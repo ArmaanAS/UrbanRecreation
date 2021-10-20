@@ -1,0 +1,48 @@
+// {
+//     "compilerOptions": {
+//         "target": "ES2015",
+//         "module": "CommonJS",
+//         "noImplicitAny": true,
+//         "removeComments": true,
+//         "preserveConstEnums": true,
+//         "sourceMap": true,
+//         "outDir": "build",
+//         "allowJs": true
+//     },
+//     "exclude": ["node_modules"],
+//     "include": ["src/ts/*.ts"]
+// }
+{
+  "compilerOptions": {
+    "allowUnreachableCode": false,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    // "noUnusedLocals": true,
+    // "noUnusedParameters": true,
+    "preserveConstEnums": true,
+    "removeComments": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "alwaysStrict": true,
+
+    "module": "ESNext",
+    "target": "ES2017",
+    "moduleResolution": "Node",
+    // "isolatedModules": true,
+
+    // "sourceMap": true,
+    "sourceRoot": "/C:/Users/Student/Documents/NodeJSWorkspace/UrbanRecreation/src",
+    "inlineSourceMap": true,
+
+    // "newLine": "LF",
+    "allowSyntheticDefaultImports": true,
+    "lib": ["es2017", "esnext"],
+    "outDir": "build",
+    "rootDir": "src",
+    "types": ["node"]
+  },
+  "include": ["src/ts/**/*.ts", "src/**/*.json"],
+  "exclude": ["node_modules"]
+}

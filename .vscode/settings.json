@@ -1,0 +1,5 @@
+{
+  "python.pythonPath": "C:\\Users\\Student\\anaconda3\\python.exe",
+  "python.formatting.provider": "yapf",
+  "jupyter.jupyterServerType": "local"
+}

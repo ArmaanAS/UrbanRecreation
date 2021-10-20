@@ -1,0 +1,29 @@
+{
+  "name": "urbanrecreation",
+  "version": "1.0.0",
+  "description": "Recreate Urban Rivals",
+  "main": "build/main.js",
+  "type": "module",
+  "scripts": {
+    "js": "cd src/js & node --inspect=9222 main.mjs",
+    "run-ts": "cd build/ts && node --inspect-brk=9229 --max-old-space-size=16384 --experimental-specifier-resolution=node --enable-source-maps Main.js",
+    "dev": "tsc && npm run run-ts",
+    "sim-limit": "cd src/js & node --inspect-brk=9222 --max-old-space-size=16384 main.mjs"
+  },
+  "keywords": [
+    "urbanrivals",
+    "nodejs"
+  ],
+  "author": "ArmaanAS",
+  "license": "ISC",
+  "dependencies": {
+    "colors": "^1.4.0",
+    "oauth": "^0.9.15",
+    "urban-rivals-oauth": "^1.2.1",
+    "ws": "^7.5.5"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.2.0",
+    "typescript": "^4.4.4"
+  }
+}

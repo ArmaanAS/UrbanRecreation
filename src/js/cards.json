@@ -1,0 +1,42 @@
+[
+  {
+    "name": "Natrang",
+    "id": "123",
+    "stars": 3,
+    "power": 4,
+    "strength": 4,
+    "ability": "No ability",
+    "bonus": "Damage +2",
+    "clan": "Fang Pi"
+  },
+  {
+    "name": "Akiko",
+    "id": "127",
+    "stars": 3,
+    "power": 2,
+    "strength": 5,
+    "ability": "-1 Opp Damage, Min 2",
+    "bonus": "Attack +8",
+    "clan": "Junkz"
+  },
+  {
+    "name": "Ataoualpet",
+    "id": 141,
+    "stars": 3,
+    "power": 3,
+    "strength": 4,
+    "ability": "-5 Opp Damage, Min 5",
+    "bonus": "Stop Opp. Ability",
+    "clan": "Roots"
+  },
+  {
+    "name": "",
+    "id": 0,
+    "stars": 1,
+    "power": 1,
+    "strength": 1,
+    "ability": "",
+    "bonus": "",
+    "clan": ""
+  }
+]
