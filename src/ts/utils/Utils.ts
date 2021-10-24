@@ -1,13 +1,16 @@
+// import { MessageChannel, receiveMessageOnPort } from 'worker_threads'
+// import v8 from 'v8'
+
 interface Tree {
   [index: string]: Tree | number;
 }
 
 export function wordTree(lines: string[]) {
-  let tree = {} as Tree;
+  const tree: Tree = {};
 
-  for (let line of lines) {
+  for (const line of lines) {
     let node = tree;
-    for (let word of line.split(" ")) {
+    for (const word of line.split(" ")) {
       if (node[word] === undefined)
         node[word] = {};
 
@@ -16,7 +19,7 @@ export function wordTree(lines: string[]) {
     node["<"] = 0;
   }
 
-  for (let [k, node] of Object.entries(tree)) {
+  for (const [k, node] of Object.entries(tree)) {
     if (node instanceof Object && node["<"] !== undefined && Object.keys(node).length == 1) {
       tree[k] = 0;
     }
@@ -26,14 +29,14 @@ export function wordTree(lines: string[]) {
 }
 
 export function logTree(tree: Tree | number, depth = 0) {
-  Object.entries(tree).forEach(([k, v], i) => {
+  for (const [k, v] of Object.entries(tree)) {
     if (depth == 0) {
       console.log(k);
     } else {
       console.log(" ".repeat(depth * 4) + "+ " + k);
     }
     logTree(v, depth + 1);
-  });
+  }
 }
 
 
@@ -45,10 +48,10 @@ export function getN<T>(arr: T[], n = 1): T[] {
 
   if (arr.length <= n) return arr;
 
-  let ret = [];
-  while (n--) {
+  const ret = [];
+  while (n--)
     ret.push(arr.splice((arr.length * Math.random()) | 0, 1)[0]);
-  }
+
 
   return ret;
 }
@@ -60,11 +63,11 @@ export function splitLines(s: string, len: number, min = 0) {
   } else {
     lines = [];
   }
-  let words = s.trim().split(/(?<= )/g);
+  const words = s.trim().split(/(?<= )/g);
 
   let line = "",
     lineN = 0;
-  for (let word of words) {
+  for (const word of words) {
     if (line.length == 0) {
       line = word;
     } else if (line.length + word.length <= len) {
@@ -92,20 +95,53 @@ export function* alternateRange(n: number) {
 
 export function* shiftRange(n: number) {
   yield n;
-  if (n >= 3) yield n - 3;
-  for (let i = 0; i < n - 3; i++)
-    yield i;
 
-  for (let i = n - 2; i < n; i++)
-    yield i;
+  if (n < 3) {
+    for (let i = 0; i < n; i++)
+      yield i;
+
+  } else {
+    yield n - 3;
+
+    for (let i = 0; i < n - 3; i++)
+      yield i;
+
+    for (let i = n - 2; i < n; i++)
+      yield i;
+  }
 }
 
-/**
- * Clone any object and keeps the prototype. 
- * Members should be primitive types
- * @param o Any object
- * @returns Shallow copy of base object
- */
+// /**
+//  * Clone any object and keeps the prototype. 
+//  * Members should be primitive types
+//  * @param o Any object
+//  * @returns Shallow copy of base object
+//  */
 export function clone<T extends object>(o: T): T {
   return Object.setPrototypeOf({ ...o }, o.constructor.prototype);
+}
+
+// const { port1, port2 } = new MessageChannel();
+// export function clone<T extends object>(o: T): T {
+//   port2.postMessage(o);
+//   return receiveMessageOnPort(port1)!.message;
+// }
+
+// export function clone<T extends object>(o: T): T {
+//   // return Object.setPrototypeOf(
+//   //   v8.deserialize(v8.serialize(o)), o.constructor.prototype);
+//   return v8.deserialize(v8.serialize(o));
+// }
+
+export class FlowController {
+  promise: Promise<void>;
+  private res: () => void;
+  constructor() {
+    this.promise = new Promise(res => this.res = res);
+  }
+
+  resume() {
+    this.res();
+    this.promise = new Promise(res => this.res = res);
+  }
 }

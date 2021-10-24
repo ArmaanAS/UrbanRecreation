@@ -9,7 +9,7 @@ import Analysis from './Analysis';
 
 if (!isMainThread) {
   const log = console.log;
-  console.log = () => { };
+  console.log = () => 0;
 
   process.stdout.write("Test output: " + threadId + "\n");
   log(`[${threadId.toString().green}] ${'Thread Started'.grey}`);
@@ -21,17 +21,15 @@ if (!isMainThread) {
 
     port.postMessage("Thanks for having me");
 
-    // port.on('message', async (data: WorkerSolverData) => {
-    //   log(data.game.constructor.name);
+    port.on('message', async (data: WorkerSolverData) => {
+      log(data.game.constructor.name);
 
-    //   // let m = await Analysis.iterTree(Game.from(workerData), true);
-    //   log(`[${data.id.toString().yellow}] ${'Analysis Started'.grey}`);
-    //   const m = await Analysis.iterTree(data.game, true);
+      // let m = await Analysis.iterTree(Game.from(workerData), true);
+      log(`[${data.id.toString().yellow}] ${'Analysis Started'.grey}`);
+      const m = await Analysis.iterTree(data.game, true);
 
-    //   log(`[${data.id.toString().yellow}] ${'Analysis Finished'.grey}`);
-    //   port.postMessage(m);
-    // })
+      log(`[${data.id.toString().yellow}] ${'Analysis Finished'.grey}`);
+      port.postMessage(m);
+    })
   })
-
-  await new Promise((resolve) => { });
 }

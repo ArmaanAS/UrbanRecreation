@@ -7,10 +7,10 @@ import {
 import Analysis from './Analysis';
 
 if (!isMainThread) {
-  let log = console.log;
+  const log = console.log;
   log(`[${threadId.toString().green}] ${'Thread Started'.grey}`);
 
-  console.log = () => { };
+  console.log = () => 0;
   // let m = await Analysis.iterTree(Game.from(workerData), true);
   const m = await Analysis.iterTree(workerData, true);
 

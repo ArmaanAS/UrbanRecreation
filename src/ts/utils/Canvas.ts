@@ -1,6 +1,7 @@
+/* eslint-disable no-control-regex */
 import colors from 'colors';
 
-function insert(s: string, c: any, i: number, rep = 0) {
+function insert(s: string, c: string | number | object, i: number, rep = 0) {
   // return s.substr(0, i) + c + s.substr(i + rep);
   return trim(s, i) + c + s.substring(trim(s, i + rep).length);
 }
@@ -36,7 +37,7 @@ export default class Canvas {
   }
 
   draw(x: number, y: number, canvas: Canvas, border = false) {
-    let i = Array.from(canvas.lines);
+    const i = Array.from(canvas.lines);
 
     if (border) {
       i.forEach((s, i, a) => a[i] = '║'[canvas.col] + s + '║'[canvas.col]);
@@ -52,10 +53,10 @@ export default class Canvas {
     return this;
   }
 
-  write(x: number, y: any, t?: any) {
+  write(x: number, y: string | number, t?: string) {
     if (y >= this.height) return;
     if (t === undefined && typeof y == 'string') {
-      t = y as string;
+      t = y;
       y = x
       x = 0;
     }
@@ -64,24 +65,22 @@ export default class Canvas {
       length = this.width - x;
       t = trim(t as string, length);
     }
-    this.lines[y] = insert(this.lines[y], t, x, length);
+    this.lines[y as number] = insert(
+      this.lines[y as number], t!, x, length);
 
     return this;
   }
 
-  log() {
-    let i = Array.from(this.lines);
+  print() {
+    const i = Array.from(this.lines);
 
     i.forEach((s, i, a) => a[i] = '║'[this.col] + s + '║'[this.col]);
 
     i.splice(0, 0, `╔${'═'.repeat(this.width)}╗`[this.col] as string);
     i.splice(i.length, 0, `╚${'═'.repeat(this.width)}╝`[this.col] as string);
 
-    for (let line of i) {
+    for (const line of i)
       console.log(' ' + line);
-    }
-
-    return this;
   }
 }
 

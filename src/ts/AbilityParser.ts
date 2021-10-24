@@ -7,8 +7,8 @@ const abilityCache: {
 export class Abilities {
   static normalise(ability: string) {
     return ability
-      .replace(/(?<=[\+\-]) (?=[xy])/gi, "")
-      .replace(/[,\.]/g, "")
+      .replace(/(?<=[+-]) (?=[xy])/gi, "")
+      .replace(/[,.]/g, "")
       .replace(/ :/g, ":");
   }
 
@@ -17,14 +17,13 @@ export class Abilities {
   }
 
   static split(ability: string) {
-    if (abilityCache.hasOwnProperty(ability)) {
-      return Array.from(abilityCache[ability]);
-    }
+    if (abilityCache[ability] !== undefined)
+      return [...abilityCache[ability]];
 
     const s = ability
-      .replace(/(?<=[\+\-]) (?=[xy\d])/gi, "")
+      .replace(/(?<=[+-]) (?=[xy\d])/gi, "")
       .replace(/,(?! )/gi, " ")
-      .replace(/[,\.]| (?=:)/gi, "")
+      .replace(/[,.]| (?=:)/gi, "")
       // .replace(/ :/g, ':')
       .replace(/At\w*/g, "Attack")
       .replace(/Prot\w*:?/g, "Protection")
@@ -50,7 +49,7 @@ export class Abilities {
       .split(/(?<=\w+) ?[:;] /gi);
 
     abilityCache[ability] = s;
-    return Array.from(s);
+    return [...s];
   }
 }
 
@@ -84,11 +83,11 @@ export class AbilityParser {
 
   static per(tokens: string[], i: number, mod: BasicModifier) {
     if (tokens[i] == "Per") {
-      if (tokens[i + 1] == "Opp") {
+      if (tokens[i + 1] == "Opp")
         mod.setPer(tokens[i + 2], true);
-      } else {
+      else
         mod.setPer(tokens[i + 1]);
-      }
+
       return true;
     }
 
@@ -96,9 +95,9 @@ export class AbilityParser {
   }
 
   static minmaxper(tokens: string[], i: number, mod: BasicModifier) {
-    if (AbilityParser.minmax(tokens, i, mod)) {
+    if (AbilityParser.minmax(tokens, i, mod))
       return true;
-    } else if (AbilityParser.per(tokens, i, mod)) {
+    else if (AbilityParser.per(tokens, i, mod)) {
       AbilityParser.minmax(tokens, i + 2, mod);
 
       return true;

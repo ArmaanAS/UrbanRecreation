@@ -29,14 +29,12 @@ export default class BattleData {
 
     this.events = events;
 
-    let l = round.hand.getLeader();
-    if (l) {
+    const l = round.hand.getLeader();
+    if (l !== undefined)
       Ability.leader(l, this);
-    }
 
-    if (this.card.clan != "Leader") {
+    if (this.card.clan != "Leader")
       Ability.card(card1, this);
-    }
   }
 
   getClanCards(card: Card, opp = false) {

@@ -19,7 +19,7 @@ export default class Round {
   ca2: boolean;
   r1: PlayerRound;
   r2: PlayerRound;
-  hand: any;
+  hand: Hand;
   constructor(round: number, day = true, first = true, p1: Player, h1: Hand, p2: Player, h2: Hand) {
     this.round = round; // 1, 2, 3, 4
     this.day = day;
@@ -37,14 +37,12 @@ export default class Round {
     this.ca1 = false;
     this.ca2 = false;
     let l = this.h1.getLeader();
-    if (l && l.ability.string == 'Counter-attack') {
+    if (l && l.ability.string == 'Counter-attack')
       this.ca1 = true;
-    }
 
     l = this.h2.getLeader();
-    if (l && l.ability.string == 'Counter-attack') {
+    if (l && l.ability.string == 'Counter-attack')
       this.ca2 = true;
-    }
 
     if (this.ca1 == this.ca2) {
       this.first = true;
@@ -59,8 +57,8 @@ export default class Round {
   }
 
   clone(p1: Player, h1: Hand, p2: Player, h2: Hand) {
-    let events1 = this.events1.clone();
-    let events2 = this.events2.clone();
+    const events1 = this.events1.clone();
+    const events2 = this.events2.clone();
     return Object.setPrototypeOf({
       round: this.round,
       day: this.day,
@@ -102,8 +100,10 @@ export default class Round {
   }
 
   battle(card1index: number, pillz1: number, fury1: boolean, card2index: number, pillz2: number, fury2: boolean) {
-    let c1 = this.h1.get(card1index);
-    let c2 = this.h2.get(card2index);
+    // const c1 = this.h1.get(card1index);
+    // const c2 = this.h2.get(card2index);
+    const c1 = this.h1[card1index];
+    const c2 = this.h2[card2index];
 
     new CardBattle(this,
       this.p1, c1, pillz1, fury1,

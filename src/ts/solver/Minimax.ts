@@ -1,5 +1,3 @@
-import colors from 'colors';
-
 export enum GameResult {
   WIN = 1,
   TIE = 0,
@@ -15,7 +13,7 @@ export const Turn = {
 export class Node {
   name: string;
   turn: Turn;
-  playSecond: boolean = false;
+  playSecond = false;
   defered: boolean;
   result?: GameResult; // This could be any number, e.g. 0.87832732451 !!...!!
   nodes: Node[] = [];
@@ -43,7 +41,7 @@ export class Node {
       this.nodes.push(name);
       return name;
     } else {
-      let n = new Node(name, turn, undefined, defered);
+      const n = new Node(name, turn, undefined, defered);
       this.nodes.push(n);
       return n;
     }
@@ -93,7 +91,7 @@ export class Node {
     return this;
   }
 
-  tree(): number | Object {
+  tree(): number | object {
     if (this.nodes.length) {
       return Object.fromEntries(this.nodes.map(n => [n.name, n.tree()]));
     } else {
@@ -114,7 +112,7 @@ export class Node {
   }
 
   toString() {
-    let g = +(this.get() * 100).toFixed(1);
+    const g = +(this.get() * 100).toFixed(1);
     if (this.turn == Minimax.MIN) {
       if (g > 0) {
         return `[Win ${g}%] ${this.name}`.green;
@@ -163,8 +161,8 @@ export default class Minimax extends Node {
   best() {
     if (this.playSecond) {
       const combine: { [key: string]: Node[] } = {};
-      for (let m of this.nodes) {
-        for (let n of m.nodes) {
+      for (const m of this.nodes) {
+        for (const n of m.nodes) {
           if (!combine[n.name])
             combine[n.name] = [];
 
@@ -181,7 +179,7 @@ export default class Minimax extends Node {
 
       const revCombo: { [key: number]: string } = {};
       for (const [k, v] of Object.entries(combination)) {
-        if (!revCombo.hasOwnProperty(v))
+        if (revCombo[v] === undefined)
           revCombo[v] = k;
         else {
           const split1 = k.split(' ', 3)
@@ -222,8 +220,8 @@ export default class Minimax extends Node {
       if (this.turn == Minimax.MAX) {
         // return this.nodes.reduce((t, n) => n.get() > t.get() ? n : t);
         return this.nodes.reduce((t, n) => {
-          let a = n.get();
-          let b = t.get();
+          const a = n.get();
+          const b = t.get();
           if (a < b) {
             return t;
           } else if (a > b) {
@@ -246,8 +244,8 @@ export default class Minimax extends Node {
       } else {
         // return this.nodes.reduce((t, n) => n.get() < t.get() ? n : t);
         return this.nodes.reduce((t, n) => {
-          let a = n.get();
-          let b = t.get();
+          const a = n.get();
+          const b = t.get();
           if (a > b) {
             return t;
           } else if (a < b) {
@@ -268,7 +266,7 @@ export default class Minimax extends Node {
   }
 
   static from(m: Node): Node {
-    for (let n of m.nodes) {
+    for (const n of m.nodes) {
       Minimax.from(n);
     }
 

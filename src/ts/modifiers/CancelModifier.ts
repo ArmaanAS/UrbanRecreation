@@ -50,13 +50,13 @@ export default class CancelModifier extends Modifier {
     //   data.oppCard.bonus.cancel = true;
     // }
     switch (this.cancel) {
-      case Cancel.POWER: data.oppCard.power.cancel = true; break;
-      case Cancel.DAMAGE: data.oppCard.damage.cancel = true; break;
-      case Cancel.ATTACK: data.oppCard.attack.cancel = true; break;
-      case Cancel.PILLZ: data.oppCard.pillz.cancel = true; break;
-      case Cancel.LIFE: data.oppCard.life.cancel = true; break;
-      case Cancel.ABILITY: data.oppCard.ability.cancel = true; break;
-      case Cancel.BONUS: data.oppCard.bonus.cancel = true; break;
+      case Cancel.POWER: data.oppCard.power_.cancel = true; break;
+      case Cancel.DAMAGE: data.oppCard.damage_.cancel = true; break;
+      case Cancel.ATTACK: data.oppCard.attack_.cancel = true; break;
+      case Cancel.PILLZ: data.oppCard.pillz_.cancel = true; break;
+      case Cancel.LIFE: data.oppCard.life_.cancel = true; break;
+      case Cancel.ABILITY: data.oppCard.ability_.cancel = true; break;
+      case Cancel.BONUS: data.oppCard.bonus_.cancel = true; break;
     }
   }
 }

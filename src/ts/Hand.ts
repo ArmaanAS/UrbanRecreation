@@ -1,115 +1,188 @@
-import Canvas from "./utils/Canvas";
-import colors from 'colors'
 import { HandOf, CardJSON } from "./types/Types";
-import Card from "./Card";
+import Card, { CardGenerator } from "./Card";
 
 // function unique(value: any, index: any, self: string | any[]) {
 //   return self.indexOf(value) === index;
 // }
 
-export default class Hand {
-  cards: HandOf<Card>;
-  constructor(cards: HandOf<Card>) {
-    this.cards = cards;
-    // this.cards.forEach((c, i) => (c.index = i));
-    cards[0].index = 0;
-    cards[1].index = 1;
-    cards[2].index = 2;
-    cards[3].index = 3;
-  }
+export default class Hand extends Array<Card> {
+  // constructor(cards: HandOf<Card>) {
+  //   super(4);
+
+  //   this[0] = cards[0];
+  //   this[1] = cards[1];
+  //   this[2] = cards[2];
+  //   this[3] = cards[3];
+  //   cards[0].index = 0;
+  //   cards[1].index = 1;
+  //   cards[2].index = 2;
+  //   cards[3].index = 3;
+  // }
 
   clone(): Hand {
-    // return Object.setPrototypeOf({
-    //   cards: this.cards.map(c => c.clone())
-    // }, Hand.prototype);
-    return Object.setPrototypeOf({
-      cards: [
-        this.cards[0].clone(),
-        this.cards[1].clone(),
-        this.cards[2].clone(),
-        this.cards[3].clone(),
-      ]
-    }, Hand.prototype);
+    return Object.setPrototypeOf([
+      this[0].clone(),
+      this[1].clone(),
+      this[2].clone(),
+      this[3].clone(),
+    ], Hand.prototype);
   }
 
   static from(o: Hand) {
-    Object.setPrototypeOf(o, Hand.prototype);
+    Card.from(o[0]);
+    Card.from(o[1]);
+    Card.from(o[2]);
+    Card.from(o[3]);
 
-    // o.cards.map(Card.from);
-    Card.from(o.cards[0]);
-    Card.from(o.cards[1]);
-    Card.from(o.cards[2]);
-    Card.from(o.cards[3]);
-
-    return o;
+    return Object.setPrototypeOf(o, Hand.prototype);
   }
 
-  get(index: number) {
-    return this.cards[index];
-  }
-
-  draw(col: keyof colors.Color = 'cyan') {
-    let board = new Canvas(128, 17);
-    board.col = col;
-
-    this.cards.forEach((c, i) => {
-      board.draw(3 + i * 32, 0, c.image(), true);
-    });
-
-    board.log();
-  }
+  // get(index: number) {
+  //   return this[index];
+  // }
 
   getClanCards(card: Card) {
-    // return this.cards
-    //   .filter(c => c.clan == card.clan)
-    //   .map(c => c.name)
-    //   .filter(unique).length;
     let i = 0;
-    if (this.cards[0].clan == card.clan) i++;
-    if (this.cards[1].clan == card.clan &&
-      this.cards[1].name != this.cards[0].name) i++;
-    if (this.cards[2].clan == card.clan &&
-      this.cards[2].name != this.cards[0].name &&
-      this.cards[2].name != this.cards[1].name) i++;
-    if (this.cards[3].clan == card.clan &&
-      this.cards[3].name != this.cards[0].name &&
-      this.cards[3].name != this.cards[1].name &&
-      this.cards[3].name != this.cards[2].name) i++;
+    if (this[0].clan == card.clan) i++;
+    if (this[1].clan == card.clan &&
+      this[1].name != this[0].name) i++;
+    if (this[2].clan == card.clan &&
+      this[2].name != this[0].name &&
+      this[2].name != this[1].name) i++;
+    if (this[3].clan == card.clan &&
+      this[3].name != this[0].name &&
+      this[3].name != this[1].name &&
+      this[3].name != this[2].name) i++;
 
     return i;
   }
 
   getLeader() {
-    let leaders = this.cards.filter(c => c.clan == 'Leader');
+    const leaders = this.filter(c => c.clan == 'Leader');
     if (leaders.length == 1)
       return leaders[0];
     else return;
   }
+}
+// export default class Hand {
+//   cards: HandOf<Card>;
+//   constructor(cards: HandOf<Card>) {
+//     this.cards = cards;
+//     // this.cards.forEach((c, i) => (c.index = i));
+//     cards[0].index = 0;
+//     cards[1].index = 1;
+//     cards[2].index = 2;
+//     cards[3].index = 3;
+//   }
+
+//   clone(): Hand {
+//     // return Object.setPrototypeOf({
+//     //   cards: this.cards.map(c => c.clone())
+//     // }, Hand.prototype);
+//     return Object.setPrototypeOf({
+//       cards: [
+//         this.cards[0].clone(),
+//         this.cards[1].clone(),
+//         this.cards[2].clone(),
+//         this.cards[3].clone(),
+//       ]
+//     }, Hand.prototype);
+//   }
+
+//   static from(o: Hand) {
+//     Object.setPrototypeOf(o, Hand.prototype);
+
+//     // o.cards.map(Card.from);
+//     Card.from(o.cards[0]);
+//     Card.from(o.cards[1]);
+//     Card.from(o.cards[2]);
+//     Card.from(o.cards[3]);
+
+//     return o;
+//   }
+
+//   get(index: number) {
+//     return this.cards[index];
+//   }
+
+
+
+//   getClanCards(card: Card) {
+//     // return this.cards
+//     //   .filter(c => c.clan == card.clan)
+//     //   .map(c => c.name)
+//     //   .filter(unique).length;
+//     let i = 0;
+//     if (this.cards[0].clan == card.clan) i++;
+//     if (this.cards[1].clan == card.clan &&
+//       this.cards[1].name != this.cards[0].name) i++;
+//     if (this.cards[2].clan == card.clan &&
+//       this.cards[2].name != this.cards[0].name &&
+//       this.cards[2].name != this.cards[1].name) i++;
+//     if (this.cards[3].clan == card.clan &&
+//       this.cards[3].name != this.cards[0].name &&
+//       this.cards[3].name != this.cards[1].name &&
+//       this.cards[3].name != this.cards[2].name) i++;
+
+//     return i;
+//   }
+
+//   getLeader() {
+//     const leaders = this.cards.filter(c => c.clan == 'Leader');
+//     if (leaders.length == 1)
+//       return leaders[0];
+//     else return;
+//   }
+// }
+
+export class HandGenerator {
+  static from(hand: HandOf<Card>) {
+    hand[0].index = 0;
+    hand[1].index = 1;
+    hand[2].index = 2;
+    hand[3].index = 3;
+
+    return Object.setPrototypeOf(hand, Hand.prototype);
+  }
 
   static generate(...cards: HandOf<string> | []) {
-    if (cards.length === 4) {
-      return new Hand(Card.getRandomHand(cards));
-    } else {
-      return new Hand(Card.getRandomHandYear(2006));
-      // return new Hand(...Card.getRandomHandClan());
-    }
+    if (cards.length === 4)
+      return this.from(CardGenerator.getRandomHand(cards));
+    else
+      return this.from(CardGenerator.getRandomHandYear(2006));
   }
 
   static generateRaw(cards: HandOf<CardJSON>) {
-    return new Hand(cards.map(j => new Card(j)) as HandOf<Card>);
+    return this.from(cards.map(j => new Card(j)) as HandOf<Card>);
   }
 
-  // static of (c1, c2, c3, c4) {
-  //   cards = [];
-  //   for (c of [c1, c2, c3, c4]) {
-  //     card = Card.get(c);
-  //     if (card) {
-  //       cards.push(card);
-  //     } else {
-  //       throw new Error("Invalid card ID or Name: " + c);
-  //     }
-  //   }
+  static handOf(cards: HandOf<number | string>) {
+    return this.from(cards.map(c => {
+      const card = CardGenerator.get(c);
+      if (card !== undefined)
+        return card;
+      else
+        throw new Error(`Invalid card ID or Name: ${c}`);
+    }) as HandOf<Card>);
+  }
+  // static generate(...cards: HandOf<string> | []) {
+  //   if (cards.length === 4)
+  //     return new Hand(CardGenerator.getRandomHand(cards));
+  //   else
+  //     return new Hand(CardGenerator.getRandomHandYear(2006));
+  // }
 
-  //   return new Hand(...cards);
+  // static generateRaw(cards: HandOf<CardJSON>) {
+  //   return new Hand(cards.map(j => new Card(j)) as HandOf<Card>);
+  // }
+
+  // static handOf(cards: HandOf<number | string>) {
+  //   return new Hand(cards.map(c => {
+  //     const card = CardGenerator.get(c);
+  //     if (card !== undefined)
+  //       return card;
+  //     else
+  //       throw new Error(`Invalid card ID or Name: ${c}`);
+  //   }) as HandOf<Card>);
   // }
 }

@@ -1,7 +1,19 @@
 import Game from './Game';
+import { HandGenerator } from './Hand';
+import Player from './Player';
 import Analysis from './solver/Analysis';
+import GameRenderer from './utils/GameRenderer';
 
-let g = Game.create(false, !false, false);
+
+const p1 = new Player(12, 12, 0);
+const p2 = new Player(12, 12, 1);
+
+const h1 = HandGenerator.generate('Roderick', 'Frank', 'Katsuhkay', 'Oyoh'); // Roderick
+const h2 = HandGenerator.generate('Behemoth Cr', 'Vholt', 'Eyrik', 'Kate');
+
+const g = new Game(p1, p2, h1, h2, false, !false, false);
+// const g = GameGenerator.create(false, !false, false);
+
 // g.select(2, 3);
 // g.select(0, 0);
 // g.select(1, 3);
@@ -10,24 +22,27 @@ let g = Game.create(false, !false, false);
 // g.select(2, 0);
 
 g.select(1, 0);
-g.select(0, 1);
+// g.select(0, 1);
 
 // g.select(1, 0);
 // g.select(1, 4);
 // g.select(0, 0);
 // g.select(2, 4);
-g.log(true);
+GameRenderer.draw(g, true);
 
-let log = console.log;
+const log = console.log;
 
-while (!g.checkWinner(true)) {
+// console.dir(g, { depth: 6 })
+// console.log(g.h1.get(0).clan)
+
+while (!g.hasWinner(true) && true) {
   if (g.getTurn() == 'Player' && !false) {
     await g.input(false);
   } else {
 
-    console.log = () => { };
+    console.log = () => 0;
     console.time('a');
-    let m = await Analysis.iterTree(g);
+    const m = await Analysis.iterTree(g);
     console.log = log;
     console.timeEnd('a');
 
@@ -38,19 +53,16 @@ while (!g.checkWinner(true)) {
       // console.log('debug', JSON.stringify(m.debug(3)));
 
       // console.log('debug', m.debug(2));
-      let best = m.best();
+      const best = m.best();
       console.log(best.toString())
 
 
       // let s = best.name.split(' ');
       // if (!g.select(+s[0], +s[1], s[2] == 'true')) {
-      let res = g.select(best.index, best.pillz, best.fury);
+      const res = g.select(best.index, best.pillz, best.fury);
       if (!res) {
         console.log(`Failed ${[typeof best.index, typeof best.pillz, typeof best.fury]} ${g.getTurn()} ${res}`.red);
-        // g.log(true);
-        // console.log(g);
-        // console.log(g.h1);
-        // console.log(g.h2);
+        // GameRenderer.draw(g, true);
         break;
       }
 
@@ -59,29 +71,10 @@ while (!g.checkWinner(true)) {
       console.log(m);
     }
   }
-  // g.log(true);
+  // GameRenderer.draw(g, true);
 }
 
 console.log('Ended.')
 // process.exit(0)
 
-
-
-// Analysis.threadedMove({
-//   threaded: 2
-// }, g, 0, 0);
-// Analysis.threadedMove({
-//   threaded: 2
-// }, g, 1, 0);
-// Analysis.threadedMove({
-//   threaded: 2
-// }, g, 2, 0);
-// Analysis.threadedMove({
-//   threaded: 2
-// }, g, 3, 0);
-
-// async function a() {
-//   console.log(await Analysis.best(g, true));
-// }
-
-// a();
+// console.dir(g, { depth: 5 });

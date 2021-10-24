@@ -30,7 +30,7 @@ export default class Ability {
   ability: string;
   // type: number;
   type: AbilityType;
-  defer: boolean = false;
+  defer = false;
   mods: Modifier[] = [];
   conditions: Condition[];
   constructor(s: string, type = AbilityType.UNDEFINED) {
@@ -69,7 +69,7 @@ export default class Ability {
   canApply(data: BattleData) {
     // let apply = true;
 
-    for (let cond of this.conditions) {
+    for (const cond of this.conditions) {
       if (!cond.met(data)) {
         console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
         return false;
@@ -90,14 +90,14 @@ export default class Ability {
   }
 
   compileConditions(data: BattleData) {
-    for (let cond of this.conditions) {
+    for (const cond of this.conditions) {
       cond.compile(data, this);
     }
   }
 
   compileAbility(data: BattleData) {
     let failed = true;
-    let tokens = this.ability.split(" ");
+    const tokens = this.ability.split(" ");
 
     compile: if (/\+\d+/.test(tokens[0])) {
       let t,
@@ -115,10 +115,10 @@ export default class Ability {
         i = 1;
       }
 
-      for (let a of t) {
+      for (const a of t) {
         // let mod = Modifier.basic(+tokens[0]);
         // let mod = new BasicModifier(+tokens[0]);
-        let mod = new BasicModifier();
+        const mod = new BasicModifier();
         mod.change = +tokens[0];
         mod.setOpp(opp);
 
@@ -140,30 +140,26 @@ export default class Ability {
         this.mods.push(mod);
       }
     } else if (/-\d+/.test(tokens[0])) {
-      let dupe = ["Xantiax", "Cards"].includes(tokens[1]);
-      let t: string[],
-        i = 1;
-      if (dupe) {
-        i = 2;
-      }
+      const dupe = ["Xantiax", "Cards"].includes(tokens[1]);
+      let t: string[];
+      const i = dupe ? 2 : 1;
 
-      if (tokens[i].includes("&")) {
+      if (tokens[i].includes("&"))
         t = tokens[i].split("&");
-      } else {
+      else
         t = [tokens[i]];
-      }
 
-      for (let a of t) {
+      for (const a of t) {
         // let mod = Modifier.basic(+tokens[0]);
         // let mod = new BasicModifier(+tokens[0]);
-        let mod = new BasicModifier();
+        const mod = new BasicModifier();
         mod.change = +tokens[0];
         mod.setOpp(true);
         failed = false;
 
         if (["Power", "Damage", "Life", "Pillz", "Attack"].includes(a)) {
-
           mod.setType(a);
+
         } else {
           console.log(
             `Unknown token[${i}]: `.red + `"${tokens[i]}"`,
@@ -178,8 +174,8 @@ export default class Ability {
       }
 
       if (dupe) {
-        let newMods = [];
-        for (let mod of this.mods) {
+        const newMods = [];
+        for (const mod of this.mods) {
           mod.win = false;
           // const clone = mod.clone();
           const cloned = clone(mod);
@@ -198,7 +194,7 @@ export default class Ability {
     } else if (tokens[0] == "Cancel") {
       failed = false;
       if (tokens[1].includes("&")) {
-        for (let t of tokens[1].split("&")) {
+        for (const t of tokens[1].split("&")) {
           this.mods.push(new CancelModifier(t));
         }
       } else if (tokens[1] == "Leader") {
@@ -209,7 +205,7 @@ export default class Ability {
     } else if (tokens[0] == "Protection") {
       failed = false;
       if (tokens[1].includes("&")) {
-        for (let prot of tokens[1].split("&")) {
+        for (const prot of tokens[1].split("&")) {
           this.mods.push(new ProtectionModifier(prot));
         }
       } else {
@@ -224,7 +220,7 @@ export default class Ability {
         return;
       } else {
         if (tokens[1].includes("&")) {
-          for (let c of tokens[1].split("&")) {
+          for (const c of tokens[1].split("&")) {
             this.mods.push(new CopyModifier(c));
           }
         } else {
@@ -246,9 +242,8 @@ export default class Ability {
       //   // }
       //   data.events.add(mod.eventTime, this.);
       // }
-      if (this.mods.length) {
+      if (this.mods.length)
         data.events.add(this.mods[0].eventTime, this);
-      }
     } else {
       console.log(`[Failed] ${this.ability}`.red);
     }
@@ -263,7 +258,7 @@ export default class Ability {
   apply(data: BattleData) {
     // let mod = this.mods[i];
     if (this.canApply(data)) {
-      for (let mod of this.mods) {
+      for (const mod of this.mods) {
         console.log(`Applying modifier... (${this.ability})`);
         mod.apply(data);
       }

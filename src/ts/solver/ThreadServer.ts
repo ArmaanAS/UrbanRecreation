@@ -1,60 +1,96 @@
-import {
-  isMainThread,
-  parentPort,
-  workerData,
-  threadId
-} from 'worker_threads';
+import { parentPort } from 'worker_threads';
 
-import Game from '../Game';
+import Game, { GameGenerator } from '../Game';
+import { CardJSON, HandOf } from '../types/Types';
+import GameRenderer from '../utils/GameRenderer';
 import Analysis from './Analysis';
 
 let g: Game;
-let buffer: any[] = [];
-let running = false;
+let buffer: DataType[] = [];
+// let running = false;
+
+
+interface DataType {
+  type: string;
+}
+
+interface RecreateType extends DataType {
+  type: 'recreate';
+  moves: DataType[];
+}
+
+interface InitType extends DataType {
+  type: 'recreate';
+  h1: HandOf<CardJSON>;
+  h2: HandOf<CardJSON>;
+  life: number;
+  pillz: number;
+  name1: string;
+  name2: string;
+  first: boolean;
+}
+
+interface MoveType extends DataType {
+  type: 'move';
+  index: number;
+  pillz: number;
+  fury: boolean;
+}
+
+interface SimulateType extends DataType {
+  type: 'simulate';
+  index: number;
+}
 
 function handleMessage() {
-  running = true;
+  // running = true;
   while (buffer.length) {
-    let data = buffer.splice(0, 1)[0];
+    const data: DataType = buffer.splice(0, 1)[0];
 
     if (data.type == 'recreate') {
-      buffer = data.moves;
+      const d = data as RecreateType;
+
+      buffer = d.moves;
       handleMessage();
 
     } else if (data.type == 'init') {
-      g = Game.createUnique(
-        data.h1, data.h2,
-        data.life, data.pillz,
-        data.name1, data.name2,
-        data.first
+      const d = data as InitType
+      g = GameGenerator.createUnique(
+        d.h1, d.h2,
+        d.life, d.pillz,
+        d.name1, d.name2,
+        d.first
       );
-      g.log(true);
+      GameRenderer.draw(g, true);
       parentPort?.postMessage('Update');
 
     } else if (data.type == 'move') {
-      g.select(data.index, data.pillz, data.fury || false);
-      g.log(true);
+      const d = data as MoveType;
+      g.select(d.index, d.pillz, d.fury || false);
+
+      GameRenderer.draw(g, true);
       parentPort?.postMessage('Update');
 
     } else if (data.type == 'simulate') {
+      const d = data as SimulateType;
       (async function () {
-        let gc = g.clone();
+        const gc = g.clone();
 
-        if (data.index != undefined) {
-          gc.select(data.index, 0, false);
+        if (d.index != undefined) {
+          gc.select(d.index, 0, false);
         }
 
-        let log = console.log;
-        console.log = () => { };
+        const log = console.log;
+        console.log = () => 0;
         console.time('a');
-        let m = await Analysis.iterTree(gc);
+        const m = await Analysis.iterTree(gc);
         console.log = log;
         console.timeEnd('a');
 
         if (!g.round.first) {
           m.turn = !m.turn;
         }
-        let best = m.best();
+        const best = m.best();
         console.log(best.toString());
 
         parentPort?.postMessage({
@@ -71,7 +107,7 @@ function handleMessage() {
 
     } else console.log('Unknown data:', data);
   }
-  running = false;
+  // running = false;
 }
 
 parentPort?.on('message', function incoming(data) {

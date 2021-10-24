@@ -33,6 +33,7 @@
     // "isolatedModules": true,
 
     // "sourceMap": true,
+    // "sourceRoot": "<rootDir>/src",
     "sourceRoot": "/C:/Users/Student/Documents/NodeJSWorkspace/UrbanRecreation/src",
     "inlineSourceMap": true,
 
@@ -41,7 +42,7 @@
     "lib": ["es2017", "esnext"],
     "outDir": "build",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node", "jest"]
   },
   "include": ["src/ts/**/*.ts", "src/**/*.json"],
   "exclude": ["node_modules"]

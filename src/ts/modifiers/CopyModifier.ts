@@ -29,13 +29,13 @@ export default class CopyModifier extends Modifier {
 
   apply(data: BattleData) {
     if (this.copy == Copy.POWER) {
-      // if (!data.card.power.blocked())
-      if (data.card.power.prot || !data.card.power.cancel)
-        data.card.power.final = data.oppCard.power.base;
+      if (!data.card.power.blocked)
+        // if (data.card.power.prot || !data.card.power.cancel)
+        data.card.power_.final = data.oppCard.power.base;
 
     } else if (this.copy == Copy.DAMAGE)
-      // if (!data.card.damage.blocked())
-      if (data.card.damage.prot || !data.card.damage.cancel)
-        data.card.damage.final = data.oppCard.damage.base;
+      if (!data.card.damage.blocked)
+        // if (data.card.damage.prot || !data.card.damage.cancel)
+        data.card.damage_.final = data.oppCard.damage.base;
   }
 }

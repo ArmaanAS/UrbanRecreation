@@ -19,17 +19,17 @@ import Bar from './Bar';
 if (!isMainThread) {
   console.log(`[${threadId.toString().green}] ${'Thread Started'.grey}`);
 
-  let game = Game.from(workerData.game);
-  let minimax: string = workerData.minimax;
-  let bar: Bar = workerData.bar;
-  let index: number = workerData.index;
-  let pillz: number = workerData.pillz;
-  let fury: boolean = workerData.fury;
-  let fullSearch: boolean = workerData.fullSearch;
+  const game = Game.from(workerData.game);
+  const minimax: string = workerData.minimax;
+  const bar: Bar = workerData.bar;
+  const index: number = workerData.index;
+  const pillz: number = workerData.pillz;
+  const fury: boolean = workerData.fury;
+  const fullSearch: boolean = workerData.fullSearch;
 
-  let log = console.log;
-  console.log = () => { };
-  let m = await Analysis.fillTree(
+  const log = console.log;
+  console.log = () => 0;
+  const m = await Analysis.fillTree(
     game, minimax, bar, index, pillz, fury, fullSearch
   );
 

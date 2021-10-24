@@ -30,23 +30,12 @@ export default class ProtectionModifier extends Modifier {
   }
 
   apply(data: BattleData) {
-    // if (this.prot == Prot.POWER) {
-    //   data.card.power.prot = true;
-    // } else if (this.prot == Prot.DAMAGE) {
-    //   data.card.damage.prot = true;
-    // } else if (this.prot == Prot.ATTACK) {
-    //   data.card.attack.prot = true;
-    // } else if (this.prot == Prot.ABILITY) {
-    //   data.card.ability.prot = true;
-    // } else if (this.prot == Prot.BONUS) {
-    //   data.card.bonus.prot = true;
-    // }
     switch (this.prot) {
-      case Prot.POWER: data.card.power.prot = true; break;
-      case Prot.DAMAGE: data.card.damage.prot = true; break;
-      case Prot.ATTACK: data.card.attack.prot = true; break;
-      case Prot.ABILITY: data.card.ability.prot = true; break;
-      case Prot.BONUS: data.card.bonus.prot = true; break;
+      case Prot.POWER: data.card.power_.prot = true; break;
+      case Prot.DAMAGE: data.card.damage_.prot = true; break;
+      case Prot.ATTACK: data.card.attack_.prot = true; break;
+      case Prot.ABILITY: data.card.ability_.prot = true; break;
+      case Prot.BONUS: data.card.bonus_.prot = true; break;
     }
   }
 }

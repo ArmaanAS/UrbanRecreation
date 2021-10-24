@@ -24,11 +24,10 @@ export default class Bar {
   }
 
   push(game: Game, cards: number) {
-    let a = new Analysis(game, undefined, undefined, false);
-    let num: number;
+    const a = new Analysis(game, undefined, undefined, false);
 
-    let p = a.getTurnPlayer().pillz + 1;
-    num = (p + Math.max(0, p - 3)) * cards; //a.getCardIndexes().length;
+    const p = a.getTurnPlayer().pillz + 1;
+    const num = (p + Math.max(0, p - 3)) * cards; //a.getCardIndexes().length;
 
     this.num.push(num);
     this.value.push(this.value[this.value.length - 1] / num);
@@ -56,8 +55,8 @@ export default class Bar {
     if (this.total >= this.step) {
       // console._stdout.write(`${this.value[this.value.length - 1]}\n`)
       this.step = Math.floor(this.total * this.inverse) / this.inverse;
-      let elapsed = (+new Date() - this.start) / 1000;
-      let remaining = (elapsed / this.total) * (100 - this.total);
+      const elapsed = (+new Date() - this.start) / 1000;
+      const remaining = (elapsed / this.total) * (100 - this.total);
       process.stdout.write(
         "\r " +
         ` Complete: ${this.step.toFixed(2)}% `.bgGreen.dim.white +

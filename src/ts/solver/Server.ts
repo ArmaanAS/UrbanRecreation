@@ -1,7 +1,7 @@
 import WebSocket from 'ws';
 import { Worker } from "worker_threads";
 
-let moves: {}[] = [];
+let moves: object[] = [];
 let worker: Worker;
 let simulated = false;
 let initialised = false;

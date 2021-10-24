@@ -1,12 +1,13 @@
-import Hand from "./Hand";
-import * as _ from "colors";
+import Hand, { HandGenerator } from "./Hand";
+import "colors";
 import readline from "readline";
 import { CardJSON, HandOf } from './types/Types'
 import { clone } from "./utils/Utils";
 import Player from "./Player";
 import Round from "./Round";
+import GameRenderer from "./utils/GameRenderer";
 
-let rl: readline.Interface | undefined;
+let rl: readline.Interface;
 
 
 export default class Game {
@@ -19,8 +20,8 @@ export default class Game {
   h1: Hand;
   h2: Hand;
   selectedFirst: boolean;
-  i1: [number, number, boolean] | undefined;
-  i2: [number, number, boolean] | undefined;
+  i1?: [number, number, boolean] = undefined;
+  i2?: [number, number, boolean] = undefined;
 
   constructor(
     p1: Player, p2: Player, h1: Hand, h2: Hand,
@@ -42,21 +43,21 @@ export default class Game {
     // this.i1 = undefined;
     // this.i2 = undefined;
 
-    for (let hand of [h1, h2]) {
-      for (let card of hand.cards) {
+    for (const hand of [h1, h2]) {
+      // for (const card of hand.cards) {
+      for (const card of hand) {
         if (card.clan == "Leader") {
-          if (hand.getClanCards(card) > 1) {
-            card.ability.string = "No Ability";
-          }
+          if (hand.getClanCards(card) > 1)
+            card.ability_.string = "No Ability";
+
         } else {
-          if (hand.getClanCards(card) == 1) {
-            card.bonus.string = "No Bonus";
-          }
+          if (hand.getClanCards(card) == 1)
+            card.bonus_.string = "No Bonus";
         }
       }
     }
 
-    this.log();
+    GameRenderer.draw(this);
 
     if (inputs) {
       this.input(repeat);
@@ -91,6 +92,44 @@ export default class Game {
     Object.setPrototypeOf(o.p1, Player.prototype);
     Object.setPrototypeOf(o.p2, Player.prototype);
 
+    // o.h1 = 
+    Hand.from(o.h1);
+    // o.h2 = 
+    Hand.from(o.h2);
+
+    if (inputs !== undefined)
+      o.inputs = inputs;
+
+    if (logs !== undefined)
+      o.logs = logs;
+
+    return o;
+  }
+  static fromClone(o: Game, inputs?: boolean, logs?: boolean) {
+    Object.setPrototypeOf(o, Game.prototype);
+
+    o.round.p1 = o.p1;
+    o.round.p2 = o.p2;
+    o.round.h1 = o.h1;
+    o.round.h2 = o.h2;
+
+    o.round.r1.player = o.p1;
+    o.round.r1.hand = o.h1;
+    o.round.r1.opp = o.p2;
+    o.round.r1.oppHand = o.h2;
+    o.round.r1.events = o.round.events1;
+
+    o.round.r2.player = o.p2;
+    o.round.r2.hand = o.h2;
+    o.round.r2.opp = o.p1;
+    o.round.r2.oppHand = o.h1;
+    o.round.r2.events = o.round.events2;
+
+    o.round = Round.from(o.round);
+
+    Object.setPrototypeOf(o.p1, Player.prototype);
+    Object.setPrototypeOf(o.p2, Player.prototype);
+
     o.h1 = Hand.from(o.h1);
     o.h2 = Hand.from(o.h2);
 
@@ -103,25 +142,6 @@ export default class Game {
     return o;
   }
 
-  log(override = false) {
-    if (!override && !this.logs) return;
-
-    if (this.i1 != undefined) {
-      this.p1.log(this.round.round);
-      this.h1.draw("cyan");
-    } else {
-      this.p1.log(this.round.round);
-      this.h1.draw(this.selectedFirst != this.round.first ? "yellow" : "white");
-    }
-
-    if (this.i2 != undefined) {
-      this.p2.log(this.round.round);
-      this.h2.draw("cyan");
-    } else {
-      this.p2.log(this.round.round);
-      this.h2.draw(this.selectedFirst != this.round.first ? "white" : "yellow");
-    }
-  }
 
   select(index: number, pillz: number, fury = false) {
     if (typeof index != 'number' || typeof pillz != 'number') //return false;
@@ -129,21 +149,24 @@ export default class Game {
         index: ${index}, pillz: ${pillz}`)
 
     if (this.selectedFirst != this.round.first) {
-      if (this.h1.get(index).played) {
-        // console.debug(index, pillz, this.h1.get(index))
+      // if (this.h1.get(index).played)
+      // if (this.h1.get(index).won !== undefined)
+      // if (this.h1[index].won !== undefined)
+      if (this.h1[index].played)
         return false;
-      }
 
       this.i1 = [index, pillz, fury];
-      this.h1.get(index).played = true;
+      this.h1[index].played = true;
     } else {
-      if (this.h2.get(index).played) {
-        // console.debug(index, pillz, this.h2.get(index))
+      // if (this.h2.get(index).played)
+      // if (this.h2.get(index).won !== undefined)
+      // if (this.h2[index].won !== undefined)
+      if (this.h2[index].played)
         return false;
-      }
 
       this.i2 = [index, pillz, fury];
-      this.h2.get(index).played = true;
+      // this.h2.get(index).played = true;
+      this.h2[index].played = true;
     }
 
     if (this.selectedFirst) {
@@ -154,7 +177,7 @@ export default class Game {
 
     this.selectedFirst = !this.selectedFirst;
 
-    this.log();
+    GameRenderer.draw(this);
     return true;
   }
 
@@ -189,7 +212,7 @@ export default class Game {
       });
     }
 
-    let msg = `
+    const msg = `
          _____      _           _                       _ 
         /  ___|    | |         | |                     | |
         \\ \`--.  ___| | ___  ___| |_    ___ __ _ _ __ __| |
@@ -198,18 +221,18 @@ export default class Game {
         \\____/ \\___|_|\\___|\\___|\\__|  \\___\\__,_|_|  \\__,_| o o o
                                                                                                                                                 
     \n`;
-    return new Promise((resolve, reject) => {
-      rl!.question(msg.green, async answer => {
+    return new Promise((resolve) => {
+      rl.question(msg.green, async answer => {
         console.log(`Selected ${answer}`);
-        let s = answer.trim().split(' ');
+        const s = answer.trim().split(' ');
 
         if (!this.select(+s[0], +(s[1] ?? 0), s[2] == 'true')) {
           resolve(await this.input(repeat));
 
         } else {
-          if (this.checkWinner(repeat)) {
+          if (this.hasWinner(repeat)) {
             console.log("\n\nClosing readline...");
-            rl!.close();
+            rl.close();
             resolve(s);
 
           } else {
@@ -226,44 +249,40 @@ export default class Game {
     });
   }
 
-  checkWinner(log = false) {
+  hasWinner(log = false) {
     if (this.round.round > 4 || this.p1.life <= 0 || this.p2.life <= 0) {
       if (log) {
-        this.log();
+        GameRenderer.draw(this)
 
         console.log("\n Game over!\n".white.bgRed);
 
-        if (this.p1.life > this.p2.life) {
+        if (this.p1.life > this.p2.life)
           console.log(` ${` ${this.p1.name} `.white.bgCyan} won the match!\n`);
-        } else if (this.p1.life < this.p2.life) {
+        else if (this.p1.life < this.p2.life)
           console.log(` ${` ${this.p2.name} `.white.bgCyan} won the match!\n`);
-        } else {
+        else
           console.log("Game is a draw!\n".green);
-        }
       }
 
       return true;
-    } else {
-      return false;
-
     }
+
+    return false;
   }
 
   getTurn() {
     return this.selectedFirst != this.round.first ? 'Player' : 'Urban Rivals';
   }
+}
 
-  static create(inputs = true, logs: boolean | undefined, repeat: boolean | undefined) {
-    let p1 = new Player(12, 12, "Player");
-    let p2 = new Player(12, 12, "Urban Rival");
+export class GameGenerator {
+  static create(inputs = true, logs?: boolean, repeat?: boolean) {
+    const p1 = new Player(12, 12, 0);  // "Player");
+    const p2 = new Player(12, 12, 1);  // "Urban Rival");
 
-    // let h1 = Hand.generate('Oon Cr');
-    // let h2 = Hand.generate('Schwarz');
-    let h1 = Hand.generate('Roderick', 'Frank', 'Katsuhkay', 'Oyoh'); // Roderick
+    const h1 = HandGenerator.generate('Roderick', 'Frank', 'Katsuhkay', 'Oyoh'); // Roderick
     // let h1 = Hand.generate('Frank', 'Katsuhkay', 'Frank', 'Katsuhkay'); // Roderick
-    let h2 = Hand.generate('Behemoth Cr', 'Vholt', 'Eyrik', 'Kate');
-    // 1023 Lizbeth Mt, 1934 Lady Ametia Cr,
-    // 942 Gerald, 1890 Anne Derya, 1932 Mel-T
+    const h2 = HandGenerator.generate('Behemoth Cr', 'Vholt', 'Eyrik', 'Kate');
 
     // 'Jessie', 'Timber'
     // 'gwen', 'Cassio Cr'
@@ -272,13 +291,13 @@ export default class Game {
   }
 
   static createUnique(h1: HandOf<CardJSON>, h2: HandOf<CardJSON>, life: number, pillz: number, name1: string | undefined, name2: string | undefined, first: boolean | undefined) {
-    let p1 = new Player(life, pillz, name1);
-    let p2 = new Player(life, pillz, name2);
+    const p1 = new Player(life, pillz, 0);  // name1);
+    const p2 = new Player(life, pillz, 1);  // name2);
 
     return new Game(
       p1, p2,
-      Hand.generateRaw(h1),
-      Hand.generateRaw(h2),
+      HandGenerator.generateRaw(h1),
+      HandGenerator.generateRaw(h2),
       false, false, false,
       first
     );

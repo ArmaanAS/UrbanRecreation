@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 type PromiseCallback = (item: any) => Promise<any>
 
 export default class CallbackPromiseMap {
@@ -19,8 +20,8 @@ export default class CallbackPromiseMap {
   }
 
   promise(item: any) {
-    let id = this.id;
-    let promise = this.cb(item)
+    const id = this.id;
+    const promise = this.cb(item)
       .then(() => this.pending.delete(id))
 
     this.pending.set(this.id++, promise);
@@ -31,7 +32,7 @@ export default class CallbackPromiseMap {
   }
 
   async race() {
-    for (let item of this.items) {
+    for (const item of this.items) {
       this.promise(item);
 
       if (this.pending.size >= this.max) {
@@ -46,51 +47,51 @@ export default class CallbackPromiseMap {
 }
 
 
-class PromiseMap {
-  items: Promise<any>[];
-  max: number;
-  id: number;
-  pending: Map<number, Promise<any>>;
-  constructor(items: Promise<any>[], max = 4) {
-    this.items = items;
-    this.max = max;
-    this.id = 0;
-    this.pending = new Map();
-  }
+// class PromiseMap {
+//   items: Promise<any>[];
+//   max: number;
+//   id: number;
+//   pending: Map<number, Promise<any>>;
+//   constructor(items: Promise<any>[], max = 4) {
+//     this.items = items;
+//     this.max = max;
+//     this.id = 0;
+//     this.pending = new Map();
+//   }
 
-  promise(item: Promise<any>) {
-    let id = this.id;
-    let promise = item
-      .then(() => this.pending.delete(id))
+//   promise(item: Promise<any>) {
+//     let id = this.id;
+//     let promise = item
+//       .then(() => this.pending.delete(id))
 
-    this.pending.set(this.id++, promise);
-  }
+//     this.pending.set(this.id++, promise);
+//   }
 
-  async race() {
-    for (let promise of this.items) {
-      this.promise(promise);
+//   async race() {
+//     for (let promise of this.items) {
+//       this.promise(promise);
 
-      if (this.pending.size >= this.max) {
-        await Promise.race(this.promises);
-      }
-    }
-  }
+//       if (this.pending.size >= this.max) {
+//         await Promise.race(this.promises);
+//       }
+//     }
+//   }
 
-  get promises() {
-    return this.pending.values();
-  }
+//   get promises() {
+//     return this.pending.values();
+//   }
 
-  static async race(promises: Promise<any>[], max: number) {
-    await new PromiseMap(promises, max).race();
-  }
-}
+//   static async race(promises: Promise<any>[], max: number) {
+//     await new PromiseMap(promises, max).race();
+//   }
+// }
 
-async function cb(val: any) {
-  return new Promise(resolve => setTimeout(_ => {
-    console.log(`Finished: ${val}`);
-    resolve(val);
-  }, 5000));
-}
+// async function cb(val: any) {
+//   return new Promise(resolve => setTimeout(_ => {
+//     console.log(`Finished: ${val}`);
+//     resolve(val);
+//   }, 5000));
+// }
 
 // await CallbackPromiseMap.race([0, 1, 2, 3, 4, 5, 6, 7], cb, 3);
 

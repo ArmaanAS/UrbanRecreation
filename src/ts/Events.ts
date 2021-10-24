@@ -52,13 +52,11 @@ export default class Events {
 
   execute(event: EventTime, data: BattleData) {
     let ability: Ability | undefined;
-    while ((ability = this.events[event].pop()) !== undefined) {
+    while ((ability = this.events[event].pop()) !== undefined)
       ability.apply(data);
-    }
 
-    for (const ability of this.repeat[event]) {
+    for (const ability of this.repeat[event])
       ability.apply(data);
-    }
   }
 
 
@@ -67,15 +65,13 @@ export default class Events {
   }
 
   executePre(data: BattleData) {
-    for (let e of [1, 2, 3, 4]) {
+    for (const e of [1, 2, 3, 4])
       this.execute(e, data);
-    }
   }
 
   executePost(data: BattleData) {
-    for (let e of [5, 6, 7, 8]) {
+    for (const e of [5, 6, 7, 8])
       this.execute(e, data);
-    }
   }
 
   executeEnd(data: BattleData) {

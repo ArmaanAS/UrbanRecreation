@@ -52,12 +52,12 @@ const Type = Time;
 
 
 export default class BasicModifier extends Modifier {
-  change: number = 0;
+  change = 0;
   per: PerType = undefined;
   type: TimeType = undefined;
-  opp: boolean = false;
-  min: number = -Infinity;
-  max: number = Infinity;
+  opp = false;
+  min = -Infinity;
+  max = Infinity;
   // constructor(change: number, minmax?: number) {
   // constructor(change: number) {
   //   super();
@@ -155,11 +155,7 @@ export default class BasicModifier extends Modifier {
       }
     } else {
       switch (this.type) {
-        // case Type.POWER: return !data.card.power.blocked();
-        // case Type.DAMAGE: return !data.card.damage.blocked();
-        // case Type.ATTACK: return !data.card.attack.blocked();
-        // case Type.LIFE: return !data.card.life.blocked();
-        // case Type.PILLZ: return !data.card.pillz.blocked();
+        // Don't change to .blocked!!
         case Type.POWER:
           return !data.card.power.prot || !data.card.power.cancel;
         case Type.DAMAGE:
@@ -207,9 +203,9 @@ export default class BasicModifier extends Modifier {
 
   mod(base: number, data: BattleData) {
     if (base <= this.min || base >= this.max) return base;
-    let change = this.change * this.getMultiplier(data);
-    let final = base + change;
-    let squash = Math.min(Math.max(final, this.min), this.max);
+    const change = this.change * this.getMultiplier(data);
+    const final = base + change;
+    const squash = Math.min(Math.max(final, this.min), this.max);
 
     console.log(`${base} => ${final} >=< ${squash}`);
     if (isNaN(squash)) {
@@ -237,11 +233,11 @@ export default class BasicModifier extends Modifier {
 
       switch (this.type) {
         case Type.POWER:
-          card.power.final = this.mod(card.power.final, data); break;
+          card.power_.final = this.mod(card.power.final, data); break;
         case Type.DAMAGE:
-          card.damage.final = this.mod(card.damage.final, data); break;
+          card.damage_.final = this.mod(card.damage.final, data); break;
         case Type.ATTACK:
-          card.attack.final = this.mod(card.attack.final, data); break;
+          card.attack_.final = this.mod(card.attack.final, data); break;
         case Type.LIFE:
           player.life = this.mod(player.life, data); break;
         case Type.PILLZ:
