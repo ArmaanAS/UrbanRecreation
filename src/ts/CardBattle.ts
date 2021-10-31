@@ -1,12 +1,15 @@
 import BattleData from "./BattleData";
 import Card from "./Card";
 import Events from "./Events";
+import Game from "./Game";
 import Player from "./Player";
-import Round from "./Round";
+// import Round from "./Round";
 
+export let counter = 0;
 
 export default class CardBattle {
-  round: Round;
+  // round: Round;
+  game: Game;
   p1: Player;
   card1: Card;
   pillz1: number;
@@ -20,7 +23,8 @@ export default class CardBattle {
   b1: BattleData;
   b2: BattleData;
   constructor(
-    round: Round,
+    // round: Round,
+    game: Game,
     p1: Player,
     card1: Card,
     pillz1: number,
@@ -32,7 +36,8 @@ export default class CardBattle {
     events1: Events,
     events2: Events
   ) {
-    this.round = round;
+    // this.round = round;
+    this.game = game;
 
     this.p1 = p1;
     this.card1 = card1;
@@ -47,8 +52,10 @@ export default class CardBattle {
     this.events1 = events1;
     this.events2 = events2;
 
-    this.b1 = new BattleData(round.r1, p1, card1, p2, card2, events1);
-    this.b2 = new BattleData(round.r2, p2, card2, p1, card1, events2);
+    // this.b1 = new BattleData(round.r1, p1, card1, p2, card2, events1);
+    // this.b2 = new BattleData(round.r2, p2, card2, p1, card1, events2);
+    this.b1 = new BattleData(game.r1, p1, card1, p2, card2, events1);
+    this.b2 = new BattleData(game.r2, p2, card2, p1, card1, events2);
   }
 
   play() {
@@ -59,18 +66,22 @@ export default class CardBattle {
     this.events2.executePre(this.b2);
 
     if (this.fury1)
-      this.card1.damage_.final += 2;
+      // this.card1.damage_.final += 2;
+      this.card1.damage.final += 2;
 
     if (this.fury2)
-      this.card2.damage_.final += 2;
+      // this.card2.damage_.final += 2;
+      this.card2.damage.final += 2;
 
 
     // this.card1.attack_.final = this.card1.power.final * (this.pillz1 + 1);
     // this.card2.attack_.final = this.card2.power.final * (this.pillz2 + 1);
     const attack1 = this.card1.power.final * (this.pillz1 + 1);
     const attack2 = this.card2.power.final * (this.pillz2 + 1);
-    this.card1.attack_.final = attack1;
-    this.card2.attack_.final = attack2;
+    // this.card1.attack_.final = attack1;
+    // this.card2.attack_.final = attack2;
+    this.card1.attack.final = attack1;
+    this.card2.attack.final = attack2;
 
     this.events1.executePost(this.b1);
     this.events2.executePost(this.b2);
@@ -91,7 +102,8 @@ export default class CardBattle {
     if (
       a1 > a2 ||
       (a1 == a2 && c1.stars < c2.stars) ||
-      (c1.stars == c2.stars && this.round.first && a1 == a2)
+      // (c1.stars == c2.stars && this.round.first && a1 == a2)
+      (c1.stars == c2.stars && this.game.first && a1 == a2)
     ) {
       // console.log(`Life -${this.card1.damage.final}`);
       this.p1.won = this.card1.won = true;
@@ -109,5 +121,9 @@ export default class CardBattle {
 
     this.card1.played = true;
     this.card2.played = true;
+
+    counter++;
+    // if (Date.now() - prevTime >= 5000)
+    //   printRate();
   }
 }

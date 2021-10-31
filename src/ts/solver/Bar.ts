@@ -26,7 +26,7 @@ export default class Bar {
   push(game: Game, cards: number) {
     const a = new Analysis(game, undefined, undefined, false);
 
-    const p = a.getTurnPlayer().pillz + 1;
+    const p = a.playingPlayer.pillz + 1;
     const num = (p + Math.max(0, p - 3)) * cards; //a.getCardIndexes().length;
 
     this.num.push(num);

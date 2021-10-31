@@ -225,13 +225,13 @@ export default class Condition {
         break;
 
       case ConditionType.STOP:
-        if (ability.type == AbilityType.ABILITY) {
+        if (ability.type === AbilityType.ABILITY) {
           this.stop = 'Ability';
-          data.card.ability_.prot = true;
+          data.card.ability.prot = true;
 
-        } else if (ability.type == AbilityType.BONUS) {
+        } else if (ability.type === AbilityType.BONUS) {
           this.stop = 'Bonus'
-          data.card.bonus_.prot = true;
+          data.card.bonus.prot = true;
         }
     }
   }

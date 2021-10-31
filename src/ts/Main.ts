@@ -22,13 +22,14 @@ const g = new Game(p1, p2, h1, h2, false, !false, false);
 // g.select(2, 0);
 
 g.select(1, 0);
-// g.select(0, 1);
+g.select(0, 1);
 
 // g.select(1, 0);
-// g.select(1, 4);
 // g.select(0, 0);
+// g.select(2, 0);
 // g.select(2, 4);
-GameRenderer.draw(g, true);
+
+// GameRenderer.draw(g, true);
 
 const log = console.log;
 
@@ -37,9 +38,20 @@ const log = console.log;
 
 while (!g.hasWinner(true) && true) {
   if (g.getTurn() == 'Player' && !false) {
-    await g.input(false);
-  } else {
+    console.log = () => 0;
+    console.time('a');
+    const m = await Analysis.iterTree(g);
+    console.log = log;
+    console.timeEnd('a');
 
+    log();
+
+    const best = m.best();
+    console.log(best.toString())
+
+    await g.input(false);
+
+  } else {
     console.log = () => 0;
     console.time('a');
     const m = await Analysis.iterTree(g);

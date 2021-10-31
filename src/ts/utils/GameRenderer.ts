@@ -1,6 +1,6 @@
 import Card from "../Card";
 import colors from 'colors'
-import { Clan } from "../types/Types";
+import { Clan } from "../types/CardTypes";
 import Canvas from "./Canvas";
 import { splitLines } from "./Utils";
 import Game from "../Game";
@@ -12,21 +12,21 @@ export default class GameRenderer {
     if (!override && !game.logs) return;
 
     if (game.i1 != undefined) {
-      this.drawPlayer(game.p1, game.round.round);
+      this.drawPlayer(game.p1, game.round);
       this.drawHand(game.h1, "cyan");
     } else {
-      this.drawPlayer(game.p1, game.round.round);
+      this.drawPlayer(game.p1, game.round);
       this.drawHand(game.h1,
-        game.selectedFirst != game.round.first ? "yellow" : "white");
+        game.firstHasSelected != game.first ? "yellow" : "white");
     }
 
     if (game.i2 != undefined) {
-      this.drawPlayer(game.p2, game.round.round);
+      this.drawPlayer(game.p2, game.round);
       this.drawHand(game.h2, "cyan");
     } else {
-      this.drawPlayer(game.p2, game.round.round);
+      this.drawPlayer(game.p2, game.round);
       this.drawHand(game.h2,
-        game.selectedFirst != game.round.first ? "white" : "yellow");
+        game.firstHasSelected != game.first ? "white" : "yellow");
     }
   }
 
@@ -61,7 +61,7 @@ export default class GameRenderer {
   static styledName(c: Card) {
     switch (c.rarity) {
       case "c": return ` ${c.name} `.bgRed.white;
-      case "u": return ` ${c.name} `.bgWhite.dim.white;
+      case "u": return ` ${c.name} `.bgWhite.white.dim;
       case "r": return ` ${c.name} `.bgYellow.black;
       case "cr": return colors.bold(` ${c.name} `.bgYellow.white);
       case "l": return colors.bold(` ${c.name} `.white.bgMagenta);
@@ -164,8 +164,10 @@ export default class GameRenderer {
     canvas.write(3, " " + " P ".white.bgBlue + ` ${power} `);
     canvas.write(4, " " + " D ".white.bgRed.bold + ` ${damage} `);
 
-    const a = splitLines(card.ability.string, width - 3, 3);
-    const b = splitLines(card.bonus.string, width - 3, 2);
+    // const a = splitLines(card.ability.string, width - 3, 3);
+    // const b = splitLines(card.bonus.string, width - 3, 2);
+    const a = splitLines(card.abilityString, width - 3, 3);
+    const b = splitLines(card.bonusString, width - 3, 2);
 
     const acol = a[0].startsWith("No") ? "grey" : "blue";
     const bcol = b[0].startsWith("No") ? "grey" : "red";

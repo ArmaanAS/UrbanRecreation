@@ -79,10 +79,12 @@ export default class Ability {
 
     if (this.type == AbilityType.ABILITY)
       // return !data.card.ability.blocked();
-      return data.card.ability.prot || !data.card.ability.cancel
+      // return data.card.ability.prot || !data.card.ability.cancel
+      return data.card.ability.blocked;
     else if (this.type == AbilityType.BONUS)
       // return !data.card.bonus.blocked();
-      return data.card.bonus.prot || !data.card.bonus.cancel;
+      // return data.card.bonus.prot || !data.card.bonus.cancel;
+      return data.card.bonus.blocked;
 
     return true;
 
@@ -215,7 +217,8 @@ export default class Ability {
       failed = false;
 
       if (tokens[1] == "Bonus") {
-        new Ability(data.oppCard.bonus.string, this.type).compile(data);
+        // new Ability(data.oppCard.bonus.string, this.type).compile(data);
+        new Ability(data.oppCard.bonusString, this.type).compile(data);
 
         return;
       } else {
@@ -267,11 +270,14 @@ export default class Ability {
 
 
   static card(card: Card, data: BattleData) {
-    new Ability(card.ability.string, AbilityType.ABILITY).compile(data);
-    new Ability(card.bonus.string, AbilityType.BONUS).compile(data);
+    // new Ability(card.ability.string, AbilityType.ABILITY).compile(data);
+    // new Ability(card.bonus.string, AbilityType.BONUS).compile(data);
+    new Ability(card.abilityString, AbilityType.ABILITY).compile(data);
+    new Ability(card.bonusString, AbilityType.BONUS).compile(data);
   }
 
   static leader(card: Card, data: BattleData) {
-    new Ability(card.ability.string, AbilityType.GLOBAL).compile(data);
+    // new Ability(card.ability.string, AbilityType.GLOBAL).compile(data);
+    new Ability(card.abilityString, AbilityType.GLOBAL).compile(data);
   }
 }

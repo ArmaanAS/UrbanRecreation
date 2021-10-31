@@ -15,9 +15,9 @@ export default class PlayerRound {
   events: Events;
 
   constructor(round: number, day: boolean, first: boolean, p1: Player, h1: Hand, p2: Player, h2: Hand, events: Events) {
-    // this.round = round;
-    // this.day = day;
-    // this.first = first;
+    this.round = round;
+    this.day = day;
+    this.first = first;
 
     this.player = p1;
     this.hand = h1;

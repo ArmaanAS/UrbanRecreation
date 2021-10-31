@@ -1,14 +1,15 @@
-export enum GameResult {
-  WIN = 1,
-  TIE = 0,
-  LOSS = -1,
-}
+import { Turn } from "../types/Types";
 
-type Turn = boolean
-export const Turn = {
-  PLAYER: true,
-  OPPONENT: false,
-} as const
+// export enum GameResult {
+//   WIN = 1,
+//   TIE = 0,
+//   LOSS = -1,
+// }
+export enum GameResult {
+  PLAYER_1_WIN = 1,
+  TIE = 0,
+  PLAYER_2_WIN = -1,
+}
 
 export class Node {
   name: string;
@@ -20,7 +21,7 @@ export class Node {
   break = false;
   constructor(
     name = '',
-    turn: Turn = Turn.PLAYER,
+    turn: Turn = Turn.PLAYER_1,
     result?: GameResult,
     defered = false
   ) {
@@ -35,7 +36,7 @@ export class Node {
   }
 
   add(name: Node): Node;
-  add(name: string, turn?: boolean, defered?: boolean): Node;
+  add(name: string, turn: Turn, defered: boolean): Node;
   add(name: string | Node, turn = !this.turn, defered?: boolean) {
     if (name instanceof Node) {
       this.nodes.push(name);
@@ -76,20 +77,20 @@ export class Node {
     } else return Infinity;
   }
 
-  win() {
-    this.result = GameResult.WIN;
-    return this;
-  }
+  // win() {
+  //   this.result = GameResult.WIN;
+  //   return this;
+  // }
 
-  tie() {
-    this.result = GameResult.TIE;
-    return this;
-  }
+  // tie() {
+  //   this.result = GameResult.TIE;
+  //   return this;
+  // }
 
-  loss() {
-    this.result = GameResult.LOSS;
-    return this;
-  }
+  // loss() {
+  //   this.result = GameResult.LOSS;
+  //   return this;
+  // }
 
   tree(): number | object {
     if (this.nodes.length) {
@@ -179,9 +180,9 @@ export default class Minimax extends Node {
 
       const revCombo: { [key: number]: string } = {};
       for (const [k, v] of Object.entries(combination)) {
-        if (revCombo[v] === undefined)
+        if (revCombo[v] === undefined) {
           revCombo[v] = k;
-        else {
+        } else {
           const split1 = k.split(' ', 3)
           const pillz1 = +split1[1] + (split1[2] == 'true' ? 3 : 0)
           const split2 = revCombo[v].split(' ', 3)

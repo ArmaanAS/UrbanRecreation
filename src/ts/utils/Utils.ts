@@ -93,6 +93,7 @@ export function* alternateRange(n: number) {
   if (i == n) yield i;
 }
 
+// export function* shiftRangePre(n: number) {
 export function* shiftRange(n: number) {
   yield n;
 
@@ -110,6 +111,16 @@ export function* shiftRange(n: number) {
       yield i;
   }
 }
+// const shiftRangeCache = <number[][]>[];
+// for (let i = 0; i < 32; i++)
+//   shiftRangeCache[i] = [...shiftRangePre(i)];
+
+// export function shiftRange(n: number) {
+//   // const arr = shiftRangeCache[n];
+//   // for (let i = 0; i <= n; i++)
+//   //   yield arr[i];
+//   return shiftRangeCache[n];
+// }
 
 // /**
 //  * Clone any object and keeps the prototype. 

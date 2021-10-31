@@ -1,4 +1,4 @@
-import { HandOf, CardJSON } from "./types/Types";
+import { HandOf, CardJSON } from "./types/CardTypes";
 import Card, { CardGenerator } from "./Card";
 
 // function unique(value: any, index: any, self: string | any[]) {
@@ -58,10 +58,29 @@ export default class Hand extends Array<Card> {
   }
 
   getLeader() {
-    const leaders = this.filter(c => c.clan == 'Leader');
-    if (leaders.length == 1)
-      return leaders[0];
-    else return;
+    // const leaders = this.filter(c => c.clan == 'Leader');
+    // if (leaders.length == 1)
+    //   return leaders[0];
+    // else return;
+    if (this[0].clan == 'Leader') {
+      if (this[1].clan == 'Leader' ||
+        this[2].clan == 'Leader' ||
+        this[3].clan == 'Leader') return;
+
+      return this[0];
+    } else if (this[1].clan == 'Leader') {
+      if (this[2].clan == 'Leader' ||
+        this[3].clan == 'Leader') return;
+
+      return this[1];
+    } else if (this[2].clan == 'Leader') {
+      if (this[3].clan == 'Leader') return;
+
+      return this[2];
+    } else if (this[3].clan == 'Leader')
+      return this[3];
+
+    return;
   }
 }
 // export default class Hand {

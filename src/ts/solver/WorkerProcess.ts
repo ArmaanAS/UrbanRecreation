@@ -15,6 +15,7 @@ export default class WorkerProcess<InputType extends object, OutputType> {
 
   constructor(id: number) {
     this.id = id;
+    WorkerProcess.numWorkers++;
     this.startProcess();
   }
 
@@ -113,6 +114,7 @@ export default class WorkerProcess<InputType extends object, OutputType> {
 
 
   private static loading = 0;
+  private static numWorkers = 0;
   private static workers: WorkerProcess<object, object>[] = [];
   private static processFlow = new FlowController();
   private static loadingFlow = new FlowController();
@@ -129,6 +131,14 @@ export default class WorkerProcess<InputType extends object, OutputType> {
     if (this.workers.length === 0)
       await this.processFlow.promise;
     // process.stdout.write(`Process is free.\n`.green);
+  }
+
+  static async allFinished() {
+    if (this.workers.length >= this.numWorkers)
+      return;
+
+    await this.processFlow.promise;
+    await this.allFinished();
   }
 
   static async processOnWorker<I extends object, O extends object>(data: I): Promise<O> {

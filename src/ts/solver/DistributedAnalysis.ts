@@ -83,6 +83,7 @@ export default class DistributedAnalysis {
 
 
   static race = WorkerProcess.race.bind(WorkerProcess);
+  static allFinished = WorkerProcess.allFinished.bind(WorkerProcess);
 
   static async iterTree(game: Game) {
     return WorkerProcess.processOnWorker<WorkerSolverData, Node>(

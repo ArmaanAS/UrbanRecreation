@@ -1,4 +1,10 @@
-const UROAuth = require('urban-rivals-oauth');
+import UROAuth from 'urban-rivals-oauth';
+import { config } from 'dotenv'
+
+config();
+
+// app - key & secret is static
+// request token
 
 const auth = {
   request: "https://www.urban-rivals.com/api/auth/request_token.php",
@@ -68,6 +74,6 @@ function callAPI(method, params) {
       console.log(e);
     });
 }
-// callAPI("characters.getCharacters", {
-//   charactersIDs: 123,
-// });
+callAPI("characters.getCharacters", {
+  charactersIDs: 123,
+});

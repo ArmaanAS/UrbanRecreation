@@ -1,5 +1,5 @@
 import BattleData from "../BattleData";
-import { EventTime } from "../Events";
+import EventTime from "../types/EventTime";
 
 
 export default abstract class Modifier {

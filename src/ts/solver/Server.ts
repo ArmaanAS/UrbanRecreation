@@ -15,7 +15,7 @@ function recreate() {
     worker.terminate();
   }
 
-  worker = new Worker("./ThreadServer.ts");
+  worker = new Worker("./solver/ThreadServer.js");
   worker.on("message", (data) => {
     console.log('postMessage -> Main:', data);
     if (data.type) {

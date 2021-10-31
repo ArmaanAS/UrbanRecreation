@@ -1,67 +1,107 @@
 import Hand, { HandGenerator } from "./Hand";
 import "colors";
 import readline from "readline";
-import { CardJSON, HandOf } from './types/Types'
+import { AbilityString, CardJSON, HandOf } from './types/CardTypes'
 import { clone } from "./utils/Utils";
 import Player from "./Player";
-import Round from "./Round";
 import GameRenderer from "./utils/GameRenderer";
+import Events from "./Events";
+import PlayerRound from "./PlayerRound";
+import CardBattle from "./CardBattle";
 
 let rl: readline.Interface;
 
+export enum Winner {
+  PLAYING = 0,
+  PLAYER_1 = 1,
+  PLAYER_2 = 2,
+  TIE = 3,
+}
+
+type CardIndex = 0 | 1 | 2 | 3 | number;
+type Selection = [CardIndex, number, boolean];
 
 export default class Game {
-  round: Round;
   inputs: boolean;
   logs: boolean;
   p1: Player;
   p2: Player;
-  winner: string | undefined;
+  winner = Winner.PLAYING;
   h1: Hand;
   h2: Hand;
-  selectedFirst: boolean;
-  i1?: [number, number, boolean] = undefined;
-  i2?: [number, number, boolean] = undefined;
+  firstHasSelected = false;
+
+  i1?: Selection = undefined;
+  i2?: Selection = undefined;
+
+  round = 1;    // 1, 2, 3, 4
+  day = true;
+  first: boolean;
+  events1 = new Events();
+  events2 = new Events();
+  ca1 = false;  // Counter-attack
+  ca2 = false;
+  r1: PlayerRound;
+  r2: PlayerRound;
 
   constructor(
     p1: Player, p2: Player, h1: Hand, h2: Hand,
     inputs: boolean, logs = true, repeat: boolean | undefined,
     first = true
   ) {
-    this.round = new Round(1, true, first, p1, h1, p2, h2);
     this.inputs = inputs;
     this.logs = logs;
 
     this.p1 = p1;
     this.p2 = p2;
-    // this.winner = undefined;
 
     this.h1 = h1;
     this.h2 = h2;
 
-    this.selectedFirst = false;
-    // this.i1 = undefined;
-    // this.i2 = undefined;
+    // this.day = day;
+    this.first = this.round % 2 == +first;  //round % 2 == 1;  //first;
+
+    const l1 = this.h1.getLeader();
+    // if (l1 && l1.ability.string == 'Counter-attack')
+    if (l1 && l1.abilityString == 'Counter-attack')
+      this.ca1 = true;
+
+    const l2 = this.h2.getLeader();
+    // if (l2 && l2.ability.string == 'Counter-attack')
+    if (l2 && l2.abilityString == 'Counter-attack')
+      this.ca2 = true;
+
+    if (this.ca1 == this.ca2) {
+      this.first = true;
+    } else if (this.ca1) {
+      this.first = false;
+    } else if (this.ca2) {
+      this.first = true;
+    }
+
+    this.r1 = new PlayerRound(1, this.day, first, p1, h1, p2, h2, this.events1);
+    this.r2 = new PlayerRound(1, this.day, !first, p2, h2, p1, h1, this.events2);
 
     for (const hand of [h1, h2]) {
-      // for (const card of hand.cards) {
       for (const card of hand) {
         if (card.clan == "Leader") {
           if (hand.getClanCards(card) > 1)
-            card.ability_.string = "No Ability";
+            // card.ability_.string = "No Ability";
+            card.ability.string = AbilityString.NO_ABILITY;
 
         } else {
           if (hand.getClanCards(card) == 1)
-            card.bonus_.string = "No Bonus";
+            // card.bonus_.string = "No Bonus";
+            card.bonus.string = AbilityString.NO_ABILITY;
         }
       }
     }
 
     GameRenderer.draw(this);
 
-    if (inputs) {
+    if (inputs)
       this.input(repeat);
-    }
+
     // this.select(0, 3);
     // this.select(0, 3);
   }
@@ -71,67 +111,46 @@ export default class Game {
     const p2 = clone(this.p2);
     const h1 = this.h1.clone();
     const h2 = this.h2.clone();
+    const events1 = this.events1.clone();
+    const events2 = this.events2.clone();
 
     return Object.setPrototypeOf({
-      round: this.round.clone(p1, h1, p2, h2),
+      // round: this.round.clone(p1, h1, p2, h2),
       inputs: inputs ?? this.inputs,
       logs: logs ?? this.logs,
       winner: this.winner,
       p1, p2, h1, h2,
-      selectedFirst: this.selectedFirst,
+      firstHasSelected: this.firstHasSelected,
       i1: this.i1,
       i2: this.i2,
+      round: this.round,
+      day: this.day,
+      first: this.first,
+      events1,
+      events2,
+      ca1: this.ca1,
+      ca2: this.ca2,
+      r1: this.r1.clone(p1, h1, p2, h2, events1),
+      r2: this.r2.clone(p2, h2, p1, h1, events2)
     }, Game.prototype);
   }
 
   static from(o: Game, inputs?: boolean, logs?: boolean) {
     Object.setPrototypeOf(o, Game.prototype);
 
-    o.round = Round.from(o.round);
+    // o.round = Round.from(o.round);
 
     Object.setPrototypeOf(o.p1, Player.prototype);
     Object.setPrototypeOf(o.p2, Player.prototype);
 
-    // o.h1 = 
     Hand.from(o.h1);
-    // o.h2 = 
     Hand.from(o.h2);
 
-    if (inputs !== undefined)
-      o.inputs = inputs;
+    Events.from(o.events1);
+    Events.from(o.events2);
 
-    if (logs !== undefined)
-      o.logs = logs;
-
-    return o;
-  }
-  static fromClone(o: Game, inputs?: boolean, logs?: boolean) {
-    Object.setPrototypeOf(o, Game.prototype);
-
-    o.round.p1 = o.p1;
-    o.round.p2 = o.p2;
-    o.round.h1 = o.h1;
-    o.round.h2 = o.h2;
-
-    o.round.r1.player = o.p1;
-    o.round.r1.hand = o.h1;
-    o.round.r1.opp = o.p2;
-    o.round.r1.oppHand = o.h2;
-    o.round.r1.events = o.round.events1;
-
-    o.round.r2.player = o.p2;
-    o.round.r2.hand = o.h2;
-    o.round.r2.opp = o.p1;
-    o.round.r2.oppHand = o.h1;
-    o.round.r2.events = o.round.events2;
-
-    o.round = Round.from(o.round);
-
-    Object.setPrototypeOf(o.p1, Player.prototype);
-    Object.setPrototypeOf(o.p2, Player.prototype);
-
-    o.h1 = Hand.from(o.h1);
-    o.h2 = Hand.from(o.h2);
+    Object.setPrototypeOf(o.r1, PlayerRound.prototype);
+    Object.setPrototypeOf(o.r2, PlayerRound.prototype);
 
     if (inputs !== undefined)
       o.inputs = inputs;
@@ -141,14 +160,50 @@ export default class Game {
 
     return o;
   }
+  // static fromClone(o: Game, inputs?: boolean, logs?: boolean) {
+  //   Object.setPrototypeOf(o, Game.prototype);
+
+  //   o.round.p1 = o.p1;
+  //   o.round.p2 = o.p2;
+  //   o.round.h1 = o.h1;
+  //   o.round.h2 = o.h2;
+
+  //   o.round.r1.player = o.p1;
+  //   o.round.r1.hand = o.h1;
+  //   o.round.r1.opp = o.p2;
+  //   o.round.r1.oppHand = o.h2;
+  //   o.round.r1.events = o.round.events1;
+
+  //   o.round.r2.player = o.p2;
+  //   o.round.r2.hand = o.h2;
+  //   o.round.r2.opp = o.p1;
+  //   o.round.r2.oppHand = o.h1;
+  //   o.round.r2.events = o.round.events2;
+
+  //   o.round = Round.from(o.round);
+
+  //   Object.setPrototypeOf(o.p1, Player.prototype);
+  //   Object.setPrototypeOf(o.p2, Player.prototype);
+
+  //   o.h1 = Hand.from(o.h1);
+  //   o.h2 = Hand.from(o.h2);
+
+  //   if (inputs !== undefined)
+  //     o.inputs = inputs;
+
+  //   if (logs !== undefined)
+  //     o.logs = logs;
+
+  //   return o;
+  // }
 
 
-  select(index: number, pillz: number, fury = false) {
+  select(index: CardIndex, pillz: number, fury = false) {
     if (typeof index != 'number' || typeof pillz != 'number') //return false;
       throw new Error(`Game.select - index or pillz is not a number 
         index: ${index}, pillz: ${pillz}`)
 
-    if (this.selectedFirst != this.round.first) {
+    if (this.firstHasSelected != this.first) {
       // if (this.h1.get(index).played)
       // if (this.h1.get(index).won !== undefined)
       // if (this.h1[index].won !== undefined)
@@ -169,36 +224,49 @@ export default class Game {
       this.h2[index].played = true;
     }
 
-    if (this.selectedFirst) {
+    if (this.firstHasSelected) {
       this.battle();
       this.i1 = undefined;
       this.i2 = undefined;
     }
 
-    this.selectedFirst = !this.selectedFirst;
+    this.firstHasSelected = !this.firstHasSelected;
 
     GameRenderer.draw(this);
     return true;
   }
 
   battle() {
-    if (this.i1 != undefined && this.i2 != undefined) {
-      this.round.battle(...this.i1, ...this.i2);
+    if (this.i1 !== undefined && this.i2 !== undefined) {
+      // this.round.battle(...this.i1, ...this.i2);
+      const card1 = this.h1[this.i1[0]];
+      const card2 = this.h2[this.i2[0]];
+      const pillz1 = this.i1[1];
+      const pillz2 = this.i2[1];
+      const fury1 = this.i1[2];
+      const fury2 = this.i2[2];
 
-      if (this.p1.life <= 0 && this.p2.life <= 0) {
+      new CardBattle(this,
+        this.p1, card1, pillz1, fury1,
+        this.p2, card2, pillz2, fury2,
+        this.events1, this.events2
+      ).play();
+
+      this.nextRound();
+
+      if (this.p1.life <= 0 && this.p2.life <= 0)
         return 'Tie';
-      } else if (this.p1.life <= 0) {
-        this.winner = this.p2.name;
-      } else if (this.p2.life <= 0) {
-        this.winner = this.p1.name;
-      } else if (this.round.round >= 5) {
-        if (this.p1.life > this.p2.life) {
-          this.winner = this.p1.name;
-        } else if (this.p1.life < this.p2.life) {
-          this.winner = this.p2.name;
-        } else {
-          this.winner = "Tie";
-        }
+      else if (this.p1.life <= 0)
+        this.winner = Winner.PLAYER_2;
+      else if (this.p2.life <= 0)
+        this.winner = Winner.PLAYER_1;
+      else if (this.round >= 5) {
+        if (this.p1.life > this.p2.life)
+          this.winner = Winner.PLAYER_1;
+        else if (this.p1.life < this.p2.life)
+          this.winner = Winner.PLAYER_2;
+        else
+          this.winner = Winner.TIE;
       }
     }
     return;
@@ -226,7 +294,15 @@ export default class Game {
         console.log(`Selected ${answer}`);
         const s = answer.trim().split(' ');
 
-        if (!this.select(+s[0], +(s[1] ?? 0), s[2] == 'true')) {
+        const index = +s[0];
+        const pillz = +(s[1] ?? 0);
+        const fury = s[2] == 'true';
+        if (index < 0 || index > 3 || pillz < 0) {
+          resolve(await this.input(repeat));
+          return;
+        }
+
+        if (!this.select(index, pillz, fury)) {
           resolve(await this.input(repeat));
 
         } else {
@@ -250,7 +326,7 @@ export default class Game {
   }
 
   hasWinner(log = false) {
-    if (this.round.round > 4 || this.p1.life <= 0 || this.p2.life <= 0) {
+    if (this.round > 4 || this.p1.life <= 0 || this.p2.life <= 0) {
       if (log) {
         GameRenderer.draw(this)
 
@@ -271,9 +347,25 @@ export default class Game {
   }
 
   getTurn() {
-    return this.selectedFirst != this.round.first ? 'Player' : 'Urban Rivals';
+    return this.firstHasSelected !== this.first ? 'Player' : 'Urban Rival';
+  }
+
+  private nextRound() {
+    if (this.ca1 == this.ca2)
+      this.first = !this.first;
+    else if (this.ca1)
+      this.first = false;
+    else if (this.ca2)
+      this.first = true;
+
+    this.round++;
+
+    this.r1.next(this.first);
+    this.r2.next(!this.first);
   }
 }
+
+
 
 export class GameGenerator {
   static create(inputs = true, logs?: boolean, repeat?: boolean) {
@@ -290,9 +382,14 @@ export class GameGenerator {
     return new Game(p1, p2, h1, h2, inputs, logs, repeat);
   }
 
-  static createUnique(h1: HandOf<CardJSON>, h2: HandOf<CardJSON>, life: number, pillz: number, name1: string | undefined, name2: string | undefined, first: boolean | undefined) {
-    const p1 = new Player(life, pillz, 0);  // name1);
-    const p2 = new Player(life, pillz, 1);  // name2);
+  static createUnique(
+    h1: HandOf<CardJSON>, h2: HandOf<CardJSON>,
+    life: number, pillz: number,
+    name1?: string, name2?: string,
+    first?: boolean
+  ) {
+    const p1 = new Player(life, pillz, name1 == 'Player' ? 0 : 1);  // name1);
+    const p2 = new Player(life, pillz, name2 == 'Player' ? 0 : 1);  // name2);
 
     return new Game(
       p1, p2,

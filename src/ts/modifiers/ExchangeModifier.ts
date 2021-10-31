@@ -1,5 +1,5 @@
 import BattleData from "../BattleData";
-import { EventTime } from "../Events"
+import EventTime from "../types/EventTime";
 import Modifier from "./Modifier";
 
 enum Exchange {
@@ -27,14 +27,18 @@ export default class ExchangeModifier extends Modifier {
     if (this.ex == Exchange.POWER) {
       if (!data.card.power.blocked) {
         // if (data.card.power.prot || !data.card.power.cancel) {
-        data.card.power_.final = data.oppCard.power.base;
-        data.oppCard.power_.final = data.card.power.base;
+        // data.card.power_.final = data.oppCard.power.base;
+        // data.oppCard.power_.final = data.card.power.base;
+        data.card.power.final = data.oppCard.power.base;
+        data.oppCard.power.final = data.card.power.base;
       }
     } else if (this.ex == Exchange.DAMAGE) {
       if (!data.card.damage.blocked) {
         // if (data.card.damage.prot || !data.card.damage.cancel) {
-        data.card.damage_.final = data.oppCard.damage.base;
-        data.oppCard.damage_.final = data.card.damage.base;
+        // data.card.damage_.final = data.oppCard.damage.base;
+        // data.oppCard.damage_.final = data.card.damage.base;
+        data.card.damage.final = data.oppCard.damage.base;
+        data.oppCard.damage.final = data.card.damage.base;
       }
     }
   }

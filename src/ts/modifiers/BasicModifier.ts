@@ -1,5 +1,5 @@
 import BattleData from "../BattleData"
-import { EventTime } from "../Events"
+import EventTime from "../types/EventTime"
 import Modifier from "./Modifier"
 
 type PerType = {
@@ -143,9 +143,8 @@ export default class BasicModifier extends Modifier {
   }
 
   canApply(data: BattleData) {
-    if (this.win && !data.player.won) return false;
-
     if (this.opp) {
+      if (this.win && !data.opp.won) return false;
       switch (this.type) {
         case Type.POWER: return !data.oppCard.power.prot;
         case Type.DAMAGE: return !data.oppCard.damage.prot;
@@ -154,6 +153,8 @@ export default class BasicModifier extends Modifier {
         case Type.PILLZ: return !data.oppCard.pillz.prot;
       }
     } else {
+      if (this.win && !data.player.won) return false;
+
       switch (this.type) {
         // Don't change to .blocked!!
         case Type.POWER:
@@ -233,11 +234,14 @@ export default class BasicModifier extends Modifier {
 
       switch (this.type) {
         case Type.POWER:
-          card.power_.final = this.mod(card.power.final, data); break;
+          // card.power_.final = this.mod(card.power.final, data); break;
+          card.power.final = this.mod(card.power.final, data); break;
         case Type.DAMAGE:
-          card.damage_.final = this.mod(card.damage.final, data); break;
+          // card.damage_.final = this.mod(card.damage.final, data); break;
+          card.damage.final = this.mod(card.damage.final, data); break;
         case Type.ATTACK:
-          card.attack_.final = this.mod(card.attack.final, data); break;
+          // card.attack_.final = this.mod(card.attack.final, data); break;
+          card.attack.final = this.mod(card.attack.final, data); break;
         case Type.LIFE:
           player.life = this.mod(player.life, data); break;
         case Type.PILLZ:

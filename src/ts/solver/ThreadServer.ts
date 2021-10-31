@@ -1,7 +1,7 @@
 import { parentPort } from 'worker_threads';
 
 import Game, { GameGenerator } from '../Game';
-import { CardJSON, HandOf } from '../types/Types';
+import { CardJSON, HandOf } from '../types/CardTypes';
 import GameRenderer from '../utils/GameRenderer';
 import Analysis from './Analysis';
 
@@ -54,7 +54,7 @@ function handleMessage() {
       handleMessage();
 
     } else if (data.type == 'init') {
-      const d = data as InitType
+      const d = data as InitType;
       g = GameGenerator.createUnique(
         d.h1, d.h2,
         d.life, d.pillz,
@@ -76,9 +76,8 @@ function handleMessage() {
       (async function () {
         const gc = g.clone();
 
-        if (d.index != undefined) {
+        if (d.index !== undefined)
           gc.select(d.index, 0, false);
-        }
 
         const log = console.log;
         console.log = () => 0;
@@ -87,9 +86,9 @@ function handleMessage() {
         console.log = log;
         console.timeEnd('a');
 
-        if (!g.round.first) {
+        if (!g.first)
           m.turn = !m.turn;
-        }
+
         const best = m.best();
         console.log(best.toString());
 

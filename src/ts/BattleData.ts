@@ -19,6 +19,7 @@ export default class BattleData {
     card2: Card,
     events: Events
   ) {
+    // round is necessary for conditions
     this.round = round;
 
     this.player = p1;
