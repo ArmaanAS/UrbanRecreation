@@ -10,8 +10,10 @@ let buffer: DataType[] = [];
 // let running = false;
 
 
+type DataTypes = 'recreate' | 'init' | 'move' | 'simulate';
+
 interface DataType {
-  type: string;
+  type: DataTypes;
 }
 
 interface RecreateType extends DataType {
@@ -20,7 +22,7 @@ interface RecreateType extends DataType {
 }
 
 interface InitType extends DataType {
-  type: 'recreate';
+  type: 'init';
   h1: HandOf<CardJSON>;
   h2: HandOf<CardJSON>;
   life: number;
@@ -35,6 +37,8 @@ interface MoveType extends DataType {
   index: number;
   pillz: number;
   fury: boolean;
+  player1?: { life: number; pillz: number };
+  player2?: { life: number; pillz: number };
 }
 
 interface SimulateType extends DataType {
@@ -42,7 +46,7 @@ interface SimulateType extends DataType {
   index: number;
 }
 
-function handleMessage() {
+async function handleMessage() {
   // running = true;
   while (buffer.length) {
     const data: DataType = buffer.splice(0, 1)[0];
@@ -55,10 +59,11 @@ function handleMessage() {
 
     } else if (data.type == 'init') {
       const d = data as InitType;
+      console.log("FIRST:", d.first);
       g = GameGenerator.createUnique(
         d.h1, d.h2,
         d.life, d.pillz,
-        d.name1, d.name2,
+        // d.name1, d.name2,
         d.first
       );
       GameRenderer.draw(g, true);
@@ -68,26 +73,36 @@ function handleMessage() {
       const d = data as MoveType;
       g.select(d.index, d.pillz, d.fury || false);
 
+      if (d.player1 !== undefined && d.player2 !== undefined) {
+        g.p1.life = d.player1.life;
+        g.p2.life = d.player2.life;
+
+        g.p1.pillz = d.player1.pillz;
+        g.p2.pillz = d.player2.pillz;
+      }
+
       GameRenderer.draw(g, true);
       parentPort?.postMessage('Update');
 
     } else if (data.type == 'simulate') {
       const d = data as SimulateType;
-      (async function () {
-        const gc = g.clone();
+      const gc = g.clone();
 
-        if (d.index !== undefined)
-          gc.select(d.index, 0, false);
+      if (d.index !== undefined)
+        gc.select(d.index, 0, false);
 
+
+      if (gc.round > 1) {
+        console.log('Simulating...')
         const log = console.log;
         console.log = () => 0;
         console.time('a');
-        const m = await Analysis.iterTree(gc);
+        const m = await Analysis.iterTree(gc, gc.firstHasSelected);
         console.log = log;
         console.timeEnd('a');
 
-        if (!g.first)
-          m.turn = !m.turn;
+        // if (!g.first)
+        //   m.turn = !m.turn;
 
         const best = m.best();
         console.log(best.toString());
@@ -98,11 +113,11 @@ function handleMessage() {
           pillz: best.pillz,
           fury: best.fury
         });
+      }
 
-        // m.defer = !m.defer;
-        // m.turn = !m.turn;
-        // console.log(m.best().toString());
-      })();
+      // m.defer = !m.defer;
+      // m.turn = !m.turn;
+      // console.log(m.best().toString());
 
     } else console.log('Unknown data:', data);
   }
@@ -113,7 +128,8 @@ parentPort?.on('message', function incoming(data) {
   // console.log('worker received:', data);
   buffer.push(data);
 
-  console.log(`buffer: (${buffer.length})`, buffer);
+  console.log(`buffer: (${buffer.length})`);
+  console.dir(buffer, { depth: 3 });
 
   // setTimeout(handleMessage, 5000);
   handleMessage();

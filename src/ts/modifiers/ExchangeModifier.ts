@@ -31,7 +31,7 @@ export default class ExchangeModifier extends Modifier {
         // data.oppCard.power_.final = data.card.power.base;
         data.card.power.final = data.oppCard.power.base;
         data.oppCard.power.final = data.card.power.base;
-      }
+      } else console.log('data.card.power.blocked === true,', data.card.power.cancel, data.card.power.prot, data.card.power.blocked);
     } else if (this.ex == Exchange.DAMAGE) {
       if (!data.card.damage.blocked) {
         // if (data.card.damage.prot || !data.card.damage.cancel) {
@@ -39,7 +39,7 @@ export default class ExchangeModifier extends Modifier {
         // data.oppCard.damage_.final = data.card.damage.base;
         data.card.damage.final = data.oppCard.damage.base;
         data.oppCard.damage.final = data.card.damage.base;
-      }
-    }
+      } else console.log('data.card.damage.blocked === true')
+    } else console.error('Unknown exchange type', this.ex);
   }
 }

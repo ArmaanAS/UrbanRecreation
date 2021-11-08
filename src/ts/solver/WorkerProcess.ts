@@ -1,5 +1,9 @@
 import cluster from 'cluster'
+import { cpus } from 'os'
+import { baseCards } from '../CardLoader';
+import { WorkerSolverData } from '../types/Types';
 import { FlowController } from '../utils/Utils';
+import { Node } from './Minimax';
 
 export default class WorkerProcess<InputType extends object, OutputType> {
   worker: cluster.Worker;
@@ -36,7 +40,7 @@ export default class WorkerProcess<InputType extends object, OutputType> {
     this.worker = cluster.fork();
 
     this.worker.on("online", () => {
-      process.stdout.write(`Worker ${this.id} is online\n`.green);
+      // process.stdout.write(`Worker ${this.id} is online\n`.green);
     })
     this.worker.on("error", (err) => {
       // throw err;
@@ -63,8 +67,10 @@ export default class WorkerProcess<InputType extends object, OutputType> {
       this.startProcess();
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     this.worker.once("message", (data) => {
-      process.stdout.write(`Init message: ${data.msg.grey}\n`);
+      this.worker.send(baseCards);
+      // process.stdout.write(`Init message: ${data.msg.grey}\n`);
 
       // this.isReady = true;
       WorkerProcess.loading--;
@@ -112,12 +118,24 @@ export default class WorkerProcess<InputType extends object, OutputType> {
     return promise;
   }
 
-
+  private static _init = false;
+  private static threads = cpus().length;
   private static loading = 0;
   private static numWorkers = 0;
   private static workers: WorkerProcess<object, object>[] = [];
   private static processFlow = new FlowController();
   private static loadingFlow = new FlowController();
+
+  static init() {
+    if (cluster.isMaster && !this._init) {
+      // process.stdout.write('WorkerProcess.init()\n'.blue)
+      for (let i = 0; i < this.threads; i++) {
+        this.create<WorkerSolverData, Node>(i);
+      }
+
+      this._init = true;
+    }
+  }
 
   static create<I extends object, O extends object>(id: number) {
     this.workers.push(new WorkerProcess<I, O>(id));
@@ -142,15 +160,22 @@ export default class WorkerProcess<InputType extends object, OutputType> {
   }
 
   static async processOnWorker<I extends object, O extends object>(data: I): Promise<O> {
+    if (!this.init)
+      this.init();
+
     if (this.workers.length === 0)
       await this.race();
 
     const worker = this.workers.pop()! as WorkerProcess<I, O>;
     const promise = worker.process(data);
     promise.then(() => {
-      this.workers.push(worker);
+      // this.workers.push(worker);
+      // this.workers.splice(0, 0, worker);
+      this.workers = [worker, ...this.workers];
     });
 
     return promise;
   }
 }
+
+WorkerProcess.init();

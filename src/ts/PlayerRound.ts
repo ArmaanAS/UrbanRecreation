@@ -44,22 +44,22 @@ export default class PlayerRound {
   }
 
   get day() {
-    return !!(this.a & 1);
+    return !!(this.a & 0b1);
   }
   set day(n: boolean) {
-    this.a = (this.a & ~1) | +n;
+    this.a = (this.a & ~0b1) | +n;
   }
   get first() {
-    return !!(this.a & 2);
+    return !!(this.a & 0b10);
   }
   set first(n: boolean) {
-    this.a = (this.a & ~2) | (+n << 1);
+    this.a = (this.a & ~0b10) | (+n << 1);
   }
   get round() {
     return (this.a >> 2) & 0b111;
   }
   set round(n: number) {
-    this.a = (this.a & ~0b11100) | (n & 0b111 << 2);
+    this.a = (this.a & ~0b11100) | ((n & 0b111) << 2);
   }
 
   next(first: boolean) {

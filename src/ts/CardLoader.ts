@@ -1,4 +1,5 @@
 import fs from "fs"
+import cluster from 'cluster'
 import {
   BaseCard,
   BaseData,
@@ -55,10 +56,6 @@ export function registerCardJSON(j: CardJSON) {
 }
 
 
-const data = fs.readFileSync(DATA_PATH).toString();
-
-const json: CardJSON[] = JSON.parse(data);
-console.log(json.length.toString().green + " cards loaded!".white);
 
 const cardIds: { [index: number]: CardJSON } = {};
 const cardNames: { [index: string]: CardJSON } = {};
@@ -68,26 +65,32 @@ const baseCards: { [key: string]: BaseCard } = {};
 
 export { cardIds, cardNames, cardYears, cardClans, baseCards };
 
+if (cluster.isMaster) {
+  const data = fs.readFileSync(DATA_PATH).toString();
 
-for (const j of json) {
-  cardIds[j.id] = j;
-  cardNames[j.name.toLowerCase()] = j;
+  const json: CardJSON[] = JSON.parse(data);
+  console.log(json.length.toString().green + " cards loaded!".white);
 
-
-  const year = new Date(j.release_date * 1000).getFullYear();
-  // if (cardYears[year] === undefined)
-  //   cardYears[year] = [];
-  cardYears[year] ??= [];
-  cardYears[year].push(j);
-
-  const clan = j.clan_name;
-  // if (cardClans[clan] === undefined)
-  //   cardClans[clan] = [];
-  cardClans[clan] ??= [];
-  cardClans[clan].push(j);
+  for (const j of json) {
+    cardIds[j.id] = j;
+    cardNames[j.name.toLowerCase()] = j;
 
 
-  registerCardJSON(j);
+    const year = new Date(j.release_date * 1000).getFullYear();
+    // if (cardYears[year] === undefined)
+    //   cardYears[year] = [];
+    cardYears[year] ??= [];
+    cardYears[year].push(j);
+
+    const clan = j.clan_name;
+    // if (cardClans[clan] === undefined)
+    //   cardClans[clan] = [];
+    cardClans[clan] ??= [];
+    cardClans[clan].push(j);
+
+
+    registerCardJSON(j);
+  }
 }
 
 

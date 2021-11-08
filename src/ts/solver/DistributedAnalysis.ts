@@ -1,9 +1,7 @@
 import Game from "../Game"
 import { Worker } from "worker_threads"
-import cluster from 'cluster'
 import Bar from "./Bar"
 import Minimax, { Node } from "./Minimax"
-import { cpus } from 'os'
 import WorkerProcess from "./WorkerProcess"
 import { WorkerSolverData } from "../types/Types"
 
@@ -58,28 +56,7 @@ export default class DistributedAnalysis {
   }
 
 
-  static threads = cpus().length;
   private static id = 0;
-
-  static {
-    if (cluster.isMaster) {
-      for (let i = 0; i < this.threads; i++) {
-        // cluster.setupMaster({
-        //   exec: './solver/ProcSolver.js',
-        //   inspectPort: 9230 + i,
-        //   execArgv: [
-        //     "--experimental-specifier-resolution=node",
-        //     "--enable-source-maps",
-        //     "--max-old-space-size=6350",
-        //     "--trace-warnings",
-        //     "--inspect", // "--inspect-brk"
-        //   ]
-        // })
-
-        WorkerProcess.create<WorkerSolverData, Node>(i);
-      }
-    }
-  }
 
 
   static race = WorkerProcess.race.bind(WorkerProcess);

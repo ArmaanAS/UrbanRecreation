@@ -36,11 +36,11 @@ type TimeType = {
 } | undefined
 const Time: { [index: string]: TimeType } = {
   // const Time = {
-  POWER: { eventTime: EventTime.PRE4, name: "POWER", win: false },
-  DAMAGE: { eventTime: EventTime.PRE4, name: "DAMAGE", win: false },
+  POWER: { eventTime: EventTime.PRE3, name: "POWER", win: false },
+  DAMAGE: { eventTime: EventTime.PRE3, name: "DAMAGE", win: false },
   ATTACK: { eventTime: EventTime.POST1, name: "ATTACK", win: false },
-  LIFE: { eventTime: EventTime.END, name: "LIFE", win: false },
-  PILLZ: { eventTime: EventTime.END, name: "PILLZ", win: false }
+  LIFE: { eventTime: EventTime.END, name: "LIFE", win: true },
+  PILLZ: { eventTime: EventTime.END, name: "PILLZ", win: true }
 } as const
 function timeFromObject(o: TimeType): TimeType {
   return o && Time[o.name]
@@ -143,8 +143,13 @@ export default class BasicModifier extends Modifier {
   }
 
   canApply(data: BattleData) {
+    if (this.win && !data.card.won) return false;
+
     if (this.opp) {
-      if (this.win && !data.opp.won) return false;
+      // console.log('this.opp === true')
+      // console.log(data.opp.won, data.oppCard.won)
+      // if (this.win && !data.oppCard.won) return false;
+      // console.log(data.oppCard.life.prot, data.oppCard.life.cancel);
       switch (this.type) {
         case Type.POWER: return !data.oppCard.power.prot;
         case Type.DAMAGE: return !data.oppCard.damage.prot;
@@ -153,7 +158,9 @@ export default class BasicModifier extends Modifier {
         case Type.PILLZ: return !data.oppCard.pillz.prot;
       }
     } else {
-      if (this.win && !data.player.won) return false;
+      // console.log('this.opp === false')
+      // if (this.win && !data.card.won) return false;
+      // console.log(data.card.life.prot, data.card.life.cancel);
 
       switch (this.type) {
         // Don't change to .blocked!!

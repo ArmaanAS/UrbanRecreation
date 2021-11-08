@@ -23,7 +23,7 @@ export const CancelObject: { [key: string]: Cancel } = {
 
 export default class CancelModifier extends Modifier {
   cancel = Cancel.POWER;
-  constructor(cancel: Cancel | string, et = EventTime.PRE3) {
+  constructor(cancel: Cancel | string, et = EventTime.PRE4) {
     super();
 
     if (typeof cancel == "string")

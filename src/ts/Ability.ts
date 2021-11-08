@@ -5,6 +5,7 @@ import Condition from "./Condition";
 import BasicModifier from "./modifiers/BasicModifier";
 import CancelModifier from "./modifiers/CancelModifier";
 import CopyModifier from "./modifiers/CopyModifier";
+import ExchangeModifier from "./modifiers/ExchangeModifier";
 import Modifier from "./modifiers/Modifier";
 import ProtectionModifier from "./modifiers/ProtectionModifier";
 import { clone } from "./utils/Utils";
@@ -80,11 +81,11 @@ export default class Ability {
     if (this.type == AbilityType.ABILITY)
       // return !data.card.ability.blocked();
       // return data.card.ability.prot || !data.card.ability.cancel
-      return data.card.ability.blocked;
+      return !data.card.ability.blocked;
     else if (this.type == AbilityType.BONUS)
       // return !data.card.bonus.blocked();
       // return data.card.bonus.prot || !data.card.bonus.cancel;
-      return data.card.bonus.blocked;
+      return !data.card.bonus.blocked;
 
     return true;
 
@@ -229,6 +230,15 @@ export default class Ability {
         } else {
           this.mods.push(new CopyModifier(tokens[1]));
         }
+      }
+    } else if (tokens[0] == "Exchange") {
+      failed = false;
+      if (tokens[1].includes("&")) {
+        for (const prot of tokens[1].split("&")) {
+          this.mods.push(new ExchangeModifier(prot));
+        }
+      } else {
+        this.mods.push(new ExchangeModifier(tokens[1]));
       }
     } else if (tokens[0] == "No") {
       return;

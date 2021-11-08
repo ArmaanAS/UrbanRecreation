@@ -306,7 +306,7 @@ export default class Analysis {
 
 
   static counter = 0;
-  static async iterTree(game: Game, child = false) {
+  static async iterTree(game: Game, child = false, thread = true) {
     const minimax = new Minimax();
     const timer = `iterTree-${this.counter++}`;
     console.time(timer);
@@ -389,7 +389,8 @@ export default class Analysis {
                 if (game.round === 1 && !game.firstHasSelected) {
                   parentNode.add(await Analysis.iterTree(game, true));
 
-                } else if (game.round === 2 && !game.firstHasSelected) {
+                  // } else if (game.round === 2 && !game.firstHasSelected) {
+                } else if (game.round === 2 && thread) {
                   await DistributedAnalysis.race();
                   DistributedAnalysis.iterTree(game)
                     .then(node => parentNode.add(node))

@@ -87,8 +87,8 @@ export default class CardBattle {
     this.events2.executePost(this.b2);
 
     console.log(
-      `\t\t\t\t\t${this.p1.name}: Attack ${this.card1.attack.final}\
-      |     ${this.p2.name}: Attack ${this.card2.attack.final}`
+      `\t\t\t\t\t${` ${this.p2.name} `.bgBlue.white} Attack ${this.card2.attack.final}\
+      |       ${` ${this.p1.name} `.bgBlue.white} Attack ${this.card1.attack.final}`
         .white
     );
 

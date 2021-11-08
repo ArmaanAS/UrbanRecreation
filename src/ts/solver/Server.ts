@@ -11,40 +11,48 @@ let gws: WebSocket;
 
 function recreate() {
   simulated = false;
-  if (worker != undefined) {
+  if (worker !== undefined)
     worker.terminate();
-  }
 
   worker = new Worker("./solver/ThreadServer.js");
   worker.on("message", (data) => {
-    console.log('postMessage -> Main:', data);
-    if (data.type) {
+    console.log('postMessage -> Main:');
+    console.dir(data, { depth: 1 })
+
+    if (data.type)
       gws.send(JSON.stringify(data));
-    }
   });
   worker.on("exit", (code) => {
-    if (code !== 0)
+    if (code > 1)
       console.error(new Error(`Worker stopped with exit code ${code}`));
   });
 
-  if (moves.length) {
+  if (moves.length)
     worker.postMessage({ type: 'recreate', moves: moves });
-  }
 }
 
 recreate();
 
 interface Data {
   type: string;
+  battleTurnPlayerID: number;
+  battleRound: number;
 }
 
+// let prevPacket: any;
 wss.on('connection', function connection(ws) {
   gws = ws;
   console.log('Connection established!');
   ws.on('message', async function incoming(raw) {
     const data: Data = JSON.parse(raw.toString());
 
-    console.log('received:', data);
+    // if (prevPacket !== undefined &&
+    //   data.type == 'init' &&
+    //   prevPacket.battleRound == data.battleRound &&
+    //   prevPacket.battleTurnPlayerID == data.battleTurnPlayerID)
+    //   return;
+
+    console.log('received type:', data.type);
 
     if (data.type == 'init') {
       moves = [data];
@@ -67,5 +75,7 @@ wss.on('connection', function connection(ws) {
       simulated = true;
       worker.postMessage(data);
     }
+
+    // prevPacket = data;
   });
 });

@@ -52,12 +52,11 @@ export class Node {
     if (this.result !== undefined)
       return this.result;
     else if (this.nodes.length) {
-      if (this.turn == Minimax.MAX) {
+      if (this.turn === Minimax.MAX) {
         // return Math.max(...this.nodes.map(n => n.get()));
         let max = -Infinity;
-        let s: number;
         for (const n of this.nodes) {
-          s = n.get();
+          const s = n.get();
           if (s > max)
             max = s
         }
@@ -66,9 +65,8 @@ export class Node {
       } else {
         // return Math.min(...this.nodes.map(n => n.get()));
         let min = Infinity;
-        let s: number;
         for (const n of this.nodes) {
-          s = n.get();
+          const s = n.get();
           if (s < min)
             min = s;
         }
@@ -115,21 +113,19 @@ export class Node {
   toString() {
     const g = +(this.get() * 100).toFixed(1);
     if (this.turn == Minimax.MIN) {
-      if (g > 0) {
+      if (g > 0)
         return `[Win ${g}%] ${this.name}`.green;
-      } else if (g < 0) {
+      else if (g < 0)
         return `[Loss ${-g}%] ${this.name}`.red;
-      } else {
+      else
         return `[Draw] ${this.name}`.yellow.dim;
-      }
     } else {
-      if (g > 0) {
+      if (g > 0)
         return `[Loss ${g}%] ${this.name}`.red;
-      } else if (g < 0) {
+      else if (g < 0)
         return `[Win ${-g}%] ${this.name}`.green;
-      } else {
+      else
         return `[Draw] ${this.name}`.yellow.dim;
-      }
     }
   }
 
@@ -160,7 +156,7 @@ export default class Minimax extends Node {
   }
 
   best() {
-    if (this.playSecond) {
+    if (this.playSecond) { // TODO: Convert to sets and maps!! 
       const combine: { [key: string]: Node[] } = {};
       for (const m of this.nodes) {
         for (const n of m.nodes) {
@@ -204,64 +200,119 @@ export default class Minimax extends Node {
           if (+i < s)
             s = +i
 
+        if (s > -1 && revCombo[0])
+          console.log(`[DRAW] ${revCombo[0]}`.yellow)
+
       } else {
         // s = Math.max(...Object.keys(revCombo));
         s = -2
         for (const i of Object.keys(revCombo))
           if (+i > s)
             s = +i
+
+        if (s < 1 && revCombo[0])
+          console.log(`[DRAW] ${revCombo[0]}`.yellow)
       }
 
       return new Node(revCombo[s], this.turn, s);
 
     } else {
+      const combo: {
+        [index: string]: { [index: number]: string }
+      } = {};
+      for (const n of this.nodes) {
+        const childCombo: { [index: number]: string } =
+          combo[`${n.index} ${n.pillz} ${n.fury}`] = {};
+
+        for (const childNode of n.nodes) {
+          childCombo[childNode.get()] =
+            `${childNode.index} ${childNode.pillz} ${childNode.fury}`;
+        }
+
+        const keys = Object.keys(childCombo);
+        if (keys.length === 1)
+          combo[`${n.index} ${n.pillz} ${n.fury}`] = keys[0];
+      }
+      console.log("Combo");
+      console.log(combo);
+
       console.log('Turn: ' + (this.turn ? 'Max' : 'Min'));
       let p = Infinity;
       let f = 2;
       if (this.turn == Minimax.MAX) {
         // return this.nodes.reduce((t, n) => n.get() > t.get() ? n : t);
-        return this.nodes.reduce((t, n) => {
-          const a = n.get();
-          const b = t.get();
-          if (a < b) {
-            return t;
-          } else if (a > b) {
-            p = n.pillz;
-            f = +n.fury;
-            return n;
-          } else {
-            if (a == b && (n.pillz < p) && (+n.fury < f)) {
-              p = n.pillz;
-              f = +n.fury;
-              return n;
-            }
-            return t;
+        // return this.nodes.reduce((t, n) => {
+        //   const a = n.get();
+        //   const b = t.get();
+        //   if (a < b) {
+        //     return t;
+        //   } else if (a > b) {
+        //     p = n.pillz;
+        //     f = +n.fury;
+        //     return n;
+        //   } else {
+        //     if (a == b && (n.pillz < p) && (+n.fury < f)) {
+        //       p = n.pillz;
+        //       f = +n.fury;
+        //       return n;
+        //     }
+        //     return t;
+        //   }
+        // });
+
+        let max = this.nodes[0];
+        for (const node of this.nodes.slice(1)) {
+          const a = node.get();
+          const b = max.get();
+          if (a > b) {
+            p = node.pillz;
+            f = +node.fury;
+            max = node;
+          } else if (a == b && (node.pillz < p) && (+node.fury < f)) {
+            p = node.pillz;
+            f = +node.fury;
+            max = node;
           }
-        });
-        // let max: Node;
-        // for (const n of this.nodes) {
-        //   let a = n.get();
-        // }
+        }
+
+        return max;
       } else {
         // return this.nodes.reduce((t, n) => n.get() < t.get() ? n : t);
-        return this.nodes.reduce((t, n) => {
-          const a = n.get();
-          const b = t.get();
-          if (a > b) {
-            return t;
-          } else if (a < b) {
-            p = n.pillz;
-            f = +n.fury;
-            return n;
-          } else {
-            if (a == b && (n.pillz < p) && (+n.fury < f)) {
-              p = n.pillz;
-              f = +n.fury;
-              return n;
-            }
-            return t;
+        // return this.nodes.reduce((t, n) => {
+        //   const a = n.get();
+        //   const b = t.get();
+        //   if (a > b) {
+        //     return t;
+        //   } else if (a < b) {
+        //     p = n.pillz;
+        //     f = +n.fury;
+        //     return n;
+        //   } else {
+        //     if (a == b && (n.pillz < p) && (+n.fury < f)) {
+        //       p = n.pillz;
+        //       f = +n.fury;
+        //       return n;
+        //     }
+        //     return t;
+        //   }
+        // });
+
+        let min = this.nodes[0];
+        for (const node of this.nodes.slice(1)) {
+          const a = node.get();
+          const b = min.get();
+          if (a < b) {
+            p = node.pillz;
+            f = +node.fury;
+            min = node;
+          } else if (a == b && (node.pillz < p) && (+node.fury < f)) {
+            p = node.pillz;
+            f = +node.fury;
+            min = node;
           }
-        });
+        }
+
+        return min;
       }
     }
   }

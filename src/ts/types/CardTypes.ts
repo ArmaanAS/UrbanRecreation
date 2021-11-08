@@ -1,7 +1,7 @@
 export const Clans = [
   "All Stars", "Bangers", "Berzerk", "Dominion", "Fang Pi Clang",
   "Freaks", "Frozn", "GHEIST", "GhosTown", "Hive", "Huracan", "Jungo",
-  "Junkz", "Komboka", "La Junta", "Leader", "Montana", "Nightmare",
+  "Junkz", "Komboka", "La Junta", "Leader", "Montana", "Nightmare", "Oculus",
   "Paradox", "Piranas", "Pussycats", "Raptors", "Rescue", "Riots", "Roots",
   "Sakrohm", "Sentinel", "Skeelz", "Ulu Watu", "Uppers", "Vortex"
 ] as const
@@ -129,7 +129,7 @@ export class AbilityStat extends BaseString {
     this.a = (this.a & ~0x400000) | (+n << 22)
   }
   get blocked() {
-    return (this.a >> 21 & 0b11) !== 0b01;
+    return (this.a >> 21 & 0b11) === 0b01;
   }
 }
 export class BonusStat extends BaseString {
@@ -152,7 +152,7 @@ export class BonusStat extends BaseString {
     this.a = (this.a & ~0x2000000) | (+n << 25)
   }
   get blocked() {
-    return (this.a >> 24 & 0b11) !== 0b01;
+    return (this.a >> 24 & 0b11) === 0b01;
   }
 }
 export class PowerStat extends BaseStat {
@@ -184,7 +184,10 @@ export class PowerStat extends BaseStat {
     // prot || !cancel
     // 10, 11, 00 = true
     // 01 = false
-    return (this.b >> 16 & 0b11) !== 0b01;
+    // Cancelled && !prot || prot
+    // 01 = true
+    // 10, 11, 00 = false,
+    return (this.b >> 16 & 0b11) === 0b01;
   }
 }
 export class DamageStat extends BaseStat {
@@ -213,7 +216,7 @@ export class DamageStat extends BaseStat {
     this.b = (this.b & ~0x80000) | (+n << 19)
   }
   get blocked() {
-    return (this.b >> 18 & 0b11) !== 0b01;
+    return (this.b >> 18 & 0b11) === 0b01;
   }
 }
 export class AttackStat extends BaseStat {
@@ -242,7 +245,7 @@ export class AttackStat extends BaseStat {
     this.b = (this.b & ~0x200000) | (+n << 21)
   }
   get blocked() {
-    return (this.b >> 20 & 0b11) !== 0b01;
+    return (this.b >> 20 & 0b11) === 0b01;
   }
 }
 export class PillzStat extends BaseAttr {
@@ -259,7 +262,7 @@ export class PillzStat extends BaseAttr {
     this.b = (this.b & ~0x800000) | (+n << 23)
   }
   get blocked() {
-    return (this.b >> 22 & 0b11) !== 0b01;
+    return (this.b >> 22 & 0b11) === 0b01;
   }
 }
 export class LifeStat extends BaseAttr {
@@ -276,6 +279,6 @@ export class LifeStat extends BaseAttr {
     this.b = (this.b & ~0x2000000) | (+n << 25)
   }
   get blocked() {
-    return (this.b >> 24 & 0b11) !== 0b01;
+    return (this.b >> 24 & 0b11) === 0b01;
   }
 }

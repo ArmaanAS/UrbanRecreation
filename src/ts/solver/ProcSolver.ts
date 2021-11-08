@@ -1,5 +1,7 @@
 import cluster from 'cluster'
 import { counter } from '../CardBattle';
+import { baseCards } from '../CardLoader';
+import { BaseCard } from '../types/CardTypes';
 import { WorkerSolverData } from '../types/Types';
 import Analysis from './Analysis';
 
@@ -11,24 +13,24 @@ if (cluster.isWorker) {
   console.log = () => 0;
 
   log(`${pid} ${'Process Started'.grey}`);
-
   process.send?.({ msg: "ready" });
 
-  // process.once("message", ({ msg }) => {
-  //   log("Received initial message: " + msg);
+  process.once("message", async (mainBaseCards: { [key: string]: BaseCard }) => {
+    // log("Received initial message: " + msg);
+    // baseCards = msg;
+    Object.assign(baseCards, mainBaseCards);
 
-  //   process.send!({ msg: "Thanks for having me" });
+    process.on('message', async (data: WorkerSolverData) => {
+      // if (Math.random() < 0.05) process.exit(1);
+      // let m = await Analysis.iterTree(Game.from(workerData), true);
+      log(`[${data.id.toString().yellow}] ${'Analysis Started'.grey}`);
+      const m = await Analysis.iterTree(data.game, true, false);
+      // const m = await Analysis.iterTree(data.game, data.game.firstHasSelected, false);
 
-  process.on('message', async (data: WorkerSolverData) => {
-    // if (Math.random() < 0.05) process.exit(1);
-    // let m = await Analysis.iterTree(Game.from(workerData), true);
-    log(`[${data.id.toString().yellow}] ${'Analysis Started'.grey}`);
-    const m = await Analysis.iterTree(data.game, true);
-
-    log(`[${data.id.toString().yellow}] ${'Analysis Finished'.grey}`);
-    process.send?.(m);
+      log(`[${data.id.toString().yellow}] ${'Analysis Finished'.grey}`);
+      process.send?.(m);
+    })
   })
-  // })
 
 
   // process.on("exit", () => {

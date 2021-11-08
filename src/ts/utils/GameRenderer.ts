@@ -11,15 +11,6 @@ export default class GameRenderer {
   static draw(game: Game, override = false) {
     if (!override && !game.logs) return;
 
-    if (game.i1 != undefined) {
-      this.drawPlayer(game.p1, game.round);
-      this.drawHand(game.h1, "cyan");
-    } else {
-      this.drawPlayer(game.p1, game.round);
-      this.drawHand(game.h1,
-        game.firstHasSelected != game.first ? "yellow" : "white");
-    }
-
     if (game.i2 != undefined) {
       this.drawPlayer(game.p2, game.round);
       this.drawHand(game.h2, "cyan");
@@ -27,6 +18,15 @@ export default class GameRenderer {
       this.drawPlayer(game.p2, game.round);
       this.drawHand(game.h2,
         game.firstHasSelected != game.first ? "white" : "yellow");
+    }
+
+    if (game.i1 != undefined) {
+      this.drawPlayer(game.p1, game.round);
+      this.drawHand(game.h1, "cyan");
+    } else {
+      this.drawPlayer(game.p1, game.round);
+      this.drawHand(game.h1,
+        game.firstHasSelected != game.first ? "yellow" : "white");
     }
   }
 
@@ -90,6 +90,7 @@ export default class GameRenderer {
       Leader: (s: string) => s.red,
       Montana: (s: string) => s.magenta.dim,
       Nightmare: (s: string) => s.black.dim,
+      Oculus: (s: string) => s.red.dim,
       Paradox: (s: string) => s.magenta.dim,
       Piranas: (s: string) => s.yellow,
       Pussycats: (s: string) => s.magenta,

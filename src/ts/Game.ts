@@ -8,6 +8,7 @@ import GameRenderer from "./utils/GameRenderer";
 import Events from "./Events";
 import PlayerRound from "./PlayerRound";
 import CardBattle from "./CardBattle";
+import { Turn } from "./types/Types";
 
 let rl: readline.Interface;
 
@@ -36,7 +37,7 @@ export default class Game {
 
   round = 1;    // 1, 2, 3, 4
   day = true;
-  first: boolean;
+  first: Turn;
   events1 = new Events();
   events2 = new Events();
   ca1 = false;  // Counter-attack
@@ -47,7 +48,7 @@ export default class Game {
   constructor(
     p1: Player, p2: Player, h1: Hand, h2: Hand,
     inputs: boolean, logs = true, repeat: boolean | undefined,
-    first = true
+    first: Turn = Turn.PLAYER_1
   ) {
     this.inputs = inputs;
     this.logs = logs;
@@ -59,7 +60,8 @@ export default class Game {
     this.h2 = h2;
 
     // this.day = day;
-    this.first = this.round % 2 == +first;  //round % 2 == 1;  //first;
+    // this.first = (this.round % 2) == (+first);  //round % 2 == 1;  //first;
+    this.first = first;
 
     const l1 = this.h1.getLeader();
     // if (l1 && l1.ability.string == 'Counter-attack')
@@ -72,7 +74,7 @@ export default class Game {
       this.ca2 = true;
 
     if (this.ca1 == this.ca2) {
-      this.first = true;
+      // this.first = true;
     } else if (this.ca1) {
       this.first = false;
     } else if (this.ca2) {
@@ -106,7 +108,7 @@ export default class Game {
     // this.select(0, 3);
   }
 
-  clone(inputs?: boolean, logs?: boolean) {
+  clone(inputs?: boolean, logs?: boolean): Game {
     const p1 = clone(this.p1);
     const p2 = clone(this.p2);
     const h1 = this.h1.clone();
@@ -203,7 +205,8 @@ export default class Game {
       throw new Error(`Game.select - index or pillz is not a number 
         index: ${index}, pillz: ${pillz}`)
 
-    if (this.firstHasSelected != this.first) {
+    // if (this.firstHasSelected != this.first) {
+    if (this.getTurn() === Turn.PLAYER_1) {
       // if (this.h1.get(index).played)
       // if (this.h1.get(index).won !== undefined)
       // if (this.h1[index].won !== undefined)
@@ -347,16 +350,20 @@ export default class Game {
   }
 
   getTurn() {
-    return this.firstHasSelected !== this.first ? 'Player' : 'Urban Rival';
+    // return this.firstHasSelected !== this.first ? 'Player' : 'Urban Rival';
+    return this.first === Turn.PLAYER_1 ? !this.firstHasSelected ?
+      Turn.PLAYER_1 : Turn.PLAYER_2 :
+      !this.firstHasSelected ?
+        Turn.PLAYER_2 : Turn.PLAYER_1;
   }
 
   private nextRound() {
     if (this.ca1 == this.ca2)
       this.first = !this.first;
     else if (this.ca1)
-      this.first = false;
+      this.first = Turn.PLAYER_2;
     else if (this.ca2)
-      this.first = true;
+      this.first = Turn.PLAYER_1;
 
     this.round++;
 
@@ -385,11 +392,13 @@ export class GameGenerator {
   static createUnique(
     h1: HandOf<CardJSON>, h2: HandOf<CardJSON>,
     life: number, pillz: number,
-    name1?: string, name2?: string,
-    first?: boolean
+    // name1 = 'Player', name2 = 'Urban Rival',
+    first?: Turn
   ) {
-    const p1 = new Player(life, pillz, name1 == 'Player' ? 0 : 1);  // name1);
-    const p2 = new Player(life, pillz, name2 == 'Player' ? 0 : 1);  // name2);
+    // const p1 = new Player(life, pillz, name1 == 'Player' ? 0 : 1);  // name1);
+    // const p2 = new Player(life, pillz, name2 == 'Player' ? 0 : 1);  // name2);
+    const p1 = new Player(life, pillz, 0);  // name1);
+    const p2 = new Player(life, pillz, 1);  // name2);
 
     return new Game(
       p1, p2,

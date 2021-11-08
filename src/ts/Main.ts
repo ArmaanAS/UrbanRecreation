@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import Game from './Game';
 import { HandGenerator } from './Hand';
 import Player from './Player';
 import Analysis from './solver/Analysis';
+import { Turn } from './types/Types';
 import GameRenderer from './utils/GameRenderer';
 
 
@@ -37,7 +39,7 @@ const log = console.log;
 // console.log(g.h1.get(0).clan)
 
 while (!g.hasWinner(true) && true) {
-  if (g.getTurn() == 'Player' && !false) {
+  if (g.getTurn() === Turn.PLAYER_1 && !false) {
     console.log = () => 0;
     console.time('a');
     const m = await Analysis.iterTree(g);
