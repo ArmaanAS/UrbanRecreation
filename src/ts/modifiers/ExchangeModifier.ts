@@ -13,7 +13,7 @@ export const ExchangeObject: { [index: string]: Exchange } = {
 
 export default class ExchangeModifier extends Modifier {
   ex = Exchange.POWER;
-  constructor(ex: Exchange | string, et = EventTime.PRE3) {
+  constructor(ex: Exchange | string, et = EventTime.PRE2) {
     super();
 
     if (typeof ex == 'string')

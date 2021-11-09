@@ -36,8 +36,8 @@ type TimeType = {
 } | undefined
 const Time: { [index: string]: TimeType } = {
   // const Time = {
-  POWER: { eventTime: EventTime.PRE3, name: "POWER", win: false },
-  DAMAGE: { eventTime: EventTime.PRE3, name: "DAMAGE", win: false },
+  POWER: { eventTime: EventTime.PRE2, name: "POWER", win: false },
+  DAMAGE: { eventTime: EventTime.PRE2, name: "DAMAGE", win: false },
   ATTACK: { eventTime: EventTime.POST1, name: "ATTACK", win: false },
   LIFE: { eventTime: EventTime.END, name: "LIFE", win: true },
   PILLZ: { eventTime: EventTime.END, name: "PILLZ", win: true }
@@ -58,6 +58,7 @@ export default class BasicModifier extends Modifier {
   opp = false;
   min = -Infinity;
   max = Infinity;
+  always = false;
   // constructor(change: number, minmax?: number) {
   // constructor(change: number) {
   //   super();
@@ -143,6 +144,7 @@ export default class BasicModifier extends Modifier {
   }
 
   canApply(data: BattleData) {
+    if (this.always) return true;
     if (this.win && !data.card.won) return false;
 
     if (this.opp) {
@@ -151,11 +153,16 @@ export default class BasicModifier extends Modifier {
       // if (this.win && !data.oppCard.won) return false;
       // console.log(data.oppCard.life.prot, data.oppCard.life.cancel);
       switch (this.type) {
-        case Type.POWER: return !data.oppCard.power.prot;
-        case Type.DAMAGE: return !data.oppCard.damage.prot;
-        case Type.ATTACK: return !data.oppCard.attack.prot;
-        case Type.LIFE: return !data.oppCard.life.prot;
-        case Type.PILLZ: return !data.oppCard.pillz.prot;
+        // case Type.POWER: return !data.oppCard.power.prot;
+        // case Type.DAMAGE: return !data.oppCard.damage.prot;
+        // case Type.ATTACK: return !data.oppCard.attack.prot;
+        // case Type.LIFE: return !data.oppCard.life.prot;
+        // case Type.PILLZ: return !data.oppCard.pillz.prot;
+        case Type.POWER: return !data.oppCard.power.blocked;
+        case Type.DAMAGE: return !data.oppCard.damage.blocked;
+        case Type.ATTACK: return !data.oppCard.attack.blocked;
+        case Type.LIFE: return !data.oppCard.life.blocked;
+        case Type.PILLZ: return !data.oppCard.pillz.blocked;
       }
     } else {
       // console.log('this.opp === false')
@@ -174,6 +181,16 @@ export default class BasicModifier extends Modifier {
           return !data.card.life.prot || !data.card.life.cancel;
         case Type.PILLZ:
           return !data.card.pillz.prot || !data.card.pillz.cancel;
+        // case Type.POWER:
+        //   return !data.card.power.blocked;
+        // case Type.DAMAGE:
+        //   return !data.card.damage.blocked;
+        // case Type.ATTACK:
+        //   return !data.card.attack.blocked;
+        // case Type.LIFE:
+        //   return !data.card.life.blocked;
+        // case Type.PILLZ:
+        //   return !data.card.pillz.blocked;
       }
     }
 
@@ -181,36 +198,36 @@ export default class BasicModifier extends Modifier {
   }
 
   getMultiplier(data: BattleData) {
-    if (this.per !== undefined) {
-      let player, card;
-      if (this.per.opp) {
-        player = data.opp;
-        card = data.oppCard;
-      } else {
-        player = data.player;
-        card = data.card;
-      }
+    if (this.per === undefined) return 1;
 
-      switch (this.per.type) {
-        case 1: return card.power.final;
-        case 2: return card.damage.final;
-        case 3: return player.life;
-        case 4: return player.pillz;
-        case 5: return data.round.getClanCards(data.card);
-        case 6: return data.round.getClanCards(data.oppCard, true);
-        case 7: return data.round.round;
-        case 8: return 5 - data.round.round;
-        case 9: return data.oppCard.stars;
-        case 10: return +(data.card.index == data.oppCard.index);
-        case 11: return +(data.card.index != data.oppCard.index);
-      }
+    let player, card;
+    if (this.per.opp) {
+      player = data.opp;
+      card = data.oppCard;
+    } else {
+      player = data.player;
+      card = data.card;
     }
 
-    return 1;
+    switch (this.per.type) {
+      case 1: return card.power.final;
+      case 2: return card.damage.final;
+      case 3: return player.life;
+      case 4: return player.pillz;
+      case 5: return data.round.getClanCards(data.card);
+      case 6: return data.round.getClanCards(data.oppCard, true);
+      case 7: return data.round.round;
+      case 8: return 5 - data.round.round;
+      case 9: return data.oppCard.stars;
+      case 10: return +(data.card.index == data.oppCard.index);
+      case 11: return +(data.card.index != data.oppCard.index);
+      default: return 1;
+    }
   }
 
   mod(base: number, data: BattleData) {
     if (base <= this.min || base >= this.max) return base;
+
     const change = this.change * this.getMultiplier(data);
     const final = base + change;
     const squash = Math.min(Math.max(final, this.min), this.max);
