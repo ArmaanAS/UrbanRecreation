@@ -46,6 +46,7 @@ export class Abilities {
       .replace(/(?<=[xy\d] )(\w+) (Opp)/gi, "$2 $1")
       .replace(/(?<=-[xy\d]+ )Opp /gi, "")
       .replace(/\b\w(?=\w+)/g, (s) => s.toUpperCase())
+      .replace(/\[star]/gi, "*")
       .split(/(?<=\w+) ?[:;] /gi);
 
     abilityCache[ability] = s;

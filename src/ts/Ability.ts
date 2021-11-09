@@ -8,32 +8,28 @@ import CopyModifier from "./modifiers/CopyModifier";
 import ExchangeModifier from "./modifiers/ExchangeModifier";
 import Modifier from "./modifiers/Modifier";
 import ProtectionModifier from "./modifiers/ProtectionModifier";
+import RecoverModifier from "./modifiers/RecoverModifier";
+import EventTime from "./types/EventTime";
 import { clone } from "./utils/Utils";
 
-
-
-// const abilityType = {
-//   UNDEFINED: 0,
-//   GLOBAL: 1,
-//   PREROUND: 2,
-//   MODIFIER: 3,
-//   POSTROUND: 4
-// };
 
 export enum AbilityType {
   UNDEFINED = 0,
   GLOBAL = 1,
   ABILITY = 2,
   BONUS = 3,
+  GLOBAL_ABILITY = 4,
+  GLOBAL_BONUS = 5,
 }
 
 export default class Ability {
   ability: string;
-  // type: number;
   type: AbilityType;
   defer = false;
   mods: Modifier[] = [];
   conditions: Condition[];
+  delayed = false;
+  won: boolean | undefined = undefined;
   constructor(s: string, type = AbilityType.UNDEFINED) {
     const conditions = Abilities.split(s);
     this.ability = conditions.pop()!;
@@ -55,6 +51,8 @@ export default class Ability {
       defer: this.defer,
       // mods: this.mods.map(m => m.clone()),
       mods: this.mods.map(clone),
+      delayed: this.delayed,
+      won: this.won,
     }, Ability.prototype);
   }
 
@@ -70,6 +68,23 @@ export default class Ability {
   canApply(data: BattleData) {
     // let apply = true;
 
+    if ((this.type === AbilityType.GLOBAL_ABILITY ||
+      this.type === AbilityType.GLOBAL_BONUS) &&
+      this.won === undefined) {
+
+      if (!data.player.won) {
+        data.events.removeGlobal(this.mods[0].eventTime, this);
+        return false;
+      } else {
+        this.won = data.player.won;
+      }
+    }
+
+    if (this.delayed) {
+      this.delayed = false;
+      return false;
+    }
+
     for (const cond of this.conditions) {
       if (!cond.met(data)) {
         console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
@@ -78,11 +93,13 @@ export default class Ability {
       console.log(`[Condition] ${cond.s} met: true`.green);
     }
 
-    if (this.type == AbilityType.ABILITY)
+    if (this.type === AbilityType.ABILITY ||
+      this.type === AbilityType.GLOBAL_ABILITY)
       // return !data.card.ability.blocked();
       // return data.card.ability.prot || !data.card.ability.cancel
       return !data.card.ability.blocked;
-    else if (this.type == AbilityType.BONUS)
+    else if (this.type === AbilityType.BONUS ||
+      this.type === AbilityType.GLOBAL_BONUS)
       // return !data.card.bonus.blocked();
       // return data.card.bonus.prot || !data.card.bonus.cancel;
       return !data.card.bonus.blocked;
@@ -240,6 +257,68 @@ export default class Ability {
       } else {
         this.mods.push(new ExchangeModifier(tokens[1]));
       }
+    } else if (tokens[1] == "Recover") { // 1 Recover Pillz Out Of 3
+      failed = false;
+      // "Pillz", 1, 3
+      this.mods.push(new RecoverModifier(tokens[2], +tokens[0], +tokens[5]));
+
+    } else if (["Poison", "Toxin", "Consume", "Regen", "Heal", "Dope"].includes(tokens[1])) {
+      // 2 Poison Min 2
+      failed = false;
+
+      if (this.type === AbilityType.ABILITY)
+        this.type = AbilityType.GLOBAL_ABILITY;
+      else if (this.type === AbilityType.BONUS)
+        this.type = AbilityType.GLOBAL_BONUS;
+
+      const mod = new BasicModifier();
+      mod.eventTime = EventTime.END;
+      mod.always = true;
+
+      const type = tokens[1];
+      if (type == "Dope" || type == "Consume")
+        mod.setType('Pillz');
+      else
+        mod.setType('Life');
+
+      if (type == "Regen" || type == "Heal" || type == "Dope") {
+        mod.setOpp(false);
+        mod.change = +tokens[0];
+      } else {
+        mod.setOpp(true);
+        mod.change = -tokens[0];
+      }
+
+      if (type == "Poison" || type == "Heal")
+        this.delayed = true;
+
+      if (tokens[2] == 'Min')
+        mod.setMin(+tokens[3])
+      else if (tokens[2] == 'Max')
+        mod.setMax(+tokens[3])
+
+      this.mods.push(mod);
+    } else if (tokens[1] == "Combust") {
+      failed = false;
+
+      if (this.type === AbilityType.ABILITY)
+        this.type = AbilityType.GLOBAL_ABILITY;
+      else if (this.type === AbilityType.BONUS)
+        this.type = AbilityType.GLOBAL_BONUS;
+
+      for (const type of ["Life", "Pillz"]) {
+        const mod = new BasicModifier();
+        mod.eventTime = EventTime.END;
+        mod.setType(type);
+        mod.setOpp(true);
+        mod.change = -tokens[0];
+        mod.always = true;
+        if (tokens[2] == 'Min')
+          mod.setMin(+tokens[3])
+
+        this.mods.push(mod);
+      }
+
     } else if (tokens[0] == "No") {
       return;
     } else if (tokens[0] == "Counter-Attack") {
@@ -256,7 +335,17 @@ export default class Ability {
       //   data.events.add(mod.eventTime, this.);
       // }
       if (this.mods.length)
-        data.events.add(this.mods[0].eventTime, this);
+        switch (this.type) {
+          case AbilityType.ABILITY:
+          case AbilityType.BONUS:
+            data.events.add(this.mods[0].eventTime, this);
+            break;
+          case AbilityType.GLOBAL:
+          case AbilityType.GLOBAL_ABILITY:
+          case AbilityType.GLOBAL_BONUS:
+            data.events.addGlobal(this.mods[0].eventTime, this);
+            break;
+        }
     } else {
       console.log(`[Failed] ${this.ability}`.red);
     }

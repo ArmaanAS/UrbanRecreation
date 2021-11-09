@@ -54,8 +54,12 @@ export default class CardBattle {
 
     // this.b1 = new BattleData(round.r1, p1, card1, p2, card2, events1);
     // this.b2 = new BattleData(round.r2, p2, card2, p1, card1, events2);
-    this.b1 = new BattleData(game.r1, p1, card1, p2, card2, events1);
-    this.b2 = new BattleData(game.r2, p2, card2, p1, card1, events2);
+    const totalPillz1 = pillz1 + (fury1 ? 3 : 0);
+    const totalPillz2 = pillz2 + (fury2 ? 3 : 0);
+    this.b1 = new BattleData(
+      game.r1, p1, card1, totalPillz1, p2, card2, totalPillz2, events1);
+    this.b2 = new BattleData(
+      game.r2, p2, card2, totalPillz2, p1, card1, totalPillz1, events2);
   }
 
   play() {

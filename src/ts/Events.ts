@@ -35,6 +35,10 @@ export default class Events {
     this.repeat[event].push(ability);
   }
 
+  removeGlobal(event: EventTime, ability: Ability) {
+    this.repeat[event].splice(this.repeat[event].indexOf(ability), 1);
+  }
+
   execute(event: EventTime, data: BattleData) {
     let ability: Ability | undefined;
     while ((ability = this.events[event].pop()) !== undefined)

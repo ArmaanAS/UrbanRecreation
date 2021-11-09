@@ -17,7 +17,7 @@ function recreate() {
   worker = new Worker("./solver/ThreadServer.js");
   worker.on("message", (data) => {
     console.log('postMessage -> Main:');
-    console.dir(data, { depth: 1 })
+    console.dir(data, { depth: 2 })
 
     if (data.type)
       gws.send(JSON.stringify(data));

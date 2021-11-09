@@ -14,7 +14,8 @@ export enum GameResult {
 export class Node {
   name: string;
   turn: Turn;
-  playSecond = false;
+  average = false;
+  playingSecond = false;
   defered: boolean;
   result?: GameResult; // This could be any number, e.g. 0.87832732451 !!...!!
   nodes: Node[] = [];
@@ -37,26 +38,36 @@ export class Node {
 
   add(name: Node): Node;
   add(name: string, turn: Turn, defered: boolean): Node;
-  add(name: string | Node, turn = !this.turn, defered?: boolean) {
+  add(name: string | Node, turn?: Turn, defered?: boolean) {
     if (name instanceof Node) {
       this.nodes.push(name);
       return name;
     } else {
+      if (turn === undefined)
+        turn = this.turn === Turn.PLAYER_1 ? Turn.PLAYER_2 : Turn.PLAYER_1;
       const n = new Node(name, turn, undefined, defered);
       this.nodes.push(n);
       return n;
     }
   }
 
-  get(): number {
+  rating(minimax = true): number {
     if (this.result !== undefined)
       return this.result;
     else if (this.nodes.length) {
-      if (this.turn === Minimax.MAX) {
+      if (!minimax) {
+        this.average = true;
+        let avg = 0;
+        for (const n of this.nodes)
+          avg += n.rating();
+
+        return avg / this.nodes.length;
+
+      } else if (this.turn === Minimax.MAX) {
         // return Math.max(...this.nodes.map(n => n.get()));
         let max = -Infinity;
         for (const n of this.nodes) {
-          const s = n.get();
+          const s = n.rating();
           if (s > max)
             max = s
         }
@@ -66,7 +77,7 @@ export class Node {
         // return Math.min(...this.nodes.map(n => n.get()));
         let min = Infinity;
         for (const n of this.nodes) {
-          const s = n.get();
+          const s = n.rating();
           if (s < min)
             min = s;
         }
@@ -110,36 +121,78 @@ export class Node {
     return this.name.split(' ', 3)[2] == 'true';
   }
 
+  get totalPillz() {
+    return this.pillz + (this.fury ? 3 : 0);
+  }
+
   toString() {
-    const g = +(this.get() * 100).toFixed(1);
-    if (this.turn == Minimax.MIN) {
-      if (g > 0)
-        return `[Win ${g}%] ${this.name}`.green;
-      else if (g < 0)
-        return `[Loss ${-g}%] ${this.name}`.red;
-      else
-        return `[Draw] ${this.name}`.yellow.dim;
+    const rating = this.rating();
+    if (this.average &&
+      !(this.turn === Minimax.MIN ? rating === 1 : rating === -1)) {
+      let p1wins = 0,
+        draws = 0,
+        p2wins = 0;
+
+      for (const n of this.nodes) {
+        const rating = n.rating();
+        if (rating === GameResult.PLAYER_1_WIN)
+          p1wins++;
+        else if (rating === GameResult.TIE)
+          draws++;
+        else if (rating === GameResult.PLAYER_2_WIN)
+          p2wins++;
+      }
+
+      if (this.turn === Minimax.MIN) {
+        const s = `[${p1wins} Win | ${draws} Draw | ${p2wins} Loss] ${this.name}`;
+        if (p1wins > p2wins && p1wins > draws)
+          return s.green;
+        else if (p2wins > p1wins && p2wins > draws)
+          return s.red;
+        else
+          return s.yellow;
+      } else {
+        const s = `[${p2wins} Win | ${draws} Draw | ${p1wins} Loss] ${this.name}`;
+
+        if (p1wins > p2wins && p1wins > draws)
+          return s.red;
+        else if (p2wins > p1wins && p2wins > draws)
+          return s.green;
+        else
+          return s.yellow;
+      }
+
     } else {
-      if (g > 0)
-        return `[Loss ${g}%] ${this.name}`.red;
-      else if (g < 0)
-        return `[Win ${-g}%] ${this.name}`.green;
-      else
-        return `[Draw] ${this.name}`.yellow.dim;
+      const g = +(rating * 100).toFixed(1);
+      if (this.turn === Minimax.MIN) {
+        if (g > 0)
+          return `[Win ${g}%] ${this.name}`.green;
+        else if (g < 0)
+          return `[Loss ${-g}%] ${this.name}`.red;
+        else
+          return `[Draw] ${this.name}`.yellow;
+      } else {
+        if (g > 0)
+          return `[Loss ${g}%] ${this.name}`.red;
+        else if (g < 0)
+          return `[Win ${-g}%] ${this.name}`.green;
+        else
+          return `[Draw] ${this.name}`.yellow;
+      }
     }
   }
 
   debug(depth = 2): string | object {
     if (this.result !== undefined) {
       return `S ${this.result}` + (this.break ? ' Break' : '');
-    } else if (depth == 0) {
-      return `G ${this.get()}`;
+    } else if (depth === 0) {
+      return `G ${this.rating()}`;
     } else {
       return Object.fromEntries([
         ...this.nodes.map(n => [n.name, n.debug(depth - 1)]),
         ['nodes', this.nodes.length],
-        ['score', this.get()],
-        ...(this.playSecond ? [
+        ['score', this.rating()],
+        ...(this.playingSecond ? [
           ['max', this.turn],
           ['defer', true]
         ] : [
@@ -156,7 +209,7 @@ export default class Minimax extends Node {
   }
 
   best() {
-    if (this.playSecond) { // TODO: Convert to sets and maps!! 
+    if (this.playingSecond) { // TODO: Convert to sets and maps!! 
       const combine: { [key: string]: Node[] } = {};
       for (const m of this.nodes) {
         for (const n of m.nodes) {
@@ -170,7 +223,7 @@ export default class Minimax extends Node {
       const combination = Object.fromEntries(
         Object.entries(combine)
           .map(([k, v]) => [k, v.reduce<number>(
-            (t, n) => t + n.get(), 0) / v.length])
+            (t, n) => t + n.rating(), 0) / v.length])
       );
       console.log('combination', combination);
 
@@ -193,7 +246,7 @@ export default class Minimax extends Node {
       console.log('Turn: ' + (!this.turn ? 'Max' : 'Min'));
 
       let s: number;
-      if (this.turn == Minimax.MAX) {
+      if (this.turn === Minimax.MAX) {
         // s = Math.min(...Object.keys(revCombo))
         s = 2
         for (const i of Object.keys(revCombo))
@@ -217,29 +270,40 @@ export default class Minimax extends Node {
       return new Node(revCombo[s], this.turn, s);
 
     } else {
+
       const combo: {
-        [index: string]: { [index: number]: string }
+        [index: string]: { [index: number]: string } | number;
       } = {};
       for (const n of this.nodes) {
-        const childCombo: { [index: number]: string } =
-          combo[`${n.index} ${n.pillz} ${n.fury}`] = {};
+        if (n.nodes.length === 0)
+          combo[n.name] = n.rating();
+        else {
+          const childCombo: { [index: number]: string } = {};
+          combo[n.name] = childCombo;
 
-        for (const childNode of n.nodes) {
-          childCombo[childNode.get()] =
-            `${childNode.index} ${childNode.pillz} ${childNode.fury}`;
+          for (const childNode of n.nodes) {
+            childCombo[childNode.rating()] = childNode.name;
+          }
+
+          const keys = Object.keys(childCombo);
+          if (keys.length === 1)
+            combo[n.name] = keys[0];
         }
-
-        const keys = Object.keys(childCombo);
-        if (keys.length === 1)
-          combo[`${n.index} ${n.pillz} ${n.fury}`] = keys[0];
       }
       console.log("Combo");
       console.log(combo);
 
+      // if (this.nodes.length === 0) throw new Error('Minimax nodes is empty');
+      if (this.nodes.length === 0) return this;
+
       console.log('Turn: ' + (this.turn ? 'Max' : 'Min'));
-      let p = Infinity;
-      let f = 2;
-      if (this.turn == Minimax.MAX) {
+      console.log('Child Turn: ' + (this.nodes[0].turn ? 'Max' : 'Min'));
+      // console.log('Turn: ' + (this.nodes[0].turn ? 'Max' : 'Min'));
+      // let p = Infinity;
+      // let f = 2;
+      let bestNode = this.nodes[0];
+      let minPillz = this.nodes[0].totalPillz;
+      if (this.turn === Minimax.MAX) {
         // return this.nodes.reduce((t, n) => n.get() > t.get() ? n : t);
         // return this.nodes.reduce((t, n) => {
         //   const a = n.get();
@@ -260,22 +324,32 @@ export default class Minimax extends Node {
         //   }
         // });
 
-        let max = this.nodes[0];
+        // let max = this.nodes[0];
+        // for (const node of this.nodes.slice(1)) {
+        //   const a = node.get();
+        //   const b = max.get();
+        //   if (a > b) {
+        //     p = node.pillz;
+        //     f = +node.fury;
+        //     max = node;
+        //   } else if (a == b && (node.pillz < p) && (+node.fury < f)) {
+        //     p = node.pillz;
+        //     f = +node.fury;
+        //     max = node;
+        //   }
+        // }
+        // return max;
+
+
+        let maxRating = this.nodes[0].rating(false);
         for (const node of this.nodes.slice(1)) {
-          const a = node.get();
-          const b = max.get();
-          if (a > b) {
-            p = node.pillz;
-            f = +node.fury;
-            max = node;
-          } else if (a == b && (node.pillz < p) && (+node.fury < f)) {
-            p = node.pillz;
-            f = +node.fury;
-            max = node;
+          const a = node.rating(false);
+          if (a > maxRating || (a === maxRating && node.totalPillz < minPillz)) {
+            minPillz = node.totalPillz;
+            maxRating = a;
+            bestNode = node;
           }
         }
-
-        return max;
       } else {
         // return this.nodes.reduce((t, n) => n.get() < t.get() ? n : t);
         // return this.nodes.reduce((t, n) => {
@@ -297,23 +371,35 @@ export default class Minimax extends Node {
         //   }
         // });
 
-        let min = this.nodes[0];
+        // let min = this.nodes[0];
+        // for (const node of this.nodes.slice(1)) {
+        //   const a = node.rating();
+        //   const b = min.rating();
+        //   if (a < b) {
+        //     p = node.pillz;
+        //     f = +node.fury;
+        //     min = node;
+        //   } else if (a == b && (node.pillz < p) && (+node.fury < f)) {
+        //     p = node.pillz;
+        //     f = +node.fury;
+        //     min = node;
+        //   }
+        // }
+        // return min;
+
+
+        let minRating = this.nodes[0].rating(false);
         for (const node of this.nodes.slice(1)) {
-          const a = node.get();
-          const b = min.get();
-          if (a < b) {
-            p = node.pillz;
-            f = +node.fury;
-            min = node;
-          } else if (a == b && (node.pillz < p) && (+node.fury < f)) {
-            p = node.pillz;
-            f = +node.fury;
-            min = node;
+          const a = node.rating(false);
+          if (a < minRating || (a === minRating && node.totalPillz < minPillz)) {
+            minPillz = node.totalPillz;
+            minRating = a;
+            bestNode = node;
           }
         }
-
-        return min;
       }
+
+      return bestNode;
     }
   }
 
@@ -334,6 +420,9 @@ export default class Minimax extends Node {
   // static TIE = 0;
   // static LOSS = -1;
 
-  static MIN = false;
-  static MAX = true;
+  // static MIN = false;
+  // static MAX = true;
+
+  static MIN = 0;
+  static MAX = 1;
 }

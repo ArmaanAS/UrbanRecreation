@@ -2,6 +2,7 @@ import { parentPort } from 'worker_threads';
 
 import Game, { GameGenerator } from '../Game';
 import { CardJSON, HandOf } from '../types/CardTypes';
+import { Turn } from '../types/Types';
 import GameRenderer from '../utils/GameRenderer';
 import Analysis from './Analysis';
 
@@ -64,7 +65,7 @@ async function handleMessage() {
         d.h1, d.h2,
         d.life, d.pillz,
         // d.name1, d.name2,
-        d.first
+        d.first ? Turn.PLAYER_1 : Turn.PLAYER_2
       );
       GameRenderer.draw(g, true);
       parentPort?.postMessage('Update');
@@ -97,7 +98,8 @@ async function handleMessage() {
         const log = console.log;
         console.log = () => 0;
         console.time('a');
-        const m = await Analysis.iterTree(gc, gc.firstHasSelected);
+        // const m = await Analysis.iterTree(gc, gc.firstHasSelected);
+        const m = await Analysis.iterTree(gc);
         console.log = log;
         console.timeEnd('a');
 
@@ -105,6 +107,7 @@ async function handleMessage() {
         //   m.turn = !m.turn;
 
         const best = m.best();
+        // console.log(best.debug());
         console.log(best.toString());
 
         parentPort?.postMessage({
@@ -128,8 +131,8 @@ parentPort?.on('message', function incoming(data) {
   // console.log('worker received:', data);
   buffer.push(data);
 
-  console.log(`buffer: (${buffer.length})`);
-  console.dir(buffer, { depth: 3 });
+  console.log(`(${buffer.length}) buffer`);
+  console.dir(buffer, { depth: 2 });
 
   // setTimeout(handleMessage, 5000);
   handleMessage();

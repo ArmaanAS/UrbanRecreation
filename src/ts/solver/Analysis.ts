@@ -73,7 +73,8 @@ export default class Analysis {
   }
 
   get turn(): Turn {
-    return this.game.firstHasSelected !== this.game.first;
+    // return this.game.firstHasSelected !== this.game.first;
+    return this.game.turn;
   }
 
   // getTotalMoves(cards) {
@@ -90,6 +91,10 @@ export default class Analysis {
     // this.getCardHand()[i].won = undefined;
     this.playedHand[i].played = false;
     this.game.firstHasSelected = false;
+    if (this.turn === Turn.PLAYER_1)
+      this.game.i1 = undefined;
+    else
+      this.game.i2 = undefined;
 
     return i;
   }
@@ -131,7 +136,7 @@ export default class Analysis {
       i = a.deselect();
 
     if (i != undefined) {
-      minimax.playSecond = true;
+      minimax.playingSecond = true;
       indexes = [i];
     } else {
       indexes = a.unplayedCardIndexes;
@@ -151,7 +156,7 @@ export default class Analysis {
                 `${i} ${p} ${f}`,
                 bar,
                 i, p, f,
-                minimax.playSecond
+                minimax.playingSecond
               ).then((m: Node) => {
                 (minimax as Node).add(m);
                 if (bar) bar.tick();
@@ -165,11 +170,11 @@ export default class Analysis {
               i,
               p,
               f,
-              minimax.playSecond
+              minimax.playingSecond
             );
             minimax.add(m);
 
-            if (!minimax.playSecond && !fullSearch) {
+            if (!minimax.playingSecond && !fullSearch) {
               if (
                 (m.result == GameResult.PLAYER_1_WIN && m.turn == Minimax.MAX) ||
                 (m.result == GameResult.PLAYER_2_WIN && m.turn == Minimax.MIN)
@@ -203,7 +208,7 @@ export default class Analysis {
 
     let _i: number | undefined;
     if (!child && (_i = games[0].deselect()) !== undefined) {
-      minimax.playSecond = true;
+      minimax.playingSecond = true;
       indexes = [_i];
     } else indexes = games[0].unplayedCardIndexes;
 
@@ -231,7 +236,7 @@ export default class Analysis {
             for (const f of p <= pillz - 3 ? [true, false] : [false]) {
               const c = new Analysis(a.game);
               c.game.select(i, p, f);
-              const m = n.add(`${i} ${p} ${f}`, c.turn, n.playSecond);
+              const m = n.add(`${i} ${p} ${f}`, c.turn, n.playingSecond);
 
               if (!c.game.firstHasSelected && c.game.winner) {
                 if (c.game.winner === Winner.PLAYER_1) {
@@ -307,9 +312,10 @@ export default class Analysis {
 
   static counter = 0;
   static async iterTree(game: Game, child = false, thread = true) {
-    const minimax = new Minimax();
     const timer = `iterTree-${this.counter++}`;
     console.time(timer);
+
+    const minimax = new Minimax();
     const rootAnalysis = new Analysis(game);
     let analyses = [rootAnalysis];
     let nodes: Node[] = [minimax];
@@ -320,7 +326,7 @@ export default class Analysis {
 
     let _i: number | undefined;
     if (!child && (_i = rootAnalysis.deselect()) !== undefined) {
-      minimax.playSecond = true;
+      minimax.playingSecond = true;
       indexes = [_i];
     } else {
       indexes = rootAnalysis.unplayedCardIndexes;
@@ -332,7 +338,7 @@ export default class Analysis {
       const roundAnalyses = [];
       const roundNodes = [];
 
-      for (const index in analyses) {
+      for (let index = 0; index < analyses.length; index++) {
         const parentAnalysis = analyses[index];
         const parentNode = nodes[index];
 
@@ -347,20 +353,23 @@ export default class Analysis {
             for (const f of (p <= pillz - 3 ? [true, false] : [false])) {
 
               const analysis = new Analysis(parentAnalysis.game);
+              const turn = analysis.turn;
               const game = analysis.game;
               game.select(i, p, f);
               const node = parentNode.add(`${i} ${p} ${f}`,
-                analysis.turn, parentNode.playSecond);
+                analysis.turn, parentNode.playingSecond);
+              // const node = parentNode.add(`${i} ${p} ${f}`,
+              //   turn, parentNode.playingSecond);
 
-              if (!game.firstHasSelected && game.winner) {
+              if (!game.firstHasSelected && game.winner !== Winner.PLAYING) {
                 if (game.winner === Winner.PLAYER_1) {
-                  // node.win();
                   node.result = GameResult.PLAYER_1_WIN;
+
                   if (!parentNode.defered) {
-                    if (node.turn) {
+                    if (node.turn === Turn.PLAYER_1) {
                       node.break = true;
                       break root;
-                    } else if (p == pillz) {
+                    } else if (p === pillz) {
                       breaking = true;
                     } else if (breaking && f && p === pillz - 3) {
                       node.break = true;
@@ -368,13 +377,13 @@ export default class Analysis {
                     }
                   }
                 } else if (game.winner === Winner.TIE) {
-                  // node.tie();
                   node.result = GameResult.TIE;
+
                 } else if (game.winner === Winner.PLAYER_2) {
-                  // node.loss();
                   node.result = GameResult.PLAYER_2_WIN;
+
                   if (!parentNode.defered) {
-                    if (!node.turn) {
+                    if (node.turn === Turn.PLAYER_2) {
                       node.break = true;
                       break root;
                     } else if (p === pillz) {
@@ -389,8 +398,8 @@ export default class Analysis {
                 if (game.round === 1 && !game.firstHasSelected) {
                   parentNode.add(await Analysis.iterTree(game, true));
 
-                  // } else if (game.round === 2 && !game.firstHasSelected) {
-                } else if (game.round === 2 && thread) {
+                } else if (game.round === 2 && !game.firstHasSelected) {
+                  // } else if (game.round === 2 && thread) {
                   await DistributedAnalysis.race();
                   DistributedAnalysis.iterTree(game)
                     .then(node => parentNode.add(node))

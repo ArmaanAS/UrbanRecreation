@@ -93,6 +93,9 @@ abstract class BaseAttr extends BaseData {
   abstract set cancel(n: boolean);
   abstract get prot(): boolean;
   abstract set prot(n: boolean);
+  /**
+   * protected || !cancelled
+   */
   abstract get blocked(): boolean;
 }
 abstract class BaseStat extends BaseAttr {

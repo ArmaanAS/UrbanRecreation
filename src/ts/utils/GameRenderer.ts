@@ -6,6 +6,7 @@ import { splitLines } from "./Utils";
 import Game from "../Game";
 import Player from "../Player";
 import Hand from "../Hand";
+import { Turn } from "../types/Types";
 
 export default class GameRenderer {
   static draw(game: Game, override = false) {
@@ -17,7 +18,7 @@ export default class GameRenderer {
     } else {
       this.drawPlayer(game.p2, game.round);
       this.drawHand(game.h2,
-        game.firstHasSelected != game.first ? "white" : "yellow");
+        game.turn === Turn.PLAYER_2 ? "white" : "yellow");
     }
 
     if (game.i1 != undefined) {
@@ -26,7 +27,7 @@ export default class GameRenderer {
     } else {
       this.drawPlayer(game.p1, game.round);
       this.drawHand(game.h1,
-        game.firstHasSelected != game.first ? "yellow" : "white");
+        game.turn === Turn.PLAYER_1 ? "yellow" : "white");
     }
   }
 
