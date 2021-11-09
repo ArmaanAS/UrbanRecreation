@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "run-js": "cd src/js && node --inspect=9222 main.mjs",
-    "run-ts": "cd build/ts && node --inspect-brk=9229 --max-old-space-size=22000 --experimental-specifier-resolution=node --enable-source-maps Main.js",
+    "run-ts": "cd build/ts && node --inspect-brk=9229x --max-old-space-size=22000 --experimental-specifier-resolution=node --enable-source-maps Main.js",
     "server": "tsc && cd build/ts && node --max-old-space-size=22000 --experimental-specifier-resolution=node --enable-source-maps solver/Server.js",
     "dev": "tsc && npm run run-ts",
     "test": "jest --coverage",
