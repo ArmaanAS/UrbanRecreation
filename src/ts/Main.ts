@@ -26,7 +26,7 @@ const g = new Game(p1, p2, h1, h2, false, !false, false);
 g.select(1, 0);
 g.select(0, 1);
 
-// g.select(1, 0);
+g.select(1, 0);
 // g.select(0, 0);
 // g.select(2, 0);
 // g.select(2, 4);
@@ -39,7 +39,7 @@ const log = console.log;
 // console.log(g.h1.get(0).clan)
 
 while (!g.hasWinner(true) && true) {
-  if (g.getTurn() === Turn.PLAYER_1 && !false) {
+  if (g.turn === Turn.PLAYER_1 && !false) {
     console.log = () => 0;
     console.time('a');
     const m = await Analysis.iterTree(g);
@@ -75,7 +75,7 @@ while (!g.hasWinner(true) && true) {
       // if (!g.select(+s[0], +s[1], s[2] == 'true')) {
       const res = g.select(best.index, best.pillz, best.fury);
       if (!res) {
-        console.log(`Failed ${[typeof best.index, typeof best.pillz, typeof best.fury]} ${g.getTurn()} ${res}`.red);
+        console.log(`Failed ${[typeof best.index, typeof best.pillz, typeof best.fury]} ${g.turn} ${res}`.red);
         // GameRenderer.draw(g, true);
         break;
       }

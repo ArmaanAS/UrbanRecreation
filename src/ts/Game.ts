@@ -73,16 +73,16 @@ export default class Game {
     if (l2 && l2.abilityString == 'Counter-attack')
       this.ca2 = true;
 
-    if (this.ca1 == this.ca2) {
-      // this.first = true;
-    } else if (this.ca1) {
-      this.first = false;
-    } else if (this.ca2) {
-      this.first = true;
+    if (this.ca1 && !this.ca2) {
+      this.first = Turn.PLAYER_2;
+    } else if (this.ca2 && !this.ca1) {
+      this.first = Turn.PLAYER_1;
     }
 
-    this.r1 = new PlayerRound(1, this.day, first, p1, h1, p2, h2, this.events1);
-    this.r2 = new PlayerRound(1, this.day, !first, p2, h2, p1, h1, this.events2);
+    this.r1 = new PlayerRound(
+      1, this.day, first === Turn.PLAYER_1, p1, h1, p2, h2, this.events1);
+    this.r2 = new PlayerRound(
+      1, this.day, first === Turn.PLAYER_2, p2, h2, p1, h1, this.events2);
 
     for (const hand of [h1, h2]) {
       for (const card of hand) {
@@ -206,7 +206,7 @@ export default class Game {
         index: ${index}, pillz: ${pillz}`)
 
     // if (this.firstHasSelected != this.first) {
-    if (this.getTurn() === Turn.PLAYER_1) {
+    if (this.turn === Turn.PLAYER_1) {
       // if (this.h1.get(index).played)
       // if (this.h1.get(index).won !== undefined)
       // if (this.h1[index].won !== undefined)
@@ -349,7 +349,7 @@ export default class Game {
     return false;
   }
 
-  getTurn() {
+  get turn() {
     // return this.firstHasSelected !== this.first ? 'Player' : 'Urban Rival';
     return this.first === Turn.PLAYER_1 ? !this.firstHasSelected ?
       Turn.PLAYER_1 : Turn.PLAYER_2 :
@@ -358,8 +358,10 @@ export default class Game {
   }
 
   private nextRound() {
-    if (this.ca1 == this.ca2)
-      this.first = !this.first;
+    if (this.ca1 === this.ca2)
+      // this.first = !this.first;
+      this.first = this.first === Turn.PLAYER_1 ?
+        Turn.PLAYER_2 : Turn.PLAYER_1;
     else if (this.ca1)
       this.first = Turn.PLAYER_2;
     else if (this.ca2)
@@ -367,8 +369,8 @@ export default class Game {
 
     this.round++;
 
-    this.r1.next(this.first);
-    this.r2.next(!this.first);
+    this.r1.next(this.first === Turn.PLAYER_1);
+    this.r2.next(this.first === Turn.PLAYER_2);
   }
 }
 
