@@ -24,7 +24,7 @@ const g = new Game(p1, p2, h1, h2, false, !false, false);
 // g.select(2, 0);
 
 g.select(1, 0);
-g.select(0, 1);
+// g.select(0, 1);
 
 // g.select(1, 0);
 // g.select(0, 0);
@@ -47,8 +47,6 @@ while (!g.hasWinner(true) && true) {
     console.timeEnd('a');
 
     log();
-
-    GameRenderer.draw(g);
 
     const best = m.best();
     console.log(best.toString());

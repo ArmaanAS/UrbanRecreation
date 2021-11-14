@@ -5,7 +5,6 @@ import Minimax, { GameResult, Node } from "./Minimax"
 import PromiseMap from '../utils/PromiseMap'
 import DistributedAnalysis from "./DistributedAnalysis"
 import { Turn } from "../game/types/Types"
-import GameRenderer from "../utils/GameRenderer"
 
 export default class Analysis {
   game: Game;
@@ -317,16 +316,6 @@ export default class Analysis {
 
 
     let depth = 0;
-
-    const _log = console.log;
-    console.log = console.info;
-    GameRenderer.draw(rootAnalysis.game, true);
-    console.log = _log;
-    console.info(
-      rootAnalysis.game.turn === Turn.PLAYER_1 ? 'p1' : 'p2',
-      rootAnalysis.game.playingFirst === Turn.PLAYER_1 ? 'p1' : 'p2',
-      rootAnalysis.game.firstHasSelected
-    );
 
     let _i: number | undefined;
     if (!child && (_i = rootAnalysis.deselect()) !== undefined) {
