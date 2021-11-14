@@ -1,10 +1,11 @@
-import Game, { Winner } from "../Game"
+import Game, { Winner } from "../game/Game"
 import { shiftRange } from '../utils/Utils'
 import Bar from "./Bar"
 import Minimax, { GameResult, Node } from "./Minimax"
 import PromiseMap from '../utils/PromiseMap'
 import DistributedAnalysis from "./DistributedAnalysis"
-import { Turn } from "../types/Types"
+import { Turn } from "../game/types/Types"
+import GameRenderer from "../utils/GameRenderer"
 
 export default class Analysis {
   game: Game;
@@ -15,28 +16,29 @@ export default class Analysis {
       this.game = game.clone(inputs, logs);
     // this.game = Game.fromClone(Clone(game), inputs, logs);
     else
-      this.game = Game.from(game, inputs, logs);
+      (this.game = Game.from(game, inputs, logs))
+        .createBattleDataCache();
   }
 
   get playingHand() {
     // return this.game.selectedFirst !== this.game.first ?
     //   this.game.h1 : this.game.h2;
-    return this.turn === Turn.PLAYER_1 ?
+    return this.game.turn === Turn.PLAYER_1 ?
       this.game.h1 : this.game.h2;
   }
 
   get playingPlayer() {
     // return this.game.selectedFirst !== this.game.first ?
     //   this.game.p1 : this.game.p2;
-    return this.turn === Turn.PLAYER_1 ?
+    return this.game.turn === Turn.PLAYER_1 ?
       this.game.p1 : this.game.p2;
   }
 
   get playedCardIndex() {
     // if (this.game.selectedFirst !== this.game.first) {
-    if (this.turn === Turn.PLAYER_1) {
+    if (this.game.turn === Turn.PLAYER_1) {
       if (this.game.i2 === undefined)
-        throw new Error('this.game.i2 == undefined')
+        throw new Error('this.game.i2 == undefined ' + this.game.i1 + ' ' + this.game.i2)
 
       return this.game.i2[0]
 
@@ -51,7 +53,7 @@ export default class Analysis {
   get playedHand() {
     // return this.game.selectedFirst !== this.game.first ?
     //   this.game.h2 : this.game.h1;
-    return this.turn === Turn.PLAYER_1 ?
+    return this.game.turn === Turn.PLAYER_1 ?
       this.game.h2 : this.game.h1;
   }
 
@@ -73,25 +75,17 @@ export default class Analysis {
   }
 
   get turn(): Turn {
-    // return this.game.firstHasSelected !== this.game.first;
     return this.game.turn;
   }
-
-  // getTotalMoves(cards) {
-  //   let p = this.getTurnPlayer().pillz + 1;
-  //   return cards * (p + Math.max(0, p - 3));
-  // }
 
   deselect() {
     if (!this.game.firstHasSelected) return;
 
     const i = this.playedCardIndex;
-    // this.getCardHand().get(i).played = false;
-    // this.getCardHand().get(i).won = undefined;
     // this.getCardHand()[i].won = undefined;
     this.playedHand[i].played = false;
     this.game.firstHasSelected = false;
-    if (this.turn === Turn.PLAYER_1)
+    if (this.game.turn === Turn.PLAYER_1)
       this.game.i1 = undefined;
     else
       this.game.i2 = undefined;
@@ -312,8 +306,8 @@ export default class Analysis {
 
   static counter = 0;
   static async iterTree(game: Game, child = false, thread = true) {
-    const timer = `iterTree-${this.counter++}`;
-    console.time(timer);
+    // const timer = `iterTree-${this.counter++}`;
+    // console.time(timer);
 
     const minimax = new Minimax();
     const rootAnalysis = new Analysis(game);
@@ -323,6 +317,16 @@ export default class Analysis {
 
 
     let depth = 0;
+
+    const _log = console.log;
+    console.log = console.info;
+    GameRenderer.draw(rootAnalysis.game, true);
+    console.log = _log;
+    console.info(
+      rootAnalysis.game.turn === Turn.PLAYER_1 ? 'p1' : 'p2',
+      rootAnalysis.game.playingFirst === Turn.PLAYER_1 ? 'p1' : 'p2',
+      rootAnalysis.game.firstHasSelected
+    );
 
     let _i: number | undefined;
     if (!child && (_i = rootAnalysis.deselect()) !== undefined) {
@@ -345,7 +349,6 @@ export default class Analysis {
         if (indexes === undefined)
           indexes = parentAnalysis.unplayedCardIndexes;
 
-
         const pillz = parentAnalysis.playingPlayer.pillz;
         root: for (const i of indexes) {
           let breaking = false;
@@ -353,13 +356,10 @@ export default class Analysis {
             for (const f of (p <= pillz - 3 ? [true, false] : [false])) {
 
               const analysis = new Analysis(parentAnalysis.game);
-              const turn = analysis.turn;
               const game = analysis.game;
               game.select(i, p, f);
               const node = parentNode.add(`${i} ${p} ${f}`,
                 analysis.turn, parentNode.playingSecond);
-              // const node = parentNode.add(`${i} ${p} ${f}`,
-              //   turn, parentNode.playingSecond);
 
               if (!game.firstHasSelected && game.winner !== Winner.PLAYING) {
                 if (game.winner === Winner.PLAYER_1) {
@@ -425,10 +425,10 @@ export default class Analysis {
       );
       analyses = roundAnalyses;
       nodes = roundNodes;
-      console.timeLog(timer);
+      // console.timeLog(timer);
     }
 
-    console.timeEnd(timer);
+    // console.timeEnd(timer);
     return minimax;
   }
 }

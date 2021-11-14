@@ -1,8 +1,8 @@
-import Ability from "./Ability";
-import Card from "./Card";
+import Ability from "../Ability";
+import Card from "../Card";
 import Events from "./Events";
-import Player from "./Player";
-import PlayerRound from "./PlayerRound";
+import Player from "../Player";
+import PlayerRound from "../PlayerRound";
 
 export default class BattleData {
   round: PlayerRound;
@@ -21,7 +21,8 @@ export default class BattleData {
     p2: Player,
     card2: Card,
     pillz2: number,
-    events: Events
+    events: Events,
+    compile = true
   ) {
     // round is necessary for conditions
     this.round = round;
@@ -36,15 +37,13 @@ export default class BattleData {
 
     this.events = events;
 
-    const l = round.hand.getLeader();
-    if (l !== undefined)
-      Ability.leader(l, this);
+    if (compile) {
+      const l = this.round.hand.getLeader();
+      if (l !== undefined)
+        Ability.leader(l, this);
 
-    if (this.card.clan != "Leader")
-      Ability.card(card1, this);
-  }
-
-  getClanCards(card: Card, opp = false) {
-    return this.round.getClanCards(card, opp);
+      if (this.card.clan != "Leader")
+        Ability.card(this.card, this);
+    }
   }
 }

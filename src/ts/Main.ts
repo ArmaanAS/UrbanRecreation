@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import Game from './Game';
-import { HandGenerator } from './Hand';
-import Player from './Player';
+import Game from './game/Game';
+import { HandGenerator } from './game/Hand';
+import Player from './game/Player';
 import Analysis from './solver/Analysis';
-import { Turn } from './types/Types';
+import { Turn } from './game/types/Types';
 import GameRenderer from './utils/GameRenderer';
 
 
@@ -26,7 +26,7 @@ const g = new Game(p1, p2, h1, h2, false, !false, false);
 g.select(1, 0);
 g.select(0, 1);
 
-g.select(1, 0);
+// g.select(1, 0);
 // g.select(0, 0);
 // g.select(2, 0);
 // g.select(2, 4);
@@ -48,8 +48,10 @@ while (!g.hasWinner(true) && true) {
 
     log();
 
+    GameRenderer.draw(g);
+
     const best = m.best();
-    console.log(best.toString())
+    console.log(best.toString());
 
     await g.input(false);
 

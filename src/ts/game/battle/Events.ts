@@ -1,20 +1,16 @@
-import Ability from "./Ability"
+import Ability from "../Ability"
 import BattleData from "./BattleData";
-import EventTime from "./types/EventTime";
+import EventTime from "../types/EventTime";
 
 
 export default class Events {
-  events: Ability[][];
-  repeat: Ability[][];
-  constructor() {
-    this.events = new Array(10).fill(null).map<Ability[]>(() => []);
-    this.repeat = new Array(10).fill(null).map<Ability[]>(() => []);
-  }
+  events = new Array(10).fill(undefined).map<Ability[]>(() => []);
+  repeat = new Array(10).fill(undefined).map<Ability[]>(() => []);
 
   clone(): Events {
     return Object.setPrototypeOf({
-      events: this.events.map(arr => arr.map(a => a.clone())),
-      repeat: this.repeat.map(arr => arr.map(a => a.clone()))
+      events: this.events.map(arr => arr.map(e => e.clone())),
+      repeat: this.repeat.map(arr => arr.map(e => e.clone()))
     }, Events.prototype);
   }
 

@@ -1,9 +1,9 @@
-import Game from "../Game"
+import Game from "../game/Game"
 import { Worker } from "worker_threads"
 import Bar from "./Bar"
 import Minimax, { Node } from "./Minimax"
 import WorkerProcess from "./WorkerProcess"
-import { WorkerSolverData } from "../types/Types"
+import { WorkerSolverData } from "../game/types/Types"
 
 
 

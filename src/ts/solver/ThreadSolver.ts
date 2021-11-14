@@ -4,7 +4,7 @@ import {
   parentPort,
   threadId
 } from 'worker_threads';
-import { WorkerSolverData } from '../types/Types';
+import { WorkerSolverData } from '../game/types/Types';
 import Analysis from './Analysis';
 
 if (!isMainThread) {

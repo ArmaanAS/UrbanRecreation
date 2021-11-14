@@ -2,13 +2,16 @@ import Hand, { HandGenerator } from "./Hand";
 import "colors";
 import readline from "readline";
 import { AbilityString, CardJSON, HandOf } from './types/CardTypes'
-import { clone } from "./utils/Utils";
+import { clone } from "../utils/Utils";
 import Player from "./Player";
-import GameRenderer from "./utils/GameRenderer";
-import Events from "./Events";
+import GameRenderer from "../utils/GameRenderer";
+import Events from "./battle/Events";
 import PlayerRound from "./PlayerRound";
-import CardBattle from "./CardBattle";
+import CardBattle from "./battle/CardBattle";
 import { Turn } from "./types/Types";
+import CachedCardBattle from "./battle/CachedCardBattle";
+
+export let counter = 0;
 
 let rl: readline.Interface;
 
@@ -37,7 +40,7 @@ export default class Game {
 
   round = 1;    // 1, 2, 3, 4
   day = true;
-  first: Turn;
+  playingFirst: Turn;
   events1 = new Events();
   events2 = new Events();
   ca1 = false;  // Counter-attack
@@ -47,7 +50,7 @@ export default class Game {
 
   constructor(
     p1: Player, p2: Player, h1: Hand, h2: Hand,
-    inputs: boolean, logs = true, repeat: boolean | undefined,
+    inputs: boolean, logs = true, repeat?: boolean,
     first: Turn = Turn.PLAYER_1
   ) {
     this.inputs = inputs;
@@ -59,24 +62,20 @@ export default class Game {
     this.h1 = h1;
     this.h2 = h2;
 
-    // this.day = day;
-    // this.first = (this.round % 2) == (+first);  //round % 2 == 1;  //first;
-    this.first = first;
+    this.playingFirst = first;
 
     const l1 = this.h1.getLeader();
-    // if (l1 && l1.ability.string == 'Counter-attack')
-    if (l1 && l1.abilityString == 'Counter-attack')
+    if (l1?.abilityString == 'Counter-attack')
       this.ca1 = true;
 
     const l2 = this.h2.getLeader();
-    // if (l2 && l2.ability.string == 'Counter-attack')
-    if (l2 && l2.abilityString == 'Counter-attack')
+    if (l2?.abilityString == 'Counter-attack')
       this.ca2 = true;
 
     if (this.ca1 && !this.ca2) {
-      this.first = Turn.PLAYER_2;
+      this.playingFirst = Turn.PLAYER_2;
     } else if (this.ca2 && !this.ca1) {
-      this.first = Turn.PLAYER_1;
+      this.playingFirst = Turn.PLAYER_1;
     }
 
     this.r1 = new PlayerRound(
@@ -92,20 +91,19 @@ export default class Game {
             card.ability.string = AbilityString.NO_ABILITY;
 
         } else {
-          if (hand.getClanCards(card) == 1)
+          if (hand.getClanCards(card) === 1)
             // card.bonus_.string = "No Bonus";
             card.bonus.string = AbilityString.NO_ABILITY;
         }
       }
     }
 
+    this.createBattleDataCache();
+
     GameRenderer.draw(this);
 
     if (inputs)
       this.input(repeat);
-
-    // this.select(0, 3);
-    // this.select(0, 3);
   }
 
   clone(inputs?: boolean, logs?: boolean): Game {
@@ -117,7 +115,6 @@ export default class Game {
     const events2 = this.events2.clone();
 
     return Object.setPrototypeOf({
-      // round: this.round.clone(p1, h1, p2, h2),
       inputs: inputs ?? this.inputs,
       logs: logs ?? this.logs,
       winner: this.winner,
@@ -127,7 +124,7 @@ export default class Game {
       i2: this.i2,
       round: this.round,
       day: this.day,
-      first: this.first,
+      playingFirst: this.playingFirst,
       events1,
       events2,
       ca1: this.ca1,
@@ -139,8 +136,6 @@ export default class Game {
 
   static from(o: Game, inputs?: boolean, logs?: boolean) {
     Object.setPrototypeOf(o, Game.prototype);
-
-    // o.round = Round.from(o.round);
 
     Object.setPrototypeOf(o.p1, Player.prototype);
     Object.setPrototypeOf(o.p2, Player.prototype);
@@ -207,7 +202,6 @@ export default class Game {
 
     // if (this.firstHasSelected != this.first) {
     if (this.turn === Turn.PLAYER_1) {
-      // if (this.h1.get(index).played)
       // if (this.h1.get(index).won !== undefined)
       // if (this.h1[index].won !== undefined)
       if (this.h1[index].played)
@@ -216,18 +210,23 @@ export default class Game {
       this.i1 = [index, pillz, fury];
       this.h1[index].played = true;
     } else {
-      // if (this.h2.get(index).played)
       // if (this.h2.get(index).won !== undefined)
       // if (this.h2[index].won !== undefined)
       if (this.h2[index].played)
         return false;
 
       this.i2 = [index, pillz, fury];
-      // this.h2.get(index).played = true;
       this.h2[index].played = true;
     }
 
     if (this.firstHasSelected) {
+      // if (this.i2![1] > this.p2.pillz) {
+      //   const log = console.log;
+      //   console.log = console.info;
+      //   console.log(this.i1, this.i2)
+      //   GameRenderer.draw(this, true);
+      //   console.log = log;
+      // }
       this.battle();
       this.i1 = undefined;
       this.i2 = undefined;
@@ -241,7 +240,6 @@ export default class Game {
 
   battle() {
     if (this.i1 !== undefined && this.i2 !== undefined) {
-      // this.round.battle(...this.i1, ...this.i2);
       const card1 = this.h1[this.i1[0]];
       const card2 = this.h2[this.i2[0]];
       const pillz1 = this.i1[1];
@@ -249,11 +247,32 @@ export default class Game {
       const fury1 = this.i1[2];
       const fury2 = this.i2[2];
 
-      new CardBattle(this,
-        this.p1, card1, pillz1, fury1,
-        this.p2, card2, pillz2, fury2,
-        this.events1, this.events2
-      ).play();
+      // new CachedCardBattle(
+      //   this.h1, card1, pillz1, fury1,
+      //   this.h2, card2, pillz2, fury2
+      // ).play(
+      //   this, this.p1, this.p2,
+      //   this.events1, this.events2
+      // );
+      const bc = battleCache[`${this.i1[0]} ${this.i2[0]}`];
+      if (bc === undefined) {
+        new CardBattle(this,
+          this.p1, card1, pillz1, fury1,
+          this.p2, card2, pillz2, fury2,
+          this.events1, this.events2
+        ).play();
+
+        console.error(`CardBattle "${this.i1[0]} ${this.i2[0]}" is not cached`);
+        // throw new Error(`CardBattle "${this.i1} ${this.i2}" is not cached`);
+      } else {
+        bc.play(this,
+          this.p1, pillz1, fury1,
+          this.p2, pillz2, fury2,
+          this.events1, this.events2
+        );
+      }
+
+      counter++;
 
       this.nextRound();
 
@@ -351,29 +370,58 @@ export default class Game {
 
   get turn() {
     // return this.firstHasSelected !== this.first ? 'Player' : 'Urban Rival';
-    return this.first === Turn.PLAYER_1 ? !this.firstHasSelected ?
-      Turn.PLAYER_1 : Turn.PLAYER_2 :
-      !this.firstHasSelected ?
-        Turn.PLAYER_2 : Turn.PLAYER_1;
+    return this.playingFirst === Turn.PLAYER_1 ?
+      (!this.firstHasSelected ?
+        Turn.PLAYER_1 : Turn.PLAYER_2) :
+      (!this.firstHasSelected ?
+        Turn.PLAYER_2 : Turn.PLAYER_1);
   }
 
   private nextRound() {
     if (this.ca1 === this.ca2)
       // this.first = !this.first;
-      this.first = this.first === Turn.PLAYER_1 ?
+      this.playingFirst = this.playingFirst === Turn.PLAYER_1 ?
         Turn.PLAYER_2 : Turn.PLAYER_1;
     else if (this.ca1)
-      this.first = Turn.PLAYER_2;
+      this.playingFirst = Turn.PLAYER_2;
     else if (this.ca2)
-      this.first = Turn.PLAYER_1;
+      this.playingFirst = Turn.PLAYER_1;
 
     this.round++;
 
-    this.r1.next(this.first === Turn.PLAYER_1);
-    this.r2.next(this.first === Turn.PLAYER_2);
+    this.r1.next(this.playingFirst === Turn.PLAYER_1);
+    this.r2.next(this.playingFirst === Turn.PLAYER_2);
+  }
+
+
+  createBattleDataCache() {
+    const log = console.log;
+    console.log = () => 1;
+
+    let counter = 0;
+    for (let ci1 = 0; ci1 < 4; ci1++) {
+      const c1 = this.h1[ci1];
+      if (c1.won !== undefined) continue;
+
+      for (let ci2 = 0; ci2 < 4; ci2++) {
+        const c2 = this.h2[ci2];
+        if (c2.won !== undefined) continue;
+
+        counter++;
+        battleCache[`${ci1} ${ci2}`] = new CachedCardBattle(
+          this.h1, c1, this.h2, c2,
+        );
+      }
+    }
+
+    console.log = log;
+    console.log(
+      `Cached ${`${counter}`.green} CardBattles `.white + `(${Object.keys(battleCache).length} keys)`.green.dim
+    );
   }
 }
 
+const battleCache: { [key: string]: CachedCardBattle } = {};
 
 
 export class GameGenerator {

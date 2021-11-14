@@ -1,5 +1,5 @@
 import "colors"
-import { clone, getN } from "./utils/Utils"
+import { clone, getN } from "../utils/Utils"
 import {
   baseCards, cardIds, cardNames,
   cardYears, cardClans, getBaseKey, registerCardJSON
@@ -36,10 +36,6 @@ export default class Card {
     return Object.setPrototypeOf({
       key: this.key,
       played: this.played,
-
-      // _ability: this._ability && { ...this._ability },
-      // _bonus: this._bonus && { ...this._bonus },
-
       data: { ...this.data }
     }, Card.prototype);
   }
@@ -80,14 +76,6 @@ export default class Card {
     return this.base.rarity;
   }
 
-  // get ability() {
-  //   return this._ability ?? this.base.ability;
-  // }
-
-  // get bonus() {
-  //   return this._bonus ?? this.base.bonus;
-  // }
-
   get abilityString(): string {
     return this.ability.string === AbilityString.DEFAULT ?
       this.base.ability : 'No Ability';
@@ -119,31 +107,6 @@ export default class Card {
     return Object.setPrototypeOf(this.data, LifeStat.prototype);
   }
 
-
-  // get ability_() {
-  //   return this._ability ?? (this._ability = { ...this.base.ability });
-  // }
-
-  // get bonus_() {
-  //   return this._bonus ?? (this._bonus = { ...this.base.bonus });
-  // }
-
-  // get power_(): PowerStat {
-  //   return Object.setPrototypeOf(this.data, PowerStat.prototype);
-  // }
-  // get damage_(): DamageStat {
-  //   return Object.setPrototypeOf(this.data, DamageStat.prototype);
-  // }
-  // get attack_(): AttackStat {
-  //   return Object.setPrototypeOf(this.data, AttackStat.prototype);
-  // }
-  // get pillz_(): PillzStat {
-  //   return Object.setPrototypeOf(this.data, PillzStat.prototype);
-  // }
-  // get life_(): LifeStat {
-  //   return Object.setPrototypeOf(this.data, LifeStat.prototype);
-  // }
-
   get index() {
     return this.data.b >> 26 & 0b111;
   }
@@ -170,145 +133,7 @@ export default class Card {
   //   this.data.b = (this.data.b & ~(1 << 31)) | (+n << 31);
   // }
 }
-// interface CardAttr {
-//   cancel: boolean;
-//   prot: boolean;
-// }
-// interface CardStat extends CardAttr {
-//   base: number;
-//   final: number;
-// }
-// interface CardString extends CardAttr {
-//   string: string;
-// }
-// export default class Card {
-//   key = '';
-//   index = -1;
-//   won?: boolean = undefined;
-//   played = false;
-//   private _power?: CardStat = undefined;
-//   private _damage?: CardStat = undefined;
-//   private _ability?: CardString = undefined;
-//   private _bonus?: CardString = undefined;
-//   private _attack?: CardStat = undefined;
-//   private _life?: CardAttr = undefined;
-//   private _pillz?: CardAttr = undefined;
-//   constructor(json: CardJSON) {
-//     this.key = json.id + '_' + json.level;
-//   }
 
-//   clone(): Card {
-//     return Object.setPrototypeOf({
-//       key: this.key,
-//       index: this.index,
-//       won: this.won,
-//       played: this.played,
-
-//       _damage: this._damage && { ...this._damage },
-//       _power: this._power && { ...this._power },
-//       _attack: this._attack && { ...this._attack },
-
-//       _ability: this._ability && { ...this._ability },
-//       _bonus: this._bonus && { ...this._bonus },
-
-//       _life: this._life && { ...this._life },
-//       _pillz: this._pillz && { ...this._pillz },
-//     }, Card.prototype);
-//   }
-
-//   static from(o: Card): Card {
-//     return Object.setPrototypeOf(o, Card.prototype);
-//   }
-
-//   get base() {
-//     return baseCards[this.key];
-//   }
-
-//   get year() {
-//     return new Date(this.base.release_date).getFullYear().toString();
-//   }
-
-//   get clan() {
-//     return this.base.clan;
-//   }
-
-//   get stars() {
-//     return this.base.stars;
-//   }
-
-//   get maxStars() {
-//     return this.base.maxStars;
-//   }
-
-//   get name() {
-//     return this.base.name;
-//   }
-
-//   get id() {
-//     return this.base.id;
-//   }
-
-//   get rarity() {
-//     return this.base.rarity;
-//   }
-
-//   get ability() {
-//     return this._ability ?? this.base.ability;
-//   }
-
-//   get bonus() {
-//     return this._bonus ?? this.base.bonus;
-//   }
-
-//   get power() {
-//     return this._power ?? this.base.power;
-//   }
-
-//   get damage() {
-//     return this._damage ?? this.base.damage;
-//   }
-
-//   get attack() {
-//     return this._attack ?? this.base.attack;
-//   }
-
-//   get life() {
-//     return this._life ?? this.base.life;
-//   }
-
-//   get pillz() {
-//     return this._pillz ?? this.base.pillz;
-//   }
-
-
-//   get ability_() {
-//     return this._ability ?? (this._ability = { ...this.base.ability });
-//   }
-
-//   get bonus_() {
-//     return this._bonus ?? (this._bonus = { ...this.base.bonus });
-//   }
-
-//   get power_() {
-//     return this._power ?? (this._power = { ...this.base.power });
-//   }
-
-//   get damage_() {
-//     return this._damage ?? (this._damage = { ...this.base.damage });
-//   }
-
-//   get attack_() {
-//     return this._attack ?? (this._attack = { ...this.base.attack });
-//   }
-
-//   get life_() {
-//     return this._life ?? (this._life = { ...this.base.life });
-//   }
-
-//   get pillz_() {
-//     return this._pillz ?? (this._pillz = { ...this.base.pillz });
-//   }
-// }
 
 export class CardGenerator {
   static get(card: number | string) {

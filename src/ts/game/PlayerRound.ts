@@ -1,5 +1,5 @@
 import Card from "./Card";
-import Events from "./Events";
+import Events from "./battle/Events";
 import Hand from "./Hand";
 import Player from "./Player";
 

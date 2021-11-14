@@ -35,7 +35,7 @@ export default class Player {
     return (this.a >> 6) & 0b11111;
   }
   set pillz(n: number) {
-    if (n < 0) throw new RangeError("pillz must be a non-negative integer!: " + n);
+    if (n < 0) throw new RangeError("pillz must be a non-negative integer: " + n);
     // if (n < 0) this.a &= ~(0b11111 << 6);
     else this.a = (this.a & ~(0b11111 << 6)) | ((n & 0b11111) << 6);
   }

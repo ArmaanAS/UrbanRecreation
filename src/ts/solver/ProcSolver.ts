@@ -1,8 +1,8 @@
 import cluster from 'cluster'
-import { counter } from '../CardBattle';
-import { baseCards } from '../CardLoader';
-import { BaseCard } from '../types/CardTypes';
-import { WorkerSolverData } from '../types/Types';
+import { counter } from '../game/Game';
+import { baseCards } from '../game/CardLoader';
+import { BaseCard } from '../game/types/CardTypes';
+import { WorkerSolverData } from '../game/types/Types';
 import Analysis from './Analysis';
 
 if (cluster.isWorker) {
