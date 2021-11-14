@@ -1,4 +1,4 @@
-import { Turn } from "../types/Types";
+import { Turn } from "../game/types/Types";
 
 // export enum GameResult {
 //   WIN = 1,
@@ -145,39 +145,64 @@ export class Node {
 
       if (this.turn === Minimax.MIN) {
         const s = `[${p1wins} Win | ${draws} Draw | ${p2wins} Loss] ${this.name}`;
-        if (p1wins > p2wins && p1wins > draws)
+        // if (p1wins > p2wins && p1wins > draws)
+        if (p2wins === 0 && draws === 0)
           return s.green;
-        else if (p2wins > p1wins && p2wins > draws)
+        // else if (p2wins > p1wins && p2wins > draws)
+        else if (p1wins === 0 && p2wins > 0)
           return s.red;
         else
           return s.yellow;
       } else {
         const s = `[${p2wins} Win | ${draws} Draw | ${p1wins} Loss] ${this.name}`;
 
-        if (p1wins > p2wins && p1wins > draws)
-          return s.red;
-        else if (p2wins > p1wins && p2wins > draws)
+        // if (p1wins > p2wins && p1wins > draws)
+        //   return s.red;
+        if (p1wins === 0 && draws === 0)
           return s.green;
+        // else if (p2wins > p1wins && p2wins > draws)
+        //   return s.green;
+        else if (p2wins === 0 && p1wins > 0)
+          return s.red;
         else
           return s.yellow;
       }
 
     } else {
       const g = +(rating * 100).toFixed(1);
+      // if (this.turn === Minimax.MIN) {
+      //   if (g > 0)
+      //     return `[Win ${g}%] ${this.name}`.green;
+      //   else if (g < 0)
+      //     return `[Loss ${-g}%] ${this.name}`.red;
+      //   else
+      //     return `[Draw] ${this.name}`.yellow;
+      // } else {
+      //   if (g > 0)
+      //     return `[Loss ${g}%] ${this.name}`.red;
+      //   else if (g < 0)
+      //     return `[Win ${-g}%] ${this.name}`.green;
+      //   else
+      //     return `[Draw] ${this.name}`.yellow;
+      // }
       if (this.turn === Minimax.MIN) {
-        if (g > 0)
+        if (g === 50)
+          return `[50/50] ${this.name}`.yellow;
+        else if (g === 0)
+          return `[Loss] ${this.name}`.red;
+        else if (g < 50)
+          return `[Win ${g}%] ${this.name}`.red;
+        else
           return `[Win ${g}%] ${this.name}`.green;
-        else if (g < 0)
-          return `[Loss ${-g}%] ${this.name}`.red;
-        else
-          return `[Draw] ${this.name}`.yellow;
       } else {
-        if (g > 0)
-          return `[Loss ${g}%] ${this.name}`.red;
-        else if (g < 0)
-          return `[Win ${-g}%] ${this.name}`.green;
+        if (g === 50)
+          return `[50/50] ${this.name}`.yellow;
+        else if (g === 100)
+          return `[Loss] ${this.name}`.red;
+        else if (g < 50)
+          return `[Win ${100 - g}%] ${this.name}`.green;
         else
-          return `[Draw] ${this.name}`.yellow;
+          return `[Win ${100 - g}%] ${this.name}`.red;
       }
     }
   }
@@ -220,11 +245,19 @@ export default class Minimax extends Node {
         }
       }
 
-      const combination = Object.fromEntries(
-        Object.entries(combine)
-          .map(([k, v]) => [k, v.reduce<number>(
-            (t, n) => t + n.rating(), 0) / v.length])
-      );
+      // const combination = Object.fromEntries(
+      //   Object.entries(combine)
+      //     .map(([k, v]) => [k, v.reduce<number>(
+      //       (t, n) => t + n.rating(), 0) / v.length])
+      // );
+      const combination: { [key: string]: number } = {};
+      for (const [k, v] of Object.entries(combine)) {
+        let total = 0;
+        for (const n of v)
+          total += n.rating();
+
+        combination[k] = (total / v.length + 1) / 2;
+      }
       console.log('combination', combination);
 
       const revCombo: { [key: number]: string } = {};
@@ -247,24 +280,22 @@ export default class Minimax extends Node {
 
       let s: number;
       if (this.turn === Minimax.MAX) {
-        // s = Math.min(...Object.keys(revCombo))
         s = 2
         for (const i of Object.keys(revCombo))
           if (+i < s)
             s = +i
 
-        if (s > -1 && revCombo[0])
-          console.log(`[DRAW] ${revCombo[0]}`.yellow)
+        // if (s > -1 && revCombo[0])
+        //   console.log(`[DRAW] ${revCombo[0]}`.yellow)
 
       } else {
-        // s = Math.max(...Object.keys(revCombo));
         s = -2
         for (const i of Object.keys(revCombo))
           if (+i > s)
             s = +i
 
-        if (s < 1 && revCombo[0])
-          console.log(`[DRAW] ${revCombo[0]}`.yellow)
+        // if (s < 1 && revCombo[0])
+        //   console.log(`[DRAW] ${revCombo[0]}`.yellow)
       }
 
       return new Node(revCombo[s], this.turn, s);
@@ -274,20 +305,21 @@ export default class Minimax extends Node {
       const combo: {
         [index: string]: { [index: number]: string } | number;
       } = {};
-      for (const n of this.nodes) {
-        if (n.nodes.length === 0)
-          combo[n.name] = n.rating();
+      for (const node of this.nodes) {
+        console.info(node.toString());
+        if (node.nodes.length === 0)
+          combo[node.name] = node.rating();
         else {
           const childCombo: { [index: number]: string } = {};
-          combo[n.name] = childCombo;
+          combo[node.name] = childCombo;
 
-          for (const childNode of n.nodes) {
+          for (const childNode of node.nodes) {
             childCombo[childNode.rating()] = childNode.name;
           }
 
           const keys = Object.keys(childCombo);
           if (keys.length === 1)
-            combo[n.name] = keys[0];
+            combo[node.name] = keys[0];
         }
       }
       console.log("Combo");
@@ -298,48 +330,10 @@ export default class Minimax extends Node {
 
       console.log('Turn: ' + (this.turn ? 'Max' : 'Min'));
       console.log('Child Turn: ' + (this.nodes[0].turn ? 'Max' : 'Min'));
-      // console.log('Turn: ' + (this.nodes[0].turn ? 'Max' : 'Min'));
-      // let p = Infinity;
-      // let f = 2;
+
       let bestNode = this.nodes[0];
       let minPillz = this.nodes[0].totalPillz;
       if (this.turn === Minimax.MAX) {
-        // return this.nodes.reduce((t, n) => n.get() > t.get() ? n : t);
-        // return this.nodes.reduce((t, n) => {
-        //   const a = n.get();
-        //   const b = t.get();
-        //   if (a < b) {
-        //     return t;
-        //   } else if (a > b) {
-        //     p = n.pillz;
-        //     f = +n.fury;
-        //     return n;
-        //   } else {
-        //     if (a == b && (n.pillz < p) && (+n.fury < f)) {
-        //       p = n.pillz;
-        //       f = +n.fury;
-        //       return n;
-        //     }
-        //     return t;
-        //   }
-        // });
-
-        // let max = this.nodes[0];
-        // for (const node of this.nodes.slice(1)) {
-        //   const a = node.get();
-        //   const b = max.get();
-        //   if (a > b) {
-        //     p = node.pillz;
-        //     f = +node.fury;
-        //     max = node;
-        //   } else if (a == b && (node.pillz < p) && (+node.fury < f)) {
-        //     p = node.pillz;
-        //     f = +node.fury;
-        //     max = node;
-        //   }
-        // }
-        // return max;
-
 
         let maxRating = this.nodes[0].rating(false);
         for (const node of this.nodes.slice(1)) {
@@ -350,43 +344,8 @@ export default class Minimax extends Node {
             bestNode = node;
           }
         }
+
       } else {
-        // return this.nodes.reduce((t, n) => n.get() < t.get() ? n : t);
-        // return this.nodes.reduce((t, n) => {
-        //   const a = n.get();
-        //   const b = t.get();
-        //   if (a > b) {
-        //     return t;
-        //   } else if (a < b) {
-        //     p = n.pillz;
-        //     f = +n.fury;
-        //     return n;
-        //   } else {
-        //     if (a == b && (n.pillz < p) && (+n.fury < f)) {
-        //       p = n.pillz;
-        //       f = +n.fury;
-        //       return n;
-        //     }
-        //     return t;
-        //   }
-        // });
-
-        // let min = this.nodes[0];
-        // for (const node of this.nodes.slice(1)) {
-        //   const a = node.rating();
-        //   const b = min.rating();
-        //   if (a < b) {
-        //     p = node.pillz;
-        //     f = +node.fury;
-        //     min = node;
-        //   } else if (a == b && (node.pillz < p) && (+node.fury < f)) {
-        //     p = node.pillz;
-        //     f = +node.fury;
-        //     min = node;
-        //   }
-        // }
-        // return min;
-
 
         let minRating = this.nodes[0].rating(false);
         for (const node of this.nodes.slice(1)) {
@@ -397,6 +356,7 @@ export default class Minimax extends Node {
             bestNode = node;
           }
         }
+
       }
 
       return bestNode;

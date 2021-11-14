@@ -37,7 +37,7 @@ export class Abilities {
       .replace(/Rec\w*/gi, "Recover")
       .replace(/&/g, "And")
       // .replace(/(?<=(Copy|Cancel|Stop|Per).*) (Opp|Mod|Left)\w*/gi, '')
-      .replace(/(?<=(Copy|Cancel|Stop).*) (Opp|Mod|Left)\w*/gi, "")
+      .replace(/(?<=(Copy|Cancel|Stop|Per).*) (Opp|Mod|Left)\w*/gi, "")
       .replace("Bonus Protection", "Protection Bonus")
       // .replace(/([\w ]+) Exchange/ig, 'Exchange $1')
       .replace(/(\w+(?: \w+ \w+)?) ([+-][xy\d]+|Exchange)/i, "$2 $1")
@@ -46,7 +46,7 @@ export class Abilities {
       .replace(/(?<=[xy\d] )(\w+) (Opp)/gi, "$2 $1")
       .replace(/(?<=-[xy\d]+ )Opp /gi, "")
       .replace(/\b\w(?=\w+)/g, (s) => s.toUpperCase())
-      .replace(/\[star]/gi, "*")
+      .replace(/\[star]/gi, "★")
       .split(/(?<=\w+) ?[:;] /gi);
 
     abilityCache[ability] = s;

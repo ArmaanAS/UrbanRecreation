@@ -1,4 +1,4 @@
-import BattleData from "../BattleData"
+import BattleData from "../battle/BattleData"
 import EventTime from "../types/EventTime"
 import Modifier from "./Modifier"
 
@@ -178,9 +178,11 @@ export default class BasicModifier extends Modifier {
         case Type.ATTACK:
           return !data.card.attack.prot || !data.card.attack.cancel;
         case Type.LIFE:
-          return !data.card.life.prot || !data.card.life.cancel;
+          return (!data.card.life.prot || !data.card.life.cancel) &&
+            data.player.life > 0;
         case Type.PILLZ:
-          return !data.card.pillz.prot || !data.card.pillz.cancel;
+          return (!data.card.pillz.prot || !data.card.pillz.cancel) &&
+            data.player.pillz > 0;
         // case Type.POWER:
         //   return !data.card.power.blocked;
         // case Type.DAMAGE:
@@ -228,16 +230,17 @@ export default class BasicModifier extends Modifier {
   mod(base: number, data: BattleData) {
     if (base <= this.min || base >= this.max) return base;
 
-    const change = this.change * this.getMultiplier(data);
+    const multiplier = this.getMultiplier(data);
+    const change = this.change * multiplier;
     const final = base + change;
     const squash = Math.min(Math.max(final, this.min), this.max);
 
     console.log(`${base} => ${final} >=< ${squash}`);
     if (isNaN(squash)) {
       console.log(data.player.life);
-      console.log(`${this.getMultiplier(data)} => ${this.change} => ${base}`);
+      console.log(`${multiplier} => ${this.change} => ${base}`);
       console.log(
-        `${typeof this.getMultiplier(data)} => ${typeof this
+        `${typeof multiplier} => ${typeof this
           .change} => ${typeof base}`
       );
     }

@@ -1,4 +1,4 @@
-import BattleData from "../BattleData";
+import BattleData from "../battle/BattleData";
 import EventTime from "../types/EventTime";
 
 

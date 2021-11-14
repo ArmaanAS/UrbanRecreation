@@ -1,5 +1,6 @@
 import { Abilities, AbilityParser } from "./AbilityParser";
-import BattleData from "./BattleData";
+import BattleData from "./battle/BattleData";
+import CachedBattleData from "./battle/CachedBattleData";
 import Card from "./Card";
 import Condition from "./Condition";
 import BasicModifier from "./modifiers/BasicModifier";
@@ -10,7 +11,7 @@ import Modifier from "./modifiers/Modifier";
 import ProtectionModifier from "./modifiers/ProtectionModifier";
 import RecoverModifier from "./modifiers/RecoverModifier";
 import EventTime from "./types/EventTime";
-import { clone } from "./utils/Utils";
+import { clone } from "../utils/Utils";
 
 
 export enum AbilityType {
@@ -109,17 +110,24 @@ export default class Ability {
     // return apply;
   }
 
-  compileConditions(data: BattleData) {
+  compileConditions(data: BattleData | CachedBattleData) {
     for (const cond of this.conditions) {
       cond.compile(data, this);
     }
   }
 
-  compileAbility(data: BattleData) {
+  compileAbility(data: BattleData | CachedBattleData) {
     let failed = true;
     const tokens = this.ability.split(" ");
 
-    compile: if (/\+\d+/.test(tokens[0])) {
+    if (tokens[0] == "No" ||
+      tokens[0] == "Counter-Attack" ||
+      tokens[0] == "Xp") {
+      return;
+    }
+
+    compile:
+    if (/\+\d+/.test(tokens[0])) {
       let t,
         i,
         opp = false;
@@ -298,7 +306,7 @@ export default class Ability {
         mod.setMax(+tokens[3])
 
       this.mods.push(mod);
-    } else if (tokens[1] == "Combust") {
+    } else if (tokens[1] == "Combust" || tokens[1] == "Mindwipe") {
       failed = false;
 
       if (this.type === AbilityType.ABILITY)
@@ -319,10 +327,6 @@ export default class Ability {
         this.mods.push(mod);
       }
 
-    } else if (tokens[0] == "No") {
-      return;
-    } else if (tokens[0] == "Counter-Attack") {
-      return;
     }
 
     if (!failed) {
@@ -351,7 +355,7 @@ export default class Ability {
     }
   }
 
-  compile(data: BattleData) {
+  compile(data: BattleData | CachedBattleData) {
     this.compileAbility(data);
     this.compileConditions(data);
   }
@@ -368,15 +372,12 @@ export default class Ability {
   }
 
 
-  static card(card: Card, data: BattleData) {
-    // new Ability(card.ability.string, AbilityType.ABILITY).compile(data);
-    // new Ability(card.bonus.string, AbilityType.BONUS).compile(data);
+  static card(card: Card, data: BattleData | CachedBattleData) {
     new Ability(card.abilityString, AbilityType.ABILITY).compile(data);
     new Ability(card.bonusString, AbilityType.BONUS).compile(data);
   }
 
-  static leader(card: Card, data: BattleData) {
-    // new Ability(card.ability.string, AbilityType.GLOBAL).compile(data);
+  static leader(card: Card, data: BattleData | CachedBattleData) {
     new Ability(card.abilityString, AbilityType.GLOBAL).compile(data);
   }
 }

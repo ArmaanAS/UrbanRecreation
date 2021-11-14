@@ -1,14 +1,13 @@
 import { parentPort } from 'worker_threads';
 
-import Game, { GameGenerator } from '../Game';
-import { CardJSON, HandOf } from '../types/CardTypes';
-import { Turn } from '../types/Types';
+import Game, { GameGenerator } from '../game/Game';
+import { CardJSON, HandOf } from '../game/types/CardTypes';
+import { Turn } from '../game/types/Types';
 import GameRenderer from '../utils/GameRenderer';
 import Analysis from './Analysis';
 
 let g: Game;
 let buffer: DataType[] = [];
-// let running = false;
 
 
 type DataTypes = 'recreate' | 'init' | 'move' | 'simulate';

@@ -1,27 +1,30 @@
-import Card from "../Card";
+import Card from "../game/Card";
 import colors from 'colors'
-import { Clan } from "../types/CardTypes";
+import { Clan } from "../game/types/CardTypes";
 import Canvas from "./Canvas";
 import { splitLines } from "./Utils";
-import Game from "../Game";
-import Player from "../Player";
-import Hand from "../Hand";
-import { Turn } from "../types/Types";
+import Game from "../game/Game";
+import Player from "../game/Player";
+import Hand from "../game/Hand";
+import { Turn } from "../game/types/Types";
 
 export default class GameRenderer {
-  static draw(game: Game, override = false) {
+  static draw(game: Game, override = false, log = false) {
     if (!override && !game.logs) return;
 
-    if (game.i2 != undefined) {
+    const _log = console.log;
+    if (log) console.log = console.info;
+
+    if (game.i2 !== undefined) {
       this.drawPlayer(game.p2, game.round);
       this.drawHand(game.h2, "cyan");
     } else {
       this.drawPlayer(game.p2, game.round);
       this.drawHand(game.h2,
-        game.turn === Turn.PLAYER_2 ? "white" : "yellow");
+        game.turn === Turn.PLAYER_2 ? "yellow" : "white");
     }
 
-    if (game.i1 != undefined) {
+    if (game.i1 !== undefined) {
       this.drawPlayer(game.p1, game.round);
       this.drawHand(game.h1, "cyan");
     } else {
@@ -29,6 +32,8 @@ export default class GameRenderer {
       this.drawHand(game.h1,
         game.turn === Turn.PLAYER_1 ? "yellow" : "white");
     }
+
+    if (log) console.log = _log;
   }
 
   static drawPlayer(p: Player, r: number) {
@@ -138,8 +143,8 @@ export default class GameRenderer {
     canvas.write(0, name);
 
     const stars =
-      /*' ★'*/
-      " $".bold.toString().repeat(card.stars) +
+      ' ★'.bold.toString().repeat(card.stars) +
+      // " $".bold.toString().repeat(card.stars) +
       " ☆".repeat(card.maxStars - card.stars) +
       " ";
 

@@ -1,7 +1,7 @@
 import cluster from 'cluster'
 import { cpus } from 'os'
-import { baseCards } from '../CardLoader';
-import { WorkerSolverData } from '../types/Types';
+import { baseCards } from '../game/CardLoader';
+import { WorkerSolverData } from '../game/types/Types';
 import { FlowController } from '../utils/Utils';
 import { Node } from './Minimax';
 

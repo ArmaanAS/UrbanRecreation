@@ -1,4 +1,4 @@
-import Game from "../Game";
+import Game from "../game/Game";
 import Analysis from "./Analysis";
 
 export default class Bar {

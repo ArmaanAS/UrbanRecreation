@@ -4,7 +4,7 @@ import {
   workerData,
   threadId
 } from 'worker_threads';
-import Game from '../Game';
+import Game from '../game/Game';
 import Analysis from './Analysis';
 import Bar from './Bar';
 

@@ -1,5 +1,6 @@
 import Ability, { AbilityType } from "./Ability";
-import BattleData from "./BattleData";
+import BattleData from "./battle/BattleData";
+import CachedBattleData from "./battle/CachedBattleData";
 import BasicModifier from "./modifiers/BasicModifier";
 
 export enum ConditionType {
@@ -67,19 +68,21 @@ export default class Condition {
 
   met(data: BattleData) {
     switch (this.type) {
-      case ConditionType.DEFEAT: return data.player.won == false;
-      case ConditionType.NIGHT: return data.round.day == false;
-      case ConditionType.DAY: return data.round.day == true;
-      case ConditionType.COURAGE: return data.round.first == true;
-      case ConditionType.REVENGE: return data.player.wonPrevious == false;
-      case ConditionType.CONFIDENCE: return data.player.wonPrevious == true;
-      case ConditionType.REPRISAL: return data.round.first == false;
+      case ConditionType.DEFEAT: return !data.player.won;
+      // case ConditionType.NIGHT: return data.round.day == false;
+      // case ConditionType.DAY: return data.round.day == true;
+      case ConditionType.NIGHT:
+      case ConditionType.DAY: return true;
+      case ConditionType.COURAGE: return data.round.first;
+      case ConditionType.REVENGE: return data.player.wonPrevious === false;
+      case ConditionType.CONFIDENCE: return data.player.wonPrevious === true;
+      case ConditionType.REPRISAL: return !data.round.first;
       case ConditionType.KILLSHOT: return data.card.attack.final >=
         data.oppCard.attack.final * 2;
-      case ConditionType.BACKLASH: return data.player.won == true;
+      case ConditionType.BACKLASH: return data.player.won === true;
       case ConditionType.REANIMATE:
         if (data.player.life < 0) data.player.life = 0;
-        return data.player.won == false && data.player.life <= 0;
+        return data.player.won === false && data.player.life <= 0;
 
       case ConditionType.STOP:
         if (this.stop == 'Ability')
@@ -88,14 +91,14 @@ export default class Condition {
           return data.card.bonus.cancel;
         else
           return true;
-      case ConditionType.SYMMETRY: return data.card.index == data.oppCard.index;
-      case ConditionType.ASYMMETRY: return data.card.index != data.oppCard.index;
+      case ConditionType.SYMMETRY: return data.card.index === data.oppCard.index;
+      case ConditionType.ASYMMETRY: return data.card.index !== data.oppCard.index;
     }
 
     return true;
   }
 
-  compile(data: BattleData, ability: Ability) {
+  compile(data: BattleData | CachedBattleData, ability: Ability) {
     // if (this.type == ConditionType.BACKLASH) {
     //   for (const mod of ability.mods) {
     //     if (mod instanceof BasicModifier)

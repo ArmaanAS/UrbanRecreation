@@ -1,10 +1,10 @@
 enum EventTime {
   START = 0,
 
-  PRE1 = 1,
-  PRE2 = 2,
-  PRE3 = 3,
-  PRE4 = 4,
+  PRE4 = 1,
+  PRE3 = 2,
+  PRE2 = 3,
+  PRE1 = 4,
 
   POST1 = 5,
   POST2 = 6,
