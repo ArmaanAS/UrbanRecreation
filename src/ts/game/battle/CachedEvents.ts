@@ -17,8 +17,15 @@ export default class CachedEvents {
 
   merge(events: Events) {
     for (let i = 0; i < 10; i++) {
-      events.events[i].push(...this.events[i].map(e => e.clone()));
-      events.repeat[i].push(...this.repeat[i].map(e => e.clone()));
+      for (const e of this.events[i]) {
+        events.events[i].push(e.clone());
+      }
+
+      for (const e of this.repeat[i]) {
+        events.repeat[i].push(e.clone());
+      }
+      // events.events[i].push(...this.events[i].map(e => e.clone()));
+      // events.repeat[i].push(...this.repeat[i].map(e => e.clone()));
     }
   }
 }
