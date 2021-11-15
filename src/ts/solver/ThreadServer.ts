@@ -88,6 +88,7 @@ async function handleMessage() {
       const d = data as SimulateType;
       const gc = g.clone();
 
+      // TODO: Fix { 'type': 'simulate, 'index': 1 }
       if (d.index !== undefined)
         gc.select(d.index, 0, false);
 
