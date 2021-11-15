@@ -15,8 +15,7 @@ export default class Analysis {
       this.game = game.clone(inputs, logs);
     // this.game = Game.fromClone(Clone(game), inputs, logs);
     else
-      (this.game = Game.from(game, inputs, logs))
-        .createBattleDataCache();
+      this.game = Game.from(game, inputs, logs)
   }
 
   get playingHand() {
@@ -83,7 +82,12 @@ export default class Analysis {
     const i = this.playedCardIndex;
     // this.getCardHand()[i].won = undefined;
     this.playedHand[i].played = false;
-    this.game.firstHasSelected = false;
+    // this.game.firstHasSelected = false;
+    // if (this.game.turn === Turn.PLAYER_1)
+    //   this.game.i1 = undefined;
+    // else
+    //   this.game.i2 = undefined;
+    this.game.id--;
     if (this.game.turn === Turn.PLAYER_1)
       this.game.i1 = undefined;
     else

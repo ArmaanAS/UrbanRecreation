@@ -26,6 +26,7 @@ type CardIndex = 0 | 1 | 2 | 3 | number;
 type Selection = [CardIndex, number, boolean];
 
 export default class Game {
+  id: number;
   inputs: boolean;
   logs: boolean;
   p1: Player;
@@ -33,18 +34,12 @@ export default class Game {
   winner = Winner.PLAYING;
   h1: Hand;
   h2: Hand;
-  firstHasSelected = false;
 
   i1?: Selection = undefined;
   i2?: Selection = undefined;
 
-  round = 1;    // 1, 2, 3, 4
-  day = true;
-  playingFirst: Turn;
   events1 = new Events();
   events2 = new Events();
-  ca1 = false;  // Counter-attack
-  ca2 = false;
   r1: PlayerRound;
   r2: PlayerRound;
 
@@ -53,6 +48,7 @@ export default class Game {
     inputs: boolean, logs = true, repeat?: boolean,
     first: Turn = Turn.PLAYER_1
   ) {
+    this.id = 0;
     this.inputs = inputs;
     this.logs = logs;
 
@@ -62,21 +58,7 @@ export default class Game {
     this.h1 = h1;
     this.h2 = h2;
 
-    this.playingFirst = first;
-
-    const l1 = this.h1.getLeader();
-    if (l1?.abilityString == 'Counter-attack')
-      this.ca1 = true;
-
-    const l2 = this.h2.getLeader();
-    if (l2?.abilityString == 'Counter-attack')
-      this.ca2 = true;
-
-    if (this.ca1 && !this.ca2) {
-      this.playingFirst = Turn.PLAYER_2;
-    } else if (this.ca2 && !this.ca1) {
-      this.playingFirst = Turn.PLAYER_1;
-    }
+    this.id = this.createBaseGameCache(first);
 
     this.r1 = new PlayerRound(
       1, this.day, first === Turn.PLAYER_1, p1, h1, p2, h2, this.events1);
@@ -87,12 +69,10 @@ export default class Game {
       for (const card of hand) {
         if (card.clan == "Leader") {
           if (hand.getClanCards(card) > 1)
-            // card.ability_.string = "No Ability";
             card.ability.string = AbilityString.NO_ABILITY;
 
         } else {
           if (hand.getClanCards(card) === 1)
-            // card.bonus_.string = "No Bonus";
             card.bonus.string = AbilityString.NO_ABILITY;
         }
       }
@@ -115,20 +95,15 @@ export default class Game {
     const events2 = this.events2.clone();
 
     return Object.setPrototypeOf({
+      id: this.id,
       inputs: inputs ?? this.inputs,
       logs: logs ?? this.logs,
       winner: this.winner,
       p1, p2, h1, h2,
-      firstHasSelected: this.firstHasSelected,
       i1: this.i1,
       i2: this.i2,
-      round: this.round,
-      day: this.day,
-      playingFirst: this.playingFirst,
       events1,
       events2,
-      ca1: this.ca1,
-      ca2: this.ca2,
       r1: this.r1.clone(p1, h1, p2, h2, events1),
       r2: this.r2.clone(p2, h2, p1, h1, events2)
     }, Game.prototype);
@@ -155,44 +130,43 @@ export default class Game {
     if (logs !== undefined)
       o.logs = logs;
 
+    o.createBaseGameCache();
+    o.createBattleDataCache();
+
     return o;
   }
-  // static fromClone(o: Game, inputs?: boolean, logs?: boolean) {
-  //   Object.setPrototypeOf(o, Game.prototype);
 
-  //   o.round.p1 = o.p1;
-  //   o.round.p2 = o.p2;
-  //   o.round.h1 = o.h1;
-  //   o.round.h2 = o.h2;
+  get base() {
+    return baseGames[this.id];
+  }
 
-  //   o.round.r1.player = o.p1;
-  //   o.round.r1.hand = o.h1;
-  //   o.round.r1.opp = o.p2;
-  //   o.round.r1.oppHand = o.h2;
-  //   o.round.r1.events = o.round.events1;
+  get day() {
+    return true;
+  }
 
-  //   o.round.r2.player = o.p2;
-  //   o.round.r2.hand = o.h2;
-  //   o.round.r2.opp = o.p1;
-  //   o.round.r2.oppHand = o.h1;
-  //   o.round.r2.events = o.round.events2;
+  get ca1() {
+    return this.base.ca1;
+  }
 
-  //   o.round = Round.from(o.round);
+  get ca2() {
+    return this.base.ca2;
+  }
 
-  //   Object.setPrototypeOf(o.p1, Player.prototype);
-  //   Object.setPrototypeOf(o.p2, Player.prototype);
+  get firstHasSelected() {
+    return this.base.firstHasSelected;
+  }
 
-  //   o.h1 = Hand.from(o.h1);
-  //   o.h2 = Hand.from(o.h2);
+  get playingFirst() {
+    return this.base.playingFirst;
+  }
 
-  //   if (inputs !== undefined)
-  //     o.inputs = inputs;
+  get round() {
+    return this.base.round;
+  }
 
-  //   if (logs !== undefined)
-  //     o.logs = logs;
-
-  //   return o;
-  // }
+  get turn() {
+    return this.base.turn;
+  }
 
 
   select(index: CardIndex, pillz: number, fury = false) {
@@ -220,19 +194,14 @@ export default class Game {
     }
 
     if (this.firstHasSelected) {
-      // if (this.i2![1] > this.p2.pillz) {
-      //   const log = console.log;
-      //   console.log = console.info;
-      //   console.log(this.i1, this.i2)
-      //   GameRenderer.draw(this, true);
-      //   console.log = log;
-      // }
       this.battle();
       this.i1 = undefined;
       this.i2 = undefined;
+    } else {
+      this.id++;
     }
 
-    this.firstHasSelected = !this.firstHasSelected;
+    // this.firstHasSelected = !this.firstHasSelected;
 
     GameRenderer.draw(this);
     return true;
@@ -368,26 +337,9 @@ export default class Game {
     return false;
   }
 
-  get turn() {
-    // return this.firstHasSelected !== this.first ? 'Player' : 'Urban Rival';
-    return this.playingFirst === Turn.PLAYER_1 ?
-      (!this.firstHasSelected ?
-        Turn.PLAYER_1 : Turn.PLAYER_2) :
-      (!this.firstHasSelected ?
-        Turn.PLAYER_2 : Turn.PLAYER_1);
-  }
 
   private nextRound() {
-    if (this.ca1 === this.ca2)
-      // this.first = !this.first;
-      this.playingFirst = this.playingFirst === Turn.PLAYER_1 ?
-        Turn.PLAYER_2 : Turn.PLAYER_1;
-    else if (this.ca1)
-      this.playingFirst = Turn.PLAYER_2;
-    else if (this.ca2)
-      this.playingFirst = Turn.PLAYER_1;
-
-    this.round++;
+    this.id++;
 
     this.r1.next(this.playingFirst === Turn.PLAYER_1);
     this.r2.next(this.playingFirst === Turn.PLAYER_2);
@@ -419,9 +371,67 @@ export default class Game {
       `Cached ${`${counter}`.green} CardBattles `.white + `(${Object.keys(battleCache).length} keys)`.green.dim
     );
   }
+
+  createBaseGameCache(first = Turn.PLAYER_1) {
+    let ca1 = false;
+    const l1 = this.h1.getLeader();
+    if (l1?.abilityString == 'Counter-attack')
+      ca1 = true;
+
+    let ca2 = false;
+    const l2 = this.h2.getLeader();
+    if (l2?.abilityString == 'Counter-attack')
+      ca2 = true;
+
+    let start = 0;
+    for (const f of [Turn.PLAYER_1, Turn.PLAYER_2]) {
+      let playingFirst = f;
+
+      for (let i = 0; i < 8; i++) {
+        const firstHasSelected = i % 2 === 1;
+        const turn = playingFirst === Turn.PLAYER_1 ?
+          (!firstHasSelected ? Turn.PLAYER_1 : Turn.PLAYER_2) :
+          (!firstHasSelected ? Turn.PLAYER_2 : Turn.PLAYER_1);
+
+        baseGames[start + i] = {
+          day: true,
+          round: Math.floor(i / 2) + 1,
+          ca1, ca2,
+          playingFirst,
+          firstHasSelected,
+          turn,
+        };
+
+        if (i % 2 === 1)
+          if (ca1 && !ca2)
+            playingFirst = Turn.PLAYER_2;
+          else if (ca2 && !ca1)
+            playingFirst = Turn.PLAYER_1;
+          else
+            playingFirst = playingFirst === Turn.PLAYER_1 ?
+              Turn.PLAYER_2 : Turn.PLAYER_1;
+      }
+
+      start += 8;
+    }
+
+    return first === Turn.PLAYER_1 ? 0 : 8;
+  }
 }
 
 const battleCache: { [key: string]: CachedCardBattle } = {};
+
+interface BaseGame {
+  playingFirst: Turn;
+  firstHasSelected: boolean;
+  turn: Turn;
+  ca1: boolean;
+  ca2: boolean;
+  day: boolean;
+  round: number;
+}
+
+const baseGames: { [key: number]: BaseGame } = {};
 
 
 export class GameGenerator {
@@ -442,11 +452,8 @@ export class GameGenerator {
   static createUnique(
     h1: HandOf<CardJSON>, h2: HandOf<CardJSON>,
     life: number, pillz: number,
-    // name1 = 'Player', name2 = 'Urban Rival',
     first?: Turn
   ) {
-    // const p1 = new Player(life, pillz, name1 == 'Player' ? 0 : 1);  // name1);
-    // const p2 = new Player(life, pillz, name2 == 'Player' ? 0 : 1);  // name2);
     const p1 = new Player(life, pillz, 0);  // name1);
     const p2 = new Player(life, pillz, 1);  // name2);
 
