@@ -34,7 +34,7 @@ export default class WorkerProcess<InputType extends object, OutputType> {
         "--enable-source-maps",
         "--max-old-space-size=6350",
         "--trace-warnings",
-        // "--inspect", // "--inspect-brk"
+        "--inspect", // "--inspect-brk"
       ]
     })
     this.worker = cluster.fork();
