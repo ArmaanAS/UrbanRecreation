@@ -216,29 +216,18 @@ export default class Game {
       const fury1 = this.i1[2];
       const fury2 = this.i2[2];
 
-      // new CachedCardBattle(
-      //   this.h1, card1, pillz1, fury1,
-      //   this.h2, card2, pillz2, fury2
-      // ).play(
-      //   this, this.p1, this.p2,
-      //   this.events1, this.events2
-      // );
-      const bc = battleCache[`${this.i1[0]} ${this.i2[0]}`];
-      if (bc === undefined) {
+
+      const ccb = battleCache[`${this.i1[0]} ${this.i2[0]}`];
+      if (ccb === undefined) {
         new CardBattle(this,
           this.p1, card1, pillz1, fury1,
           this.p2, card2, pillz2, fury2,
           this.events1, this.events2
-        ).play();
+        );
 
         console.error(`CardBattle "${this.i1[0]} ${this.i2[0]}" is not cached`);
-        // throw new Error(`CardBattle "${this.i1} ${this.i2}" is not cached`);
       } else {
-        bc.play(this,
-          this.p1, pillz1, fury1,
-          this.p2, pillz2, fury2,
-          this.events1, this.events2
-        );
+        ccb.play(this, pillz1, fury1, pillz2, fury2);
       }
 
       counter++;
