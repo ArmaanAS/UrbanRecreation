@@ -125,8 +125,6 @@ export default class BasicModifier extends Modifier {
 
     this.type = type;
     this.win = type.win;
-
-    // if (type !== undefined)
     this.eventTime = type.eventTime;
 
     console.log(`Set modifier type: ${type.name}`);
@@ -221,8 +219,8 @@ export default class BasicModifier extends Modifier {
       case 7: return data.round.round;
       case 8: return 5 - data.round.round;
       case 9: return data.oppCard.stars;
-      case 10: return +(data.card.index == data.oppCard.index);
-      case 11: return +(data.card.index != data.oppCard.index);
+      case 10: return +(data.card.index === data.oppCard.index);
+      case 11: return +(data.card.index !== data.oppCard.index);
       default: return 1;
     }
   }
@@ -259,20 +257,31 @@ export default class BasicModifier extends Modifier {
         player = data.player;
       }
 
+      let final: number;
       switch (this.type) {
         case Type.POWER:
           // card.power_.final = this.mod(card.power.final, data); break;
-          card.power.final = this.mod(card.power.final, data); break;
+          final = this.mod(card.power.final, data);
+          card.power.final = final;
+          break;
         case Type.DAMAGE:
           // card.damage_.final = this.mod(card.damage.final, data); break;
-          card.damage.final = this.mod(card.damage.final, data); break;
+          final = this.mod(card.damage.final, data);
+          card.damage.final = final;
+          break;
         case Type.ATTACK:
           // card.attack_.final = this.mod(card.attack.final, data); break;
-          card.attack.final = this.mod(card.attack.final, data); break;
+          final = this.mod(card.attack.final, data);
+          card.attack.final = final;
+          break;
         case Type.LIFE:
-          player.life = this.mod(player.life, data); break;
+          final = this.mod(player.life, data);
+          player.life = final;
+          break;
         case Type.PILLZ:
-          player.pillz = this.mod(player.pillz, data); break;
+          final = this.mod(player.pillz, data);
+          player.pillz = final;
+          break;
       }
     } else console.log(`Failed to apply modifier`.yellow);
   }
