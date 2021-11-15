@@ -87,12 +87,23 @@ export default class Game {
   }
 
   clone(inputs?: boolean, logs?: boolean): Game {
-    const p1 = clone(this.p1);
-    const p2 = clone(this.p2);
     const h1 = this.h1.clone();
     const h2 = this.h2.clone();
-    const events1 = this.events1.clone();
-    const events2 = this.events2.clone();
+
+    // const p1 = clone(this.p1);
+    // const p2 = clone(this.p2);
+    // const events1 = this.events1.clone();
+    // const events2 = this.events2.clone();
+    let p1 = this.p1,
+      p2 = this.p2,
+      events1 = this.events1,
+      events2 = this.events2;
+    if (this.id % 2 === 1) {
+      p1 = clone(p1);
+      p2 = clone(p2);
+      events1 = events1.clone();
+      events2 = events2.clone();
+    }
 
     return Object.setPrototypeOf({
       id: this.id,
