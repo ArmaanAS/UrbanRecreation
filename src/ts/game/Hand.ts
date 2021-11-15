@@ -21,10 +21,14 @@ export default class Hand extends Array<Card> {
 
   clone(): Hand {
     return Object.setPrototypeOf([
-      this[0].clone(),
-      this[1].clone(),
-      this[2].clone(),
-      this[3].clone(),
+      this[0].won === undefined ? this[0].clone() : this[0],
+      this[1].won === undefined ? this[1].clone() : this[1],
+      this[2].won === undefined ? this[2].clone() : this[2],
+      this[3].won === undefined ? this[3].clone() : this[3],
+      // this[0].clone(),
+      // this[1].clone(),
+      // this[2].clone(),
+      // this[3].clone(),
     ], Hand.prototype);
   }
 
