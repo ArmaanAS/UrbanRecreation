@@ -14,9 +14,16 @@ export default class PlayerRound {
   oppHand: Hand;
   events: Events;
 
-  constructor(round: number, day: boolean, first: boolean, p1: Player, h1: Hand, p2: Player, h2: Hand, events: Events) {
+  constructor(
+    round: number,
+    // day: boolean, 
+    first: boolean,
+    p1: Player, h1: Hand,
+    p2: Player, h2: Hand,
+    events: Events
+  ) {
     this.round = round;
-    this.day = day;
+    // this.day = day;
     this.first = first;
 
     this.player = p1;
@@ -31,10 +38,10 @@ export default class PlayerRound {
   clone(p1: Player, h1: Hand, p2: Player, h2: Hand, events: Events): PlayerRound {
     // return new PlayerRound(this.round, this.day, this.first, p1, h1, p2, h2, events);
     return Object.setPrototypeOf({
-      a: this.a,
       // round: this.round,
       // day: this.day,
       // first: this.first,
+      a: this.a,
       player: p1,
       hand: h1,
       opp: p2,
@@ -44,11 +51,12 @@ export default class PlayerRound {
   }
 
   get day() {
-    return !!(this.a & 0b1);
+    // return !!(this.a & 0b1);
+    return true;
   }
-  set day(n: boolean) {
-    this.a = (this.a & ~0b1) | +n;
-  }
+  // set day(n: boolean) {
+  //   this.a = (this.a & ~0b1) | +n;
+  // }
   get first() {
     return !!(this.a & 0b10);
   }

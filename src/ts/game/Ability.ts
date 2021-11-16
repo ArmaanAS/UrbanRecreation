@@ -122,7 +122,7 @@ export default class Ability {
 
     if (tokens[0] == "No" ||
       tokens[0] == "Counter-Attack" ||
-      tokens[0] == "Xp") {
+      tokens[1] == "Xp%") {
       return;
     }
 

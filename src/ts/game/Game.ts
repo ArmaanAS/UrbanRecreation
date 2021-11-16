@@ -61,9 +61,9 @@ export default class Game {
     this.id = this.createBaseGameCache(first);
 
     this.r1 = new PlayerRound(
-      1, this.day, first === Turn.PLAYER_1, p1, h1, p2, h2, this.events1);
+      1, first === Turn.PLAYER_1, p1, h1, p2, h2, this.events1);
     this.r2 = new PlayerRound(
-      1, this.day, first === Turn.PLAYER_2, p2, h2, p1, h1, this.events2);
+      1, first === Turn.PLAYER_2, p2, h2, p1, h1, this.events2);
 
     for (const hand of [h1, h2]) {
       for (const card of hand) {
@@ -90,17 +90,17 @@ export default class Game {
     const h1 = this.h1.clone();
     const h2 = this.h2.clone();
 
-    // const p1 = clone(this.p1);
-    // const p2 = clone(this.p2);
+    const p1 = clone(this.p1);
+    const p2 = clone(this.p2);
     // const events1 = this.events1.clone();
     // const events2 = this.events2.clone();
-    let p1 = this.p1,
-      p2 = this.p2,
-      events1 = this.events1,
+    let events1 = this.events1,
       events2 = this.events2;
+    //   p1 = this.p1,
+    //   p2 = this.p2;
     if (this.id % 2 === 1) {
-      p1 = clone(p1);
-      p2 = clone(p2);
+      // p1 = clone(p1);
+      // p2 = clone(p2);
       events1 = events1.clone();
       events2 = events2.clone();
     }
@@ -348,7 +348,7 @@ export default class Game {
 
   createBattleDataCache() {
     const log = console.log;
-    console.log = () => 1;
+    // console.log = () => 1;
 
     let counter = 0;
     for (let ci1 = 0; ci1 < 4; ci1++) {
@@ -387,7 +387,7 @@ export default class Game {
     for (const f of [Turn.PLAYER_1, Turn.PLAYER_2]) {
       let playingFirst = f;
 
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i <= 8; i++) {
         const firstHasSelected = i % 2 === 1;
         const turn = playingFirst === Turn.PLAYER_1 ?
           (!firstHasSelected ? Turn.PLAYER_1 : Turn.PLAYER_2) :
@@ -412,10 +412,10 @@ export default class Game {
               Turn.PLAYER_2 : Turn.PLAYER_1;
       }
 
-      start += 8;
+      start += 16;
     }
 
-    return first === Turn.PLAYER_1 ? 0 : 8;
+    return first === Turn.PLAYER_1 ? 0 : 16;
   }
 }
 
