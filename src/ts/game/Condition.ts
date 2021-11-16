@@ -68,7 +68,7 @@ export default class Condition {
 
   met(data: BattleData) {
     switch (this.type) {
-      case ConditionType.DEFEAT: return !data.player.won;
+      case ConditionType.DEFEAT: return data.player.won === false;
       // case ConditionType.NIGHT: return data.round.day == false;
       // case ConditionType.DAY: return data.round.day == true;
       case ConditionType.NIGHT:

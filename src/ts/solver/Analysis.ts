@@ -80,14 +80,10 @@ export default class Analysis {
     if (!this.game.firstHasSelected) return;
 
     const i = this.playedCardIndex;
-    // this.getCardHand()[i].won = undefined;
+
     this.playedHand[i].played = false;
-    // this.game.firstHasSelected = false;
-    // if (this.game.turn === Turn.PLAYER_1)
-    //   this.game.i1 = undefined;
-    // else
-    //   this.game.i2 = undefined;
     this.game.id--;
+
     if (this.game.turn === Turn.PLAYER_1)
       this.game.i1 = undefined;
     else
