@@ -15,7 +15,7 @@ export default class ExchangeModifier extends Modifier {
   rec = Recover.PILLZ;
   n: number;
   outOf: number;
-  constructor(rec: Recover | string, n: number, outOf: number, et = EventTime.POST2) {
+  constructor(rec: Recover | string, n: number, outOf: number, et = EventTime.END) {
     super();
 
     if (typeof rec == 'string')
