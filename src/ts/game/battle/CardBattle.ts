@@ -49,10 +49,10 @@ export default class CardBattle {
       card2.damage.final += 2;
 
 
-    const attack1 = card1.power.final * (pillz1 + 1);
-    const attack2 = card2.power.final * (pillz2 + 1);
-    card1.attack.final = attack1;
-    card2.attack.final = attack2;
+    const a1 = card1.power.final * (pillz1 + 1);
+    const a2 = card2.power.final * (pillz2 + 1);
+    card1.attack.final = a1;
+    card2.attack.final = a2;
 
     events1.executePost(b1);
     events2.executePost(b2);
@@ -66,6 +66,8 @@ export default class CardBattle {
     p1.pillz -= totalPillz1;
     p2.pillz -= totalPillz2;
 
+    const attack1 = card1.attack.final;
+    const attack2 = card2.attack.final;
     if (
       attack1 > attack2 ||
       (attack1 === attack2 && (card1.stars < card2.stars ||
