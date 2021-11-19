@@ -79,8 +79,8 @@ export default class BasicModifier extends Modifier {
     // o.per = Per[o.per.name]
     o.per = perFromObject(o.per);
     o.type = timeFromObject(o.type);
-    process.stderr.write(o.per + "  " + o.per!.constructor.name)
-    process.stderr.write(o.type + "  " + o.type!.constructor.name)
+    // process.stderr.write(o.per + "  " + o.per!.constructor.name)
+    // process.stderr.write(o.type + "  " + o.type!.constructor.name)
     // o.type = timeFromString(o.type);
     // o.type = Time[o.type.name]
 
@@ -159,7 +159,7 @@ export default class BasicModifier extends Modifier {
         case Type.POWER: return !data.oppCard.power.blocked;
         case Type.DAMAGE: return !data.oppCard.damage.blocked;
         case Type.ATTACK: return !data.oppCard.attack.blocked;
-        case Type.LIFE: return !data.oppCard.life.blocked;
+        case Type.LIFE: return !data.oppCard.life.blocked && data.player.life > 0;
         case Type.PILLZ: return !data.oppCard.pillz.blocked;
       }
     } else {
@@ -168,29 +168,11 @@ export default class BasicModifier extends Modifier {
       // console.log(data.card.life.prot, data.card.life.cancel);
 
       switch (this.type) {
-        // Don't change to .blocked!!
-        case Type.POWER:
-          return !data.card.power.prot || !data.card.power.cancel;
-        case Type.DAMAGE:
-          return !data.card.damage.prot || !data.card.damage.cancel;
-        case Type.ATTACK:
-          return !data.card.attack.prot || !data.card.attack.cancel;
-        case Type.LIFE:
-          return (!data.card.life.prot || !data.card.life.cancel) &&
-            data.player.life > 0;
-        case Type.PILLZ:
-          return (!data.card.pillz.prot || !data.card.pillz.cancel) &&
-            data.player.pillz > 0;
-        // case Type.POWER:
-        //   return !data.card.power.blocked;
-        // case Type.DAMAGE:
-        //   return !data.card.damage.blocked;
-        // case Type.ATTACK:
-        //   return !data.card.attack.blocked;
-        // case Type.LIFE:
-        //   return !data.card.life.blocked;
-        // case Type.PILLZ:
-        //   return !data.card.pillz.blocked;
+        case Type.POWER: return !data.card.power.blocked;
+        case Type.DAMAGE: return !data.card.damage.blocked;
+        case Type.ATTACK: return !data.card.attack.blocked;
+        case Type.LIFE: return !data.card.life.blocked && data.player.life > 0;
+        case Type.PILLZ: return !data.card.pillz.blocked;
       }
     }
 
