@@ -24,8 +24,6 @@ export default class CachedEvents {
       for (const e of this.repeat[i]) {
         events.repeat[i].push(e.clone());
       }
-      // events.events[i].push(...this.events[i].map(e => e.clone()));
-      // events.repeat[i].push(...this.repeat[i].map(e => e.clone()));
     }
   }
 }
