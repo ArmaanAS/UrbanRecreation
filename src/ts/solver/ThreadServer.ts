@@ -93,30 +93,30 @@ async function handleMessage() {
         gc.select(d.index, 0, false);
 
 
-      if (gc.round > 1) {
-        console.log('Simulating...')
-        const log = console.log;
-        console.log = () => 0;
-        console.time('a');
-        // const m = await Analysis.iterTree(gc, gc.firstHasSelected);
-        const m = await Analysis.iterTree(gc);
-        console.log = log;
-        console.timeEnd('a');
+      // if (gc.round > 1) {
+      console.log('Simulating...')
+      const log = console.log;
+      console.log = () => 0;
+      console.time('a');
+      // const m = await Analysis.iterTree(gc, gc.firstHasSelected);
+      const m = await Analysis.iterTree(gc);
+      console.log = log;
+      console.timeEnd('a');
 
-        // if (!g.first)
-        //   m.turn = !m.turn;
+      // if (!g.first)
+      //   m.turn = !m.turn;
 
-        const best = m.best();
-        // console.log(best.debug());
-        console.log(best.toString());
+      const best = m.best();
+      // console.log(best.debug());
+      console.log(best.toString());
 
-        parentPort?.postMessage({
-          type: 'play',
-          index: best.index,
-          pillz: best.pillz,
-          fury: best.fury
-        });
-      }
+      parentPort?.postMessage({
+        type: 'play',
+        index: best.index,
+        pillz: best.pillz,
+        fury: best.fury
+      });
+      // }
 
       // m.defer = !m.defer;
       // m.turn = !m.turn;
