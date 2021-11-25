@@ -24,7 +24,8 @@ if (cluster.isWorker) {
       // if (Math.random() < 0.05) process.exit(1);
       // let m = await Analysis.iterTree(Game.from(workerData), true);
       log(`[${data.id.toString().yellow}] ${'Analysis Started'.grey}`);
-      const m = await Analysis.iterTree(data.game, true, false);
+      // const m = await Analysis.iterTree(data.game, true, false);
+      const m = await Analysis.iterTree(data.game, data.child, data.rootName, data.freeze);
       // const m = await Analysis.iterTree(data.game, data.game.firstHasSelected, false);
 
       log(`[${data.id.toString().yellow}] ${'Analysis Finished'.grey}`);

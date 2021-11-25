@@ -125,6 +125,9 @@ export default class WorkerProcess<InputType extends object, OutputType> {
   private static workers: WorkerProcess<object, object>[] = [];
   private static processFlow = new FlowController();
   private static loadingFlow = new FlowController();
+  // private static buffer: object[] = new Array(this.threads * 2);
+  private static waiting = 0;
+  private static waitingFlow = new FlowController();
 
   static init() {
     if (cluster.isMaster && !this._init) {
@@ -141,18 +144,26 @@ export default class WorkerProcess<InputType extends object, OutputType> {
     this.workers.push(new WorkerProcess<I, O>(id));
   }
 
-  static async race() {
+  static async race(waiting = false) {
     // process.stdout.write(`Racing processes...\n`.yellow);
     if (this.loading)
       await this.loadingFlow.promise;
 
-    if (this.workers.length === 0)
-      await this.processFlow.promise;
+    if (waiting) {
+      if (this.workers.length === 0)
+        await this.processFlow.promise;
+    } else {
+      while (this.waiting >= this.threads) {
+        // console.info("Awating waitingFlow.promise".yellow);
+        await this.waitingFlow.promise;
+        // console.info("waitingFlow resumed".green);
+      }
+    }
     // process.stdout.write(`Process is free.\n`.green);
   }
 
   static async allFinished() {
-    if (this.workers.length >= this.numWorkers)
+    if (this.waiting === 0 && this.workers.length >= this.numWorkers)
       return;
 
     await this.processFlow.promise;
@@ -163,15 +174,29 @@ export default class WorkerProcess<InputType extends object, OutputType> {
     if (!this.init)
       this.init();
 
-    if (this.workers.length === 0)
-      await this.race();
+    // if (this.workers.length === 0)
+    //   await this.race();
+
+    // console.dir(data, { depth: 0 });
+    if (this.workers.length === 0) {
+      let queuePosition = ++this.waiting;
+      // console.info("Added process to queue:".red, queuePosition);
+      while (queuePosition > 0) {
+        await this.race(true);
+        // console.info("Queue position:".yellow.dim, --queuePosition);
+        queuePosition--;
+      }
+      this.waitingFlow.resume();
+      this.waiting--;
+    }
 
     const worker = this.workers.pop()! as WorkerProcess<I, O>;
     const promise = worker.process(data);
     promise.then(() => {
       // this.workers.push(worker);
       // this.workers.splice(0, 0, worker);
-      this.workers = [worker, ...this.workers];
+      // this.workers = [worker, ...this.workers];
+      this.workers.unshift(worker);
     });
 
     return promise;

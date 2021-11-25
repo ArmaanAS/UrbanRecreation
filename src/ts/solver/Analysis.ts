@@ -1,10 +1,10 @@
 import Game, { Winner } from "../game/Game"
 import { shiftRange } from '../utils/Utils'
-import Bar from "./Bar"
+// import Bar from "./Bar"
 import Minimax, { GameResult, Node } from "./Minimax"
-import PromiseMap from '../utils/PromiseMap'
 import DistributedAnalysis from "./DistributedAnalysis"
 import { Turn } from "../game/types/Types"
+import { isMaster } from 'cluster'
 
 export default class Analysis {
   game: Game;
@@ -76,7 +76,7 @@ export default class Analysis {
     return this.game.turn;
   }
 
-  deselect() {
+  private deselect() {
     if (!this.game.firstHasSelected) return;
 
     const i = this.playedCardIndex;
@@ -94,224 +94,11 @@ export default class Analysis {
 
 
 
-  static async fillTree(
-    game: Game,
-    minimax: Node | string = new Minimax(),
-    bar = new Bar(),
-    index: number,
-    pillz: number,
-    fury = false,
-    fullSearch = false
-  ) {
-    const a = new Analysis(game);
-
-    if (typeof minimax == "string")
-      minimax = Minimax.node(minimax);
-
-
-    let indexes, i;
-    if (minimax.name != "root") {
-      a.game.select(index, pillz, fury);
-
-      if (!a.game.firstHasSelected && a.game.winner) {
-        if (a.game.winner === Winner.PLAYER_1)
-          minimax.result = GameResult.PLAYER_1_WIN;
-        else if (a.game.winner === Winner.TIE)
-          minimax.result = GameResult.TIE;
-        else if (a.game.winner === Winner.PLAYER_2)
-          minimax.result = GameResult.PLAYER_2_WIN;
-        else
-          throw new Error(`Unknown winner: "${a.game.winner}"`);
-
-        return minimax;
-      }
-    } else
-      i = a.deselect();
-
-    if (i != undefined) {
-      minimax.playingSecond = true;
-      indexes = [i];
-    } else {
-      indexes = a.unplayedCardIndexes;
-    }
-    minimax.turn = a.turn;
-
-    if (bar) bar.push(a.game, indexes.length);
-
-    for (let p = 0; p <= a.playingPlayer.pillz; p++) {
-      for (const f of p <= a.playingPlayer.pillz - 3 ? [true, false] : [false]) {
-        const promises = [];
-        for (const i of indexes) {
-          if (a.game.round <= 2) {
-            promises.push(
-              DistributedAnalysis.threadedFillTree(
-                a.game,
-                `${i} ${p} ${f}`,
-                bar,
-                i, p, f,
-                minimax.playingSecond
-              ).then((m: Node) => {
-                (minimax as Node).add(m);
-                if (bar) bar.tick();
-              })
-            );
-          } else {
-            const m = await Analysis.fillTree(
-              a.game,
-              `${i} ${p} ${f}`,
-              bar,
-              i,
-              p,
-              f,
-              minimax.playingSecond
-            );
-            minimax.add(m);
-
-            if (!minimax.playingSecond && !fullSearch) {
-              if (
-                (m.result == GameResult.PLAYER_1_WIN && m.turn == Minimax.MAX) ||
-                (m.result == GameResult.PLAYER_2_WIN && m.turn == Minimax.MIN)
-              ) {
-                process.stdout.write("break\n");
-                break;
-              }
-            }
-          }
-        }
-        await Promise.allSettled(promises);
-      }
-    }
-
-    if (bar) bar.pop();
-
-    return minimax;
-  }
-
-
-
-  static async iterTree1(game: Game, child = false) {
-    const minimax = new Minimax();
-    const timer = `iterTree${Math.random()}`;
-    console.time(timer);
-    let games = [new Analysis(game)];
-    let nodes: Node[] = [minimax];
-    let indexes: number[] | undefined;
-
-    let depth = 0;
-
-    let _i: number | undefined;
-    if (!child && (_i = games[0].deselect()) !== undefined) {
-      minimax.playingSecond = true;
-      indexes = [_i];
-    } else indexes = games[0].unplayedCardIndexes;
-
-    minimax.turn = games[0].turn;
-
-    while (games.length) {
-      const next = [];
-      const layer = [];
-
-      for (const index in games) {
-        const a = games[index];
-        const n = nodes[index];
-
-        if (indexes === undefined)
-          indexes = a.unplayedCardIndexes;
-
-
-        const pillz = a.playingPlayer.pillz;
-        // let promises = [];
-        const items = [];
-        root: for (const i of indexes) {
-          // card: for (let p = 0; p <= pillz; p++) {
-          let breaking = false;
-          card: for (const p of shiftRange(pillz)) {
-            for (const f of p <= pillz - 3 ? [true, false] : [false]) {
-              const c = new Analysis(a.game);
-              c.game.select(i, p, f);
-              const m = n.add(`${i} ${p} ${f}`, c.turn, n.playingSecond);
-
-              if (!c.game.firstHasSelected && c.game.winner) {
-                if (c.game.winner === Winner.PLAYER_1) {
-                  // m.win();
-                  m.result = GameResult.PLAYER_1_WIN;
-                  if (!n.defered) {
-                    if (m.turn) {
-                      m.break = true;
-                      break root;
-                    } else if (p == pillz) {
-                      breaking = true;
-                    } else if (breaking && f && p == pillz - 3) {
-                      m.break = true;
-                      break card;
-                    }
-                  }
-                } else if (c.game.winner === Winner.TIE) {
-                  // m.tie();
-                  m.result = GameResult.TIE;
-                } else if (c.game.winner == Winner.PLAYER_2) {
-                  // m.loss();
-                  m.result = GameResult.PLAYER_2_WIN;
-                  if (!n.defered) {
-                    if (!m.turn) {
-                      m.break = true;
-                      break root;
-                    } else if (p == pillz) {
-                      breaking = true;
-                    } else if (breaking && f && p == pillz - 3) {
-                      m.break = true;
-                      break card;
-                    }
-                  }
-                } else throw new Error(`Unknown winner: "${c.game.winner}"`);
-              } else {
-                if (c.game.round === 1 && !c.game.firstHasSelected) {
-                  // n.add(await Analysis.threadedIterTree(c.game));
-                  n.add(await Analysis.iterTree1(c.game, true));
-                } else if (c.game.round == 2 && !c.game.firstHasSelected) {
-                  // promises.push(Analysis.threadedIterTree(c.game).then(i => n.add(i)));
-                  items.push(c.game);
-
-                  // n.add(await Analysis.threadedIterTree(c.game));
-                  // n.add(await Analysis.iterTree(c.game, true));
-                } else {
-                  next.push(c);
-                  layer.push(m);
-                }
-              }
-            }
-          }
-        }
-        // await Promise.allSettled(promises);
-        await PromiseMap.race(items, g =>
-          DistributedAnalysis.threadedIterTree(g)
-            .then((x: Node) => n.add(x)), (((((6 - 1))))));
-        indexes = undefined;
-      }
-
-      process.stdout.write(
-        `[${(depth++).toString().green}`.grey + ']'.grey + ' Finished  ' +
-        `Games: ${games.length}\n`.yellow
-      );
-      games = next;
-      nodes = layer;
-      console.timeLog(timer);
-    }
-
-    console.timeEnd(timer);
-    return minimax;
-  }
-
-
-  static counter = 0;
-  static async iterTree(game: Game, child = false, thread = true) {
-    // const timer = `iterTree-${this.counter++}`;
-    // console.time(timer);
-
-    const minimax = new Minimax();
+  static async iterTree(game: Game, child = false, rootName?: string, freeze = true) {
+    const rootNode = new Minimax(rootName, game.turn);
     const rootAnalysis = new Analysis(game);
     let analyses = [rootAnalysis];
-    let nodes: Node[] = [minimax];
+    let nodes: Node[] = [rootNode];
     let indexes: number[] | undefined;
 
 
@@ -319,17 +106,18 @@ export default class Analysis {
 
     let _i: number | undefined;
     if (!child && (_i = rootAnalysis.deselect()) !== undefined) {
-      minimax.playingSecond = true;
+      rootNode.turn = rootAnalysis.turn;
+      rootNode.playingSecond = true;
       indexes = [_i];
     } else {
       indexes = rootAnalysis.unplayedCardIndexes;
     }
 
-    minimax.turn = rootAnalysis.turn;
 
     while (analyses.length) {
-      const roundAnalyses = [];
-      const roundNodes = [];
+      const roundAnalyses: Analysis[] = [];
+      const roundNodes: Node[] = [];
+      let counter = 0;
 
       for (let index = 0; index < analyses.length; index++) {
         const parentAnalysis = analyses[index];
@@ -343,14 +131,21 @@ export default class Analysis {
           let breaking = false;
           card: for (const p of shiftRange(pillz)) {
             for (const f of (p <= pillz - 3 ? [true, false] : [false])) {
+              counter++;
 
               const analysis = new Analysis(parentAnalysis.game);
               const game = analysis.game;
               game.select(i, p, f);
-              const node = parentNode.add(`${i} ${p} ${f}`,
-                analysis.turn, parentNode.playingSecond);
+              // const node = parentNode.add(`${i} ${p} ${f}`,
+              //   analysis.turn, parentNode.playingSecond);
+              // const node = new Minimax.Node(`${i} ${p} ${f}`,
+              //   analysis.turn, undefined, parentNode.playingSecond);
 
               if (!game.firstHasSelected && game.winner !== Winner.PLAYING) {
+                // parentNode.nodes.push(node);
+                const node = parentNode.add(`${i} ${p} ${f}`,
+                  analysis.turn, parentNode.playingSecond);
+
                 if (game.winner === Winner.PLAYER_1) {
                   node.result = GameResult.PLAYER_1_WIN;
 
@@ -382,18 +177,22 @@ export default class Analysis {
                       break card;
                     }
                   }
-                } else throw new Error(`Unknown winner: "${game.winner}"`);
+                }
               } else {
-                if (game.round === 1 && !game.firstHasSelected) {
+                if (isMaster && game.round === 2 && game.firstHasSelected) {
+                  // parentNode.nodes.pop();
+                  await DistributedAnalysis.race();
+                  DistributedAnalysis.iterTree(
+                    game, true, `${i} ${p} ${f}`, !game.firstHasSelected)
+                    .then(node => parentNode.add(node));
+
+                } else if (game.round === 1 && !game.firstHasSelected) {
                   parentNode.add(await Analysis.iterTree(game, true));
 
-                } else if (game.round === 2 && !game.firstHasSelected) {
-                  // } else if (game.round === 2 && thread) {
-                  await DistributedAnalysis.race();
-                  DistributedAnalysis.iterTree(game)
-                    .then(node => parentNode.add(node))
-
                 } else {
+                  // parentNode.nodes.push(node);
+                  const node = parentNode.add(`${i} ${p} ${f}`,
+                    analysis.turn, parentNode.playingSecond);
                   roundAnalyses.push(analysis);
                   roundNodes.push(node);
                 }
@@ -402,22 +201,18 @@ export default class Analysis {
           }
         }
 
-        // process.stdout.write(minimax.toString());
-
-        await DistributedAnalysis.allFinished();
         indexes = undefined;
       }
+      await DistributedAnalysis.allFinished();
 
       process.stdout.write(
         `[${(depth++).toString().green}`.grey + ']'.grey + ' Finished  ' +
-        `Games: ${analyses.length}\n`.yellow
+        `Moves: ${counter}\n`.yellow
       );
       analyses = roundAnalyses;
       nodes = roundNodes;
-      // console.timeLog(timer);
     }
 
-    // console.timeEnd(timer);
-    return minimax;
+    return child && freeze ? rootNode.freeze() : rootNode;
   }
 }

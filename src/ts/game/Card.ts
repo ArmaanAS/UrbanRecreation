@@ -20,7 +20,7 @@ import {
 
 
 export default class Card {
-  private key = -1;
+  private key: number;
   played = false;
   private data: BaseData;
   constructor(json: CardJSON) {
@@ -44,7 +44,7 @@ export default class Card {
     return Object.setPrototypeOf(o, Card.prototype);
   }
 
-  get base() {
+  private get base() {
     return baseCards[this.key];
   }
 
@@ -184,176 +184,3 @@ export class CardGenerator {
     return cardsArr;
   }
 }
-
-// class CardClassic {
-//   index: number = -1;
-//   won?: boolean = undefined;
-//   played: boolean = false;
-//   name: string;
-//   id: number;
-//   stars: Stars;
-//   maxStars: MaxStars;
-//   release_date: number;
-//   clan: Clan;
-//   rarity: Rarity;
-//   power: CardStat;
-//   damage: CardStat;
-//   ability: CardString;
-//   bonus: CardString;
-//   attack: CardStat;
-//   life: CardAttr;
-//   pillz: CardAttr;
-//   constructor(json: CardJSON) {
-//     // this.index = -1;
-//     // this.won = undefined;
-//     // this.played = false;
-
-//     this.name = json.name;
-//     this.id = json.id;
-//     this.stars = json.level;
-//     this.maxStars = json.level_max;
-//     this.release_date = json.release_date * 1000;
-//     this.clan = json.clan_name;
-//     this.rarity = json.rarity;
-
-//     // this.power = new CardStat(json.power);
-//     // this.damage = new CardStat(json.damage);
-//     // this.ability = new CardString(json.ability);
-//     // this.bonus = new CardString(json.bonus);
-
-//     // this.attack = new CardStat(0);
-
-//     // this.life = new CardAttr();
-//     // this.pillz = new CardAttr();
-
-//     this.power = {
-//       base: json.power, final: json.power, prot: false, cancel: false
-//     };
-//     this.damage = {
-//       base: json.damage, final: json.damage, prot: false, cancel: false
-//     };
-//     this.ability = { string: json.ability, prot: false, cancel: false };
-//     this.bonus = { string: json.bonus, prot: false, cancel: false };
-
-//     this.attack = { base: 0, final: 0, prot: false, cancel: false };
-
-//     this.life = { prot: false, cancel: false };
-//     this.pillz = { prot: false, cancel: false };
-//   }
-
-//   clone(): Card {
-//     return Object.setPrototypeOf({
-//       index: this.index,
-//       won: this.won,
-//       played: this.played,
-
-//       name: this.name,
-//       id: this.id,
-//       stars: this.stars,
-//       maxStars: this.maxStars,
-//       release_date: this.release_date,
-//       clan: this.clan,
-//       rarity: this.rarity,
-
-//       // power: this.power.clone(),
-//       // damage: this.damage.clone(),
-//       // ability: this.ability.clone(),
-//       // bonus: this.bonus.clone(),
-
-//       // attack: this.attack.clone(),
-
-//       // life: this.life.clone(),
-//       // pillz: this.pillz.clone(),
-//       // power: this.power.clone(),
-
-//       // damage: clone(this.damage),
-//       // ability: clone(this.ability),
-//       // bonus: clone(this.bonus),
-
-//       // attack: clone(this.attack),
-
-//       // life: clone(this.life),
-//       // pillz: clone(this.pillz),
-//       // power: clone(this.power),
-//       damage: { ...this.damage },
-//       ability: { ...this.ability },
-//       bonus: { ...this.bonus },
-
-//       attack: { ...this.attack },
-
-//       life: { ...this.life },
-//       pillz: { ...this.pillz },
-//       power: { ...this.power },
-//     }, Card.prototype);
-//   }
-
-//   static from(o: Card) {
-//     return Object.setPrototypeOf(o, Card.prototype);
-
-//     // Object.setPrototypeOf(o.power, CardStat.prototype);
-//     // Object.setPrototypeOf(o.damage, CardStat.prototype);
-//     // Object.setPrototypeOf(o.ability, CardString.prototype);
-//     // Object.setPrototypeOf(o.bonus, CardString.prototype);
-
-//     // Object.setPrototypeOf(o.attack, CardStat.prototype);
-
-//     // Object.setPrototypeOf(o.life, CardAttr.prototype);
-//     // Object.setPrototypeOf(o.pillz, CardAttr.prototype);
-
-//     // return o;
-//   }
-
-//   get year() {
-//     return new Date(this.release_date).getFullYear().toString();
-//   }
-
-
-
-//   static get(card: number | string) {
-//     let data: CardJSON | undefined;
-//     if (typeof card == 'number')
-//       data = cardIds[card];
-//     else
-//       data = cardNames[card];
-
-//     if (data == undefined) return undefined;
-//     else return new Card(data);
-//   }
-
-//   static getRandomHandYear(year = 2006) {
-//     let card = getN(cardYears[year])[0];
-//     let cards = cardYears[year].filter((j) => j.clan_name == card.clan_name);
-
-//     return getN(cards, 4).map((c) => new Card(c)) as HandOf<Card>;
-//   }
-
-//   static getRandomHandClan(clan?: Clan) {
-//     let cards: CardJSON[];
-//     if (clan !== undefined) {
-//       cards = cardClans[clan];
-//     } else {
-//       // cards = cardClans[getN(Object.keys(cardClans) as Clan[])[0]];
-//       cards = cardClans[getN(Clans as unknown as Clan[])[0]];
-//     }
-
-//     return getN(cards, 4).map((c) => new Card(c));
-//   }
-
-//   static getRandomHand(cards: HandOf<string | number>) {
-//     let cardsArr = cards.map(c => {
-//       if (typeof c == "string")
-//         return new Card(cardNames[c.toLowerCase()]);
-//       else
-//         return new Card(cardIds[c]);
-//     }) as HandOf<Card>;
-
-//     cardsArr.push(
-//       ...getN(Object.values(cardIds), 4 - cardsArr.length).map(
-//         (c) => new Card(c)
-//       )
-//     );
-
-//     return cardsArr;
-//   }
-// }
-

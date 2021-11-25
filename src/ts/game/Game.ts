@@ -181,7 +181,8 @@ export default class Game {
 
 
   select(index: CardIndex, pillz: number, fury = false) {
-    if (typeof index != 'number' || typeof pillz != 'number') //return false;
+    // if (typeof index != 'number' || typeof pillz != 'number') //return false;
+    if (!Number.isInteger(index) || !Number.isInteger(pillz))
       throw new Error(`Game.select - index or pillz is not a number 
         index: ${index}, pillz: ${pillz}`)
 
@@ -412,10 +413,10 @@ export default class Game {
               Turn.PLAYER_2 : Turn.PLAYER_1;
       }
 
-      start += 16;
+      start += 9;
     }
 
-    return first === Turn.PLAYER_1 ? 0 : 16;
+    return first === Turn.PLAYER_1 ? 0 : 9;
   }
 }
 
@@ -431,7 +432,8 @@ interface BaseGame {
   round: number;
 }
 
-const baseGames: { [key: number]: BaseGame } = {};
+// const baseGames: { [key: number]: BaseGame } = {};
+const baseGames: BaseGame[] = [];
 
 
 export class GameGenerator {

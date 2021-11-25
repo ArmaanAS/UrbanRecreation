@@ -17,7 +17,7 @@ export class Node {
   average = false;
   playingSecond = false;
   defered: boolean;
-  result?: GameResult; // This could be any number, e.g. 0.87832732451 !!...!!
+  result?: GameResult = undefined; // This could be any number, e.g. 0.87832732451 !!...!!
   nodes: Node[] = [];
   break = false;
   constructor(
@@ -83,7 +83,10 @@ export class Node {
         }
         return min
       }
-    } else return Infinity;
+    }
+
+    console.error("Node has no children nodes".red);
+    return Infinity;
   }
 
   // win() {
@@ -123,6 +126,13 @@ export class Node {
 
   get totalPillz() {
     return this.pillz + (this.fury ? 3 : 0);
+  }
+
+  freeze(average?: boolean) {
+    this.result = this.rating(average);
+    this.nodes = [];
+
+    return this;
   }
 
   toString() {
@@ -229,138 +239,142 @@ export class Node {
 }
 
 export default class Minimax extends Node {
-  constructor(turn = Minimax.MAX, name = 'root') {
+  constructor(name = 'root', turn = Minimax.MAX) {
     super(name, turn);
   }
 
   best() {
-    if (this.playingSecond) { // TODO: Convert to sets and maps!! 
-      const combine: { [key: string]: Node[] } = {};
-      for (const m of this.nodes) {
-        for (const n of m.nodes) {
-          if (!combine[n.name])
-            combine[n.name] = [];
+    if (this.playingSecond)
+      return this.bestTimeline();
+    else
+      return this.bestChild();
+  }
 
-          combine[n.name].push(n);
-        }
+  private bestTimeline() { // TODO: Convert to sets and maps?
+    const combine: { [key: string]: Node[] } = {};
+    for (const m of this.nodes) {
+      for (const n of m.nodes) {
+        if (combine[n.name] === undefined)
+          combine[n.name] = [];
+
+        combine[n.name].push(n);
       }
+    }
 
-      // const combination = Object.fromEntries(
-      //   Object.entries(combine)
-      //     .map(([k, v]) => [k, v.reduce<number>(
-      //       (t, n) => t + n.rating(), 0) / v.length])
-      // );
-      const combination: { [key: string]: number } = {};
-      for (const [k, v] of Object.entries(combine)) {
-        let total = 0;
-        for (const n of v)
-          total += n.rating();
+    // const combination = Object.fromEntries(
+    //   Object.entries(combine)
+    //     .map(([k, v]) => [k, v.reduce<number>(
+    //       (t, n) => t + n.rating(), 0) / v.length])
+    // );
+    const combination: { [key: string]: number } = {};
+    for (const [k, v] of Object.entries(combine)) {
+      let total = 0;
+      for (const n of v)
+        total += n.rating();
 
-        combination[k] = (total / v.length + 1) / 2;
-      }
-      console.log('combination', combination);
+      combination[k] = (total / v.length + 1) / 2;
+    }
+    console.log('combination', combination);
 
-      const revCombo: { [key: number]: string } = {};
-      for (const [k, v] of Object.entries(combination)) {
-        if (revCombo[v] === undefined) {
-          revCombo[v] = k;
-        } else {
-          const split1 = k.split(' ', 3)
-          const pillz1 = +split1[1] + (split1[2] == 'true' ? 3 : 0)
-          const split2 = revCombo[v].split(' ', 3)
-          const pillz2 = +split2[1] + (split2[2] == 'true' ? 3 : 0)
-
-          if (pillz1 < pillz2)
-            revCombo[v] = k
-        }
-      }
-
-      console.log('revCombo', revCombo);
-      console.log('Turn: ' + (!this.turn ? 'Max' : 'Min'));
-
-      let s: number;
-      if (this.turn === Minimax.MAX) {
-        s = 2
-        for (const i of Object.keys(revCombo))
-          if (+i < s)
-            s = +i
-
-        // if (s > -1 && revCombo[0])
-        //   console.log(`[DRAW] ${revCombo[0]}`.yellow)
-
+    const revCombo: { [key: number]: string } = {};
+    for (const [k, v] of Object.entries(combination)) {
+      if (revCombo[v] === undefined) {
+        revCombo[v] = k;
       } else {
-        s = -2
-        for (const i of Object.keys(revCombo))
-          if (+i > s)
-            s = +i
+        const split1 = k.split(' ', 3)
+        const pillz1 = +split1[1] + (split1[2] == 'true' ? 3 : 0)
+        const split2 = revCombo[v].split(' ', 3)
+        const pillz2 = +split2[1] + (split2[2] == 'true' ? 3 : 0)
 
-        // if (s < 1 && revCombo[0])
-        //   console.log(`[DRAW] ${revCombo[0]}`.yellow)
+        if (pillz1 < pillz2)
+          revCombo[v] = k
       }
+    }
 
-      return new Node(revCombo[s], this.turn, s);
+    console.log('revCombo', revCombo);
+    console.log('Turn: ' + (!this.turn ? 'Max' : 'Min'));
+
+    let s: number;
+    if (this.turn === Minimax.MAX) {
+      s = 2
+      for (const i of Object.keys(revCombo))
+        if (+i < s)
+          s = +i
+
+      // if (s > -1 && revCombo[0])
+      //   console.log(`[DRAW] ${revCombo[0]}`.yellow)
+
+    } else {
+      s = -2
+      for (const i of Object.keys(revCombo))
+        if (+i > s)
+          s = +i
+
+      // if (s < 1 && revCombo[0])
+      //   console.log(`[DRAW] ${revCombo[0]}`.yellow)
+    }
+
+    return new Node(revCombo[s], this.turn, s);
+  }
+
+  private bestChild() {
+    const moveRatings: {
+      [index: string]: { [index: number]: string } | number;
+    } = {};
+    for (const node of this.nodes) {
+      console.info(node.toString());
+      if (node.nodes.length === 0)
+        moveRatings[node.name] = (node.rating() + 1) / 2;
+      else {
+        const childRatings: { [index: number]: string } = {};
+        moveRatings[node.name] = childRatings;
+
+        for (const childNode of node.nodes) {
+          childRatings[childNode.rating()] = childNode.name;
+        }
+
+        const keys = Object.keys(childRatings);
+        if (keys.length === 1)
+          moveRatings[node.name] = (+keys[0] + 1) / 2;
+      }
+    }
+    console.log("Move Ratings", moveRatings);
+
+    // if (this.nodes.length === 0) throw new Error('Minimax nodes is empty');
+    if (this.nodes.length === 0) return this;
+
+    console.log('Turn: ' + (this.turn ? 'Max' : 'Min'));
+    console.log('Child Turn: ' + (this.nodes[0].turn ? 'Max' : 'Min'));
+
+    let bestNode = this.nodes[0];
+    let minPillz = this.nodes[0].totalPillz;
+    if (this.turn === Minimax.MAX) {
+
+      let maxRating = this.nodes[0].rating(false);
+      for (const node of this.nodes.slice(1)) {
+        const a = node.rating(false);
+        if (a > maxRating || (a === maxRating && node.totalPillz < minPillz)) {
+          minPillz = node.totalPillz;
+          maxRating = a;
+          bestNode = node;
+        }
+      }
 
     } else {
 
-      const combo: {
-        [index: string]: { [index: number]: string } | number;
-      } = {};
-      for (const node of this.nodes) {
-        console.info(node.toString());
-        if (node.nodes.length === 0)
-          combo[node.name] = node.rating();
-        else {
-          const childCombo: { [index: number]: string } = {};
-          combo[node.name] = childCombo;
-
-          for (const childNode of node.nodes) {
-            childCombo[childNode.rating()] = childNode.name;
-          }
-
-          const keys = Object.keys(childCombo);
-          if (keys.length === 1)
-            combo[node.name] = keys[0];
+      let minRating = this.nodes[0].rating(false);
+      for (const node of this.nodes.slice(1)) {
+        const a = node.rating(false);
+        if (a < minRating || (a === minRating && node.totalPillz < minPillz)) {
+          minPillz = node.totalPillz;
+          minRating = a;
+          bestNode = node;
         }
       }
-      console.log("Combo");
-      console.log(combo);
 
-      // if (this.nodes.length === 0) throw new Error('Minimax nodes is empty');
-      if (this.nodes.length === 0) return this;
-
-      console.log('Turn: ' + (this.turn ? 'Max' : 'Min'));
-      console.log('Child Turn: ' + (this.nodes[0].turn ? 'Max' : 'Min'));
-
-      let bestNode = this.nodes[0];
-      let minPillz = this.nodes[0].totalPillz;
-      if (this.turn === Minimax.MAX) {
-
-        let maxRating = this.nodes[0].rating(false);
-        for (const node of this.nodes.slice(1)) {
-          const a = node.rating(false);
-          if (a > maxRating || (a === maxRating && node.totalPillz < minPillz)) {
-            minPillz = node.totalPillz;
-            maxRating = a;
-            bestNode = node;
-          }
-        }
-
-      } else {
-
-        let minRating = this.nodes[0].rating(false);
-        for (const node of this.nodes.slice(1)) {
-          const a = node.rating(false);
-          if (a < minRating || (a === minRating && node.totalPillz < minPillz)) {
-            minPillz = node.totalPillz;
-            minRating = a;
-            bestNode = node;
-          }
-        }
-
-      }
-
-      return bestNode;
     }
+
+    return bestNode;
   }
 
   static from(m: Node): Node {
@@ -371,9 +385,10 @@ export default class Minimax extends Node {
     return Object.setPrototypeOf(m, Node.prototype);
   }
 
-  static node(name: string) {
-    return new Node(name);
-  }
+  // static node(name: string) {
+  //   return new Node(name);
+  // }
+  static Node = Node;
 
 
   // static WIN = 1;
