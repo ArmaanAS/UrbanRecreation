@@ -89,14 +89,14 @@ export default class BasicModifier extends Modifier {
 
   setMin(min: number) {
     this.min = min;
-    console.log("Set min: " + min);
+    console.log("Set min:", min);
 
     return this;
   }
 
   setMax(max: number) {
     this.max = max;
-    console.log("Set max: " + max);
+    console.log("Set max:", max);
 
     return this;
   }
@@ -134,7 +134,7 @@ export default class BasicModifier extends Modifier {
 
   setOpp(opp = true) {
     if (opp !== this.opp)
-      console.log("Set opp: " + opp);
+      console.log("Set opp:", opp);
 
     this.opp = opp;
 

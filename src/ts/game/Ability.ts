@@ -23,17 +23,22 @@ export enum AbilityType {
   GLOBAL_BONUS = 5,
 }
 
+// const abilityCache: string[] = [];
+// const abilityIndexCache: {[key: string]: number} = {};
+
 export default class Ability {
   ability: string;
+  // _ability: number;
   type: AbilityType;
-  defer = false;
+  // defer = false;
   mods: Modifier[] = [];
   conditions: Condition[];
-  delayed = false;
-  won: boolean | undefined = undefined;
+  delayed?: boolean = undefined;
+  won?: boolean = undefined;
   constructor(s: string, type = AbilityType.UNDEFINED) {
     const conditions = Abilities.split(s);
     this.ability = conditions.pop()!;
+    // const ability = conditions.pop()!;
 
     this.type = type;
 
@@ -43,13 +48,15 @@ export default class Ability {
   }
 
   clone() {
+    if (this.delayed === undefined) return this;
+
     return Object.setPrototypeOf({
       // conditions: this.conditions.map(c => c.clone()),
       conditions: this.conditions.map(clone),
       ability: this.ability,
 
       type: this.type,
-      defer: this.defer,
+      // defer: this.defer,
       // mods: this.mods.map(m => m.clone()),
       mods: this.mods.map(clone),
       delayed: this.delayed,
@@ -61,7 +68,8 @@ export default class Ability {
     Object.setPrototypeOf(o, Ability.prototype);
 
     o.conditions = o.conditions.map(Condition.from);
-    o.mods = o.mods.map(Modifier.from);
+    // o.mods = o.mods.map(Modifier.from);
+    o.mods = o.mods.map(BasicModifier.from);
 
     return o;
   }
@@ -77,7 +85,7 @@ export default class Ability {
         data.events.removeGlobal(this.mods[0].eventTime, this);
         return false;
       } else {
-        this.won = data.player.won;
+        this.won = true;
       }
     }
 
@@ -232,12 +240,20 @@ export default class Ability {
       }
     } else if (tokens[0] == "Protection") {
       failed = false;
-      if (tokens[1].includes("&")) {
-        for (const prot of tokens[1].split("&")) {
-          this.mods.push(new ProtectionModifier(prot));
+      let i = 1;
+      let both = false;
+
+      if (tokens[1] == "Cards") {
+        i = 2;
+        both = true;
+      }
+
+      if (tokens[i].includes("&")) {
+        for (const prot of tokens[i].split("&")) {
+          this.mods.push(new ProtectionModifier(prot, both));
         }
       } else {
-        this.mods.push(new ProtectionModifier(tokens[1]));
+        this.mods.push(new ProtectionModifier(tokens[i], both));
       }
     } else if (tokens[0] == "Copy") {
       failed = false;
@@ -314,6 +330,9 @@ export default class Ability {
       else if (this.type === AbilityType.BONUS)
         this.type = AbilityType.GLOBAL_BONUS;
 
+      if (tokens[1] == "Combust")
+        this.delayed = true;
+
       for (const type of ["Life", "Pillz"]) {
         const mod = new BasicModifier();
         mod.eventTime = EventTime.END;
@@ -330,7 +349,7 @@ export default class Ability {
     }
 
     if (!failed) {
-      console.log(`[Added] ${this.ability}`.green);
+      console.log(`[Added] ${this.ability}\n`.green);
       // for (let mod of this.mods) {
       // for (let i in this.mods) {
       //   // if (this.type == Ability.Type.GLOBAL) {

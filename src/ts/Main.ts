@@ -10,12 +10,14 @@ import GameRenderer from './utils/GameRenderer';
 const p1 = new Player(12, 12, 0);
 const p2 = new Player(12, 12, 1);
 
-// const h1 = HandGenerator.generate('Roderick', 'Frank', 'Katsuhkay', 'Oyoh'); // Roderick
-// const h2 = HandGenerator.generate('Behemoth Cr', 'Vholt', 'Eyrik', 'Kate');
+const h1 = HandGenerator.generate('Roderick', 'Frank', 'Katsuhkay', 'Oyoh'); // Roderick
+const h2 = HandGenerator.generate('Behemoth Cr', 'Vholt', 'Eyrik', 'Kate');
 // const h1 = HandGenerator.generate('Sando', 'Deborah', 'Orka', 'Genmaicha'); // Roderick
 // const h2 = HandGenerator.generate('Strygia', 'El Kuzco', 'Noon Steevens', 'Nathan');
-const h1 = HandGenerator.generate('Sando', 'Deborah', 'Orka', 'Genmaicha'); // Roderick
-const h2 = HandGenerator.generate('Rik-L', 'Behemoth Cr', 'X-Hares', 'Dagg Cr');
+// const h1 = HandGenerator.generate('Kapel', 'Malicia', 'Brittany', 'Veronica'); // Roderick
+// const h2 = HandGenerator.generate('Rik-L', 'Behemoth Cr', 'X-Hares', 'Dagg Cr');
+// const h1 = HandGenerator.generate('Globumm Cr', 'Globumm Cr', 'Globumm Cr', 'Globumm Cr'); // Roderick
+// const h2 = HandGenerator.generate('Behemoth Cr', 'Behemoth Cr', 'Behemoth Cr', 'Behemoth Cr');
 
 const g = new Game(p1, p2, h1, h2, false, !false, false);
 // const g = new Game(p1, p2, h1, h2, false, !false, false, Turn.PLAYER_2);
@@ -31,18 +33,18 @@ const g = new Game(p1, p2, h1, h2, false, !false, false);
 // g.select(1, 5);
 
 g.select(1, 0);
-g.select(0, 1);
+// g.select(0, 1);
 
-g.select(1, 0);
+// g.select(1, 0);
 // g.select(0, 0);
 // g.select(2, 0);
 // g.select(2, 4);
 
-g.select(3, 5);
-g.select(0, 0);
-g.select(2, 0);
-g.select(3, 8);
-g.select(2, 7);
+// g.select(3, 5);
+// g.select(0, 0);
+// g.select(2, 0);
+// g.select(3, 8);
+// g.select(2, 7);
 
 // GameRenderer.draw(g, true);
 
@@ -69,7 +71,7 @@ while (!g.hasWinner(true) && true) {
   } else {
     console.log = () => 0;
     console.time('a');
-    const m = await Analysis.iterTree(g);
+    const m = await Analysis.iterTree(g, false);
     console.log = log;
     console.timeEnd('a');
 

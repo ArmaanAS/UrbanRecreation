@@ -21,10 +21,14 @@ export default class Hand extends Array<Card> {
 
   clone(): Hand {
     return Object.setPrototypeOf([
-      this[0].won === undefined ? this[0].clone() : this[0],
-      this[1].won === undefined ? this[1].clone() : this[1],
-      this[2].won === undefined ? this[2].clone() : this[2],
-      this[3].won === undefined ? this[3].clone() : this[3],
+      this[0].won === undefined && !this[0].played ? this[0].clone() : this[0],
+      this[1].won === undefined && !this[1].played ? this[1].clone() : this[1],
+      this[2].won === undefined && !this[2].played ? this[2].clone() : this[2],
+      this[3].won === undefined && !this[3].played ? this[3].clone() : this[3],
+      // this[0].won === undefined ? this[0].clone() : this[0],
+      // this[1].won === undefined ? this[1].clone() : this[1],
+      // this[2].won === undefined ? this[2].clone() : this[2],
+      // this[3].won === undefined ? this[3].clone() : this[3],
       // this[0].clone(),
       // this[1].clone(),
       // this[2].clone(),
@@ -90,7 +94,7 @@ export default class Hand extends Array<Card> {
 
 
 export class HandGenerator {
-  static from(hand: HandOf<Card>) {
+  static from(hand: HandOf<Card>): Hand {
     hand[0].index = 0;
     hand[1].index = 1;
     hand[2].index = 2;

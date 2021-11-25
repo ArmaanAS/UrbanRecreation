@@ -8,8 +8,8 @@ import CardBattle from "./CardBattle";
 export default class CachedCardBattle {
   card1: Card;
   card2: Card;
-  events1: CachedEvents;
-  events2: CachedEvents;
+  events1?: CachedEvents;
+  events2?: CachedEvents;
   constructor(
     hand1: Hand,
     card1: Card,
@@ -25,6 +25,13 @@ export default class CachedCardBattle {
     // Compile the cards
     new CachedBattleData(hand1, this.card1, this.card2, this.events1);
     new CachedBattleData(hand2, this.card2, this.card1, this.events2);
+
+    // Set events to undefined if no events added
+    if (this.events1._events === undefined && this.events1._repeat === undefined)
+      this.events1 = undefined;
+
+    if (this.events2._events === undefined && this.events2._repeat === undefined)
+      this.events2 = undefined;
   }
 
   play(
@@ -34,9 +41,9 @@ export default class CachedCardBattle {
     pillz2: number,
     fury2: boolean,
   ) {
-    // Merging the states
-    this.events1.merge(game.events1);
-    this.events2.merge(game.events2);
+    // Merge events
+    this.events1?.merge(game.events1);
+    this.events2?.merge(game.events2);
 
     // Clone cards
     const card1 = this.card1.clone();

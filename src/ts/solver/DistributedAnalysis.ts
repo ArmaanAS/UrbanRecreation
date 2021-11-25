@@ -62,8 +62,8 @@ export default class DistributedAnalysis {
   static race = WorkerProcess.race.bind(WorkerProcess);
   static allFinished = WorkerProcess.allFinished.bind(WorkerProcess);
 
-  static async iterTree(game: Game) {
+  static async iterTree(game: Game, child?: boolean, rootName?: string, freeze?: boolean) {
     return WorkerProcess.processOnWorker<WorkerSolverData, Node>(
-      { game, id: this.id++ }).then(Minimax.from);
+      { game, child, rootName, freeze, id: this.id++ }).then(Minimax.from);
   }
 }
