@@ -12,7 +12,10 @@
     "test": "jest --coverage",
     "lint": "./node_modules/.bin/eslint src/ts",
     "sim-limit": "cd src/js && node --inspect-brk=9222 --max-old-space-size=16384 main.mjs",
-    "api": "node src/api/RequestCards.js"
+    "cards-api": "node src/api/RequestCards.js",
+    "build": "tsc",
+    "compile-abilities": "node --experimental-specifier-resolution=node src/api/CompileAbilities.js",
+    "ability-tree": "node --experimental-specifier-resolution=node src/api/AbilityTree.js"
   },
   "keywords": [
     "urbanrivals",

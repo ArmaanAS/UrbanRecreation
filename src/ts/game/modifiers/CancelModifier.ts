@@ -11,7 +11,7 @@ enum Cancel {
   PILLZ = 6,
   LIFE = 7,
 }
-export const CancelObject: { [key: string]: Cancel } = {
+export const CancelObject: { [key: string]: Cancel; } = {
   POWER: Cancel.POWER,
   DAMAGE: Cancel.DAMAGE,
   ATTACK: Cancel.ATTACK,
@@ -19,7 +19,7 @@ export const CancelObject: { [key: string]: Cancel } = {
   BONUS: Cancel.BONUS,
   PILLZ: Cancel.PILLZ,
   LIFE: Cancel.LIFE,
-}
+};
 
 export default class CancelModifier extends Modifier {
   cancel = Cancel.POWER;
@@ -27,36 +27,14 @@ export default class CancelModifier extends Modifier {
     super();
 
     if (typeof cancel == "string")
-      this.cancel = CancelObject[cancel.toUpperCase()]
+      this.cancel = CancelObject[cancel.toUpperCase()];
     else
       this.cancel = cancel;
     this.eventTime = et;
   }
 
   apply(data: BattleData) {
-    // if (this.cancel == Cancel.POWER) {
-    //   data.oppCard.power.cancel = true;
-    // } else if (this.cancel == Cancel.DAMAGE) {
-    //   data.oppCard.damage.cancel = true;
-    // } else if (this.cancel == Cancel.ATTACK) {
-    //   data.oppCard.attack.cancel = true;
-    // } else if (this.cancel == Cancel.PILLZ) {
-    //   data.oppCard.pillz.cancel = true;
-    // } else if (this.cancel == Cancel.LIFE) {
-    //   data.oppCard.life.cancel = true;
-    // } else if (this.cancel == Cancel.ABILITY) {
-    //   data.oppCard.ability.cancel = true;
-    // } else if (this.cancel == Cancel.BONUS) {
-    //   data.oppCard.bonus.cancel = true;
-    // }
     switch (this.cancel) {
-      // case Cancel.POWER: data.oppCard.power_.cancel = true; break;
-      // case Cancel.DAMAGE: data.oppCard.damage_.cancel = true; break;
-      // case Cancel.ATTACK: data.oppCard.attack_.cancel = true; break;
-      // case Cancel.PILLZ: data.oppCard.pillz_.cancel = true; break;
-      // case Cancel.LIFE: data.oppCard.life_.cancel = true; break;
-      // case Cancel.ABILITY: data.oppCard.ability_.cancel = true; break;
-      // case Cancel.BONUS: data.oppCard.bonus_.cancel = true; break;
       case Cancel.POWER: data.oppCard.power.cancel = true; break;
       case Cancel.DAMAGE: data.oppCard.damage.cancel = true; break;
       case Cancel.ATTACK: data.oppCard.attack.cancel = true; break;

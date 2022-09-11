@@ -19,11 +19,46 @@ export function wordTree(lines: string[]) {
     node["<"] = 0;
   }
 
-  for (const [k, node] of Object.entries(tree)) {
-    if (node instanceof Object && node["<"] !== undefined && Object.keys(node).length == 1) {
-      tree[k] = 0;
+  function cull(tree: Tree) {
+    for (const [k, node] of Object.entries(tree)) {
+      if (node instanceof Object) {
+        if ("<" in node && Object.keys(node).length === 1) {
+          tree[k] = 0;
+        } else {
+          cull(node);
+        }
+      }
     }
   }
+
+  cull(tree);
+
+  function shorten(tree: Tree) {
+    // for (const [k, node] of Object.entries(tree)) {
+    //   if (node instanceof Object) {
+    //     const entries = Object.entries(node);
+    //     if (entries.length === 1 && entries[0][1] === 0) {
+    //       delete tree[k];
+    //       tree[`${k} ${entries[0][0]}`] = 0;
+    //     } else {
+    //       shorten(node);
+
+    //     }
+    //   }
+    // }
+    for (const [k, node] of Object.entries(tree)) {
+      if (node instanceof Object) {
+        shorten(node);
+        const entries = Object.entries(node);
+        if (entries.length === 1 && entries[0][1] === 0) {
+          delete tree[k];
+          tree[`${k} ${entries[0][0]}`] = 0;
+        }
+      }
+    }
+  }
+
+  shorten(tree);
 
   return tree;
 }

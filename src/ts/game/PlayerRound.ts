@@ -1,53 +1,32 @@
 import Card from "./Card";
-import Events from "./battle/Events";
 import Hand from "./Hand";
-import Player from "./Player";
 
 export default class PlayerRound {
-  // round: number;
-  // day: boolean;
-  // first: boolean;
   private a = 0;
-  player: Player;
   hand: Hand;
-  opp: Player;
   oppHand: Hand;
-  events: Events;
 
   constructor(
     round: number,
     // day: boolean, 
     first: boolean,
-    p1: Player, h1: Hand,
-    p2: Player, h2: Hand,
-    events: Events
+    h1: Hand,
+    h2: Hand,
   ) {
     this.round = round;
     // this.day = day;
     this.first = first;
 
-    this.player = p1;
     this.hand = h1;
-
-    this.opp = p2;
     this.oppHand = h2;
-
-    this.events = events;
   }
 
-  clone(p1: Player, h1: Hand, p2: Player, h2: Hand, events: Events): PlayerRound {
-    // return new PlayerRound(this.round, this.day, this.first, p1, h1, p2, h2, events);
+  clone(h1: Hand, h2: Hand): PlayerRound {
     return Object.setPrototypeOf({
-      // round: this.round,
-      // day: this.day,
-      // first: this.first,
       a: this.a,
-      player: p1,
       hand: h1,
-      opp: p2,
       oppHand: h2,
-      events
-    }, PlayerRound.prototype)
+    }, PlayerRound.prototype);
   }
 
   get day() {
