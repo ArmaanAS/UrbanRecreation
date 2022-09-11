@@ -4,15 +4,15 @@ export const Clans = [
   "Junkz", "Komboka", "La Junta", "Leader", "Montana", "Nightmare", "Oculus",
   "Paradox", "Piranas", "Pussycats", "Raptors", "Rescue", "Riots", "Roots",
   "Sakrohm", "Sentinel", "Skeelz", "Ulu Watu", "Uppers", "Vortex"
-] as const
-export type Clan = typeof Clans[number]
+] as const;
+export type Clan = typeof Clans[number];
 
-export type Rarity = "c" | "u" | "r" | "cr" | "m" | "l"
+export type Rarity = "c" | "u" | "r" | "cr" | "m" | "l";
 
-export type Stars = 1 | 2 | 3 | 4 | 5
-export type MaxStars = 2 | 3 | 4 | 5
-export type Power = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
-export type Damage = Power
+export type Stars = 1 | 2 | 3 | 4 | 5;
+export type MaxStars = 2 | 3 | 4 | 5;
+export type Power = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type Damage = Power;
 
 export interface CardJSON {
   name: string;
@@ -28,7 +28,7 @@ export interface CardJSON {
   bonus: string;
 }
 
-export type HandOf<T> = [T, T, T, T]
+export type HandOf<T> = [T, T, T, T];
 
 // interface CardAttr {
 //   cancel: boolean;
@@ -94,7 +94,7 @@ abstract class BaseAttr extends BaseData {
   abstract get prot(): boolean;
   abstract set prot(n: boolean);
   /**
-   * protected || !cancelled
+   * `protected || !cancelled`
    */
   abstract get blocked(): boolean;
 }
@@ -117,19 +117,19 @@ export class AbilityStat extends BaseString {
     return this.a >> 20 & 1;
   }
   set string(n: AbilityString) {
-    this.a = (this.a & ~0x100000) | (n << 20)
+    this.a = (this.a & ~0x100000) | (n << 20);
   }
   get cancel(): boolean {
     return !!(this.a >> 21 & 1);
   }
   set cancel(n: boolean) {
-    this.a = (this.a & ~0x200000) | (+n << 21)
+    this.a = (this.a & ~0x200000) | (+n << 21);
   }
   get prot(): boolean {
     return !!(this.a >> 22 & 1);
   }
   set prot(n: boolean) {
-    this.a = (this.a & ~0x400000) | (+n << 22)
+    this.a = (this.a & ~0x400000) | (+n << 22);
   }
   get blocked() {
     return (this.a >> 21 & 0b11) === 0b01;
@@ -140,19 +140,19 @@ export class BonusStat extends BaseString {
     return this.a >> 23 & 1;
   }
   set string(n: AbilityString) {
-    this.a = (this.a & ~0x800000) | (n << 23)
+    this.a = (this.a & ~0x800000) | (n << 23);
   }
   get cancel(): boolean {
     return !!(this.a >> 24 & 1);
   }
   set cancel(n: boolean) {
-    this.a = (this.a & ~0x1000000) | (+n << 24)
+    this.a = (this.a & ~0x1000000) | (+n << 24);
   }
   get prot(): boolean {
     return !!(this.a >> 25 & 1);
   }
   set prot(n: boolean) {
-    this.a = (this.a & ~0x2000000) | (+n << 25)
+    this.a = (this.a & ~0x2000000) | (+n << 25);
   }
   get blocked() {
     return (this.a >> 24 & 0b11) === 0b01;
@@ -175,13 +175,13 @@ export class PowerStat extends BaseStat {
     return !!(this.b >> 16 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x10000) | (+n << 16)
+    this.b = (this.b & ~0x10000) | (+n << 16);
   }
   get prot(): boolean {
     return !!(this.b >> 17 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x20000) | (+n << 17)
+    this.b = (this.b & ~0x20000) | (+n << 17);
   }
   get blocked() {
     // prot || !cancel
@@ -210,13 +210,13 @@ export class DamageStat extends BaseStat {
     return !!(this.b >> 18 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x40000) | (+n << 18)
+    this.b = (this.b & ~0x40000) | (+n << 18);
   }
   get prot(): boolean {
     return !!(this.b >> 19 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x80000) | (+n << 19)
+    this.b = (this.b & ~0x80000) | (+n << 19);
   }
   get blocked() {
     return (this.b >> 18 & 0b11) === 0b01;
@@ -239,13 +239,13 @@ export class AttackStat extends BaseStat {
     return !!(this.b >> 20 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x100000) | (+n << 20)
+    this.b = (this.b & ~0x100000) | (+n << 20);
   }
   get prot(): boolean {
     return !!(this.b >> 21 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x200000) | (+n << 21)
+    this.b = (this.b & ~0x200000) | (+n << 21);
   }
   get blocked() {
     return (this.b >> 20 & 0b11) === 0b01;
@@ -256,13 +256,13 @@ export class PillzStat extends BaseAttr {
     return !!(this.b >> 22 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x400000) | (+n << 22)
+    this.b = (this.b & ~0x400000) | (+n << 22);
   }
   get prot(): boolean {
     return !!(this.b >> 23 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x800000) | (+n << 23)
+    this.b = (this.b & ~0x800000) | (+n << 23);
   }
   get blocked() {
     return (this.b >> 22 & 0b11) === 0b01;
@@ -273,13 +273,13 @@ export class LifeStat extends BaseAttr {
     return !!(this.b >> 24 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x1000000) | (+n << 24)
+    this.b = (this.b & ~0x1000000) | (+n << 24);
   }
   get prot(): boolean {
     return !!(this.b >> 25 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x2000000) | (+n << 25)
+    this.b = (this.b & ~0x2000000) | (+n << 25);
   }
   get blocked() {
     return (this.b >> 24 & 0b11) === 0b01;

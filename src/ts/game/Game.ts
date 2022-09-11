@@ -1,7 +1,7 @@
 import Hand, { HandGenerator } from "./Hand";
 import "colors";
 import readline from "readline";
-import { AbilityString, CardJSON, HandOf } from './types/CardTypes'
+import { AbilityString, CardJSON, HandOf } from './types/CardTypes';
 import { clone } from "../utils/Utils";
 import Player from "./Player";
 import GameRenderer from "../utils/GameRenderer";
@@ -60,10 +60,14 @@ export default class Game {
 
     this.id = this.createBaseGameCache(first);
 
+    // this.r1 = new PlayerRound(
+    //   1, first === Turn.PLAYER_1, p1, h1, p2, h2, this.events1);
+    // this.r2 = new PlayerRound(
+    //   1, first === Turn.PLAYER_2, p2, h2, p1, h1, this.events2);
     this.r1 = new PlayerRound(
-      1, first === Turn.PLAYER_1, p1, h1, p2, h2, this.events1);
+      1, first === Turn.PLAYER_1, h1, h2);
     this.r2 = new PlayerRound(
-      1, first === Turn.PLAYER_2, p2, h2, p1, h1, this.events2);
+      1, first === Turn.PLAYER_2, h2, h1);
 
     for (const hand of [h1, h2]) {
       for (const card of hand) {
@@ -115,8 +119,8 @@ export default class Game {
       i2: this.i2,
       events1,
       events2,
-      r1: this.r1.clone(p1, h1, p2, h2, events1),
-      r2: this.r2.clone(p2, h2, p1, h1, events2)
+      r1: this.r1.clone(h1, h2),
+      r2: this.r2.clone(h2, h1)
     }, Game.prototype);
   }
 
@@ -184,7 +188,7 @@ export default class Game {
     // if (typeof index != 'number' || typeof pillz != 'number') //return false;
     if (!Number.isInteger(index) || !Number.isInteger(pillz))
       throw new Error(`Game.select - index or pillz is not a number 
-        index: ${index}, pillz: ${pillz}`)
+        index: ${index}, pillz: ${pillz}`);
 
     // if (this.firstHasSelected != this.first) {
     if (this.turn === Turn.PLAYER_1) {
@@ -320,7 +324,7 @@ export default class Game {
   hasWinner(log = false) {
     if (this.round > 4 || this.p1.life <= 0 || this.p2.life <= 0) {
       if (log) {
-        GameRenderer.draw(this)
+        GameRenderer.draw(this);
 
         console.log("\n Game over!\n".white.bgRed);
 
@@ -420,7 +424,7 @@ export default class Game {
   }
 }
 
-const battleCache: { [key: string]: CachedCardBattle } = {};
+const battleCache: { [key: string]: CachedCardBattle; } = {};
 
 interface BaseGame {
   playingFirst: Turn;

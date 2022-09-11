@@ -1,6 +1,7 @@
-import UROAuth from 'urban-rivals-oauth'
-import { config } from 'dotenv'
-import process from 'process'
+import UROAuth from 'urban-rivals-oauth';
+import { config } from 'dotenv';
+import process from 'process';
+import { writeFileSync, readFileSync } from "fs";
 
 config();
 
@@ -11,31 +12,57 @@ const urApi = new UROAuth({
 
 
 export default async function callAPI(method, params) {
-  const { items, context } = await urApi.query(method, params)
+  const { items, context } = await urApi.query(method, params);
 
   return { items, context };
 }
+
+let accessToken;
+try {
+  accessToken = JSON.parse(readFileSync("./tokens.json").toString());
+  console.log("accessToken", accessToken);
+  urApi.accessToken = accessToken;
+
+  // Save accessTokens to `tokens.json`
+  writeFileSync("./tokens.json", JSON.stringify(accessToken));
+} catch (e) {
+  console.log("\nFailed to read ./tokens.json\n");
+}
+
 
 // Get initial request token 
 const requestToken = await urApi.getRequestToken();
 console.log('getRequestToken', requestToken);
 
-// Log URL to authorize your account
-const url = urApi.getAuthorizeUrl('https://localhost/');
-console.log(url);
 
 
+// Get player's accessToken, to make requests with
+if (accessToken) {
+  // Test accessTokens work still
+  try {
+    const result = await callAPI("characters.getCharacters", {
+      charactersIDs: 123,
+    });
+  } catch (e) {
+    console.log("\naccessToken has expired\n");
+    accessToken = undefined;
+  }
+}
 
-// Wait for enter input
-console.info("\nPress <ENTER> when ready\n");
-process.stdin.resume();
-await new Promise(res => process.stdin.once("data", res));
-process.stdin.end();
+// Wait for user to validate accessToken with link
+if (!accessToken) {
+  // Log URL to authorize your account
+  const url = urApi.getAuthorizeUrl('about:new');
+  console.log(url);
 
-// Get players accessToken, to make requests with
-await urApi.getAccessToken();
+  // Wait for enter input
+  console.info("\nPress <ENTER> when ready\n");
+  process.stdin.resume();
+  await new Promise(res => process.stdin.once("data", res));
+  process.stdin.end();
 
-const result = await callAPI("characters.getCharacters", {
-  charactersIDs: 123,
-});
-console.debug(result);
+  await urApi.getAccessToken();
+
+  // Save accessTokens to `tokens.json`
+  writeFileSync("./tokens.json", JSON.stringify(urApi.accessToken));
+}

@@ -27,7 +27,7 @@ export enum ConditionType {
   STOP = 20,
 }
 const ConditionTypes: {
-  [key: string]: ConditionType
+  [key: string]: ConditionType;
 } = {
   UNDEFINED: ConditionType.UNDEFINED,
   COURAGE: ConditionType.COURAGE,
@@ -50,7 +50,7 @@ const ConditionTypes: {
   ASYMMETRY: ConditionType.ASYMMETRY,
   REANIMATE: ConditionType.REANIMATE,
   STOP: ConditionType.STOP,
-}
+};
 
 
 export default class Condition {
@@ -99,70 +99,6 @@ export default class Condition {
   }
 
   compile(data: BattleData | CachedBattleData, ability: Ability) {
-    // if (this.type == ConditionType.BACKLASH) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.setOpp(false);
-    //   }
-
-    // } else if (this.type == ConditionType.BRAWL) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.setPer('BRAWL');
-    //   }
-
-    // } else if (this.type == ConditionType.SUPPORT) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.setPer('SUPPORT');
-    //   }
-
-    // } else if (this.type == ConditionType.GROWTH) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.setPer('GROWTH');
-    //   }
-
-    // } else if (this.type == ConditionType.DEGROWTH) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.setPer('DEGROWTH');
-    //   }
-
-    // } else if (this.type == ConditionType.EQUALIZER) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.setPer('EQUALIZER');
-    //   }
-
-    // } else if (this.type == ConditionType.DEFEAT) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.win = false;
-    //   }
-
-    // } else if (this.type == ConditionType["VICTORY OR DEFEAT"]) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.win = false;
-    //   }
-
-    // } else if (this.type == ConditionType.REANIMATE) {
-    //   for (const mod of ability.mods) {
-    //     if (mod instanceof BasicModifier)
-    //       mod.win = false;
-    //   }
-
-    // } else if (this.type == ConditionType.STOP) {
-    //   if (ability.type == AbilityType.ABILITY) {
-    //     this.stop = 'Ability';
-    //     data.card.ability_.prot = true;
-
-    //   } else if (ability.type == AbilityType.BONUS) {
-    //     this.stop = 'Bonus'
-    //     data.card.bonus_.prot = true;
-    //   }
-    // }
     switch (this.type) {
       case ConditionType.BACKLASH:
         for (const mod of ability.mods) {
@@ -233,7 +169,7 @@ export default class Condition {
           data.card.ability.prot = true;
 
         } else if (ability.type === AbilityType.BONUS) {
-          this.stop = 'Bonus'
+          this.stop = 'Bonus';
           data.card.bonus.prot = true;
         }
     }

@@ -120,7 +120,9 @@ export default class Ability {
 
   compileConditions(data: BattleData | CachedBattleData) {
     for (const cond of this.conditions) {
-      cond.compile(data, this);
+      try {
+        cond.compile(data, this);
+      } catch { /* */ }
     }
   }
 
@@ -136,13 +138,17 @@ export default class Ability {
 
     compile:
     if (/\+\d+/.test(tokens[0])) {
-      let t,
-        i,
-        opp = false;
-      if (tokens[1] == "Opp") {
+      const dupe = tokens[1] === "Players";
+      let t: string[],
+        i: number,
+        opp1 = false;
+      if (dupe) {
         t = [tokens[2]];
         i = 2;
-        opp = true;
+      } else if (tokens[1] === "Opp") {
+        t = [tokens[2]];
+        i = 2;
+        opp1 = true;
       } else if (tokens[1].includes("&")) {
         t = tokens[1].split("&");
         i = 1;
@@ -151,29 +157,31 @@ export default class Ability {
         i = 1;
       }
 
-      for (const a of t) {
-        // let mod = Modifier.basic(+tokens[0]);
-        // let mod = new BasicModifier(+tokens[0]);
-        const mod = new BasicModifier();
-        mod.change = +tokens[0];
-        mod.setOpp(opp);
+      for (const opp of dupe ? [true, false] : [opp1]) {
+        for (const a of t) {
+          // let mod = Modifier.basic(+tokens[0]);
+          // let mod = new BasicModifier(+tokens[0]);
+          const mod = new BasicModifier();
+          mod.change = +tokens[0];
+          mod.setOpp(opp);
 
-        if (["Power", "Damage", "Life", "Pillz", "Attack"].includes(a)) {
-          failed = false;
+          if (["Power", "Damage", "Life", "Pillz", "Attack"].includes(a)) {
+            failed = false;
 
-          mod.setType(a);
-        } else {
-          failed = true;
-          console.log(
-            "Unknown token[1]:".red + '"' + tokens[1] + '"',
-            this.ability
-          );
-          break compile;
+            mod.setType(a);
+          } else {
+            failed = true;
+            console.log(
+              "Unknown token[1]:".red + '"' + tokens[1] + '"',
+              this.ability
+            );
+            break compile;
+          }
+
+          AbilityParser.minmaxper(tokens, i + 1, mod);
+
+          this.mods.push(mod);
         }
-
-        AbilityParser.minmaxper(tokens, i + 1, mod);
-
-        this.mods.push(mod);
       }
     } else if (/-\d+/.test(tokens[0])) {
       const dupe = ["Xantiax", "Cards"].includes(tokens[1]);
@@ -216,7 +224,7 @@ export default class Ability {
           // const clone = mod.clone();
           const cloned = clone(mod);
           if (cloned instanceof BasicModifier)
-            cloned.setOpp(false)
+            cloned.setOpp(false);
 
           newMods.push(cloned);
         }
@@ -263,6 +271,10 @@ export default class Ability {
         new Ability(data.oppCard.bonusString, this.type).compile(data);
 
         return;
+      } else if (tokens[1] == "Ability") {
+        new Ability(data.oppCard.abilityString, this.type).compile(data);
+
+        return;
       } else {
         if (tokens[1].includes("&")) {
           for (const c of tokens[1].split("&")) {
@@ -280,6 +292,15 @@ export default class Ability {
         }
       } else {
         this.mods.push(new ExchangeModifier(tokens[1]));
+      }
+    } else if (tokens[0] == "Impose") {
+      failed = false;
+      if (tokens[1].includes("&")) {
+        for (const prot of tokens[1].split("&")) {
+          this.mods.push(new ExchangeModifier("Impose " + prot));
+        }
+      } else {
+        this.mods.push(new ExchangeModifier("Impose " + tokens[1]));
       }
     } else if (tokens[1] == "Recover") { // 1 Recover Pillz Out Of 3
       failed = false;
@@ -317,9 +338,9 @@ export default class Ability {
         this.delayed = true;
 
       if (tokens[2] == 'Min')
-        mod.setMin(+tokens[3])
+        mod.setMin(+tokens[3]);
       else if (tokens[2] == 'Max')
-        mod.setMax(+tokens[3])
+        mod.setMax(+tokens[3]);
 
       this.mods.push(mod);
     } else if (tokens[1] == "Combust" || tokens[1] == "Mindwipe") {
@@ -341,7 +362,7 @@ export default class Ability {
         mod.change = -tokens[0];
         mod.always = true;
         if (tokens[2] == 'Min')
-          mod.setMin(+tokens[3])
+          mod.setMin(+tokens[3]);
 
         this.mods.push(mod);
       }

@@ -1,26 +1,22 @@
 import BasicModifier from "./modifiers/BasicModifier";
 
 const abilityCache: {
-  [index: string]: string[]
+  [index: string]: string[];
 } = {};
 
 export class Abilities {
+  // static normalise(ability: string) {
+  //   return ability
+  //     .replace(/(?<=[+-]) (?=[xy])/gi, "")
+  //     .replace(/[,.]/g, "")
+  //     .replace(/ :/g, ":");
+  // }
+  static abilityStringCache: { [key: string]: string; } = {};
   static normalise(ability: string) {
-    return ability
-      .replace(/(?<=[+-]) (?=[xy])/gi, "")
-      .replace(/[,.]/g, "")
-      .replace(/ :/g, ":");
-  }
+    if (ability in this.abilityStringCache)
+      return this.abilityStringCache[ability];
 
-  static splitConditions(ability: string[]) {
-    return ability.map(s => s.split(/(?<=\w+) ?: /g));
-  }
-
-  static split(ability: string) {
-    if (abilityCache[ability] !== undefined)
-      return [...abilityCache[ability]];
-
-    const s = ability
+    const norm = ability
       .replace(/(?<=[+-]) (?=[xy\d])/gi, "")
       .replace(/,(?! )/gi, " ")
       .replace(/[,.]| (?=:)/gi, "")
@@ -40,6 +36,7 @@ export class Abilities {
       .replace(/(?<=(Copy|Cancel|Stop).*) (Opp|Mod|Left)\w*/gi, "")
       .replace(/(?<=Per.*) Left\w*/gi, "")
       .replace("Bonus Protection", "Protection Bonus")
+      .replace(/^(.+) Impose/, "Impose $1")
       // .replace(/([\w ]+) Exchange/ig, 'Exchange $1')
       .replace(/(\w+(?: \w+ \w+)?) ([+-][xy\d]+|Exchange)/i, "$2 $1")
       .replace(/([a-z]+)(?<!Min|Max) ([xy\d]+)/i, "$2 $1")
@@ -47,8 +44,24 @@ export class Abilities {
       .replace(/(?<=[xy\d] )(\w+) (Opp)/gi, "$2 $1")
       .replace(/(?<=-[xy\d]+ )Opp /gi, "")
       .replace(/\b\w(?=\w+)/g, (s) => s.toUpperCase())
-      .replace(/\[star]/gi, "★")
-      .split(/(?<=\w+) ?[:;] /gi);
+      .replace(/\[star]/gi, "★");
+
+    this.abilityStringCache[ability] = norm;
+
+    return norm;
+  }
+
+  private static splitConditions(normalisedAbility: string) {
+    return normalisedAbility
+      .split(/(?<=\w+) ?[:;] |(?<=\[Clan:\d+\]):? (?!:)/gi);
+  }
+
+  static split(ability: string) {
+    if (abilityCache[ability] !== undefined)
+      return [...abilityCache[ability]];
+
+    const a = this.normalise(ability);
+    const s = this.splitConditions(a);
 
     abilityCache[ability] = s;
     return [...s];
