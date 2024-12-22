@@ -2,24 +2,13 @@ export default class Player {
   // Bit format: 000000 00000 0 00 00
   // life 6 pillz 5 _name 1 won 2 wonPrevious 2
   private a = 0;
-
-  // life = 0;
-  // pillz = 0;
-  // _name = 0;
-  // won?: boolean = undefined;
-  // wonPrevious?: boolean = undefined;
-  // constructor(life: number, pillz: number, name = "Player") { //, level = 1) {
   constructor(life: number, pillz: number, name: 0 | 1) {
-    // this.life = life;
-    // this.pillz = pillz;
-    // this._name = name;
     if (life < 0 || pillz < 0)
       throw new RangeError(`life and pillz must be a non-negative integer!\n Pillz: ${pillz}, life: ${life}`);
     this.a = (life & 0b111111) | ((pillz & 0b11111) << 6) | (name << 11);
   }
 
   get name() {
-    // return this._name ? "Player" : "Urban Rival";
     return ((this.a >> 11) & 1) ? "Urban Rival" : "Player";
   }
 
@@ -36,7 +25,6 @@ export default class Player {
   }
   set pillz(n: number) {
     if (n < 0) throw new RangeError("pillz must be a non-negative integer: " + n);
-    // if (n < 0) this.a &= ~(0b11111 << 6);
     else this.a = (this.a & ~(0b11111 << 6)) | ((n & 0b11111) << 6);
   }
 
