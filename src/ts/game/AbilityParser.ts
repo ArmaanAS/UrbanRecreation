@@ -20,7 +20,6 @@ export class Abilities {
       .replace(/(?<=[+-]) (?=[xy\d])/gi, "")
       .replace(/,(?! )/gi, " ")
       .replace(/[,.]| (?=:)/gi, "")
-      // .replace(/ :/g, ':')
       .replace(/At\w*/g, "Attack")
       .replace(/Prot\w*:?/g, "Protection")
       .replace(/Copy:/gi, "Copy")
@@ -28,16 +27,13 @@ export class Abilities {
       .replace(/(Dmg|Dam)\w*/gi, "Damage")
       .replace(/Pow\w*/gi, "Power")
       .replace(/Can\w*/gi, "Cancel")
-      // .replace(/Mod\w*/ig, 'Modify')
       .replace(/Prot\w*/gi, "Protection")
       .replace(/Rec\w*/gi, "Recover")
       .replace(/&/g, "And")
-      // .replace(/(?<=(Copy|Cancel|Stop|Per).*) (Opp|Mod|Left)\w*/gi, '')
       .replace(/(?<=(Copy|Cancel|Stop).*) (Opp|Mod|Left)\w*/gi, "")
       .replace(/(?<=Per.*) Left\w*/gi, "")
       .replace("Bonus Protection", "Protection Bonus")
       .replace(/^(.+) Impose/, "Impose $1")
-      // .replace(/([\w ]+) Exchange/ig, 'Exchange $1')
       .replace(/(\w+(?: \w+ \w+)?) ([+-][xy\d]+|Exchange)/i, "$2 $1")
       .replace(/([a-z]+)(?<!Min|Max) ([xy\d]+)/i, "$2 $1")
       .replace(/(\w+) And (\w+)/gi, "$1&$2")
@@ -60,11 +56,11 @@ export class Abilities {
     if (abilityCache[ability] !== undefined)
       return [...abilityCache[ability]];
 
-    const a = this.normalise(ability);
-    const s = this.splitConditions(a);
+    const normalised = this.normalise(ability);
+    const splitConditions = this.splitConditions(normalised);
 
-    abilityCache[ability] = s;
-    return [...s];
+    abilityCache[ability] = splitConditions;
+    return [...splitConditions];
   }
 }
 
