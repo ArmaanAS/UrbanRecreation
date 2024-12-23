@@ -7,7 +7,7 @@ type PerType = {
   type: number;
   name: string;
 } | undefined;
-const Per: { [index: string]: PerType } = {
+const Per: Record<string, PerType> = {
   POWER: { opp: false, type: 1, name: "POWER" },
   DAMAGE: { opp: false, type: 2, name: "DAMAGE" },
   LIFE: { opp: false, type: 3, name: "LIFE" },
@@ -23,7 +23,7 @@ const Per: { [index: string]: PerType } = {
   OPP_DAMAGE: { opp: true, type: 2, name: "OPP_DAMAGE" },
   OPP_LIFE: { opp: true, type: 3, name: "OPP_LIFE" },
   OPP_PILLZ: { opp: true, type: 4, name: "OPP_PILLZ" },
-} as const;
+};
 function perFromObject(o: PerType): PerType {
   return o && Per[o.name];
 }
@@ -33,14 +33,14 @@ type TimeType = {
   name: string;
   win: boolean;
 } | undefined;
-const Time: { [index: string]: TimeType } = {
+const Time: Record<string, TimeType> = {
   // const Time = {
   POWER: { eventTime: EventTime.PRE2, name: "POWER", win: false },
   DAMAGE: { eventTime: EventTime.PRE2, name: "DAMAGE", win: false },
   ATTACK: { eventTime: EventTime.POST1, name: "ATTACK", win: false },
   LIFE: { eventTime: EventTime.END, name: "LIFE", win: true },
   PILLZ: { eventTime: EventTime.END, name: "PILLZ", win: true },
-} as const;
+};
 function timeFromObject(o: TimeType): TimeType {
   return o && Time[o.name];
 }
