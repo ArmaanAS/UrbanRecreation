@@ -1,4 +1,4 @@
-### Urban card game recreation
+# Urban card game recreation
 
 This is full recreation of the mechanics of the Urban card game in node.js, with typescript, originally build in javascript.
 
@@ -7,13 +7,7 @@ This is full recreation of the mechanics of the Urban card game in node.js, with
 Initialise the app with
 
 ```bash
-npm init
-```
-
-Or with Yarn
-
-```bash
-yarn init
+deno install
 ```
 
 ## Usage
