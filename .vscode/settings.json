@@ -1,5 +1,6 @@
 {
-  "python.pythonPath": "C:\\Users\\Student\\anaconda3\\python.exe",
-  "python.formatting.provider": "yapf",
-  "jupyter.jupyterServerType": "local"
+  "deno.enable": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "denoland.vscode-deno"
+  }
 }
