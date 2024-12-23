@@ -2,10 +2,10 @@ import Game, { Winner } from "../game/Game.ts";
 import { shiftRange } from "../utils/Utils.ts";
 // import Bar from "./Bar.ts"
 import Minimax, { GameResult, Node } from "./Minimax.ts";
-import DistributedAnalysis from "./DistributedAnalysis.ts";
+// import DistributedAnalysis from "./DistributedAnalysis.ts";
 import { Turn } from "../game/types/Types.ts";
-import cluster from "node:cluster";
-import process from "node:process";
+// import cluster from "node:cluster";
+// import process from "node:process";
 
 export default class Analysis {
   game: Game;
@@ -143,13 +143,8 @@ export default class Analysis {
               const analysis = new Analysis(parentAnalysis.game);
               const game = analysis.game;
               game.select(i, p, f);
-              // const node = parentNode.add(`${i} ${p} ${f}`,
-              //   analysis.turn, parentNode.playingSecond);
-              // const node = new Minimax.Node(`${i} ${p} ${f}`,
-              //   analysis.turn, undefined, parentNode.playingSecond);
 
               if (!game.firstHasSelected && game.winner !== Winner.PLAYING) {
-                // parentNode.nodes.push(node);
                 const node = parentNode.add(
                   `${i} ${p} ${f}`,
                   analysis.turn,
@@ -158,7 +153,6 @@ export default class Analysis {
 
                 if (game.winner === Winner.PLAYER_1) {
                   node.result = GameResult.PLAYER_1_WIN;
-
                   if (!parentNode.defered) {
                     if (node.turn === Turn.PLAYER_1) {
                       node.break = true;
@@ -174,7 +168,6 @@ export default class Analysis {
                   node.result = GameResult.TIE;
                 } else if (game.winner === Winner.PLAYER_2) {
                   node.result = GameResult.PLAYER_2_WIN;
-
                   if (!parentNode.defered) {
                     if (node.turn === Turn.PLAYER_2) {
                       node.break = true;
@@ -188,22 +181,9 @@ export default class Analysis {
                   }
                 }
               } else {
-                if (
-                  cluster.isPrimary && game.round === 2 && game.firstHasSelected
-                ) {
-                  // parentNode.nodes.pop();
-                  await DistributedAnalysis.race();
-                  DistributedAnalysis.iterTree(
-                    game,
-                    true,
-                    `${i} ${p} ${f}`,
-                    !game.firstHasSelected,
-                  )
-                    .then((node) => parentNode.add(node));
-                } else if (game.round === 1 && !game.firstHasSelected) {
+                if (game.round === 1 && !game.firstHasSelected) {
                   parentNode.add(await Analysis.iterTree(game, true));
                 } else {
-                  // parentNode.nodes.push(node);
                   const node = parentNode.add(
                     `${i} ${p} ${f}`,
                     analysis.turn,
@@ -219,11 +199,9 @@ export default class Analysis {
 
         indexes = undefined;
       }
-      await DistributedAnalysis.allFinished();
 
-      process.stdout.write(
-        `[${(depth++).toString().green}`.grey + "]".grey + " Finished  " +
-          `Moves: ${counter}\n`.yellow,
+      console.log(
+        `[${depth++}] Finished  Moves: ${counter}`,
       );
       analyses = roundAnalyses;
       nodes = roundNodes;
