@@ -3,7 +3,7 @@ import Ability, { AbilityType } from "@/game/Ability.ts";
 import data from "@data/data.json" with { type: "json" };
 
 const events = new Set();
-// Set.prototype.addGlobal = Set.prototype.add;
+Set.prototype.addGlobal = Set.prototype.add;
 
 const obj = {};
 const ab = {};

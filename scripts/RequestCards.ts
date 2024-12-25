@@ -14,3 +14,6 @@ Deno.writeTextFileSync("./data/data.json", JSON.stringify(items));
 console.timeEnd("Write");
 
 console.info("Finished writing to './data.json'".green);
+
+const file = "./CompileAbilities.js";
+await import(file);

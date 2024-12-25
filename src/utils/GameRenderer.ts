@@ -40,7 +40,7 @@ export default class GameRenderer {
     const life = Math.max(p.life, 0).toString().red.bold;
     const pillz = Math.max(p.pillz, 0).toString().blue.bold;
     const bar = "[" +
-      "#".repeat(p.pillz) +
+      "O".repeat(p.pillz) +
       "-".repeat(Math.max(12 - p.pillz, 0)) +
       "]";
     console.log(

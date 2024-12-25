@@ -1,9 +1,36 @@
 export const Clans = [
-  "All Stars", "Bangers", "Berzerk", "Dominion", "Fang Pi Clang",
-  "Freaks", "Frozn", "GHEIST", "GhosTown", "Hive", "Huracan", "Jungo",
-  "Junkz", "Komboka", "La Junta", "Leader", "Montana", "Nightmare", "Oculus",
-  "Paradox", "Piranas", "Pussycats", "Raptors", "Rescue", "Riots", "Roots",
-  "Sakrohm", "Sentinel", "Skeelz", "Ulu Watu", "Uppers", "Vortex"
+  "All Stars",
+  "Bangers",
+  "Berzerk",
+  "Dominion",
+  "Fang Pi Clang",
+  "Freaks",
+  "Frozn",
+  "GHEIST",
+  "GhosTown",
+  "Hive",
+  "Huracan",
+  "Jungo",
+  "Junkz",
+  "Komboka",
+  "La Junta",
+  "Leader",
+  "Montana",
+  "Nightmare",
+  "Oculus",
+  "Paradox",
+  "Piranas",
+  "Pussycats",
+  "Raptors",
+  "Rescue",
+  "Riots",
+  "Roots",
+  "Sakrohm",
+  "Sentinel",
+  "Skeelz",
+  "Ulu Watu",
+  "Uppers",
+  "Vortex",
 ] as const;
 export type Clan = typeof Clans[number];
 
@@ -59,12 +86,11 @@ export interface BaseCard {
   // life: CardAttr; // 2 bits
   // pillz: CardAttr; // 2 bits
   data: BaseData;
-}  // 58 bits + 3 bit index = 61 bits = 2 numbers
+} // 58 bits + 3 bit index = 61 bits = 2 numbers
 
-
-// a = power.base,.final, damage.base,.final, 
+// a = power.base,.final, damage.base,.final,
 //     ability.string,.cancel,.prot  bonus.string,.cancel,.prot
-// b = attack.base,.final, power.cancel,.prot  damage.cancel,.prot, 
+// b = attack.base,.final, power.cancel,.prot  damage.cancel,.prot,
 //     attack.cancel,.prot  pillz.cancel,.prot  life.cancel,.prot
 //     index  won  played
 // a = 00000 00000 00000 00000 000 000    = 26 bits

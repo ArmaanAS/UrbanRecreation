@@ -45,10 +45,10 @@ export default class Game {
     p2: Player,
     h1: Hand,
     h2: Hand,
-    inputs: boolean,
+    first: Turn = Turn.PLAYER_1,
+    inputs = false,
     logs = true,
     repeat?: boolean,
-    first: Turn = Turn.PLAYER_1,
   ) {
     this.id = 0;
     this.inputs = inputs;
@@ -177,11 +177,11 @@ export default class Game {
   }
 
   get ca1() {
-    return this.base.ca1;
+    return this.base.counterAttack1;
   }
 
   get ca2() {
-    return this.base.ca2;
+    return this.base.counterAttack2;
   }
 
   get firstHasSelected() {
@@ -198,6 +198,29 @@ export default class Game {
 
   get turn() {
     return this.base.turn;
+  }
+
+  draw() {
+    GameRenderer.draw(this);
+  }
+
+  deselect() {
+    if (!this.firstHasSelected) {
+      console.log("Cannot deselect before first move");
+      return;
+    }
+
+    this.id--;
+
+    if (this.turn === Turn.PLAYER_1 && this.i1) {
+      this.h1[this.i1![0]].played = false;
+      this.i1 = undefined;
+    } else if (this.turn === Turn.PLAYER_2 && this.i2) {
+      this.h2[this.i2![0]].played;
+      this.i2 = undefined;
+    }
+
+    this.draw();
   }
 
   select(index: CardIndex, pillz: number, fury = false) {
@@ -304,13 +327,26 @@ export default class Game {
         /\\__/ /  __/ |  __/ (__| |_  | (_| (_| | | | (_| |
         \\____/ \\___|_|\\___|\\___|\\__|  \\___\\__,_|_|  \\__,_| o o o\n\n\n`;
 
-    const answer = prompt(msg.green, "")!;
+    console.log(msg.green);
+    const answer = prompt('Index Pillz [Fury] Or "Undo" or "End" -', "")!
+      .toLowerCase();
+
+    if (answer === "undo") {
+      this.deselect();
+      return this.input(repeat);
+    } else if (answer === "end") {
+      this.p1.life = -1;
+      this.p2.life = -1;
+      this.id = 7;
+      return [];
+      // throw new Error("Ending game");
+    }
 
     const s = answer.trim().split(" ");
 
     const index = +s[0];
     const pillz = +(s[1] ?? 0);
-    const fury = s[2] == "true";
+    const fury = s[2] === "true";
     if (index < 0 || index > 3 || pillz < 0) {
       console.log("Invalid input");
       return this.input(repeat);
@@ -335,13 +371,14 @@ export default class Game {
       if (log) {
         GameRenderer.draw(this);
 
-        console.log("\n Game over!\n".white.bgRed);
-
         if (this.p1.life > this.p2.life) {
+          console.log("\n  Game over!\n".white.bgGreen);
           console.log(` ${` ${this.p1.name} `.white.bgCyan} won the match!\n`);
         } else if (this.p1.life < this.p2.life) {
+          console.log("\n  Game over!\n".white.bgRed);
           console.log(` ${` ${this.p2.name} `.white.bgCyan} won the match!\n`);
         } else {
+          console.log("\n  Game over!\n".white.bgYellow);
           console.log("Game is a draw!\n".green);
         }
       }
@@ -390,16 +427,16 @@ export default class Game {
   }
 
   createBaseGameCache(first = Turn.PLAYER_1) {
-    let ca1 = false;
+    let counterAttack1 = false;
     const l1 = this.h1.getLeader();
     if (l1?.abilityString == "Counter-attack") {
-      ca1 = true;
+      counterAttack1 = true;
     }
 
-    let ca2 = false;
+    let counterAttack2 = false;
     const l2 = this.h2.getLeader();
     if (l2?.abilityString == "Counter-attack") {
-      ca2 = true;
+      counterAttack2 = true;
     }
 
     let start = 0;
@@ -415,17 +452,17 @@ export default class Game {
         baseGames[start + i] = {
           day: true,
           round: Math.floor(i / 2) + 1,
-          ca1,
-          ca2,
+          counterAttack1,
+          counterAttack2,
           playingFirst,
           firstHasSelected,
           turn,
         };
 
         if (i % 2 === 1) {
-          if (ca1 && !ca2) {
+          if (counterAttack1 && !counterAttack2) {
             playingFirst = Turn.PLAYER_2;
-          } else if (ca2 && !ca1) {
+          } else if (counterAttack2 && !counterAttack1) {
             playingFirst = Turn.PLAYER_1;
           } else {
             playingFirst = playingFirst === Turn.PLAYER_1
@@ -448,8 +485,8 @@ interface BaseGame {
   playingFirst: Turn;
   firstHasSelected: boolean;
   turn: Turn;
-  ca1: boolean;
-  ca2: boolean;
+  counterAttack1: boolean;
+  counterAttack2: boolean;
   day: boolean;
   round: number;
 }
@@ -469,7 +506,7 @@ export class GameGenerator {
     // 'Jessie', 'Timber'
     // 'gwen', 'Cassio Cr'
 
-    return new Game(p1, p2, h1, h2, inputs, logs, repeat);
+    return new Game(p1, p2, h1, h2, Turn.PLAYER_1, inputs, logs, repeat);
   }
 
   static createUnique(
@@ -487,10 +524,10 @@ export class GameGenerator {
       p2,
       HandGenerator.generateRaw(h1),
       HandGenerator.generateRaw(h2),
-      false,
-      false,
-      false,
       first,
+      false,
+      false,
+      false,
     );
   }
 }

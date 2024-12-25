@@ -53,43 +53,45 @@ export class Node {
   }
 
   rating(minimax = true): number {
-    if (this.result !== undefined) {
-      return this.result;
-    } else if (this.nodes.length) {
-      if (!minimax) {
-        this.average = true;
-        let avg = 0;
-        for (const n of this.nodes) {
-          avg += n.rating();
-        }
+    if (this.result !== undefined) return this.result;
 
-        return avg / this.nodes.length;
-      } else if (this.turn === Minimax.MAX) {
-        // return Math.max(...this.nodes.map(n => n.get()));
-        let max = -Infinity;
-        for (const n of this.nodes) {
-          const s = n.rating();
-          if (s > max) {
-            max = s;
-          }
-        }
-
-        return max;
-      } else {
-        // return Math.min(...this.nodes.map(n => n.get()));
-        let min = Infinity;
-        for (const n of this.nodes) {
-          const s = n.rating();
-          if (s < min) {
-            min = s;
-          }
-        }
-        return min;
-      }
+    if (this.nodes.length === 0) {
+      // console.error("Node has no children nodes".red);
+      return Infinity;
     }
 
-    console.error("Node has no children nodes".red);
-    return Infinity;
+    if (!minimax) {
+      this.average = true;
+      let avg = 0;
+      for (const n of this.nodes) {
+        avg += n.rating();
+      }
+
+      return avg / this.nodes.length;
+    }
+
+    if (this.turn === Minimax.MAX) {
+      // return Math.max(...this.nodes.map(n => n.get()));
+      let max = -Infinity;
+      for (const node of this.nodes) {
+        const rating = node.rating();
+        if (rating > max) {
+          max = rating;
+        }
+      }
+
+      return max;
+    } else {
+      // return Math.min(...this.nodes.map(n => n.get()));
+      let min = Infinity;
+      for (const node of this.nodes) {
+        const rating = node.rating();
+        if (rating < min) {
+          min = rating;
+        }
+      }
+      return min;
+    }
   }
 
   // win() {

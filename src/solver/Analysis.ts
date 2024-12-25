@@ -102,6 +102,7 @@ export default class Analysis {
     child = false,
     rootName?: string,
     freeze = true,
+    signal?: AbortSignal,
   ) {
     const rootNode = new Minimax(rootName, game.turn);
     const rootAnalysis = new Analysis(game);
@@ -120,12 +121,18 @@ export default class Analysis {
       indexes = rootAnalysis.unplayedCardIndexes;
     }
 
-    while (analyses.length) {
+    outer: while (analyses.length) {
       const roundAnalyses: Analysis[] = [];
       const roundNodes: Node[] = [];
       let counter = 0;
 
       for (let index = 0; index < analyses.length; index++) {
+        // Make time for Ctrl+C
+        // if (signal && Math.random() < 0.05) {
+        //   await new Promise((resolve) => setTimeout(resolve));
+        // }
+        // if (signal?.aborted) break outer;
+
         const parentAnalysis = analyses[index];
         const parentNode = nodes[index];
 
@@ -182,7 +189,9 @@ export default class Analysis {
                 }
               } else {
                 if (game.round === 1 && !game.firstHasSelected) {
-                  parentNode.add(await Analysis.iterTree(game, true));
+                  parentNode.add(
+                    await Analysis.iterTree(game, true),
+                  );
                 } else {
                   const node = parentNode.add(
                     `${i} ${p} ${f}`,
@@ -209,4 +218,98 @@ export default class Analysis {
 
     return child && freeze ? rootNode.freeze() : rootNode;
   }
+
+  // static async iterTree(
+  //   game: Game,
+  //   child = false,
+  //   rootName?: string,
+  //   freeze = true,
+  // ) {
+  //   const rootNode = new Minimax(rootName, game.turn);
+  //   const rootAnalysis = new Analysis(game);
+
+  //   // Handle already completed games
+  //   if (game.winner !== Winner.PLAYING) {
+  //     if (game.winner === Winner.PLAYER_1) {
+  //       rootNode.result = GameResult.PLAYER_1_WIN;
+  //     } else if (game.winner === Winner.TIE) {
+  //       rootNode.result = GameResult.TIE;
+  //     } else {
+  //       rootNode.result = GameResult.PLAYER_2_WIN;
+  //     }
+  //     return rootNode;
+  //   }
+
+  //   let _i: number | undefined;
+  //   if (!child && (_i = rootAnalysis.deselect()) !== undefined) {
+  //     rootNode.turn = rootAnalysis.turn;
+  //     rootNode.playingSecond = true;
+
+  //     // Process single move for playing second
+  //     const analysis = new Analysis(rootAnalysis.game);
+  //     const game = analysis.game;
+  //     game.select(_i, 0, false); // Use minimal resources for initial move
+  //   }
+
+  //   await this.processGameState(game, rootNode);
+
+  //   return child && freeze ? rootNode.freeze() : rootNode;
+  // }
+
+  // private static async processGameState(
+  //   game: Game,
+  //   parentNode: Node,
+  // ) {
+  //   const analysis = new Analysis(game);
+  //   const indexes = analysis.unplayedCardIndexes;
+  //   const pillz = analysis.playingPlayer.pillz;
+
+  //   // Process moves in order of potential effectiveness
+  //   for (const i of indexes) {
+  //     for (const p of shiftRange(pillz)) {
+  //       for (const f of (p <= pillz - 3 ? [true, false] : [false])) {
+  //         const moveAnalysis = new Analysis(analysis.game);
+  //         const moveGame = moveAnalysis.game;
+  //         moveGame.select(i, p, f);
+
+  //         const node = parentNode.add(
+  //           `${i} ${p} ${f}`,
+  //           moveAnalysis.turn,
+  //           parentNode.playingSecond,
+  //         );
+
+  //         if (
+  //           !moveGame.firstHasSelected && moveGame.winner !== Winner.PLAYING
+  //         ) {
+  //           // Terminal state
+  //           if (moveGame.winner === Winner.PLAYER_1) {
+  //             node.result = GameResult.PLAYER_1_WIN;
+  //             if (!parentNode.defered && node.turn === Turn.PLAYER_1) {
+  //               return; // Early cutoff for winning move
+  //             }
+  //           } else if (moveGame.winner === Winner.TIE) {
+  //             node.result = GameResult.TIE;
+  //           } else {
+  //             node.result = GameResult.PLAYER_2_WIN;
+  //             if (!parentNode.defered && node.turn === Turn.PLAYER_2) {
+  //               return; // Early cutoff for winning move
+  //             }
+  //           }
+  //         } else {
+  //           // Recursively analyze next moves
+  //           const childNode = await this.iterTree(
+  //             moveGame,
+  //             true,
+  //             undefined,
+  //             false,
+  //           );
+  //           node.nodes.push(childNode);
+  //         }
+
+  //         // Clean up
+  //         moveAnalysis.game = null as any;
+  //       }
+  //     }
+  //   }
+  // }
 }

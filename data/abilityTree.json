@@ -2,13 +2,14 @@
   "+x": {
     "Power": {
       "<": 0,
-      "Max x": 0,
-      "Per Life Max x": 0
-    },
-    "Damage": {
-      "<": 0,
-      "Max x": 0,
-      "Per Life Max x": 0
+      "Per": {
+        "Life": {
+          "Max x": 0,
+          "Lost Max x": 0
+        },
+        "Pillz Max x": 0
+      },
+      "Max x": 0
     },
     "Attack": {
       "<": 0,
@@ -21,7 +22,10 @@
           "<": 0,
           "Lost": 0
         },
-        "Life": 0
+        "Life": {
+          "<": 0,
+          "Lost": 0
+        }
       }
     },
     "Life": {
@@ -35,11 +39,19 @@
       },
       "Max x": 0
     },
+    "Damage": {
+      "<": 0,
+      "Per": {
+        "Pillz Lost Max x": 0,
+        "Life Max x": 0
+      },
+      "Max x": 0
+    },
     "Pillz": {
       "<": 0,
       "Per": {
         "Damage": 0,
-        "Round Max x": 0
+        "Round": 0
       },
       "Max x": 0
     },
@@ -51,28 +63,20 @@
     },
     "Opp": {
       "Life": 0,
-      "Attack": 0
-    },
-    "Xp%": 0
-  },
-  "x": {
-    "Recover Pillz Out Of x": 0,
-    "Toxin Min x": 0,
-    "Poison Min x": 0,
-    "Heal Max x": 0,
-    "Dope Max x": 0,
-    "Regen Max x": 0,
-    "Consume Min x": 0,
-    "Mindwipe Min x": 0,
-    "Corrupt Min x": 0,
-    "Rebirth Max x": 0,
-    "Corrosion Min x": 0,
-    "Combust Min x": 0
+      "Pillz": 0
+    }
   },
   "-x": {
     "Power": {
+      "Per": {
+        "Life Lost Min x": 0,
+        "Pillz Lost Min x": 0
+      },
+      "Min x": 0
+    },
+    "Damage": {
       "Min x": 0,
-      "Per Life Lost Min x": 0
+      "Per Pillz Lost Min x": 0
     },
     "Attack": {
       "Per": {
@@ -87,23 +91,41 @@
     },
     "Cards": {
       "Power Min x": 0,
-      "Damage Min x": 0,
-      "Attack Min x": 0
+      "Attack Min x": 0,
+      "Damage Min x": 0
     },
-    "Damage Min x": 0,
-    "Power&Damage Min x": 0,
     "Life Min x": 0,
-    "Life&Pillz Min x": 0,
+    "Power&Damage Min x": 0,
+    "Players Pillz Min x": 0,
     "Pillz&Life Min x": 0,
+    "Life&Pillz Min x": 0,
     "Xantiax Life Min x": 0
   },
   "Stop": {
     "Ability": 0,
     "Bonus": 0
   },
+  "x": {
+    "Recover": {
+      "Pillz Out Of x": 0,
+      "Players Pillz Out Of x": 0
+    },
+    "Toxin Min x": 0,
+    "Poison Min x": 0,
+    "Heal Max x": 0,
+    "Dope Max x": 0,
+    "Regen Max x": 0,
+    "Consume Min x": 0,
+    "Corrosion Min x": 0,
+    "Combust Min x": 0,
+    "Mindwipe Min x": 0,
+    "Corrupt Min x": 0,
+    "Rebirth Max x": 0,
+    "Repair Max x": 0
+  },
   "Copy": {
-    "Power": 0,
     "Bonus": 0,
+    "Power": 0,
     "Damage": 0,
     "Power&Damage": 0,
     "Ability": 0
@@ -111,12 +133,13 @@
   "Hazard": 0,
   "Cancel": {
     "Pillz&Life": 0,
-    "Power": 0,
-    "Attack": 0,
-    "Power&Damage": 0,
-    "Life": 0,
-    "Pillz": 0,
     "Damage": 0,
+    "Life": 0,
+    "Attack": 0,
+    "Power": 0,
+    "Power&Damage": 0,
+    "Pillz": 0,
+    "Power/Damage": 0,
     "Leader": 0
   },
   "Protection": {
@@ -128,21 +151,29 @@
     "Ability": 0,
     "Cards Power&Damage": 0
   },
-  "Counter-Attack": 0,
   "Exchange": {
-    "Damage": 0,
     "Power": 0,
+    "Damage": 0,
     "Power&Damage": 0
   },
+  "Counter-Attack": 0,
+  "Limitless": 0,
   "Beyond": 0,
-  "Illusion": 0,
   "Impose": {
     "Damage": 0,
     "Power": 0
   },
+  "Perfection": 0,
+  "Overdose": 0,
+  "Damage": 0,
+  "Illusion": 0,
   "Bypass": 0,
   "Tie-Break": 0,
   "Infiltrated": 0,
   "No Ability": 0,
-  "Remove Ability Conditions": 0
+  "Cards +x Damage": 0,
+  "Sinister Symmetry": 0,
+  "Remove Ability Conditions": 0,
+  "Tune Out": 0,
+  "Opp +x Attack": 0
 }

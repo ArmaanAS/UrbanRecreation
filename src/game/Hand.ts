@@ -113,7 +113,7 @@ export class HandGenerator {
     return Object.setPrototypeOf(hand, Hand.prototype);
   }
 
-  static generate(...cards: HandOf<string> | []) {
+  static generate(...cards: HandOf<string | number> | []) {
     if (cards.length === 4) {
       return this.from(CardGenerator.getRandomHand(cards));
     } else {

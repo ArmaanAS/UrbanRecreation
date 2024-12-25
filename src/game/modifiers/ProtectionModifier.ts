@@ -9,13 +9,6 @@ enum Prot {
   ABILITY = 4,
   BONUS = 5,
 }
-export const ProtObject: { [key: string]: Prot } = {
-  POWER: Prot.POWER,
-  DAMAGE: Prot.DAMAGE,
-  ATTACK: Prot.ATTACK,
-  ABILITY: Prot.ABILITY,
-  BONUS: Prot.BONUS,
-};
 
 export default class ProtectionModifier extends Modifier {
   prot: Prot;
@@ -24,7 +17,7 @@ export default class ProtectionModifier extends Modifier {
     super();
 
     if (typeof prot == "string") {
-      this.prot = ProtObject[prot.toUpperCase()];
+      this.prot = Prot[prot.toUpperCase() as keyof typeof Prot];
     } else {
       this.prot = prot;
     }
