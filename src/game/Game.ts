@@ -102,7 +102,7 @@ export default class Game {
     }
   }
 
-  clone(inputs?: boolean, logs?: boolean): Game {
+  clone(inputs = false, logs = false): Game {
     const h1 = this.h1.clone();
     const h2 = this.h2.clone();
 
@@ -204,7 +204,42 @@ export default class Game {
     GameRenderer.draw(this);
   }
 
-  deselect() {
+  get playingHand() {
+    return this.turn === Turn.PLAYER_1 ? this.h1 : this.h2;
+  }
+
+  get playingPlayer() {
+    return this.turn === Turn.PLAYER_1 ? this.p1 : this.p2;
+  }
+
+  get playedCardIndex() {
+    if (!this.firstHasSelected) {
+      throw new Error("No first move selected");
+    }
+
+    if (this.turn === Turn.PLAYER_1) {
+      return this.i2![0];
+    } else {
+      return this.i1![0];
+    }
+  }
+
+  get playedHand() {
+    return this.turn === Turn.PLAYER_1 ? this.h2 : this.h1;
+  }
+
+  get unplayedCardIndexes() {
+    const indexes: number[] = [];
+    const hand = this.playingHand;
+    for (let i = 0; i < 4; i++) {
+      if (!hand[i].played) {
+        indexes.push(i);
+      }
+    }
+    return indexes;
+  }
+
+  deselect(draw = true) {
     if (!this.firstHasSelected) {
       console.log("Cannot deselect before first move");
       return;
@@ -212,15 +247,20 @@ export default class Game {
 
     this.id--;
 
-    if (this.turn === Turn.PLAYER_1 && this.i1) {
-      this.h1[this.i1![0]].played = false;
+    let index: number;
+    if (this.turn === Turn.PLAYER_1) {
+      index = this.i1![0];
+      this.h1[index].played = false;
       this.i1 = undefined;
-    } else if (this.turn === Turn.PLAYER_2 && this.i2) {
-      this.h2[this.i2![0]].played;
+    } else {
+      index = this.i2![0];
+      this.h2[index].played = false;
       this.i2 = undefined;
     }
 
-    this.draw();
+    if (draw) this.draw();
+
+    return index;
   }
 
   select(index: CardIndex, pillz: number, fury = false) {
@@ -324,7 +364,7 @@ export default class Game {
         /  ___|    | |         | |                     | |
         \\ \`--.  ___| | ___  ___| |_    ___ __ _ _ __ __| |
          \`--. \\/ _ \\ |/ _ \\/ __| __|  / __/ _\` | '__/ _\` |
-        /\\__/ /  __/ |  __/ (__| |_  | (_| (_| | | | (_| |
+        /\\__/ /  __/ |  __/ (__| |_   |(_| (_| | | | (_| |
         \\____/ \\___|_|\\___|\\___|\\__|  \\___\\__,_|_|  \\__,_| o o o\n\n\n`;
 
     console.log(msg.green);

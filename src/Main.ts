@@ -40,29 +40,41 @@ async function playGame(body: Body) {
   while (!g.hasWinner(true) && true) {
     if (g.turn === Turn.PLAYER_1 && !false) {
       if (g.round !== 1) {
-        const controller = new AbortController();
-        const abort = () => controller.abort();
+        // const controller = new AbortController();
+        // const abort = () => controller.abort();
+        // Deno.addSignalListener("SIGINT", abort);
+
+        // log("\n\nCalculating best move...\n\n");
+
+        // console.log = () => 0;
+        // console.time("a");
+        // const m = await Analysis.iterTree(
+        //   g,
+        //   undefined,
+        //   undefined,
+        //   undefined,
+        //   controller.signal,
+        // );
+        // console.log = log;
+        // console.timeEnd("a");
+
+        // log();
+
+        // const best = m.best();
+        // console.log(best.toString());
+        // Deno.removeSignalListener("SIGINT", abort);
+        const url = new URL("solver_2/worker.ts", import.meta.url);
+        const worker = new Worker(url, {
+          type: "module",
+          deno: {
+            permissions: "inherit",
+          },
+        });
+
+        worker.postMessage(g);
+        const abort = () => worker.terminate();
         Deno.addSignalListener("SIGINT", abort);
-
-        log("\n\nCalculating best move...\n\n");
-
-        console.log = () => 0;
-        console.time("a");
-        const m = await Analysis.iterTree(
-          g,
-          undefined,
-          undefined,
-          undefined,
-          controller.signal,
-        );
-        console.log = log;
-        console.timeEnd("a");
-
-        log();
-
-        const best = m.best();
-        console.log(best.toString());
-        Deno.removeSignalListener("SIGINT", abort);
+        worker.onmessage = () => Deno.removeSignalListener("SIGINT", abort);
       }
 
       if (g.firstHasSelected) {
