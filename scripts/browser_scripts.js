@@ -151,6 +151,7 @@ async function findBattleStatus() {
 }
 
 {
+  document.getElementById("unity-container").style.width = "100%";
   const data = await findBattleStatus();
   const p0 = data.Player0.Player.id;
   const p1 = data.Player1.Player.id;
