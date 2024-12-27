@@ -61,7 +61,7 @@ export default class Hand extends Array<Card> {
       }
     }
 
-    console.log({ oculusIndex });
+    // console.log({ oculusIndex });
 
     if (oculus) {
       // Count clans in hand

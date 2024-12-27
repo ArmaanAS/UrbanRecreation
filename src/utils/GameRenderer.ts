@@ -72,8 +72,8 @@ export default class GameRenderer {
         return colors.bold(` ${c.name} `.bgYellow.white);
       case "l":
         return colors.bold(` ${c.name} `.white.bgMagenta);
-      case "m":
-        return colors.bold(` ${c.name} `.bgBlue.white);
+        // case "m":
+        //   return colors.bold(` ${c.name} `.bgBlue.white);
     }
   }
 
@@ -81,6 +81,7 @@ export default class GameRenderer {
     "All Stars": (s: string) => s.blue,
     Bangers: (s: string) => s.yellow.dim,
     Berzerk: (s: string) => s.red,
+    Cosmohnuts: (s: string) => s.green.bgRed,
     Dominion: (s: string) => s.magenta.dim,
     "Fang Pi Clang": (s: string) => s.red,
     Freaks: (s: string) => s.green,
@@ -96,6 +97,7 @@ export default class GameRenderer {
     Leader: (s: string) => s.red,
     Montana: (s: string) => s.magenta.dim,
     Nightmare: (s: string) => s.black.dim,
+    Oblivion: (s: string) => s.gray.dim,
     Oculus: (s: string) => s.red.dim,
     Paradox: (s: string) => s.magenta.dim,
     Piranas: (s: string) => s.yellow,
@@ -110,6 +112,7 @@ export default class GameRenderer {
     "Ulu Watu": (s: string) => s.green,
     Uppers: (s: string) => s.green,
     Vortex: (s: string) => s.grey,
+    Zenith: (s: string) => s.white.bgBlue,
   };
 
   static styledClan(c: Card) {

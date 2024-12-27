@@ -28,6 +28,7 @@ export enum ConditionType {
   STOP = 20,
   UNISON = 21,
   INFILTRATED = 22,
+  VERSUS = 23,
 }
 
 export default class Condition {
@@ -37,10 +38,15 @@ export default class Condition {
   clans!: Clan[];
   constructor(s: string) {
     this.s = s;
-    if (s.startsWith("[")) {
+    if (s.endsWith("]")) {
       const clanIds = [...s.matchAll(/\d+/g)].map((m) => +m[0]) as ClanId[];
       this.clans = clanIds.map((id) => ClanIdMap[id]);
-      this.type = ConditionType.INFILTRATED;
+      console.log("Clans", this.clans);
+      if (s.startsWith("Versus")) {
+        this.type = ConditionType.VERSUS;
+      } else {
+        this.type = ConditionType.INFILTRATED;
+      }
     } else {
       this.type =
         ConditionType[s.toUpperCase() as keyof typeof ConditionType] ??
@@ -96,6 +102,10 @@ export default class Condition {
         return data.round.hand.getClanCards(data.card) === 4;
       case ConditionType.INFILTRATED:
         return this.clans.includes(data.card.clan);
+      case ConditionType.VERSUS:
+        return this.clans.find((c) =>
+          data.round.oppHand.map((c) => c.clan).includes(c)
+        ) !== undefined;
     }
 
     return true;
