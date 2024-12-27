@@ -12,7 +12,7 @@ const game = Game.from(data as Game);
 log("\n\nCalculating best move...\n\n");
 
 console.time("worker iterTree");
-const best = await Analysis.iterTree3(game);
+const best = Analysis.iterTree(game);
 console.timeEnd("worker iterTree");
 console.log = log;
 

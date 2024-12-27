@@ -2,6 +2,7 @@ import Ability, { AbilityType } from "./Ability.ts";
 import BattleData from "./battle/BattleData.ts";
 import CachedBattleData from "./battle/CachedBattleData.ts";
 import BasicModifier from "./modifiers/BasicModifier.ts";
+import { type Clan, type ClanId, ClanIdMap } from "@/game/types/CardTypes.ts";
 
 export enum ConditionType {
   UNDEFINED = 0,
@@ -25,40 +26,27 @@ export enum ConditionType {
   ASYMMETRY = 18,
   REANIMATE = 19,
   STOP = 20,
+  UNISON = 21,
+  INFILTRATED = 22,
 }
-const ConditionTypes: {
-  [key: string]: ConditionType;
-} = {
-  UNDEFINED: ConditionType.UNDEFINED,
-  COURAGE: ConditionType.COURAGE,
-  DEFEAT: ConditionType.DEFEAT,
-  BRAWL: ConditionType.BRAWL,
-  GROWTH: ConditionType.GROWTH,
-  CONFIDENCE: ConditionType.CONFIDENCE,
-  DEGROWTH: ConditionType.DEGROWTH,
-  "VICTORY OR DEFEAT": ConditionType["VICTORY OR DEFEAT"],
-  EQUALIZER: ConditionType.EQUALIZER,
-  SUPPORT: ConditionType.SUPPORT,
-  TEAM: ConditionType.TEAM,
-  SYMMETRY: ConditionType.SYMMETRY,
-  REVENGE: ConditionType.REVENGE,
-  REPRISAL: ConditionType.REPRISAL,
-  DAY: ConditionType.DAY,
-  NIGHT: ConditionType.NIGHT,
-  KILLSHOT: ConditionType.KILLSHOT,
-  BACKLASH: ConditionType.BACKLASH,
-  ASYMMETRY: ConditionType.ASYMMETRY,
-  REANIMATE: ConditionType.REANIMATE,
-  STOP: ConditionType.STOP,
-};
 
 export default class Condition {
   s: string;
   type: ConditionType;
   stop!: string;
+  clans!: Clan[];
   constructor(s: string) {
     this.s = s;
-    this.type = ConditionTypes[s.toUpperCase()] ?? ConditionType.UNDEFINED;
+    if (s.startsWith("[")) {
+      const clanIds = [...s.matchAll(/\d+/g)].map((m) => +m[0]) as ClanId[];
+      this.clans = clanIds.map((id) => ClanIdMap[id]);
+      this.type = ConditionType.INFILTRATED;
+    } else {
+      this.type =
+        ConditionType[s.toUpperCase() as keyof typeof ConditionType] ??
+          ConditionType.UNDEFINED;
+    }
+    console.log("Condition", s, this.type);
   }
 
   static from(o: Condition): Condition {
@@ -103,6 +91,11 @@ export default class Condition {
         return data.card.index === data.oppCard.index;
       case ConditionType.ASYMMETRY:
         return data.card.index !== data.oppCard.index;
+
+      case ConditionType.UNISON:
+        return data.round.hand.getClanCards(data.card) === 4;
+      case ConditionType.INFILTRATED:
+        return this.clans.includes(data.card.clan);
     }
 
     return true;

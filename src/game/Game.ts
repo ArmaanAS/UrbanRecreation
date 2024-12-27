@@ -228,6 +228,10 @@ export default class Game {
     return this.turn === Turn.PLAYER_1 ? this.h2 : this.h1;
   }
 
+  get isPlaying() {
+    return this.winner === Winner.PLAYING;
+  }
+
   get unplayedCardIndexes() {
     const indexes: number[] = [];
     const hand = this.playingHand;

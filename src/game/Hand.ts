@@ -1,5 +1,6 @@
 import { CardJSON, HandOf } from "./types/CardTypes.ts";
 import Card, { CardGenerator } from "./Card.ts";
+import type { Clan } from "@/game/types/CardTypes.ts";
 
 // function unique(value: any, index: any, self: string | any[]) {
 //   return self.indexOf(value) === index;
@@ -36,13 +37,64 @@ export default class Hand extends Array<Card> {
     ], Hand.prototype);
   }
 
-  static override from(o: Hand) {
+  static override from(o: Hand | HandOf<Card>): Hand {
     Card.from(o[0]);
     Card.from(o[1]);
     Card.from(o[2]);
     Card.from(o[3]);
 
-    return Object.setPrototypeOf(o, Hand.prototype);
+    const hand: Hand = Object.setPrototypeOf(o, Hand.prototype);
+
+    // Change Oculus cards clan
+    // If only one other clan is present in the draw, the Oculus card is considered to be a card of that clan.
+    // If two other clans are present, the Oculus card will belong to the clan of the sole card, thus activating its bonus.
+    // If three other clans are present in the draw, or if you have more than one Oculus in your hand, the Infiltrated bonus has no effect.
+    let oculus: Card | undefined;
+    let oculusIndex: number | undefined;
+    for (let i = 0; i < 4; i++) {
+      const card = hand[i];
+      if (card.baseClan === "Oculus") {
+        if (oculus !== undefined) return hand;
+        oculus = card;
+        oculusIndex = i;
+        break;
+      }
+    }
+
+    console.log({ oculusIndex });
+
+    if (oculus) {
+      // Count clans in hand
+      const clansCount = new Map<Clan, number>();
+      for (let i = 0; i < 4; i++) {
+        if (i === oculusIndex) continue;
+        const card = hand[i];
+        if (card.baseClan !== "Oculus") {
+          clansCount.set(card.clan, (clansCount.get(card.clan) ?? 0) + 1);
+        }
+      }
+
+      // Find clan to Infiltrate
+      let clan: Clan | undefined;
+      if (clansCount.size === 1) {
+        clan = clansCount.keys().next().value!;
+      } else if (clansCount.size === 2) {
+        for (const [newClan, count] of clansCount) {
+          if (count === 1) {
+            clan = newClan;
+            break;
+          }
+        }
+      }
+      // console.log({ clan });
+
+      if (clan) {
+        oculus.clan = clan;
+        oculus.bonusString = hand.find((c) => c.baseClan === clan)!.bonusString;
+      }
+    }
+
+    return hand;
   }
 
   // get(index: number) {
@@ -51,21 +103,21 @@ export default class Hand extends Array<Card> {
 
   getClanCards(card: Card) {
     let i = 0;
-    if (this[0].clan == card.clan) i++;
+    if (this[0].clan === card.clan) i++;
     if (
-      this[1].clan == card.clan &&
-      this[1].name != this[0].name
+      this[1].clan === card.clan &&
+      this[1].name !== this[0].name
     ) i++;
     if (
-      this[2].clan == card.clan &&
-      this[2].name != this[0].name &&
-      this[2].name != this[1].name
+      this[2].clan === card.clan &&
+      this[2].name !== this[0].name &&
+      this[2].name !== this[1].name
     ) i++;
     if (
-      this[3].clan == card.clan &&
-      this[3].name != this[0].name &&
-      this[3].name != this[1].name &&
-      this[3].name != this[2].name
+      this[3].clan === card.clan &&
+      this[3].name !== this[0].name &&
+      this[3].name !== this[1].name &&
+      this[3].name !== this[2].name
     ) i++;
 
     return i;
@@ -110,7 +162,8 @@ export class HandGenerator {
     hand[2].index = 2;
     hand[3].index = 3;
 
-    return Object.setPrototypeOf(hand, Hand.prototype);
+    // return Object.setPrototypeOf(hand, Hand.prototype);
+    return Hand.from(hand);
   }
 
   static generate(...cards: HandOf<string | number> | []) {

@@ -18,7 +18,7 @@ import {
   // CardString,
   CardJSON,
   Clan,
-  Clans,
+  ClanNames,
   DamageStat,
   HandOf,
   LifeStat,
@@ -61,6 +61,12 @@ export default class Card {
   }
 
   get clan() {
+    return this.base.infiltratedClan ?? this.base.clan;
+  }
+  set clan(clan: Clan) {
+    this.base.infiltratedClan = clan;
+  }
+  get baseClan() {
     return this.base.clan;
   }
 
@@ -91,8 +97,11 @@ export default class Card {
   }
   get bonusString(): string {
     return this.bonus.string === AbilityString.DEFAULT
-      ? this.base.bonus
+      ? this.base.infiltratedBonus ?? this.base.bonus
       : "No Bonus";
+  }
+  set bonusString(text: string) {
+    this.base.infiltratedBonus = text;
   }
 
   get ability(): AbilityStat {
@@ -175,7 +184,7 @@ export class CardGenerator {
       cards = cardClans[clan];
     } // cards = cardClans[getN(Object.keys(cardClans) as Clan[])[0]];
     else {
-      cards = cardClans[getN(Clans as unknown as Clan[])[0]];
+      cards = cardClans[getN(ClanNames)[0]];
     }
 
     return getN(cards, 4).map((c) => new Card(c));

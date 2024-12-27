@@ -16,7 +16,7 @@ export class Node {
   turn: Turn;
   average = false;
   playingSecond = false;
-  defered: boolean;
+  deferred: boolean;
   result?: GameResult = undefined; // This could be any number, e.g. 0.87832732451 !!...!!
   nodes: Node[] = [];
   break = false;
@@ -24,21 +24,21 @@ export class Node {
     name = "",
     turn: Turn = Turn.PLAYER_1,
     result?: GameResult,
-    defered = false,
+    deferred = false,
   ) {
     this.name = name;
     this.turn = turn;
 
     // this.playSecond = false;
-    this.defered = defered;
+    this.deferred = deferred;
 
     this.result = result;
     // this.nodes = [];
   }
 
   add(name: Node): Node;
-  add(name: string, turn: Turn, defered: boolean): Node;
-  add(name: string | Node, turn?: Turn, defered?: boolean) {
+  add(name: string, turn: Turn, deferred: boolean): Node;
+  add(name: string | Node, turn?: Turn, deferred?: boolean) {
     if (name instanceof Node) {
       this.nodes.push(name);
       return name;
@@ -46,7 +46,7 @@ export class Node {
       if (turn === undefined) {
         turn = this.turn === Turn.PLAYER_1 ? Turn.PLAYER_2 : Turn.PLAYER_1;
       }
-      const n = new Node(name, turn, undefined, defered);
+      const n = new Node(name, turn, undefined, deferred);
       this.nodes.push(n);
       return n;
     }

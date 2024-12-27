@@ -1,40 +1,49 @@
-export const Clans = [
-  "All Stars",
-  "Bangers",
-  "Berzerk",
-  "Dominion",
-  "Fang Pi Clang",
-  "Freaks",
-  "Frozn",
-  "GHEIST",
-  "GhosTown",
-  "Hive",
-  "Huracan",
-  "Jungo",
-  "Junkz",
-  "Komboka",
-  "La Junta",
-  "Leader",
-  "Montana",
-  "Nightmare",
-  "Oculus",
-  "Paradox",
-  "Piranas",
-  "Pussycats",
-  "Raptors",
-  "Rescue",
-  "Riots",
-  "Roots",
-  "Sakrohm",
-  "Sentinel",
-  "Skeelz",
-  "Ulu Watu",
-  "Uppers",
-  "Vortex",
-] as const;
-export type Clan = typeof Clans[number];
+export const Clans = {
+  "All Stars": 38,
+  "Bangers": 31,
+  "Berzerk": 46,
+  "Cosmohnuts": 58,
+  "Dominion": 53,
+  "Fang Pi Clang": 25,
+  "Freaks": 40,
+  "Frozn": 47,
+  "GHEIST": 32,
+  "GhosTown": 52,
+  "Hive": 51,
+  "Huracan": 48,
+  "Jungo": 43,
+  "Junkz": 26,
+  "Komboka": 54,
+  "La Junta": 27,
+  "Leader": 36,
+  "Montana": 3,
+  "Nightmare": 37,
+  "Oblivion": 57,
+  "Oculus": 56,
+  "Paradox": 55,
+  "Piranas": 42,
+  "Pussycats": 4,
+  "Raptors": 50,
+  "Rescue": 41,
+  "Riots": 49,
+  "Roots": 29,
+  "Sakrohm": 30,
+  "Sentinel": 33,
+  "Skeelz": 44,
+  "Ulu Watu": 10,
+  "Uppers": 28,
+  "Vortex": 45,
+  "Zenith": 59,
+} as const;
+export const ClanNames = Object.keys(Clans) as (keyof typeof Clans)[];
+export const ClanIdMap = Object.fromEntries(
+  Object.entries(Clans).map(([k, v]) => [v, k]),
+) as Record<ClanId, Clan>;
+export type Clan = keyof typeof Clans;
+export type ClanId = typeof Clans[Clan];
 
-export type Rarity = "c" | "u" | "r" | "cr" | "m" | "l";
+// export type Rarity = "c" | "u" | "r" | "cr" | "m" | "l";
+export type Rarity = "c" | "u" | "r" | "cr" | "l";
 
 export type Stars = 1 | 2 | 3 | 4 | 5;
 export type MaxStars = 2 | 3 | 4 | 5;
@@ -75,9 +84,11 @@ export interface BaseCard {
   maxStars: MaxStars;
   release_date: number;
   clan: Clan;
+  infiltratedClan?: Clan;
   rarity: Rarity;
   ability: string;
   bonus: string;
+  infiltratedBonus?: string;
   // ability: CardString; // 3 bits
   // bonus: CardString; // 3 bits
   // power: CardStat;  // 18 bits
