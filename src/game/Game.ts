@@ -24,8 +24,6 @@ type Selection = [CardIndex, number, boolean];
 
 export default class Game {
   id: number;
-  inputs: boolean;
-  logs: boolean;
   p1: Player;
   p2: Player;
   winner = Winner.PLAYING;
@@ -46,13 +44,8 @@ export default class Game {
     h1: Hand,
     h2: Hand,
     first: Turn = Turn.PLAYER_1,
-    inputs = false,
-    logs = true,
-    repeat?: boolean,
   ) {
     this.id = 0;
-    this.inputs = inputs;
-    this.logs = logs;
 
     this.p1 = p1;
     this.p2 = p2;
@@ -95,14 +88,10 @@ export default class Game {
 
     this.createBattleDataCache();
 
-    GameRenderer.draw(this);
-
-    if (inputs) {
-      this.input(repeat);
-    }
+    this.draw();
   }
 
-  clone(inputs = false, logs = false): Game {
+  clone(): Game {
     const h1 = this.h1.clone();
     const h2 = this.h2.clone();
 
@@ -123,8 +112,6 @@ export default class Game {
 
     return Object.setPrototypeOf({
       id: this.id,
-      inputs: inputs ?? this.inputs,
-      logs: logs ?? this.logs,
       winner: this.winner,
       p1,
       p2,
@@ -139,7 +126,7 @@ export default class Game {
     }, Game.prototype);
   }
 
-  static from(o: Game, inputs?: boolean, logs?: boolean) {
+  static from(o: Game) {
     Object.setPrototypeOf(o, Game.prototype);
 
     Object.setPrototypeOf(o.p1, Player.prototype);
@@ -154,13 +141,13 @@ export default class Game {
     Object.setPrototypeOf(o.r1, PlayerRound.prototype);
     Object.setPrototypeOf(o.r2, PlayerRound.prototype);
 
-    if (inputs !== undefined) {
-      o.inputs = inputs;
-    }
+    // if (inputs !== undefined) {
+    //   o.inputs = inputs;
+    // }
 
-    if (logs !== undefined) {
-      o.logs = logs;
-    }
+    // if (logs !== undefined) {
+    //   o.logs = logs;
+    // }
 
     o.createBaseGameCache();
     o.createBattleDataCache();
@@ -267,7 +254,7 @@ export default class Game {
     return index;
   }
 
-  select(index: CardIndex, pillz: number, fury = false) {
+  select(index: CardIndex, pillz: number, fury = false, draw = true) {
     // if (typeof index != 'number' || typeof pillz != 'number') //return false;
     if (!Number.isInteger(index) || !Number.isInteger(pillz)) {
       throw new Error(`Game.select - index or pillz is not a number 
@@ -305,7 +292,7 @@ export default class Game {
 
     // this.firstHasSelected = !this.firstHasSelected;
 
-    GameRenderer.draw(this);
+    if (draw) this.draw();
     return true;
   }
 
@@ -413,7 +400,7 @@ export default class Game {
   hasWinner(log = false) {
     if (this.round > 4 || this.p1.life <= 0 || this.p2.life <= 0) {
       if (log) {
-        GameRenderer.draw(this);
+        this.draw();
 
         if (this.p1.life > this.p2.life) {
           console.log("\n  Game over!\n".white.bgGreen);
@@ -539,7 +526,7 @@ interface BaseGame {
 const baseGames: BaseGame[] = [];
 
 export class GameGenerator {
-  static create(inputs = true, logs?: boolean, repeat?: boolean) {
+  static create() {
     const p1 = new Player(12, 12, 0); // "Player");
     const p2 = new Player(12, 12, 1); // "Urban Rival");
 
@@ -550,7 +537,7 @@ export class GameGenerator {
     // 'Jessie', 'Timber'
     // 'gwen', 'Cassio Cr'
 
-    return new Game(p1, p2, h1, h2, Turn.PLAYER_1, inputs, logs, repeat);
+    return new Game(p1, p2, h1, h2, Turn.PLAYER_1);
   }
 
   static createUnique(
@@ -558,7 +545,7 @@ export class GameGenerator {
     h2: HandOf<CardJSON>,
     life: number,
     pillz: number,
-    first?: Turn,
+    turn?: Turn,
   ) {
     const p1 = new Player(life, pillz, 0); // name1);
     const p2 = new Player(life, pillz, 1); // name2);
@@ -568,10 +555,7 @@ export class GameGenerator {
       p2,
       HandGenerator.generateRaw(h1),
       HandGenerator.generateRaw(h2),
-      first,
-      false,
-      false,
-      false,
+      turn,
     );
   }
 }

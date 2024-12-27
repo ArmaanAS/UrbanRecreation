@@ -1,7 +1,8 @@
 {
   "tasks": {
     "run": "deno -S --allow-env=FORCE_COLOR --allow-read --allow-net --unstable-worker-options --v8-flags=--max-old-space-size=12000 --watch ./src/Main.ts",
-    "data": "deno run --env --allow-env=API_KEY,API_SECRET,NODE_EXTRA_CA_CERTS,FORCE_COLOR -RWN --allow-sys=osRelease ./scripts/RequestCards.ts"
+    "data": "deno run --env --allow-env=API_KEY,API_SECRET,NODE_EXTRA_CA_CERTS,FORCE_COLOR -RWN --allow-sys=osRelease ./scripts/RequestCards.ts",
+    "bench": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 --inspect-brk ./tests/IterTree.bench.ts"
   },
   "imports": {
     "hono": "jsr:@hono/hono@^4.6.14",

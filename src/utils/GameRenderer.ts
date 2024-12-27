@@ -9,12 +9,7 @@ import Hand from "../game/Hand.ts";
 import { Turn } from "../game/types/Types.ts";
 
 export default class GameRenderer {
-  static draw(game: Game, override = false, log = false) {
-    if (!override && !game.logs) return;
-
-    const _log = console.log;
-    if (log) console.log = console.info;
-
+  static draw(game: Game) {
     if (game.i2 !== undefined) {
       this.drawPlayer(game.p2, game.round);
       this.drawHand(game.h2, "cyan");
@@ -30,8 +25,6 @@ export default class GameRenderer {
       this.drawPlayer(game.p1, game.round);
       this.drawHand(game.h1, game.turn === Turn.PLAYER_1 ? "yellow" : "white");
     }
-
-    if (log) console.log = _log;
   }
 
   static drawPlayer(p: Player, r: number) {

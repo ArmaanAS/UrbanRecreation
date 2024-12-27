@@ -39,28 +39,8 @@ async function playGame(body: Body) {
 
   while (!g.hasWinner(true) && true) {
     if (g.turn === Turn.PLAYER_1 && !false) {
-      if (g.round !== 1) {
-        const url = new URL("solver_2/worker.ts", import.meta.url);
-        const worker = new Worker(url, {
-          type: "module",
-          deno: {
-            permissions: "inherit",
-          },
-        });
-
-        const abort = () => {
-          console.info("Terminating worker");
-          worker.terminate();
-        };
-        console.info("Adding SIGINT listener");
-        Deno.addSignalListener("SIGINT", abort);
-
-        worker.postMessage(g);
-
-        worker.onmessage = () => {
-          console.info("Removing SIGINT listener");
-          Deno.removeSignalListener("SIGINT", abort);
-        };
+      if (g.round > 1) {
+        Analysis.iterTreeWorker(g);
       }
 
       if (g.firstHasSelected) {

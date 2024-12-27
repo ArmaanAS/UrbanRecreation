@@ -1,25 +1,52 @@
 import Game, { Winner } from "../game/Game.ts";
 import { shiftRange } from "../utils/Utils.ts";
-// import Bar from "./Bar.ts"
 import Minimax, { GameResult, Node } from "./Minimax.ts";
-// import DistributedAnalysis from "./DistributedAnalysis.ts";
 import { Turn } from "../game/types/Types.ts";
 
 export default class Analysis {
+  static iterTreeWorker(
+    game: Game,
+  ): Promise<Minimax | undefined> {
+    const url = new URL("worker.ts", import.meta.url);
+    const worker = new Worker(url, {
+      type: "module",
+      deno: {
+        permissions: "inherit",
+      },
+    });
+
+    worker.postMessage({ game });
+
+    return new Promise((res) => {
+      const abort = () => {
+        console.info("Terminating worker");
+        worker.terminate();
+        res(undefined);
+      };
+      // console.info("Adding SIGINT listener");
+      Deno.addSignalListener("SIGINT", abort);
+
+      worker.onmessage = (e) => {
+        // console.info("Removing SIGINT listener");
+        Deno.removeSignalListener("SIGINT", abort);
+        res(e.data as Minimax);
+        worker.terminate();
+      };
+    });
+  }
+
   static iterTree(
     game: Game,
     isRoot = true,
-    rootName?: string,
-    freeze = true,
   ): Minimax {
-    const rootNode = new Minimax(rootName, game.turn);
+    const rootNode = new Minimax(undefined, game.turn);
     const rootGame = game.clone();
     let games = [rootGame];
     let nodes: Node[] = [rootNode];
-    let indexes: number[] | undefined;
 
     let depth = 0;
 
+    let indexes: number[] | undefined;
     if (isRoot && rootGame.firstHasSelected) {
       indexes = [rootGame.deselect(false)!];
       rootNode.turn = rootGame.turn;
@@ -31,9 +58,15 @@ export default class Analysis {
       const roundNodes: Node[] = [];
       let counter = 0;
 
-      while (games.length) {
-        const parentGame = games.pop()!;
-        const parentNode = nodes.pop()!;
+      // while (games.length) {
+      //   const parentGame = games.pop()!;
+      //   const parentNode = nodes.pop()!;
+      // for (let index = 0; index < games.length; index++) {
+      for (let index = games.length - 1; index >= 0; index--) {
+        const parentGame = games[index];
+        const parentNode = nodes[index];
+        // games.length--;
+        // nodes.length--;
 
         indexes ??= parentGame.unplayedCardIndexes;
 
@@ -45,7 +78,7 @@ export default class Analysis {
               counter++;
 
               const game = parentGame.clone();
-              game.select(i, p, f);
+              game.select(i, p, f, false);
 
               if (!game.firstHasSelected && game.winner !== Winner.PLAYING) {
                 const node = parentNode.add(
@@ -110,7 +143,7 @@ export default class Analysis {
       nodes = roundNodes;
     }
 
-    return !isRoot && freeze ? rootNode.freeze() : rootNode;
+    return isRoot ? rootNode : rootNode.freeze();
   }
 
   static iterTree3(
@@ -207,97 +240,4 @@ export default class Analysis {
 
     return node;
   }
-  // static async iterTree(
-  //   game: Game,
-  //   child = false,
-  //   rootName?: string,
-  //   freeze = true,
-  // ) {
-  //   const rootNode = new Minimax(rootName, game.turn);
-  //   const rootAnalysis = new Analysis(game);
-
-  //   // Handle already completed games
-  //   if (game.winner !== Winner.PLAYING) {
-  //     if (game.winner === Winner.PLAYER_1) {
-  //       rootNode.result = GameResult.PLAYER_1_WIN;
-  //     } else if (game.winner === Winner.TIE) {
-  //       rootNode.result = GameResult.TIE;
-  //     } else {
-  //       rootNode.result = GameResult.PLAYER_2_WIN;
-  //     }
-  //     return rootNode;
-  //   }
-
-  //   let _i: number | undefined;
-  //   if (!child && (_i = rootAnalysis.deselect()) !== undefined) {
-  //     rootNode.turn = rootAnalysis.turn;
-  //     rootNode.playingSecond = true;
-
-  //     // Process single move for playing second
-  //     const analysis = new Analysis(rootAnalysis.game);
-  //     const game = analysis.game;
-  //     game.select(_i, 0, false); // Use minimal resources for initial move
-  //   }
-
-  //   await this.processGameState(game, rootNode);
-
-  //   return child && freeze ? rootNode.freeze() : rootNode;
-  // }
-
-  // private static async processGameState(
-  //   game: Game,
-  //   parentNode: Node,
-  // ) {
-  //   const analysis = new Analysis(game);
-  //   const indexes = analysis.unplayedCardIndexes;
-  //   const pillz = analysis.playingPlayer.pillz;
-
-  //   // Process moves in order of potential effectiveness
-  //   for (const i of indexes) {
-  //     for (const p of shiftRange(pillz)) {
-  //       for (const f of (p <= pillz - 3 ? [true, false] : [false])) {
-  //         const moveAnalysis = new Analysis(analysis.game);
-  //         const moveGame = moveAnalysis.game;
-  //         moveGame.select(i, p, f);
-
-  //         const node = parentNode.add(
-  //           `${i} ${p} ${f}`,
-  //           moveAnalysis.turn,
-  //           parentNode.playingSecond,
-  //         );
-
-  //         if (
-  //           !moveGame.firstHasSelected && moveGame.winner !== Winner.PLAYING
-  //         ) {
-  //           // Terminal state
-  //           if (moveGame.winner === Winner.PLAYER_1) {
-  //             node.result = GameResult.PLAYER_1_WIN;
-  //             if (!parentNode.defered && node.turn === Turn.PLAYER_1) {
-  //               return; // Early cutoff for winning move
-  //             }
-  //           } else if (moveGame.winner === Winner.TIE) {
-  //             node.result = GameResult.TIE;
-  //           } else {
-  //             node.result = GameResult.PLAYER_2_WIN;
-  //             if (!parentNode.defered && node.turn === Turn.PLAYER_2) {
-  //               return; // Early cutoff for winning move
-  //             }
-  //           }
-  //         } else {
-  //           // Recursively analyze next moves
-  //           const childNode = await this.iterTree(
-  //             moveGame,
-  //             true,
-  //             undefined,
-  //             false,
-  //           );
-  //           node.nodes.push(childNode);
-  //         }
-
-  //         // Clean up
-  //         moveAnalysis.game = null as any;
-  //       }
-  //     }
-  //   }
-  // }
 }

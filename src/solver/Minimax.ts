@@ -1,10 +1,5 @@
 import { Turn } from "../game/types/Types.ts";
 
-// export enum GameResult {
-//   WIN = 1,
-//   TIE = 0,
-//   LOSS = -1,
-// }
 export enum GameResult {
   PLAYER_1_WIN = 1,
   TIE = 0,
