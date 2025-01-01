@@ -791,45 +791,27 @@ impl ResultsTree {
 pub struct Solver2;
 
 impl Solver2 {
-    /// Constructs a tree of results data structures
-    /// for all possible game states.
-    pub fn fill_tree(game: &Game) -> HashMap<Selection, ResultsTree> {
-        let mut result_tree = HashMap::new();
-
-        let pillz = game.get_turn_player().pillz;
-
-        // Select all possible selections for the current player.
-        for index in 0..4 {
-            if game.get_turn_hand()[index].played {
-                continue;
-            }
-
-            for &(pillz, fury) in split_shift_range(pillz) {
-                let mut game = game.clone();
-                game.select(index, pillz, fury);
-
-                let selection = Selection { index, pillz, fury };
-                match game.status() {
-                    GameStatus::Playing => {
-                        let results = Solver2::fill_tree(&game);
-                        result_tree.insert(selection, ResultsTree::Map(results));
-                    }
-                    GameStatus::Draw => {
-                        result_tree.insert(selection, ResultsTree::Draw);
-                    }
-                    GameStatus::Opponent => {
-                        result_tree.insert(selection, ResultsTree::OpponentWin);
-                    }
-                    GameStatus::Player => {
-                        result_tree.insert(selection, ResultsTree::PlayerWin);
-                    }
-                }
-            }
-        }
-        result_tree
-    }
-
     pub fn fill_tree_abab(game: &Game) -> HashMap<Selection, ResultsTree> {
+        let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
+        let now = Instant::now();
+
+        toggle_print();
+        let tree = Solver2::_fill_tree_abab(game);
+        toggle_print();
+
+        let battles = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
+        let elapsed = now.elapsed();
+        println!(
+            "{} {} /{:.1?}secs ({:.0?}k/s)",
+            " Battle Count ".white().on_bright_purple(),
+            battles,
+            elapsed.as_secs_f32(),
+            battles as f32 / elapsed.as_secs_f32() / 1000f32
+        );
+
+        tree
+    }
+    fn _fill_tree_abab(game: &Game) -> HashMap<Selection, ResultsTree> {
         let p2_index = if game.s2.is_some() {
             Some(game.s2.unwrap().index)
         } else {
@@ -884,7 +866,7 @@ impl Solver2 {
                                 tree1.insert(s2, ResultsTree::Draw);
                             }
                             GameStatus::Playing => {
-                                let tree = Solver2::fill_tree_abab(&g);
+                                let tree = Solver2::_fill_tree_abab(&g);
                                 tree1.insert(s2, ResultsTree::Map(tree));
                             }
                         }
@@ -897,52 +879,150 @@ impl Solver2 {
         result_tree
     }
 
-    // /// What if we thought of the game as being ABABABAB instead of ABBAABBA?
-    // /// I think it would be easier to solve.
-    // pub fn solve2(game: &Game) -> SelectionResult {
-    //     if game.has_someone_selected() {
-    //         return;
-    //     }
+    pub fn solve(game: &Game) -> Selection {
+        let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
+        let now = Instant::now();
 
-    //     let first_turn = game.get_turn();
+        toggle_print();
+        let (best_moves, best_score, win_rate) = Solver2::_solve(game, 0);
+        toggle_print();
 
-    //     let pillz1 = game.get_turn_player().pillz;
-    //     let pillz2 = game.get_turn_opponent().pillz;
+        let battles = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
+        let elapsed = now.elapsed();
+        println!(
+            "{} {} /{:.1?}secs ({:.0?}k/s)",
+            " Battle Count ".white().on_bright_purple(),
+            battles,
+            elapsed.as_secs_f32(),
+            battles as f32 / elapsed.as_secs_f32() / 1000f32
+        );
+        match best_score {
+            0 => println!("Worst Result | {}", " Draw ".white().on_bright_black()),
+            -1 => println!("Worst Result | {}", " Opponent Wins ".white().on_red()),
+            1 => println!("Worst Result | {}", " Player Wins ".white().on_blue()),
+            _ => unreachable!("Score: {}", best_score),
+        }
+        for selection in best_moves.iter() {
+            println!(
+                "({}) {}",
+                format!("{:.1?}%", win_rate * 100f32).green(),
+                selection
+            );
+        }
+        best_moves[0]
+    }
 
-    //     for i1 in 0..4 {
-    //         if game.h1.cards[i1].played {
-    //             continue;
-    //         }
+    fn _solve(game: &Game, depth: usize) -> (Vec<Selection>, i8, f32) {
+        let p2_index = if game.s2.is_some() {
+            Some(game.s2.unwrap().index)
+        } else {
+            None
+        };
+        let mut best_moves = Vec::new();
+        let mut best_score = -2;
+        let mut best_win_rate = 0f32;
 
-    //         for (p1, f1) in split_shift_range(pillz1) {
-    //             let s1 = Selection { index: i1, pillz: p1, fury: f1 };
+        let pillz1 = game.p1.pillz;
+        let pillz2 = game.p2.pillz;
 
-    //             let mut worst_result = ResultsTree::Playe
+        for i1 in 0..4 {
+            if game.h1.cards[i1].played {
+                continue;
+            }
+            for &(p1, f1) in split_shift_range(pillz1) {
+                let s1 = Selection {
+                    index: i1,
+                    pillz: p1,
+                    fury: f1,
+                };
 
-    //             for i2 in 0..4 {
-    //                 if game.h2.cards[i2].played {
-    //                     continue;
-    //                 }
+                let mut worst_score = 1i8;
+                let mut total_win_rate = 0f32;
+                let mut len = 0;
 
-    //                 for (p2, f2) in split_shift_range(pillz2) {
-    //                     let s2 = Selection { index: i2, pillz: p2, fury: f2 };
+                // println!("{}{}:", "  ".repeat(depth), format!("{}", s1).on_blue());
+                // println!("{}{}:", "  ".repeat(depth), s1);
+                // println!("{} {}:", "__".repeat(depth).blue(), s1);
 
-    //                     let mut g = game.clone();
-    //                     g.s1 = Some(s1);
-    //                     g.s2 = Some(s2);
+                for i2 in 0..4 {
+                    if let Some(index2) = p2_index {
+                        if i2 != index2 {
+                            continue;
+                        }
+                    }
+                    if game.h2.cards[i2].played {
+                        continue;
+                    }
 
-    //                     let best = Solver2::solve2(&g);
-    //                     match best {
-    //                         SelectionResult::Player(s) => {
-    //                             wins_every_possible = true;
-    //                         }
-    //                         SelectionResult::Opponent(s) => {
-    //                             wins_every_possible = false;
-    //                         }
-    //                         SelectionResult::Draw(_) => {
-    //                             wins_every_possible = false;
-    //                         }
-    // }
+                    for &(p2, f2) in split_shift_range(pillz2) {
+                        let s2 = Selection {
+                            index: i2,
+                            pillz: p2,
+                            fury: f2,
+                        };
+
+                        let mut g = game.clone();
+                        g.select_both(s1, s2);
+
+                        // print!("{}{}:", "  ".repeat(depth + 1), format!("{}", s2).on_red());
+                        // print!("{}{}:", "  ".repeat(depth + 1), s2);
+                        // print!("{} {}:", "__".repeat(depth + 1).red(), s2);
+                        match g.status() {
+                            GameStatus::Player => {
+                                total_win_rate += 1.0;
+                                // println!("{}", " Player Wins ".white().on_blue());
+                            }
+                            GameStatus::Opponent => {
+                                worst_score = -1;
+                                // println!("{}", " Opponent Wins ".white().on_red());
+                            }
+                            GameStatus::Draw => {
+                                worst_score = worst_score.min(0);
+                                total_win_rate += 0.5;
+                                // println!("{}", " Draw ".white().on_bright_black());
+                            }
+                            GameStatus::Playing => {
+                                // println!();
+                                let (_, score, win_rate) = Solver2::_solve(&g, depth + 2);
+                                worst_score = worst_score.min(score);
+                                total_win_rate += win_rate;
+                                // println!(
+                                //     "{} ({:.1?}%) Worst result {}",
+                                //     "__".repeat(depth + 1).red(),
+                                //     win_rate * 100.0,
+                                //     score
+                                // );
+                            }
+                        }
+                        len += 1;
+                    }
+                }
+
+                // result_tree.insert(s1, ResultsTree::Map(tree1));
+                // let (score, win_rate) = ResultsTree::Map(tree1).get_score();
+                let score = worst_score;
+                let win_rate = total_win_rate / len as f32;
+                if score > best_score || (score == best_score && win_rate > best_win_rate) {
+                    best_score = score;
+                    best_win_rate = win_rate;
+                    best_moves.clear();
+                    best_moves.push(s1);
+                } else if score == best_score && win_rate == best_win_rate {
+                    best_moves.push(s1);
+                }
+
+                // println!(
+                //     "{} ({:.1?}%) Worst result {}",
+                //     "__".repeat(depth).blue(),
+                //     win_rate * 100.0,
+                //     worst_score
+                // );
+            }
+        }
+
+        // (best_moves, best_score, (best_win_rate / 2.0 + 1.0) / 2.0)
+        (best_moves, best_score, best_win_rate)
+    }
 }
 
 #[test]
@@ -960,7 +1040,7 @@ fn test_solver() {
                               // game.select(1, 3, false); // Orka
 
     game.select(0, 4, false); // Nathan
-                              // game.select(1, 4, false); // El Kuzco
+    game.select(1, 4, false); // El Kuzco
                               // game.select(0, 2, false); // Genmaicha
 
     // game.select(2, 0, false); // Sando
@@ -968,30 +1048,20 @@ fn test_solver() {
 
     // game.select(1, 5, false); // El Kuzco
 
-    let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
-    let now = Instant::now();
-    toggle_print();
-    // let tree = Solver2::fill_tree(&game);
-    let tree = Solver2::fill_tree_abab(&game);
-    toggle_print();
-    let battles = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
-    let elapsed = now.elapsed();
-    println!(
-        "{} {} /{:.1?}secs ({:.0?}k/s)",
-        " Battle Count ".white().on_bright_purple(),
-        battles,
-        elapsed.as_secs_f32(),
-        battles as f32 / elapsed.as_secs_f32() / 1000f32
-    );
+    // let tree = Solver2::fill_tree_abab(&game);
 
     // let best_moves =
-    ResultsTree::get_best_moves(&tree);
+    // ResultsTree::get_best_moves(&tree);
     // println!("{:?}", best_moves);
+
+    // let best =
+    Solver2::solve(&game);
+    // println!("{}", best);
 
     let best = Solver::solve(&game);
     println!("{}", best);
 
-    ResultsTree::Map(tree).print();
+    // ResultsTree::Map(tree).print();
 
     // let selection = best.selection();
     // game.select(selection.index, selection.pillz, selection.fury);

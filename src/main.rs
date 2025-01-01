@@ -1,10 +1,14 @@
 use std::{
     env,
     io::{self, Result},
+    sync::{Arc, Mutex},
+    thread,
 };
 
+use actix_web::web::Data;
 use game::Selection;
 use rayon::ThreadPoolBuilder;
+use solver_2::Solver2;
 
 use crate::{
     card::Hand,
@@ -35,7 +39,11 @@ async fn main() -> Result<()> {
     let h1: Hand;
     let h2: Hand;
     let mut flip = 0u8;
+    // let mut game: Game;
+    let game: Arc<Mutex<Option<Game>>> = Arc::new(Mutex::new(None));
     if args.len() >= 9 {
+        // h1 = Hand::from_names("Anagone", "Doela", "Elios", "Galahad");
+        // h2 = Hand::from_names("Murray", "Petra", "Buck", "Keile");
         h1 = Hand::from_names(
             args[1].as_str(),
             args[2].as_str(),
@@ -51,93 +59,110 @@ async fn main() -> Result<()> {
         if args.len() == 10 {
             flip = 1;
         }
-    } else {
-        // h1 = Hand::from_names("Anagone", "Doela", "Elios", "Galahad");
-        // h2 = Hand::from_names("Murray", "Petra", "Buck", "Keile");
+        let mut g = Game::new(h1, h2);
+        g.flip = flip;
+        g.print_status();
 
-        server::serve().await?;
+        if flip == 0 {
+            // let best = Solver::solve(&game);
 
-        return Ok(());
-    }
-    let mut game = Game::new(h1, h2);
-    game.flip = flip;
+            // match (best, game.get_turn()) {
+            //     (SelectionResult::Player(_), PlayerType::Opponent)
+            //     | (SelectionResult::Opponent(_), PlayerType::Player) => {
+            //         Solver::middle(&game);
+            //     }
+            //     (_, _) => println!("{:?}", best),
+            // }
+            Solver::middle(&g);
+        }
 
-    game.print_status();
+        println!("{} turn", g.get_turn_name());
 
-    if flip == 0 {
-        // let best = Solver::solve(&game);
-
-        // match (best, game.get_turn()) {
-        //     (SelectionResult::Player(_), PlayerType::Opponent)
-        //     | (SelectionResult::Opponent(_), PlayerType::Player) => {
-        //         Solver::middle(&game);
-        //     }
-        //     (_, _) => println!("{:?}", best),
-        // }
-        Solver::middle(&game);
+        *game.lock().unwrap() = Some(g);
     }
 
-    // return Ok(());
+    let game_clone = game.clone();
 
-    println!("{} turn", game.get_turn_name());
-    for line in io::stdin().lines() {
-        let mut input = line.unwrap();
+    thread::spawn(move || {
+        for line in io::stdin().lines() {
+            let mut input = line.unwrap();
 
-        let cancelled: bool;
-        if input.as_str() == "cancel" {
-            game.clear_selection();
-            game.print_status();
-            // cancelled = true;
-            continue;
-        } else if input.starts_with("x ") {
-            input = input[2..].to_string();
-            game.clear_selection();
-            cancelled = true;
-        } else {
-            cancelled = false;
-        }
+            // let mut game = game.lock().unwrap().as_mut().unwrap();
 
-        let selected = Selection::parse(input);
-        if selected.is_none() {
-            continue;
-        }
-
-        let Selection { index, pillz, fury } = selected.unwrap();
-
-        // println!("{}, {}, {}", index, pillz, fury);
-        if !game.can_select(index, pillz, fury) {
-            continue;
-        }
-
-        let battled = game.select(index, pillz, fury);
-        // if !battled {
-        //     game.print_status();
-        // }
-        if game.status() != GameStatus::Playing {
-            break;
-        }
-
-        let turn = game.get_turn();
-
-        if game.round == 0 {
-            if !cancelled && turn == PlayerType::Player {
-                Solver::middle(&game);
+            let mut game_lock = game.lock().unwrap();
+            if game_lock.is_none() {
+                continue;
             }
-        } else {
-            let best = Solver::solve(&game);
+            let game = game_lock.as_mut().unwrap();
 
-            match (best, turn) {
-                (SelectionResult::Player(_), PlayerType::Opponent)
-                | (SelectionResult::Opponent(_), PlayerType::Player) => {
-                    Solver::middle(&game);
+            let cancelled: bool;
+            if input.as_str() == "cancel" {
+                game.clear_selection();
+                game.print_status();
+                // cancelled = true;
+                continue;
+            } else if input.starts_with("x ") {
+                input = input[2..].to_string();
+                game.clear_selection();
+                cancelled = true;
+            } else {
+                cancelled = false;
+            }
+
+            let selected = Selection::parse(input);
+            if selected.is_none() {
+                continue;
+            }
+
+            let Selection { index, pillz, fury } = selected.unwrap();
+
+            // println!("{}, {}, {}", index, pillz, fury);
+            if !game.can_select(index, pillz, fury) {
+                continue;
+            }
+
+            let battled = game.select(index, pillz, fury);
+            // Release Mutex lock
+            let game = game.clone();
+
+            if battled {
+                game.print_status();
+            }
+            if game.status() != GameStatus::Playing {
+                // Game over
+                // game.print_status();
+                continue;
+            }
+
+            let turn = game.get_turn();
+
+            if game.round == 0 {
+                // if !cancelled && turn == PlayerType::Player {
+                //     Solver::middle(&game);
+                // }
+            } else {
+                // let game_clone = game.clone();
+                // thread::spawn(move || {
+                // Solver2::solve(&game_clone);
+                // });
+                Solver2::solve(&game);
+
+                let best = Solver::solve(&game);
+
+                match (best, turn) {
+                    (SelectionResult::Player(_), PlayerType::Opponent)
+                    | (SelectionResult::Opponent(_), PlayerType::Player) => {
+                        Solver::middle(&game);
+                    }
+                    (_, _) => println!("{}", best),
                 }
-                (_, _) => println!("{}", best),
             }
-        }
 
-        println!("{} turn", game.get_turn_name());
-    }
-    game.print_status();
+            println!("{} turn", game.get_turn_name());
+        }
+    });
+
+    server::serve(Data::new(Arc::clone(&game_clone))).await?;
 
     Ok(())
 }
