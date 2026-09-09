@@ -1,0 +1,494 @@
+{
+  "id": 876464,
+  "capturedAt": "2026-09-09T22:34:20.249Z",
+  "creationTime": 1788993259,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1867,
+          "name": "Adytia Ld",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 3386,
+            "description": "+2 Attack Per Opp. Damage"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1959,
+          "name": "Calumma",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1822,
+            "description": "Cancel Opp. Attack Modif."
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1945,
+          "name": "Lule",
+          "clan": "Komboka",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1805,
+            "description": "Support: -3 Opp Attack, Min 11"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1908,
+          "name": "Mavi",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1760,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19819600,
+      "name": "black mummy",
+      "level": 329,
+      "grade": "Eternal",
+      "country": "sn",
+      "club": {
+        "id": 1646647,
+        "name": "A POR LA SIGUIENTE CR"
+      },
+      "registrationTime": 1326979005,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2701,
+          "name": "Dorga",
+          "clan": "Tolvack",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 5854,
+            "description": "After [clan:31][clan:26][clan:3][clan:4][clan:28] : Power +2"
+          },
+          "bonus": {
+            "id": 5585,
+            "description": "After [clan:56][clan:60] : Power +3"
+          }
+        },
+        {
+          "id": 2672,
+          "name": "Drava",
+          "clan": "Tolvack",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 5598,
+            "description": "Asymmetry: Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 5585,
+            "description": "After [clan:56][clan:60] : Power +3"
+          }
+        },
+        {
+          "id": 2704,
+          "name": "Maelt Riv",
+          "clan": "Tolvack",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 5873,
+            "description": "Consume 1, Min 2"
+          },
+          "bonus": {
+            "id": 5585,
+            "description": "After [clan:56][clan:60] : Power +3"
+          }
+        },
+        {
+          "id": 2680,
+          "name": "Tør",
+          "clan": "Tolvack",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 5674,
+            "description": "Degrowth: -1 Opp Power, Min 2"
+          },
+          "bonus": {
+            "id": 5585,
+            "description": "After [clan:56][clan:60] : Power +3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 2680,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1788993275635
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1908,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1788993283301
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 28,
+          "won": false
+        },
+        {
+          "power": 6,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 36,
+          "won": true
+        }
+      ],
+      "life": [
+        7,
+        12
+      ],
+      "pillz": [
+        9,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 30785
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1945,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1788993297063
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 2672,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1788993303292
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 28,
+          "won": false
+        },
+        {
+          "power": 10,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 40,
+          "won": true
+        }
+      ],
+      "life": [
+        3,
+        12
+      ],
+      "pillz": [
+        6,
+        4
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 19910
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 2704,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1788993318655
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1959,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1788993323188
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 8,
+          "won": false
+        },
+        {
+          "power": 11,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 44,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        12
+      ],
+      "pillz": [
+        2,
+        1
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "pillz",
+          "attributeAction": "decrease",
+          "isPermanent": true,
+          "quantity": 1
+        }
+      ],
+      "durationMs": 22068
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 25,
+    "scoreDiff": 25,
+    "player": {
+      "life": 0,
+      "pillz": 2,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 12,
+      "pillz": 1
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 9
+      },
+      {
+        "type": "characterXP",
+        "value": 600
+      }
+    ],
+    "t": 1788993323426
+  },
+  "finalStatus": "done",
+  "snapshots": 24,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Dorga",
+      "Drava",
+      "Maelt Riv",
+      "Tør",
+      "Adytia Ld",
+      "Calumma",
+      "Lule",
+      "Mavi"
+    ],
+    "levels": [
+      3,
+      3,
+      3,
+      4,
+      2,
+      2,
+      5,
+      2
+    ],
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          3,
+          5,
+          false
+        ],
+        "s2": [
+          3,
+          3,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 7,
+        "p1pillz": 7,
+        "p2pillz": 9,
+        "r1": {
+          "power": 6,
+          "damage": 5,
+          "attack": 36,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 2,
+          "attack": 28,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          3,
+          false
+        ],
+        "s2": [
+          1,
+          3,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 3,
+        "p1pillz": 4,
+        "p2pillz": 6,
+        "r1": {
+          "power": 10,
+          "damage": 4,
+          "attack": 40,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 7,
+          "attack": 28,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          3,
+          false
+        ],
+        "s2": [
+          1,
+          0,
+          true
+        ],
+        "p1life": 12,
+        "p2life": 0,
+        "p1pillz": 1,
+        "p2pillz": 2,
+        "r1": {
+          "power": 11,
+          "damage": 3,
+          "attack": 44,
+          "won": true
+        },
+        "r2": {
+          "power": 8,
+          "damage": 3,
+          "attack": 8,
+          "won": false
+        }
+      }
+    ]
+  }
+}

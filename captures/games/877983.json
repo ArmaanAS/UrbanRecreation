@@ -1,0 +1,486 @@
+{
+  "id": 877983,
+  "capturedAt": "2026-09-09T23:22:05.538Z",
+  "creationTime": 1788996124,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 28329988,
+      "name": "HumorlessKilljoy",
+      "level": 205,
+      "grade": "Legend",
+      "country": "co",
+      "club": {
+        "id": 689469,
+        "name": "Blade Runners"
+      },
+      "registrationTime": 1371477464,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 128,
+          "name": "Berserkgirl Cr",
+          "clan": "Junkz",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 3864,
+            "description": "Equalizer: Damage +1"
+          },
+          "bonus": {
+            "id": 37,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 940,
+          "name": "Eebiza",
+          "clan": "Junkz",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 2108,
+            "description": "Defeat: Recover 1 Pillz Out Of 2"
+          },
+          "bonus": {
+            "id": 37,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 1178,
+          "name": "Sasl Lovelace",
+          "clan": "Junkz",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 2475,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          },
+          "bonus": {
+            "id": 37,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 342,
+          "name": "Veenyle Cr",
+          "clan": "Junkz",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "m1",
+          "ability": {
+            "id": 178,
+            "description": "-3 Opp Damage, Min 2"
+          },
+          "bonus": {
+            "id": 37,
+            "description": "Attack +8"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 488,
+          "name": "Buck",
+          "clan": "Ulu Watu",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 310,
+            "description": "Power +2"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 978,
+          "name": "Lianah Ld",
+          "clan": "Ulu Watu",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 3526,
+            "description": "Heal 1 Max. 20"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 1154,
+          "name": "Shaun",
+          "clan": "Ulu Watu",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 980,
+            "description": "Reprisal: Power And Damage +1"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 1918,
+          "name": "Zatapa",
+          "clan": "Ulu Watu",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1770,
+            "description": "Degrowth: -1 Opp Damage, Min 1"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1918,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1788996136424
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 342,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788996142885
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 14,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 2,
+          "damageAfter": 4,
+          "attack": 32,
+          "won": true
+        }
+      ],
+      "life": [
+        10,
+        12
+      ],
+      "pillz": [
+        12,
+        9
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 27220
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 940,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788996156222
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1154,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1788996164373
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 16,
+          "won": false
+        },
+        {
+          "power": 10,
+          "damage": 5,
+          "damageAfter": 4,
+          "attack": 30,
+          "won": true
+        }
+      ],
+      "life": [
+        5,
+        12
+      ],
+      "pillz": [
+        13,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 21759
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 488,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": false,
+          "t": 1788996178014
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 128,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1788996185731
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 56,
+          "won": false
+        },
+        {
+          "power": 9,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 72,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        12
+      ],
+      "pillz": [
+        8,
+        0
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 22967
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 630,
+    "scoreDiff": 58,
+    "player": {
+      "life": 12,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 8
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 4000
+      },
+      {
+        "type": "playerXP",
+        "value": 32
+      },
+      {
+        "type": "characterXP",
+        "value": 900
+      }
+    ],
+    "t": 1788996186136
+  },
+  "finalStatus": "done",
+  "snapshots": 22,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Buck",
+      "Lianah Ld",
+      "Shaun",
+      "Zatapa",
+      "Berserkgirl Cr",
+      "Eebiza",
+      "Sasl Lovelace",
+      "Veenyle Cr"
+    ],
+    "levels": [
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      4,
+      2
+    ],
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          3,
+          3,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 10,
+        "p1pillz": 9,
+        "p2pillz": 12,
+        "r1": {
+          "power": 8,
+          "damage": 2,
+          "attack": 32,
+          "won": true
+        },
+        "r2": {
+          "power": 6,
+          "damage": 1,
+          "attack": 14,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          1,
+          0,
+          false
+        ],
+        "s2": [
+          2,
+          2,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 5,
+        "p1pillz": 7,
+        "p2pillz": 13,
+        "r1": {
+          "power": 10,
+          "damage": 5,
+          "attack": 30,
+          "won": true
+        },
+        "r2": {
+          "power": 8,
+          "damage": 2,
+          "attack": 16,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          0,
+          7,
+          false
+        ],
+        "s2": [
+          0,
+          5,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 8,
+        "r1": {
+          "power": 9,
+          "damage": 7,
+          "attack": 72,
+          "won": true
+        },
+        "r2": {
+          "power": 8,
+          "damage": 8,
+          "attack": 56,
+          "won": false
+        }
+      }
+    ]
+  }
+}

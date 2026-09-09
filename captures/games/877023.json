@@ -1,0 +1,408 @@
+{
+  "id": 877023,
+  "capturedAt": "2026-09-09T22:49:00.268Z",
+  "creationTime": 1788994139,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1882,
+          "name": "Bekum",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1730,
+            "description": "Growth: - 1 Opp. Life Min 4"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1959,
+          "name": "Calumma",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1822,
+            "description": "Cancel Opp. Attack Modif."
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1868,
+          "name": "Kubra",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1716,
+            "description": "Defeat: +1 Pillz And Life"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1945,
+          "name": "Lule",
+          "clan": "Komboka",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1805,
+            "description": "Support: -3 Opp Attack, Min 11"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 7212490,
+      "name": "TigerMane",
+      "level": 258,
+      "grade": "Imperator",
+      "country": "ca",
+      "club": {
+        "id": 399304,
+        "name": "TEAM CANADA"
+      },
+      "registrationTime": 1257535991,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2473,
+          "name": "Caballine",
+          "clan": "Sentinel",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 5108,
+            "description": "Unison : Copy: Opp. Bonus"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 1924,
+          "name": "Redfield",
+          "clan": "Sentinel",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1776,
+            "description": "Equalizer: Damage +1"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 2332,
+          "name": "ReportCop",
+          "clan": "Sentinel",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "p",
+          "ability": {
+            "id": 3291,
+            "description": "Asymmetry: Copy: Opp. Ability"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 927,
+          "name": "Valentina Ld",
+          "clan": "Sentinel",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 4459,
+            "description": "Killshot: -3 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 1924,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1788994172813
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1945,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1788994182448
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 49,
+          "won": false
+        },
+        {
+          "power": 9,
+          "damage": 8,
+          "damageAfter": 3,
+          "attack": 50,
+          "won": true
+        }
+      ],
+      "life": [
+        4,
+        12
+      ],
+      "pillz": [
+        6,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 52053
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1868,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788994206581
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 927,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": false,
+          "t": 1788994217908
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 7,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 72,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        12
+      ],
+      "pillz": [
+        6,
+        0
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 35895
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 379,
+    "scoreDiff": 22,
+    "player": {
+      "life": 0,
+      "pillz": 6,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 12,
+      "pillz": 0
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 7
+      },
+      {
+        "type": "characterXP",
+        "value": 500
+      }
+    ],
+    "t": 1788994218194
+  },
+  "finalStatus": "done",
+  "snapshots": 20,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Caballine",
+      "Redfield",
+      "ReportCop",
+      "Valentina Ld",
+      "Bekum",
+      "Calumma",
+      "Kubra",
+      "Lule"
+    ],
+    "levels": [
+      3,
+      4,
+      3,
+      3,
+      2,
+      2,
+      2,
+      5
+    ],
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          5,
+          false
+        ],
+        "s2": [
+          3,
+          6,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 4,
+        "p1pillz": 7,
+        "p2pillz": 6,
+        "r1": {
+          "power": 9,
+          "damage": 8,
+          "attack": 50,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 7,
+          "attack": 49,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          0,
+          false
+        ],
+        "s2": [
+          3,
+          7,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 6,
+        "r1": {
+          "power": 8,
+          "damage": 4,
+          "attack": 72,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 2,
+          "attack": 7,
+          "won": false
+        }
+      }
+    ]
+  }
+}

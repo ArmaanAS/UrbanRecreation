@@ -1,0 +1,73 @@
+# UrbanRecreation — agent guide
+
+A Deno + TypeScript recreation of the **Urban Rivals** card-game engine, plus a game-tree
+solver and a pipeline for capturing real games from the live site to use as ground truth.
+Written by hand by the repo owner (armaanas); AI assistance started September 2026.
+
+## Layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/game/` | Engine: `Game`, `Hand`, `Card`, `Player`, `PlayerRound`; abilities are parsed from text by `AbilityParser.ts` → `Ability.ts` → `modifiers/*`; a round is resolved by `battle/CardBattle.ts` firing `Events` at ordered `EventTime`s (START, PRE4..PRE1, POST1..POST4, END). `battle/Cached*` are memoised variants used by the solver. |
+| `src/solver/` | Minimax / iterative game-tree analysis with worker threads. |
+| `src/utils/` | Console rendering, misc helpers. |
+| `data/` | `data.json` = the card list the engine loads, **one row per card per level** (power, damage and ability differ by level), built by `deno task cards` from `site_characters.jsonl` (gitignored 40 MB dump of the site's own card DB, refreshed via `__ur.dumpCharacters()` in the browser). `site_clans.json` (from `__ur.dumpClans()`) supplies clan names/bonuses; otherwise they come from the legacy `cards.json`. `cards.json` / `data.maxlevel.json` = older OAuth-API dumps (Dec 2024, max level only, stale); `compiled.json` = ability inventory from `deno task compile`. |
+| `scripts/` | Card data (`BuildCardData.ts` is the live path; `RequestCards.ts` / `RequestAllCardLevels.ts` / `UR_API.ts` are the OAuth-API path, needs API_KEY/API_SECRET in `.env` plus a browser auth step), ability compiler (`CompileAbilities.js`), battle capture (`BattleCapture.ts`, `ExtractBattle.ts`). |
+| `tests/` | `deno test -A`. Per-ability tests in `tests/ability/`, replay of captured games in `tests/replay/`, Rust cross-check testcases in `tests/rust/`. |
+| `ur-logger.user.js` + `log_server.ts` | Tampermonkey userscript mirroring site traffic to a local server that writes `ur_log.jsonl` (raw, **contains tokens, gitignored**) and secret-free per-battle files in `captures/battles/`. |
+| `captures/` | `battles/<id>.jsonl` raw battle capture in a compact lossless form (static block once + one dynamic line per `battles.status` poll, ~20 KB/battle instead of ~450 KB; `expandStatus()` in `scripts/BattleCapture.ts` rebuilds the original server objects); `abilities.json` shared ability/bonus dictionary (id → description + structured `abilityData`); `games/<id>.json` clean game records with decks, moves, per-round resolution, life/pillz, and an engine `testcase`. All safe to commit. |
+
+## Common commands
+
+```bash
+deno test -A --no-check          # run tests (type-check currently fails on src/utils/Utils.ts:184)
+deno task log                    # start capture server, then play on urban-rivals.com with the userscript on
+deno task extract                # captures/battles/*.jsonl → captures/games/*.json
+deno task extract --raw ur_log.jsonl   # re-split a raw log into battle files
+deno test -A --no-check tests/replay/  # replay captured games through the engine
+deno task cards                  # rebuild data/data.json from data/site_characters.jsonl (after __ur.dumpCharacters())
+deno task bench / deno task time # solver benchmark
+```
+
+## Current priorities (Sept 2026)
+
+1. Capture many real PvP games and make the engine reproduce them (`tests/replay/`).
+   As of 2026-09-10: 56 battles captured, 52 replayable, 30 replay exactly (life, pillz,
+   power, damage, attack, winner per round), 22 mismatch. The mismatches are triaged into
+   ~11 root causes in `docs/replay-triage.md` (Day/Night, Support count, Montana min clamp,
+   Brawl, Growth/Degrowth, modifier ordering, post-KO gains, Recover, Symmetry, unparsed
+   keywords). Work through that list; re-run the replay suite after each fix.
+2. Card data is complete as of 2026-09-10 (2496 cards, every level, 36 clans incl. the new
+   Tolvack). To refresh: `__ur.dumpCharacters()` and `__ur.dumpClans()` in the browser (log
+   server running), then `deno task cards`. A new clan must also be added to `Clans` in
+   `src/game/types/CardTypes.ts`. Cards that became collectors got a " Cr" suffix; the loader
+   keeps the old name as an alias.
+3. Longer term: replace regex ability parsing with the structured `abilityData` the battle
+   API returns per card (see any `captures/games/*.json`; the site card DB dump does NOT
+   include it), and build a "what do players play" dataset from captured moves and timings.
+4. Engine bugs are addressed only when a replay exposes them; two legacy tests
+   (`Game_2 Protection` — empty card names, `Oculus Infiltrated`) fail and predate this work.
+
+## Conventions
+
+- Deno, no Node build step. Imports via `@/` (src) and `@data/` aliases in `deno.json`.
+- Engine code is performance-sensitive (solver explores millions of states): avoid logging
+  or allocation in `CardBattle`, `Events`, modifiers. Debug `console.log`s are removed
+  before commit.
+- Never commit `ur_log*.jsonl`, `tokens.json`, or `.env`. Capture files under `captures/`
+  are redacted by `BattleCapture.ts` and are fine to commit.
+- Player names/ids in captures are public profile data from the game; keep it that way.
+
+## Domain notes
+
+- A game is 4 rounds; each round both players pick a card, pillz (0..remaining) and
+  optional fury (+2 damage, costs 3 pillz). Attack = power × (pillz + 1). Higher attack
+  wins the round; the winner's damage is subtracted from the loser's life. KO ends the game.
+- First mover alternates each round; the engine's `Turn.PLAYER_1` is whoever moved first
+  in round 0. Captured testcases are normalised to that convention.
+- Pillz conventions differ: the engine's `select(index, pillz, fury)` pillz excludes the free
+  pill (attack = power × (pillz + 1)); the server's `pillzUsed` includes it (attack =
+  power × pillzUsed) and excludes the 3 fury pillz. `ExtractBattle.ts` converts.
+- Server snapshots (`battles.status`) hide a player's pillz until the round resolves, show
+  `roundAttack` only in the snapshot right after resolution, and the final "done" snapshot
+  does not include the last round's damage; `ExtractBattle.ts` handles all three.

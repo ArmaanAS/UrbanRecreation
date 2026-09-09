@@ -1,0 +1,405 @@
+{
+  "id": 874590,
+  "capturedAt": "2026-09-09T21:35:50.229Z",
+  "creationTime": 1788989749,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 3496394,
+      "name": "ReV_Next_",
+      "level": 153,
+      "grade": "Colossus",
+      "country": "fr",
+      "club": {
+        "id": 1056,
+        "name": "Les Guerriers Tenebreux"
+      },
+      "registrationTime": 1225181466,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2095,
+          "name": "Administrator",
+          "clan": "Leader",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 4144,
+            "description": "Hazard"
+          },
+          "bonus": null
+        },
+        {
+          "id": 2270,
+          "name": "Diabolus",
+          "clan": "Nightmare",
+          "level": 1,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1311,
+            "description": "Protection: Attack"
+          },
+          "bonus": {
+            "id": 130,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 2503,
+          "name": "Karkass Cr",
+          "clan": "Nightmare",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 3948,
+            "description": "Brawl: Damage + 1"
+          },
+          "bonus": {
+            "id": 130,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 1800,
+          "name": "Nero Cr",
+          "clan": "Nightmare",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          },
+          "bonus": {
+            "id": 130,
+            "description": "Stop Opp. Bonus"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 559,
+          "name": "Aurora",
+          "clan": "Rescue",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 377,
+            "description": "+3 Life"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 1707,
+          "name": "Callie",
+          "clan": "Rescue",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1536,
+            "description": "-1 Opp Power And Damage, Min 1"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 792,
+          "name": "Lothar",
+          "clan": "Rescue",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 612,
+            "description": "-3 Opp Power, Min 4"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 1498,
+          "name": "Spidee",
+          "clan": "Rescue",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1310,
+            "description": "Reprisal: Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 559,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1788989765528
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 2503,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1788989778480
+        }
+      ],
+      "resolution": [
+        {
+          "power": 9,
+          "damage": 8,
+          "damageAfter": 4,
+          "attack": 45,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 42,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        4
+      ],
+      "pillz": [
+        8,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 36808
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1800,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1788989793654
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1498,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788989802308
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 24,
+          "won": true
+        },
+        {
+          "power": 6,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 6,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        0
+      ],
+      "pillz": [
+        6,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 26273
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 131,
+    "scoreDiff": 20,
+    "player": {
+      "life": 0,
+      "pillz": 7,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 12,
+      "pillz": 6
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 7
+      },
+      {
+        "type": "characterXP",
+        "value": 500
+      }
+    ],
+    "t": 1788989802601
+  },
+  "finalStatus": "done",
+  "snapshots": 17,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Aurora",
+      "Callie",
+      "Lothar",
+      "Spidee",
+      "Administrator",
+      "Diabolus",
+      "Karkass Cr",
+      "Nero Cr"
+    ],
+    "levels": [
+      5,
+      3,
+      2,
+      4,
+      2,
+      1,
+      3,
+      4
+    ],
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          5,
+          false
+        ],
+        "s2": [
+          2,
+          4,
+          false
+        ],
+        "p1life": 4,
+        "p2life": 12,
+        "p1pillz": 7,
+        "p2pillz": 8,
+        "r1": {
+          "power": 7,
+          "damage": 5,
+          "attack": 42,
+          "won": false
+        },
+        "r2": {
+          "power": 9,
+          "damage": 8,
+          "attack": 45,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          2,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 12,
+        "p1pillz": 7,
+        "p2pillz": 6,
+        "r1": {
+          "power": 6,
+          "damage": 6,
+          "attack": 6,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 7,
+          "attack": 24,
+          "won": true
+        }
+      }
+    ]
+  }
+}

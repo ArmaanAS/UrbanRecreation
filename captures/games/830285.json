@@ -1,0 +1,329 @@
+{
+  "id": 830285,
+  "capturedAt": "2026-09-08T22:44:52.330Z",
+  "creationTime": 1788907491,
+  "room": {
+    "id": 154844,
+    "name": "Dojo",
+    "idBattleRule": 6,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 6,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Colossus",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1177,
+          "name": "Crazy Carlo",
+          "clan": "All Stars",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 2134,
+            "description": "Reprisal: -4 Opp Damage, Min 2"
+          },
+          "bonus": null
+        },
+        {
+          "id": 539,
+          "name": "Rei Cr",
+          "clan": "Fang Pi Clang",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 358,
+            "description": "Power +3"
+          },
+          "bonus": null
+        },
+        {
+          "id": 1070,
+          "name": "Vanish",
+          "clan": "Junkz",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        },
+        {
+          "id": 961,
+          "name": "Lucy",
+          "clan": "Pussycats",
+          "level": 1,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 32853055,
+      "name": "Scubb",
+      "level": 1,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1427125242,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 564,
+          "name": "Sleam",
+          "clan": "Bangers",
+          "level": 1,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        },
+        {
+          "id": 733,
+          "name": "Astrid",
+          "clan": "GHEIST",
+          "level": 1,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        },
+        {
+          "id": 795,
+          "name": "Tino",
+          "clan": "Montana",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        },
+        {
+          "id": 566,
+          "name": "Scubb",
+          "clan": "Piranas",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 539,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788907500257
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 564,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788907500347
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 8,
+          "won": true
+        },
+        {
+          "power": 1,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 1,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        8
+      ],
+      "pillz": [
+        12,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 18539
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 733,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788907510869
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1070,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788907515634
+        }
+      ],
+      "resolution": [
+        {
+          "power": 5,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 5,
+          "won": true
+        },
+        {
+          "power": 3,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 3,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        5
+      ],
+      "pillz": [
+        12,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 13832
+    },
+    {
+      "round": 2,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1177,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788907531153
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 795,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788907531255
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 7,
+          "won": true
+        },
+        {
+          "power": 4,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 4,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        0
+      ],
+      "pillz": [
+        12,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 18129
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 12,
+      "pillz": 12,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 12
+    },
+    "rewards": [
+      {
+        "type": "playerXP",
+        "value": 4
+      },
+      {
+        "type": "characterXP",
+        "value": 900
+      }
+    ],
+    "t": 1788907531495
+  },
+  "finalStatus": "done",
+  "snapshots": 19,
+  "issues": [
+    "Dojo (tutorial) battle: rules differ from PvP, no testcase generated"
+  ],
+  "testcase": null
+}

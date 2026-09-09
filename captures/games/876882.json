@@ -1,0 +1,395 @@
+{
+  "id": 876882,
+  "capturedAt": "2026-09-09T22:45:05.281Z",
+  "creationTime": 1788993904,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1867,
+          "name": "Adytia Ld",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 3386,
+            "description": "+2 Attack Per Opp. Damage"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 2186,
+          "name": "Keya",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 2556,
+            "description": "Support: -2 Opp Attack, Min 8"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1894,
+          "name": "Kupanda Cr",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1744,
+            "description": "Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1945,
+          "name": "Lule",
+          "clan": "Komboka",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1805,
+            "description": "Support: -3 Opp Attack, Min 11"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 35085929,
+      "name": "Levas Tau Tau",
+      "level": 195,
+      "grade": "Colossus",
+      "country": "pt",
+      "club": {
+        "id": 2066275,
+        "name": "*TUGA RIVALS*"
+      },
+      "registrationTime": 1569432045,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 463,
+          "name": "Edd Cr",
+          "clan": "Montana",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 287,
+            "description": "Courage: Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        },
+        {
+          "id": 505,
+          "name": "Enzo",
+          "clan": "Montana",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 325,
+            "description": "Poison 1, Min 5"
+          },
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        },
+        {
+          "id": 1132,
+          "name": "Waller",
+          "clan": "Montana",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 959,
+            "description": "Defeat: -2 Opp. Life, Min 1"
+          },
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        },
+        {
+          "id": 2212,
+          "name": "Slatter",
+          "clan": "Oculus",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 2931,
+            "description": "[clan:38][clan:47][clan:3][clan:57][clan:28] Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 463,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1788993916329
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 2186,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788993926455
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 8,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 8,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        10
+      ],
+      "pillz": [
+        12,
+        11
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 30255
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1867,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1788993942179
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 505,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1788993947573
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 34,
+          "won": true
+        },
+        {
+          "power": 8,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 32,
+          "won": false
+        }
+      ],
+      "life": [
+        13,
+        8
+      ],
+      "pillz": [
+        9,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 22689
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": false,
+    "score": 274,
+    "scoreDiff": 38,
+    "player": {
+      "life": 13,
+      "pillz": 9,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 8,
+      "pillz": 8
+    },
+    "rewards": [],
+    "t": 1788993988287
+  },
+  "finalStatus": "timeout",
+  "snapshots": 23,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Edd Cr",
+      "Enzo",
+      "Waller",
+      "Slatter",
+      "Adytia Ld",
+      "Keya",
+      "Kupanda Cr",
+      "Lule"
+    ],
+    "levels": [
+      4,
+      3,
+      3,
+      4,
+      2,
+      2,
+      2,
+      5
+    ],
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          1,
+          false
+        ],
+        "s2": [
+          1,
+          0,
+          false
+        ],
+        "p1life": 10,
+        "p2life": 12,
+        "p1pillz": 11,
+        "p2pillz": 12,
+        "r1": {
+          "power": 7,
+          "damage": 5,
+          "attack": 8,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 2,
+          "attack": 8,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          0,
+          4,
+          false
+        ],
+        "s2": [
+          1,
+          3,
+          false
+        ],
+        "p1life": 8,
+        "p2life": 13,
+        "p1pillz": 8,
+        "p2pillz": 9,
+        "r1": {
+          "power": 8,
+          "damage": 3,
+          "attack": 32,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 2,
+          "attack": 34,
+          "won": true
+        }
+      }
+    ]
+  }
+}

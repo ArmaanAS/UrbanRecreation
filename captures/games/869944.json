@@ -1,0 +1,173 @@
+{
+  "id": 869944,
+  "capturedAt": "2026-09-09T19:42:47.526Z",
+  "creationTime": 1788982967,
+  "room": {
+    "id": 154844,
+    "name": "Dojo",
+    "idBattleRule": 6,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 6,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Colossus",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1177,
+          "name": "Crazy Carlo",
+          "clan": "All Stars",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 2134,
+            "description": "Reprisal: -4 Opp Damage, Min 2"
+          },
+          "bonus": null
+        },
+        {
+          "id": 539,
+          "name": "Rei Cr",
+          "clan": "Fang Pi Clang",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 358,
+            "description": "Power +3"
+          },
+          "bonus": null
+        },
+        {
+          "id": 1070,
+          "name": "Vanish",
+          "clan": "Junkz",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        },
+        {
+          "id": 961,
+          "name": "Lucy",
+          "clan": "Pussycats",
+          "level": 1,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 32853055,
+      "name": "Scubb",
+      "level": 1,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1427125242,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 564,
+          "name": "Sleam",
+          "clan": "Bangers",
+          "level": 1,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        },
+        {
+          "id": 733,
+          "name": "Astrid",
+          "clan": "GHEIST",
+          "level": 1,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        },
+        {
+          "id": 795,
+          "name": "Tino",
+          "clan": "Montana",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        },
+        {
+          "id": 566,
+          "name": "Scubb",
+          "clan": "Piranas",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": null,
+          "bonus": null
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [],
+      "resolution": [
+        null,
+        null
+      ],
+      "life": [
+        null,
+        null
+      ],
+      "pillz": [
+        null,
+        null
+      ],
+      "postRoundAbilities": [],
+      "durationMs": null
+    }
+  ],
+  "result": null,
+  "finalStatus": "playing",
+  "snapshots": 27,
+  "issues": [
+    "round 0: expected 2 moves, saw 0",
+    "Dojo (tutorial) battle: rules differ from PvP, no testcase generated"
+  ],
+  "testcase": null
+}

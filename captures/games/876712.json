@@ -1,0 +1,405 @@
+{
+  "id": 876712,
+  "capturedAt": "2026-09-09T22:40:45.423Z",
+  "creationTime": 1788993644,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19074485,
+      "name": "King Dido",
+      "level": 104,
+      "grade": "Imperator",
+      "country": "us",
+      "club": null,
+      "registrationTime": 1322069555,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1766,
+          "name": "Al Safra",
+          "clan": "Uppers",
+          "level": 1,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 3487,
+            "description": "-10 Opp Attack, Min 3"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 693,
+          "name": "Glenn",
+          "clan": "Uppers",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 512,
+            "description": "-3 Opp. Life Min 3"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 1996,
+          "name": "Golden B",
+          "clan": "Uppers",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1912,
+            "description": "Symmetry: -2 Opp Pow. And Dam., Min 1"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 607,
+          "name": "Wendel",
+          "clan": "Uppers",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 425,
+            "description": "Courage: Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1867,
+          "name": "Adytia Ld",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3386,
+            "description": "+2 Attack Per Opp. Damage"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1868,
+          "name": "Kubra",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1716,
+            "description": "Defeat: +1 Pillz And Life"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1945,
+          "name": "Lule",
+          "clan": "Komboka",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1805,
+            "description": "Support: -3 Opp Attack, Min 11"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1908,
+          "name": "Mavi",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1760,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 693,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1788993657656
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1908,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788993661218
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 14,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 3,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        6
+      ],
+      "pillz": [
+        11,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 24173
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 1868,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1788993673282
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1996,
+          "pillz": 11,
+          "pillzUsed": 12,
+          "fury": false,
+          "t": 1788993682198
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 84,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 18,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        0
+      ],
+      "pillz": [
+        0,
+        9
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 24344
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 172,
+    "scoreDiff": 12,
+    "player": {
+      "life": 0,
+      "pillz": 9,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 12,
+      "pillz": 0
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 7
+      },
+      {
+        "type": "characterXP",
+        "value": 500
+      }
+    ],
+    "t": 1788993682410
+  },
+  "finalStatus": "done",
+  "snapshots": 16,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Al Safra",
+      "Glenn",
+      "Golden B",
+      "Wendel",
+      "Adytia Ld",
+      "Kubra",
+      "Lule",
+      "Mavi"
+    ],
+    "levels": [
+      1,
+      5,
+      4,
+      2,
+      2,
+      2,
+      5,
+      2
+    ],
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          1,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 6,
+        "p1pillz": 11,
+        "p2pillz": 12,
+        "r1": {
+          "power": 7,
+          "damage": 6,
+          "attack": 14,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 2,
+          "attack": 3,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          1,
+          3,
+          false
+        ],
+        "s2": [
+          2,
+          11,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 9,
+        "r1": {
+          "power": 7,
+          "damage": 6,
+          "attack": 84,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 2,
+          "attack": 18,
+          "won": false
+        }
+      }
+    ]
+  }
+}

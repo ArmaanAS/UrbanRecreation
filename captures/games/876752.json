@@ -1,0 +1,423 @@
+{
+  "id": 876752,
+  "capturedAt": "2026-09-09T22:41:40.970Z",
+  "creationTime": 1788993700,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 35960563,
+      "name": "0paco",
+      "level": 76,
+      "grade": "Novice",
+      "country": "mx",
+      "club": {
+        "id": 681567,
+        "name": "Magic Urban"
+      },
+      "registrationTime": 1628438986,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2530,
+          "name": "Macey Rook",
+          "clan": "Berzerk",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "p",
+          "ability": {
+            "id": 4380,
+            "description": "Brawl: - 1 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 680,
+            "description": "-2 Opp. Life Min 2"
+          }
+        },
+        {
+          "id": 2135,
+          "name": "Sixx Meycry",
+          "clan": "Berzerk",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 4417,
+            "description": "Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 680,
+            "description": "-2 Opp. Life Min 2"
+          }
+        },
+        {
+          "id": 1003,
+          "name": "Andy Ld",
+          "clan": "Skeelz",
+          "level": 1,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "p",
+          "ability": {
+            "id": 5531,
+            "description": "-20 Opp Attack, Min 5"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        },
+        {
+          "id": 1934,
+          "name": "Lady Ametia Cr",
+          "clan": "Skeelz",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1788,
+            "description": "+1 Power Per Life Left Max. 13"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1867,
+          "name": "Adytia Ld",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3386,
+            "description": "+2 Attack Per Opp. Damage"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1882,
+          "name": "Bekum",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1730,
+            "description": "Growth: - 1 Opp. Life Min 4"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1873,
+          "name": "Ceida Cr",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1722,
+            "description": "Attack +20"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1908,
+          "name": "Mavi",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1760,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1934,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1788993716613
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1908,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1788993723430
+        }
+      ],
+      "resolution": [
+        {
+          "power": 13,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 65,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 7,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        8
+      ],
+      "pillz": [
+        8,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 31308
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1873,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1788993737034
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 2530,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": true,
+          "t": 1788993748902
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 48,
+          "won": true
+        },
+        {
+          "power": 3,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 32,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        0
+      ],
+      "pillz": [
+        0,
+        9
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": false,
+          "quantity": 2
+        },
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": false,
+          "quantity": 3
+        }
+      ],
+      "durationMs": 28630
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 186,
+    "scoreDiff": 14,
+    "player": {
+      "life": 0,
+      "pillz": 9,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 12,
+      "pillz": 0
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 7
+      },
+      {
+        "type": "characterXP",
+        "value": 500
+      }
+    ],
+    "t": 1788993749194
+  },
+  "finalStatus": "done",
+  "snapshots": 16,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Macey Rook",
+      "Sixx Meycry",
+      "Andy Ld",
+      "Lady Ametia Cr",
+      "Adytia Ld",
+      "Bekum",
+      "Ceida Cr",
+      "Mavi"
+    ],
+    "levels": [
+      2,
+      3,
+      1,
+      3,
+      2,
+      2,
+      2,
+      2
+    ],
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          3,
+          4,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 8,
+        "p1pillz": 8,
+        "p2pillz": 12,
+        "r1": {
+          "power": 13,
+          "damage": 4,
+          "attack": 65,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 2,
+          "attack": 7,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          3,
+          false
+        ],
+        "s2": [
+          0,
+          5,
+          true
+        ],
+        "p1life": 12,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 9,
+        "r1": {
+          "power": 8,
+          "damage": 3,
+          "attack": 48,
+          "won": true
+        },
+        "r2": {
+          "power": 3,
+          "damage": 4,
+          "attack": 32,
+          "won": false
+        }
+      }
+    ]
+  }
+}
