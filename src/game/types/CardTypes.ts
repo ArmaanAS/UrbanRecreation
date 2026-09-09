@@ -30,6 +30,7 @@ export const Clans = {
   "Sakrohm": 30,
   "Sentinel": 33,
   "Skeelz": 44,
+  "Tolvack": 60,
   "Ulu Watu": 10,
   "Uppers": 28,
   "Vortex": 45,

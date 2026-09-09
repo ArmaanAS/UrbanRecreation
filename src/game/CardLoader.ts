@@ -1,7 +1,5 @@
-import cluster from "node:cluster";
 import { BaseCard, BaseData, CardJSON, Clan } from "./types/CardTypes.ts";
-
-const DATA_PATH = "./data/data.json";
+import _json from "@data/data.json" with { type: "json" };
 
 export function getBaseKey(id: number, stars: number) {
   if (id < 0 || id > 0xffff) {
@@ -50,39 +48,44 @@ export function registerCardJSON(j: CardJSON) {
   };
 }
 
-const cardIds: { [index: number]: CardJSON } = {};
-const cardNames: { [index: string]: CardJSON } = {};
-const cardYears: { [index: number]: CardJSON[] } = {};
-const cardClans = {} as { [Property in Clan]: CardJSON[] };
-const baseCards: { [key: string]: BaseCard } = {};
+/** Max-level entry per card id / lower-cased name (the default when no level is given). */
+export const cardIds: Record<number, CardJSON> = {};
+export const cardNames: Record<string, CardJSON> = {};
+/** Every level of every card: cardLevels[id][level]. */
+export const cardLevels: Record<number, Partial<Record<number, CardJSON>>> = {};
+/** Max-level entries grouped by release year / clan (used for random hands). */
+export const cardYears: Record<number, CardJSON[]> = {};
+export const cardClans = {} as Record<Clan, CardJSON[]>;
+export const baseCards: Record<string, BaseCard> = {};
 
-export { baseCards, cardClans, cardIds, cardNames, cardYears };
+const json = _json as CardJSON[];
 
-if (cluster.isPrimary) {
-  const data = await Deno.readTextFileSync(DATA_PATH);
+let maxLevelCards = 0;
+for (const j of json) {
+  (cardLevels[j.id] ??= {})[j.level] = j;
+  registerCardJSON(j);
 
-  const json: CardJSON[] = JSON.parse(data);
-  console.log(json.length.toString().green + " cards loaded!".white);
+  if (j.level !== j.level_max) continue;
+  maxLevelCards++;
 
-  for (const j of json) {
-    cardIds[j.id] = j;
-    cardNames[j.name.toLowerCase()] = j;
+  cardIds[j.id] = j;
+  cardNames[j.name.toLowerCase()] = j;
+  // Cards get a " Cr" suffix when they become collectors; keep the old name as an alias.
+  const plain = j.name.toLowerCase().replace(/ cr$/, "");
+  if (plain !== j.name.toLowerCase()) cardNames[plain] ??= j;
 
-    const year = new Date(j.release_date * 1000).getFullYear();
-    // if (cardYears[year] === undefined)
-    //   cardYears[year] = [];
-    cardYears[year] ??= [];
-    cardYears[year].push(j);
+  const year = new Date(j.release_date * 1000).getFullYear();
+  cardYears[year] ??= [];
+  cardYears[year].push(j);
 
-    const clan = j.clan_name;
-    // if (cardClans[clan] === undefined)
-    //   cardClans[clan] = [];
-    cardClans[clan] ??= [];
-    cardClans[clan].push(j);
-
-    registerCardJSON(j);
-  }
+  const clan = j.clan_name;
+  cardClans[clan] ??= [];
+  cardClans[clan].push(j);
 }
+console.log(
+  maxLevelCards.toString().green + " cards loaded!".white +
+    (json.length > maxLevelCards ? ` (${json.length} card levels)`.gray : ""),
+);
 
 // let abilities = json.map(i => new Ability(i.ability));
 // abilities = [...abilities, ...json.map(i => new Ability(i.bonus))]

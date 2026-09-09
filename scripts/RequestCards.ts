@@ -8,12 +8,9 @@ const { items } = await callAPI("characters.getCharacters", {
 });
 console.timeEnd("Request");
 
-console.info("Writing data to './data.json'".yellow);
-console.time("Write");
-Deno.writeTextFileSync("./data/data.json", JSON.stringify(items));
-console.timeEnd("Write");
-
-console.info("Finished writing to './data.json'".green);
+console.info("Writing data to './cards.json'".yellow);
+await Deno.writeTextFile("./data/cards.json", JSON.stringify(items));
+console.info("Finished writing to './cards.json'".green);
 
 const file = "./CompileAbilities.js";
 await import(file);

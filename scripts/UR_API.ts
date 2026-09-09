@@ -1,7 +1,7 @@
 import UROAuth from "urban-rivals-oauth";
 import accessToken from "../tokens.json" with { type: "json" };
 
-const urApi = new UROAuth({
+export const urApi = new UROAuth({
   key: Deno.env.get("API_KEY"),
   secret: Deno.env.get("API_SECRET"),
 });

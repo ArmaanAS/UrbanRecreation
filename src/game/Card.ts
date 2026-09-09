@@ -4,6 +4,7 @@ import {
   baseCards,
   cardClans,
   cardIds,
+  cardLevels,
   cardNames,
   cardYears,
   getBaseKey,
@@ -155,12 +156,17 @@ export default class Card {
 }
 
 export class CardGenerator {
-  static get(card: number | string) {
+  /** Look up a card by id or name; `level` selects a specific evolution (default: max level). */
+  static get(card: number | string, level?: number) {
     let data: CardJSON | undefined;
     if (typeof card == "number") {
       data = cardIds[card];
     } else {
-      data = cardNames[card];
+      data = cardNames[card.toLowerCase()];
+    }
+
+    if (data !== undefined && level !== undefined && level !== data.level) {
+      data = cardLevels[data.id]?.[level];
     }
 
     if (data === undefined) {
@@ -168,8 +174,13 @@ export class CardGenerator {
     } else {
       return new Card(data);
     }
-    // return data && new Card(data);
   }
+
+  static getRandomCard(clan: Clan) {
+    const cards = cardClans[clan];
+    return new Card(getN(cards, 1)[0]);
+  }
+
 
   static getRandomHandYear(year = 2006) {
     const card = getN(cardYears[year])[0];
@@ -187,16 +198,14 @@ export class CardGenerator {
       cards = cardClans[getN(ClanNames)[0]];
     }
 
-    return getN(cards, 4).map((c) => new Card(c));
+    return getN(cards, 4).map((c) => new Card(c)) as HandOf<Card>;
   }
 
   static getRandomHand(cards: HandOf<string | number>) {
     const cardsArr = cards.map((c) => {
-      if (typeof c == "string") {
-        return new Card(cardNames[c.toLowerCase()]);
-      } else {
-        return new Card(cardIds[c]);
-      }
+      const json = typeof c == "string" ? cardNames[c.toLowerCase()] : cardIds[c];
+      if (json === undefined) throw new Error(`Invalid card ID or Name: ${JSON.stringify(c)}`);
+      return new Card(json);
     }) as HandOf<Card>;
 
     cardsArr.push(

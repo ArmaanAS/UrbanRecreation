@@ -1,4 +1,4 @@
-import { CardJSON, HandOf } from "./types/CardTypes.ts";
+import { CardJSON, ClanNames, HandOf } from "./types/CardTypes.ts";
 import Card, { CardGenerator } from "./Card.ts";
 import type { Clan } from "@/game/types/CardTypes.ts";
 
@@ -166,11 +166,19 @@ export class HandGenerator {
     return Hand.from(hand);
   }
 
-  static generate(...cards: HandOf<string | number> | []) {
+  static generate(...cards: [] | [string | number] | HandOf<string | number>) {
     if (cards.length === 4) {
       return this.from(CardGenerator.getRandomHand(cards));
     } else {
-      return this.from(CardGenerator.getRandomHandYear(2006));
+      // return this.from(CardGenerator.getRandomHandYear(2006));
+      // return this.from(CardGenerator.getRandomHandClan());
+      const clanCards = CardGenerator.getRandomHandClan();
+      return this.handOf(
+        [
+          ...cards,
+          ...clanCards.map((c) => c.name).slice(cards.length),
+        ] as HandOf<string | number>,
+      );
     }
   }
 
@@ -178,13 +186,15 @@ export class HandGenerator {
     return this.from(cards.map((j) => new Card(j)) as HandOf<Card>);
   }
 
-  static handOf(cards: HandOf<number | string>) {
-    return this.from(cards.map((c) => {
-      const card = CardGenerator.get(c);
+  /** Build a hand from ids / names; `levels[i]` picks the evolution of card i (default: max). */
+  static handOf(cards: HandOf<number | string>, levels?: HandOf<number | undefined>) {
+    return this.from(cards.map((c, i) => {
+      const level = levels?.[i];
+      const card = CardGenerator.get(c, level);
       if (card !== undefined) {
         return card;
       } else {
-        throw new Error(`Invalid card ID or Name: ${c}`);
+        throw new Error(`Invalid card ID or Name: ${c}${level !== undefined ? ` at level ${level}` : ""}`);
       }
     }) as HandOf<Card>);
   }
