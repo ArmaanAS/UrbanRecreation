@@ -1,3 +1,8 @@
 .env*
 
 tokens.json
+# network capture logs (contain session tokens)
+ur_log*.jsonl
+
+# site card database dump (40MB, regenerate with __ur.dumpCharacters())
+data/site_characters.jsonl
