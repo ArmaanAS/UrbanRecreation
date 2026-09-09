@@ -40,6 +40,7 @@ const Time: Record<string, TimeType> = {
   ATTACK: { eventTime: EventTime.POST1, name: "ATTACK", win: false },
   LIFE: { eventTime: EventTime.END, name: "LIFE", win: true },
   PILLZ: { eventTime: EventTime.END, name: "PILLZ", win: true },
+  TUNEOUT: { eventTime: EventTime.PRE1, name: "TUNEOUT", win: false },
 };
 function timeFromObject(o: TimeType): TimeType {
   return o && Time[o.name];
@@ -143,6 +144,11 @@ export default class BasicModifier extends Modifier {
   }
 
   canApply(data: BattleData) {
+    // Stop Heal if life <= 0
+    if (this.type === Type.LIFE && !this.opp && data.player.life <= 0) {
+      return false;
+    }
+
     if (this.always) return true;
     if (this.win && !data.card.won) return false;
 
@@ -158,15 +164,18 @@ export default class BasicModifier extends Modifier {
         // case Type.LIFE: return !data.oppCard.life.prot;
         // case Type.PILLZ: return !data.oppCard.pillz.prot;
         case Type.POWER:
-          return !data.oppCard.power.blocked;
+          return !data.oppCard.power.blocked && !data.card.power.blocked;
         case Type.DAMAGE:
-          return !data.oppCard.damage.blocked;
+          return !data.oppCard.damage.blocked && !data.card.damage.blocked;
         case Type.ATTACK:
-          return !data.oppCard.attack.blocked;
+          return !data.oppCard.attack.blocked && !data.card.attack.blocked;
         case Type.LIFE:
-          return !data.oppCard.life.blocked && data.player.life > 0;
+          return !data.oppCard.life.blocked && !data.card.life.blocked &&
+            data.opp.life > 0;
         case Type.PILLZ:
-          return !data.oppCard.pillz.blocked;
+          return !data.oppCard.pillz.blocked && data.opp.pillz > 0;
+        case Type.TUNEOUT:
+          return true;
       }
     } else {
       // console.log('this.opp === false')
@@ -181,9 +190,12 @@ export default class BasicModifier extends Modifier {
         case Type.ATTACK:
           return !data.card.attack.blocked;
         case Type.LIFE:
+          console.log("Player life:", data.player.life);
           return !data.card.life.blocked && data.player.life > 0;
         case Type.PILLZ:
           return !data.card.pillz.blocked;
+        case Type.TUNEOUT:
+          return true;
       }
     }
 
@@ -286,6 +298,12 @@ export default class BasicModifier extends Modifier {
         case Type.PILLZ:
           final = this.mod(player.pillz, data);
           player.pillz = final;
+          break;
+        case Type.TUNEOUT:
+          data.card.power.final = 1;
+          data.oppCard.power.final = 1;
+          data.card.attack.final = 0;
+          data.oppCard.attack.final = 0;
           break;
       }
     } else console.log(`Failed to apply modifier`.yellow);

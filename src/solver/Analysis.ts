@@ -54,19 +54,20 @@ export default class Analysis {
     }
 
     while (games.length) {
-      const roundGames: Game[] = [];
-      const roundNodes: Node[] = [];
       let counter = 0;
 
-      // while (games.length) {
-      //   const parentGame = games.pop()!;
-      //   const parentNode = nodes.pop()!;
-      // for (let index = 0; index < games.length; index++) {
-      for (let index = games.length - 1; index >= 0; index--) {
-        const parentGame = games[index];
-        const parentNode = nodes[index];
-        // games.length--;
-        // nodes.length--;
+      const roundGames: Game[] = [];
+      const roundNodes: Node[] = [];
+
+      while (games.length) {
+        const parentGame = games.pop()!;
+        const parentNode = nodes.pop()!;
+        // for (let index = 0; index < games.length; index++) {
+        // for (let index = games.length - 1; index >= 0; index--) {
+        //   const parentGame = games[index];
+        //   const parentNode = nodes[index];
+        //   // games.length--;
+        //   // nodes.length--;
 
         indexes ??= parentGame.unplayedCardIndexes;
 

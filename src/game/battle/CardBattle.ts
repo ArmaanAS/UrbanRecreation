@@ -4,6 +4,7 @@ import Events from "./Events.ts";
 import Game from "../Game.ts";
 import Player from "../Player.ts";
 import { Turn } from "../types/Types.ts";
+import EventTime from "@/game/types/EventTime.ts";
 
 export default class CardBattle {
   constructor(
@@ -55,8 +56,22 @@ export default class CardBattle {
     p1.wonPrevious = p1.won;
     p2.wonPrevious = p2.won;
 
-    events1.executePre(b1);
-    events2.executePre(b2);
+    // events1.executePre(b1);
+    // events2.executePre(b2);
+    events1.execute(EventTime.START, b1);
+    events2.execute(EventTime.START, b2);
+    // console.log("Executing pre", 4);
+    events1.execute(EventTime.PRE4, b1);
+    events2.execute(EventTime.PRE4, b2);
+    // console.log("Executing pre", 3);
+    events1.execute(EventTime.PRE3, b1);
+    events2.execute(EventTime.PRE3, b2);
+    // console.log("Executing pre", 2);
+    events1.execute(EventTime.PRE2, b1);
+    events2.execute(EventTime.PRE2, b2);
+    // console.log("Executing pre", 1);
+    events1.execute(EventTime.PRE1, b1);
+    events2.execute(EventTime.PRE1, b2);
 
     if (fury1) {
       card1.damage.final += 2;
@@ -71,8 +86,16 @@ export default class CardBattle {
     card1.attack.final = a1;
     card2.attack.final = a2;
 
-    events1.executePost(b1);
-    events2.executePost(b2);
+    // events1.executePost(b1);
+    // events2.executePost(b2);
+    events1.execute(EventTime.POST1, b1);
+    events2.execute(EventTime.POST1, b2);
+    events1.execute(EventTime.POST2, b1);
+    events2.execute(EventTime.POST2, b2);
+    events1.execute(EventTime.POST3, b1);
+    events2.execute(EventTime.POST3, b2);
+    events1.execute(EventTime.POST4, b1);
+    events2.execute(EventTime.POST4, b2);
 
     console.log(
       `\t\t\t\t\t${` ${p2.name} `.bgBlue.white} Attack ${card2.attack.final}\
@@ -102,8 +125,10 @@ export default class CardBattle {
       p1.life -= card2.damage.final;
     }
 
-    events1.executeEnd(b1);
-    events2.executeEnd(b2);
+    // events1.executeEnd(b1);
+    // events2.executeEnd(b2);
+    events1.execute(EventTime.END, b1);
+    events2.execute(EventTime.END, b2);
 
     card1.played = true;
     card2.played = true;

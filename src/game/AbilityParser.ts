@@ -1,8 +1,6 @@
 import BasicModifier from "./modifiers/BasicModifier.ts";
 
-const abilityCache: {
-  [index: string]: string[];
-} = {};
+const abilityCache = new Map<string, string[]>();
 
 export class Abilities {
   // static normalise(ability: string) {
@@ -11,10 +9,10 @@ export class Abilities {
   //     .replace(/[,.]/g, "")
   //     .replace(/ :/g, ":");
   // }
-  static abilityStringCache: { [key: string]: string } = {};
+  static abilityStringCache = new Map<string, string>();
   static normalise(ability: string) {
-    if (ability in this.abilityStringCache) {
-      return this.abilityStringCache[ability];
+    if (this.abilityStringCache.has(ability)) {
+      return this.abilityStringCache.get(ability)!;
     }
 
     const norm = ability
@@ -30,7 +28,8 @@ export class Abilities {
       .replace(/Can\w*/gi, "Cancel")
       .replace(/Prot\w*/gi, "Protection")
       .replace(/Rec\w*/gi, "Recover")
-      .replace(/&/g, "And")
+      .replace(/Asymm\.:?/gi, "Asymmetry")
+      .replace(/ ?[&/] ?/g, " And ")
       .replace(/(?<=(Copy|Cancel|Stop).*) (Opp|Mod|Left)\w*/gi, "")
       .replace(/(?<=Per.*) Left\w*/gi, "")
       .replace("Bonus Protection", "Protection Bonus")
@@ -43,7 +42,7 @@ export class Abilities {
       .replace(/\b\w(?=\w+)/g, (s) => s.toUpperCase())
       .replace(/\[star]/gi, "★");
 
-    this.abilityStringCache[ability] = norm;
+    this.abilityStringCache.set(ability, norm);
 
     return norm;
   }
@@ -54,14 +53,14 @@ export class Abilities {
   }
 
   static split(ability: string) {
-    if (abilityCache[ability] !== undefined) {
-      return [...abilityCache[ability]];
+    if (abilityCache.has(ability)) {
+      return [...abilityCache.get(ability)!];
     }
 
     const normalised = this.normalise(ability);
     const splitConditions = this.splitConditions(normalised);
 
-    abilityCache[ability] = splitConditions;
+    abilityCache.set(ability, splitConditions);
     return [...splitConditions];
   }
 }

@@ -9,6 +9,7 @@ import PlayerRound from "./PlayerRound.ts";
 import CardBattle from "./battle/CardBattle.ts";
 import { Turn } from "./types/Types.ts";
 import CachedCardBattle from "./battle/CachedCardBattle.ts";
+import Ability from "@/game/Ability.ts";
 
 export let counter = 0;
 
@@ -19,8 +20,8 @@ export enum Winner {
   TIE = 3,
 }
 
-type CardIndex = 0 | 1 | 2 | 3 | number;
-type Selection = [CardIndex, number, boolean];
+export type CardIndex = 0 | 1 | 2 | 3 | number;
+export type Selection = [CardIndex, number, boolean];
 
 export default class Game {
   id: number;
@@ -44,9 +45,8 @@ export default class Game {
     h1: Hand,
     h2: Hand,
     first: Turn = Turn.PLAYER_1,
+    draw = true,
   ) {
-    this.id = 0;
-
     this.p1 = p1;
     this.p2 = p2;
 
@@ -88,7 +88,7 @@ export default class Game {
 
     this.createBattleDataCache();
 
-    this.draw();
+    if (draw) this.draw();
   }
 
   clone(): Game {
@@ -99,8 +99,8 @@ export default class Game {
     const p2 = clone(this.p2);
     // const events1 = this.events1.clone();
     // const events2 = this.events2.clone();
-    let events1 = this.events1,
-      events2 = this.events2;
+    let events1 = this.events1;
+    let events2 = this.events2;
     //   p1 = this.p1,
     //   p2 = this.p2;
     if (this.id % 2 === 1) {
@@ -140,14 +140,6 @@ export default class Game {
 
     Object.setPrototypeOf(o.r1, PlayerRound.prototype);
     Object.setPrototypeOf(o.r2, PlayerRound.prototype);
-
-    // if (inputs !== undefined) {
-    //   o.inputs = inputs;
-    // }
-
-    // if (logs !== undefined) {
-    //   o.logs = logs;
-    // }
 
     o.createBaseGameCache();
     o.createBattleDataCache();
@@ -257,7 +249,7 @@ export default class Game {
   select(index: CardIndex, pillz: number, fury = false, draw = true) {
     // if (typeof index != 'number' || typeof pillz != 'number') //return false;
     if (!Number.isInteger(index) || !Number.isInteger(pillz)) {
-      throw new Error(`Game.select - index or pillz is not a number 
+      throw new Error(`Game.select - index or pillz is not a number
         index: ${index}, pillz: ${pillz}`);
     }
 
@@ -290,8 +282,6 @@ export default class Game {
       this.id++;
     }
 
-    // this.firstHasSelected = !this.firstHasSelected;
-
     if (draw) this.draw();
     return true;
   }
@@ -305,7 +295,7 @@ export default class Game {
       const fury1 = this.i1[2];
       const fury2 = this.i2[2];
 
-      const ccb = battleCache[`${this.i1[0]} ${this.i2[0]}`];
+      const ccb = battleCache.get(`${this.i1[0]} ${this.i2[0]}`);
       if (ccb === undefined) {
         new CardBattle(
           this,
@@ -441,11 +431,14 @@ export default class Game {
         if (c2.won !== undefined) continue;
 
         counter++;
-        battleCache[`${ci1} ${ci2}`] = new CachedCardBattle(
-          this.h1,
-          c1,
-          this.h2,
-          c2,
+        battleCache.set(
+          `${ci1} ${ci2}`,
+          new CachedCardBattle(
+            this.h1,
+            c1,
+            this.h2,
+            c2,
+          ),
         );
       }
     }
@@ -453,7 +446,7 @@ export default class Game {
     console.log = log;
     console.log(
       `Cached ${`${counter}`.green} CardBattles `.white +
-        `(${Object.keys(battleCache).length} keys)`.green.dim,
+        `(${battleCache.size} keys)`.green.dim,
     );
   }
 
@@ -510,7 +503,7 @@ export default class Game {
   }
 }
 
-const battleCache: { [key: string]: CachedCardBattle } = {};
+const battleCache = new Map<string, CachedCardBattle>();
 
 interface BaseGame {
   playingFirst: Turn;

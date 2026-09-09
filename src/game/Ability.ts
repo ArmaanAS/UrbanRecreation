@@ -1,6 +1,7 @@
 import { Abilities, AbilityParser } from "./AbilityParser.ts";
 import BattleData from "./battle/BattleData.ts";
 import CachedBattleData from "./battle/CachedBattleData.ts";
+import CachedEvents from "./battle/CachedEvents.ts";
 import Card from "./Card.ts";
 import Condition from "./Condition.ts";
 import BasicModifier from "./modifiers/BasicModifier.ts";
@@ -274,12 +275,40 @@ export default class Ability {
     } else if (tokens[0] == "Copy") {
       failed = false;
 
+      // console.log(
+      //   `${data.card.name} vs ${data.oppCard.name}`,
+      //   this.ability,
+      //   this.type,
+      // );
+
       if (tokens[1] == "Bonus") {
+        if (/Copy.+Bonus/i.test(data.oppCard.bonusString)) {
+          console.log("Copy Bonus loop detected. Skipping...");
+          return;
+        } else if (
+          /Copy.+Ability/i.test(data.oppCard.bonusString) &&
+          /Copy.+Bonus/i.test(data.oppCard.abilityString)
+        ) {
+          console.log("Copy Ability and Bonus loop detected. Skipping...");
+          return;
+        }
+        console.log("Copying", data.oppCard.bonusString);
         // new Ability(data.oppCard.bonus.string, this.type).compile(data);
         new Ability(data.oppCard.bonusString, this.type).compile(data);
 
         return;
       } else if (tokens[1] == "Ability") {
+        if (/Copy.+Ability/i.test(data.oppCard.abilityString)) {
+          console.log("Copy Ability loop detected. Skipping...");
+          return;
+        } else if (
+          /Copy.+Bonus/i.test(data.oppCard.abilityString) &&
+          /Copy.+Ability/i.test(data.oppCard.bonusString)
+        ) {
+          console.log("Copy Ability and Bonus loop detected. Skipping...");
+          return;
+        }
+        console.log("Copying", data.oppCard.abilityString);
         new Ability(data.oppCard.abilityString, this.type).compile(data);
 
         return;
@@ -310,10 +339,24 @@ export default class Ability {
       } else {
         this.mods.push(new ExchangeModifier("Impose " + tokens[1]));
       }
-    } else if (tokens[1] == "Recover") { // 1 Recover Pillz Out Of 3
+    } else if (tokens[1] == "Recover") {
       failed = false;
       // "Pillz", 1, 3
-      this.mods.push(new RecoverModifier(tokens[2], +tokens[0], +tokens[5]));
+      if (tokens[2] == "Players") { // 1 Recover Players Pillz Out Of 3
+        this.mods.push(
+          new RecoverModifier(tokens[3], +tokens[0], +tokens[6], true),
+        );
+      } else { // 1 Recover Pillz Out Of 3
+        this.mods.push(
+          new RecoverModifier(tokens[2], +tokens[0], +tokens[5], false),
+        );
+      }
+    } else if (tokens[0] === "Tune") {
+      failed = false;
+      const mod = new BasicModifier();
+      mod.setType("TUNEOUT");
+
+      this.mods.push(mod);
     } else if (
       ["Poison", "Toxin", "Consume", "Regen", "Heal", "Dope"].includes(
         tokens[1],

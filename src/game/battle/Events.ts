@@ -35,33 +35,36 @@ export default class Events {
   }
 
   execute(event: EventTime, data: BattleData) {
-    let ability: Ability | undefined;
-    while ((ability = this.events[event].pop()) !== undefined) {
+    // let ability: Ability | undefined;
+    // while ((ability = this.events[event].pop()) !== undefined) {
+    for (const ability of this.events[event]) {
       ability.apply(data);
     }
+    this.events[event].length = 0;
 
     for (const ability of this.repeat[event]) {
       ability.apply(data);
     }
   }
 
-  executeStart(data: BattleData) {
-    this.execute(EventTime.START, data);
-  }
+  // executeStart(data: BattleData) {
+  //   this.execute(EventTime.START, data);
+  // }
 
-  executePre(data: BattleData) {
-    for (const e of [1, 2, 3, 4]) {
-      this.execute(e, data);
-    }
-  }
+  // executePre(data: BattleData) {
+  //   for (const e of [1, 2, 3, 4]) {
+  //     console.log("Executing pre", e);
+  //     this.execute(e, data);
+  //   }
+  // }
 
-  executePost(data: BattleData) {
-    for (const e of [5, 6, 7, 8]) {
-      this.execute(e, data);
-    }
-  }
+  // executePost(data: BattleData) {
+  //   for (const e of [5, 6, 7, 8]) {
+  //     this.execute(e, data);
+  //   }
+  // }
 
-  executeEnd(data: BattleData) {
-    this.execute(EventTime.END, data);
-  }
+  // executeEnd(data: BattleData) {
+  //   this.execute(EventTime.END, data);
+  // }
 }

@@ -1,6 +1,8 @@
 import Ability from "../Ability.ts";
 import Events from "./Events.ts";
 import EventTime from "../types/EventTime.ts";
+import BattleData from "@/game/battle/BattleData.ts";
+import { AbilityType } from "@/game/Ability.ts";
 
 export default class CachedEvents {
   _events?: Ability[][];
@@ -20,7 +22,8 @@ export default class CachedEvents {
   }
 
   addGlobal(event: EventTime, ability: Ability) {
-    this.repeat[event].push(ability);
+    this._repeat ??= new Array(10).fill(undefined).map<Ability[]>(() => []);
+    this._repeat[event].push(ability);
   }
 
   merge(events: Events) {
@@ -35,8 +38,25 @@ export default class CachedEvents {
     if (this._repeat !== undefined) {
       for (let i = 0; i < 10; i++) {
         for (const e of this._repeat[i]) {
-          events.repeat[i].push(e.clone());
+          if (e.type !== AbilityType.GLOBAL || events.repeat[i].length === 0) {
+            events.repeat[i].push(e.clone());
+          }
         }
+      }
+    }
+  }
+
+  execute(event: EventTime, data: BattleData) {
+    let ability: Ability | undefined;
+    if (this._events !== undefined) {
+      while ((ability = this._events[event].pop()) !== undefined) {
+        ability.apply(data);
+      }
+    }
+
+    if (this._repeat !== undefined) {
+      for (const ability of this._repeat[event]) {
+        ability.apply(data);
       }
     }
   }

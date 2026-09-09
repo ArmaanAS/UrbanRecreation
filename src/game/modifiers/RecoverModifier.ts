@@ -11,14 +11,16 @@ export const RecoverObject: { [index: string]: Recover } = {
   LIFE: Recover.LIFE,
 };
 
-export default class ExchangeModifier extends Modifier {
+export default class RecoverModifier extends Modifier {
   rec = Recover.PILLZ;
   n: number;
   outOf: number;
+  both: boolean;
   constructor(
     rec: Recover | string,
     n: number,
     outOf: number,
+    both = false,
     et = EventTime.END,
   ) {
     super();
@@ -31,6 +33,7 @@ export default class ExchangeModifier extends Modifier {
 
     this.n = n;
     this.outOf = outOf;
+    this.both = both;
     this.eventTime = et;
   }
 
@@ -40,6 +43,16 @@ export default class ExchangeModifier extends Modifier {
         const gain = Math.ceil(data.playerPillzUsed * (this.n / this.outOf));
         console.log(`Player recovered ${gain} pillz / ${data.playerPillzUsed}`);
         data.player.pillz += gain;
+
+        if (this.both) {
+          const oppGain = Math.ceil(
+            data.oppCard.damage.final * (this.n / this.outOf),
+          );
+          console.log(
+            `Opponent recovered ${oppGain} life / ${data.oppCard.damage.final} damage`,
+          );
+          data.opp.life += oppGain;
+        }
       }
     } else if (this.rec === Recover.LIFE) {
       if (!data.card.life.blocked) {
@@ -50,6 +63,10 @@ export default class ExchangeModifier extends Modifier {
           `Player recovered ${gain} life / ${data.oppCard.damage.final} damage`,
         );
         data.player.life += gain;
+
+        if (this.both) {
+          throw new Error("Both is not supported for life recovery");
+        }
       }
     } else console.error("Unknown recover type", this.rec);
   }
