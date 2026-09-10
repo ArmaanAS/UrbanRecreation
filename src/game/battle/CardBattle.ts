@@ -132,5 +132,10 @@ export default class CardBattle {
 
     card1.played = true;
     card2.played = true;
+
+    // "After [clan:...]" looks at what its owner played in the *previous* round, so record
+    // that only now, with the round resolved. b1 and b2 are the two players' views of it.
+    b1.round.lastClan = card1.clan;
+    b2.round.lastClan = card2.clan;
   }
 }

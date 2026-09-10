@@ -1,10 +1,17 @@
 import Card from "./Card.ts";
 import Hand from "./Hand.ts";
+import { type Clan } from "./types/CardTypes.ts";
 
 export default class PlayerRound {
   private a = 0;
   hand: Hand;
   oppHand: Hand;
+  /**
+   * Clan of the card this player played in the previous round, which is what
+   * "After [clan:...]" asks about (the server calls it previousClanRequirement).
+   * Undefined in round 0, where there is no previous card.
+   */
+  lastClan?: Clan;
 
   constructor(
     round: number,
@@ -26,6 +33,7 @@ export default class PlayerRound {
       a: this.a,
       hand: h1,
       oppHand: h2,
+      lastClan: this.lastClan,
     }, PlayerRound.prototype);
   }
 

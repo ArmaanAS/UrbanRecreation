@@ -29,6 +29,7 @@ export enum ConditionType {
   UNISON = 21,
   INFILTRATED = 22,
   VERSUS = 23,
+  AFTER = 24,
 }
 
 export default class Condition {
@@ -44,6 +45,8 @@ export default class Condition {
       console.log("Clans", this.clans);
       if (s.startsWith("Versus")) {
         this.type = ConditionType.VERSUS;
+      } else if (s.startsWith("After")) {
+        this.type = ConditionType.AFTER;
       } else {
         this.type = ConditionType.INFILTRATED;
       }
@@ -103,6 +106,14 @@ export default class Condition {
         return data.round.hand.getClanCards(data.card) === 4;
       case ConditionType.INFILTRATED:
         return this.clans.includes(data.card.clan);
+      // "After [clan:56][clan:60]": only active if the card this player played in the
+      // *previous* round belonged to one of the listed clans - the server's
+      // previousClanRequirement, e.g. captures/abilities.json 5585 (the Tolvack bonus),
+      // "if the player of Tolvack played an Oculus or Tolvack character in the previous
+      // round". Round 0 has no previous card, so it never activates there.
+      case ConditionType.AFTER:
+        return data.round.lastClan !== undefined &&
+          this.clans.includes(data.round.lastClan);
       case ConditionType.VERSUS:
         return this.clans.find((c) =>
           data.round.oppHand.map((c) => c.clan).includes(c)

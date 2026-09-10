@@ -51,3 +51,44 @@ Deno.test("Defeat Heal does not start on a win", () => {
   assertEquals(g.h1[3].won, true);
   assertEquals(g.p1.life, 12); // still no healing
 });
+
+// A permanent that is stopped in the round its card is played never starts at all, and the
+// check has to happen then: from the next round on, the ability object outlives its card and
+// `data.card` is whichever card its owner plays instead. Captured battle 877733 r0: Pr
+// Balthazar's "Stop Opp. Ability" meets Lianah Ld's "Heal 1 Max. 20", and the server never
+// heals DashSmashing across the three rounds that follow.
+const stopped = () =>
+  new Game(
+    new Player(12, 12, 0),
+    new Player(12, 12, 1),
+    HandGenerator.handOf(["Agnes", "Bumdo", "Korakine", "Pr Balthazar"] as HandOf<string>, [1, 2, 2, 3] as HandOf<number | undefined>),
+    HandGenerator.handOf(["Eugene", "Fanny", "Lianah Ld", "Shaun"] as HandOf<string>, [3, 2, 3, 3] as HandOf<number | undefined>),
+    Turn.PLAYER_1,
+  );
+
+Deno.test("Heal stopped in its own round never starts", () => {
+  const g = stopped();
+
+  g.select(3, 0, false, false); // p1 Pr Balthazar, "Stop Opp. Ability"
+  g.select(2, 4, false, false); // p2 Lianah Ld, "Heal 1 Max. 20" — wins, but is stopped
+  assertEquals(g.h2[2].won, true);
+  assertEquals(g.p2.life, 12);
+
+  // Round 1: player 2 selects first and wins again, so nothing but a heal could move it.
+  g.select(3, 5, false, false); // p2 Shaun
+  g.select(0, 0, false, false); // p1 Agnes
+  assertEquals(g.p2.life, 12);
+});
+
+Deno.test("Heal that is not stopped does start", () => {
+  const g = stopped();
+
+  g.select(0, 0, false, false); // p1 Agnes — no Stop this time
+  g.select(2, 4, false, false); // p2 Lianah Ld wins with its ability intact
+  assertEquals(g.h2[2].won, true);
+  assertEquals(g.p2.life, 12); // Heal skips the round that started it
+
+  g.select(3, 5, false, false); // p2 Shaun
+  g.select(3, 0, false, false); // p1 Pr Balthazar
+  assertEquals(g.p2.life, 13);
+});

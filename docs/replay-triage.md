@@ -19,6 +19,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-10 | 44 | 10 | modifier ordering, Day/Night, post-KO gains (below) |
 | 2026-09-11 | 50 | 10 | +6 games; bonus before ability; same-phase reductions by descending Min |
 | 2026-09-11 | 53 | 7 | permanents latch on their own trigger; Repair; Sinister Symmetry |
+| 2026-09-11 | 55 | 5 | After [clan:...] is a previous-round look-back; stopped permanents never start |
 
 ## Fixed
 
@@ -79,7 +80,28 @@ Cr at index 3 beats Tina at index 3, deals 4 to an opponent on 9 Life, and the s
 reports a post-round life decrease of exactly the remaining 5, with `byKo: true`.
 Fixed 874399. Tests in `tests/ability/SinisterSymmetry.test.ts`.
 
-## Open (7 battles)
+### After [clan:...] is a previous-round look-back
+Not "once a listed clan's card was played earlier in the game": `abilityData` calls it
+`previousClanRequirement`, and the Tolvack bonus (5585) reads "only activates if the player
+of Tolvack played an Oculus or Tolvack character in the **previous round**". `Condition`
+also mistyped it, because "After [Clan:56][Clan:60]" ends in "]" and so fell through to
+`INFILTRATED`, which asks whether the *current* card is of a listed clan - always true for a
+Tolvack card, hence the unconditional +3. There is now a `ConditionType.AFTER`, fed by
+`PlayerRound.lastClan`, which `CardBattle` records for each side once a round resolves.
+876464 confirms it round by round: Tor lv4 fights round 0 on its base power of 6, Drava lv3
+(base 7) has 10 in round 1, Maelt Riv lv3 (base 8) has 11 in round 2.
+Fixed 876464. Tests in `tests/ability/After.test.ts`.
+
+### A permanent stopped in its own round never starts
+`Ability.latches()` now refuses to latch when the card's ability (or bonus) is blocked. The
+check cannot be left to each application: from the next round on the ability object outlives
+its card, and `data.card` is whichever card its owner plays then, so the blocked test would
+be asking about the wrong card - which is why a latched permanent no longer runs it at all.
+877733 r0 is the case: Pr Balthazar's "Stop Opp. Ability" meets Lianah Ld's "Heal 1 Max.
+20", and the server never heals across the three rounds that follow.
+Fixed 877733. Tests in `tests/ability/Heal.test.ts`.
+
+## Open (5 battles)
 
 ### Inactive clan bonus ("None") and Damage Exchange — Free Fight / mixed decks
 - 901004 r0 (Free Fight): Kubrat Cr's bonus is sent as "None" (only card of its clan in
@@ -89,12 +111,6 @@ Fixed 874399. Tests in `tests/ability/SinisterSymmetry.test.ts`.
 
 ### Unimplemented / unparsed keywords
 - **Cards Damage +2**: 874795 r0 El Resbaladizo damage 8 vs 6 (+4 → "+2 per something"; TBD).
-- **After [clan:…]**: Tolvack bonus "After [clan:56][clan:60] : Power +3" activates once a
-  listed clan's card was played earlier in the game. Engine currently parses it as an
-  unconditional +3: 876464 r0 Tør power 9 vs 6 (r1/r2 it *is* active).
-- **Unison** (all four cards same clan): 877733 r1 Korakine "Unison : +2 Pillz And Life"
-  lost the round; engine still gave +1 life (server +0). Check both the Unison condition
-  and "Pillz And Life" parsing.
 
 ### Revenge / Damage Impose
 - 874712 r1 Tina "Revenge: Power And Damage +2" (lost previous round) vs Kochar "Damage

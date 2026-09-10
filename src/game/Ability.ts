@@ -82,6 +82,17 @@ export default class Ability {
    * requiring a win here discarded the effect instead (captured battle 875230).
    */
   private latches(data: BattleData) {
+    // A stopped ability never starts at all: Pr Balthazar's "Stop Opp. Ability" in captured
+    // battle 877733 r0 keeps Lianah Ld's "Heal 1 Max. 20" from ever healing. It has to be
+    // checked here and not on each application, because from the next round on `data.card`
+    // is whichever card the owner plays then, not the one that started the effect.
+    if (this.type === AbilityType.GLOBAL_ABILITY && data.card.ability.blocked) {
+      return false;
+    }
+    if (this.type === AbilityType.GLOBAL_BONUS && data.card.bonus.blocked) {
+      return false;
+    }
+
     for (const cond of this.conditions) {
       if (!cond.met(data)) {
         console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
@@ -101,13 +112,24 @@ export default class Ability {
     const permanent = this.type === AbilityType.GLOBAL_ABILITY ||
       this.type === AbilityType.GLOBAL_BONUS;
 
-    if (permanent && this.won === undefined) {
-      if (!this.latches(data)) {
-        data.events.removeGlobal(this.mods[0].eventTime, this);
+    if (permanent) {
+      if (this.won === undefined) {
+        if (!this.latches(data)) {
+          data.events.removeGlobal(this.mods[0].eventTime, this);
+          return false;
+        }
+
+        this.won = true;
+      }
+
+      if (this.delayed) {
+        this.delayed = false;
         return false;
       }
 
-      this.won = true;
+      // Latched, so it repeats whatever happens from here; the blocked checks below would
+      // be asking about the wrong card.
+      return true;
     }
 
     if (this.delayed) {
@@ -115,14 +137,12 @@ export default class Ability {
       return false;
     }
 
-    if (!permanent) {
-      for (const cond of this.conditions) {
-        if (!cond.met(data)) {
-          console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
-          return false;
-        }
-        console.log(`[Condition] ${cond.s} met: true`.green);
+    for (const cond of this.conditions) {
+      if (!cond.met(data)) {
+        console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
+        return false;
       }
+      console.log(`[Condition] ${cond.s} met: true`.green);
     }
 
     if (
