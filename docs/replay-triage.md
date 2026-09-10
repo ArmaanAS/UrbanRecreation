@@ -20,6 +20,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-11 | 50 | 10 | +6 games; bonus before ability; same-phase reductions by descending Min |
 | 2026-09-11 | 53 | 7 | permanents latch on their own trigger; Repair; Sinister Symmetry |
 | 2026-09-11 | 55 | 5 | After [clan:...] is a previous-round look-back; stopped permanents never start |
+| 2026-09-11 | 56 | 4 | Cards <stat> +N applies to both sides |
 
 ## Fixed
 
@@ -101,26 +102,58 @@ be asking about the wrong card - which is why a latched permanent no longer runs
 20", and the server never heals across the three rounds that follow.
 Fixed 877733. Tests in `tests/ability/Heal.test.ts`.
 
-## Open (5 battles)
+### Cards <stat> +N
+"Cards Damage +2" is "The Damage points of both characters are increased by 2 points"
+(`abilityData` 3295, sideAffected "both"). Two things were wrong: `normalise` turned it into
+"Cards +2 Damage", because the rule that moves the sign in front takes one or three words
+and not two, so `tokens[0]` was "Cards" and no branch matched at all; and the positive
+branch only treated "Players" as a both-sides marker, though the negative one already read
+"Cards" that way for "-2 Cards Damage, Min 1" (4957). 874795 r0 confirms both halves in one
+round: El Resbaladizo lv4 (base 6) fights at 8, Aurora lv5 (base 5) at 7.
+Fixed 874795. Tests in `tests/ability/CardsDamage.test.ts`.
 
-### Inactive clan bonus ("None") and Damage Exchange — Free Fight / mixed decks
-- 901004 r0 (Free Fight): Kubrat Cr's bonus is sent as "None" (only card of its clan in
-  hand → no clan bonus). Check `Hand` applies the ≥2-same-clan rule and that a "None" bonus
-  parses to nothing. Same round: Waldegrin Cr "Damage Exchange" lost with 8 damage vs 1;
-  server dealt 1 (engine 6) — Exchange semantics / activation on loss to verify.
+## Open (4 battles)
 
-### Unimplemented / unparsed keywords
-- **Cards Damage +2**: 874795 r0 El Resbaladizo damage 8 vs 6 (+4 → "+2 per something"; TBD).
+### Damage Exchange — 901004
+The inactive-bonus half of this entry is a false lead: across the captures there are 23
+played rounds where the server sends no clan bonus, and in every one the card is the only
+member of its clan in the hand. Most of those games already replay exactly, so the
+≥2-same-clan rule is already right and nothing needs doing there.
+
+What is left is Damage Exchange, and 901004 r0 pins its semantics completely: Waldegrin Cr
+lv5 has a written Damage of 1 and Kubrat Cr lv5 has 8, and the server reports Waldegrin
+fighting at 8 and Kubrat at 1 - the two *base* values swapped, exactly as `abilityData` 1588
+says ("The starting Damage (written on the card) of your card is exchanged with that of your
+opponent's", sideAffected "both", attributeAction "copy"). Kubrat then deals 1.
+`ExchangeModifier` already does precisely that swap, so the bug is elsewhere in the round:
+the engine has Kubrat dealing 6, which is neither base (8) nor the swapped value (1). Find
+where the 2 goes missing before touching the modifier. Only 3 captured rounds play a Damage
+Exchange card at all, one of them on a loss.
 
 ### Revenge / Damage Impose
 - 874712 r1 Tina "Revenge: Power And Damage +2" (lost previous round) vs Kochar "Damage
   Impose" + "Copy: Opp. Ability": engine damage 2, server 4.
 
 ### Recover N Pillz Out Of M
-- 877983 r1 Eebiza "Defeat: Recover 1 Pillz Out Of 2" with 0 pillz bet: server +1, engine +0.
-  But 867173 r1 AI-Lycs "Recover 2 Out Of 3" with 3 bet: server +2 (= ceil(3×2/3), not
-  ceil(4×2/3) = 3). So the free pill is *not* counted, yet a 0-pill bet still recovers 1.
-  Hypothesis: max(1, ceil(bet × N / M)). Two data points; needs more.
+Every Recover round in the captures, with the pillz arithmetic done against the round's own
+`postRoundAbilities` and the other effects in play:
+
+- 877983 r1 Eebiza "Defeat: Recover 1 Pillz Out Of 2", bet 0, **lost** → **+1**
+  (12 → 13 with nothing else on that side granting pillz).
+- 901400 r1 D-aleq "Defeat: Recover 2 Pillz Out Of 3", bet 3, **lost** → **+2**
+  (10 → 9 having spent 3).
+- 901400 r0 Lovhak and r2 Behemoth Cr, same bonus, both **won**: pillz falls by exactly the
+  bet, confirming Defeat-only.
+- 867173 r2 AI-Lycs "Defeat: Recover 2 Pillz Out Of 3", bet 4, **won**: no recovery. The
+  extra -1 that round is Prince Candle's Combust, which also takes the matching 1 Life.
+  (The earlier note here claimed this was r1 with a bet of 3 and a +2; it is not.)
+
+max(1, ceil(bet × N / M)) fits both triggering rounds, but they cannot discriminate the
+rounding: bet 3 with N=2 M=3 is exactly 2, so ceil, floor and round all agree, and bet 0
+only exercises the max(1, ...) clause. **The rounding is completely untested.** What would
+settle it is losing a round with a Recover card on a bet that is not a multiple of M -
+"Recover 2 Out Of 3" on 2, 4 or 5 pillz (ceil gives 2, 3, 4; floor gives 1, 2, 3), or
+"Recover 1 Out Of 2" on 3 or 5.
 
 ### Not reproducible from a testcase
 - 874590 is a **Hazard** game and cannot be replayed as it stands. Administrator (Leader,

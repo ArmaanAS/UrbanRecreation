@@ -188,7 +188,12 @@ export default class Ability {
 
     compile:
     if (/\+\d+/.test(tokens[0])) {
-      const dupe = tokens[1] === "Players";
+      // "Players" and "Cards" both mean the modifier lands once on each side. "Cards Damage
+      // +2" normalises to "+2 Cards Damage" and is "The Damage points of both characters are
+      // increased by 2" (captures/abilities.json 3295, sideAffected "both"); 874795 r0 has
+      // El Resbaladizo lv4 at 6+2 and Aurora lv5 at 5+2 in the same round. The negative
+      // branch below already reads "Cards" this way for "-2 Cards Damage, Min 1".
+      const dupe = tokens[1] === "Players" || tokens[1] === "Cards";
       let t: string[],
         i: number,
         opp1 = false;

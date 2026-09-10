@@ -35,6 +35,11 @@ export class Abilities {
       .replace("Bonus Protection", "Protection Bonus")
       .replace(/^(.+) Impose/, "Impose $1")
       .replace(/(\w+(?: \w+ \w+)?) ([+-][xy\d]+|Exchange)/i, "$2 $1")
+      // The swap above only takes one or three words, not two, so "Cards Damage +2"
+      // comes out as "Cards +2 Damage". Put the sign back in front so it parses like any
+      // other modifier, with "Cards" left in front of the stat to mark both sides - the
+      // shape "-2 Cards Damage Min 1" already has.
+      .replace(/^(Cards|Players) ([+-][xy\d]+)/, "$2 $1")
       .replace(/([a-z]+)(?<!Min|Max) ([xy\d]+)/i, "$2 $1")
       .replace(/(\w+) And (\w+)/gi, "$1&$2")
       .replace(/(?<=[xy\d] )(\w+) (Opp)/gi, "$2 $1")
