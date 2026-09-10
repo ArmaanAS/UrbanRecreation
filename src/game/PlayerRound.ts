@@ -8,13 +8,13 @@ export default class PlayerRound {
 
   constructor(
     round: number,
-    // day: boolean,
     first: boolean,
     h1: Hand,
     h2: Hand,
+    day = true,
   ) {
     this.round = round;
-    // this.day = day;
+    this.day = day;
     this.first = first;
 
     this.hand = h1;
@@ -30,12 +30,11 @@ export default class PlayerRound {
   }
 
   get day() {
-    // return !!(this.a & 0b1);
-    return true;
+    return !!(this.a & 0b1);
   }
-  // set day(n: boolean) {
-  //   this.a = (this.a & ~0b1) | +n;
-  // }
+  set day(n: boolean) {
+    this.a = (this.a & ~0b1) | +n;
+  }
   get first() {
     return !!(this.a & 0b10);
   }

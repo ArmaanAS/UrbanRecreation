@@ -73,6 +73,8 @@ interface Testcase {
   cards: string[];
   /** Level (stars) each card was played at, same order as `cards`. */
   levels: number[];
+  /** Clint City was at night (Night: abilities active, night variants in use). */
+  night: boolean;
   flip: boolean;
   life: number;
   pillz: number;
@@ -86,6 +88,16 @@ interface Testcase {
     r1?: MoveResult;
     r2?: MoveResult;
   }[];
+}
+
+/**
+ * Clint City switches between day and night every 4 hours. Night is 06:00-10:00,
+ * 14:00-18:00 and 22:00-02:00 Paris time (source: Urban Rivals wiki / forum; confirmed by
+ * captured games where the server sent the active Day:/Night: ability text).
+ */
+export function isNight(unixSeconds: number): boolean {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Europe/Paris" }).format(new Date(unixSeconds * 1000)));
+  return (hour >= 6 && hour < 10) || (hour >= 14 && hour < 18) || hour >= 22 || hour < 2;
 }
 
 const cardById = new Map<number, typeof cards[number]>();
@@ -271,7 +283,17 @@ function reconstruct(id: number, entries: CaptureEntry[]) {
   if (levelMismatch) issues.push("engine lacks stats for one or more cards at the level played: no testcase generated (run __ur.dumpCharacters() then `deno task cards`)");
   const isDojo = first.battleRuleId === 6 || /dojo/i.test(String((meta?.room as { name?: string } | undefined)?.name ?? ""));
   if (isDojo) issues.push("Dojo (tutorial) battle: rules differ from PvP, no testcase generated");
-  const testcase = isDojo || levelMismatch ? null : buildTestcase(players, rounds, issues);
+  const night = isNight(first.creationTime);
+  // Sanity check: the server sends the *active* variant of Day:/Night: abilities.
+  for (const p of players) {
+    for (const c of p.hand) {
+      for (const k of ["ability", "bonus"] as const) {
+        const m = /^\s*(Day|Night)\s*:/.exec(c[k]?.description ?? "");
+        if (m && (m[1] === "Night") !== night) issues.push(`${c.name}: server sent "${m[1]}:" text but schedule says ${night ? "night" : "day"} — check isNight()`);
+      }
+    }
+  }
+  const testcase = isDojo || levelMismatch ? null : buildTestcase(players, rounds, issues, night);
 
   return {
     id,
@@ -279,6 +301,7 @@ function reconstruct(id: number, entries: CaptureEntry[]) {
     creationTime: first.creationTime,
     room: meta?.room ?? null,
     battleRuleId: first.battleRuleId,
+    night,
     myId: myId || null,
     mySide,
     firstPlayer: rounds[0]?.first ?? null,
@@ -292,7 +315,7 @@ function reconstruct(id: number, entries: CaptureEntry[]) {
   };
 }
 
-function buildTestcase(players: ReturnType<typeof describePlayer>[], rounds: Round[], issues: string[]): Testcase | null {
+function buildTestcase(players: ReturnType<typeof describePlayer>[], rounds: Round[], issues: string[], night: boolean): Testcase | null {
   const p1: Side | null = rounds[0]?.first ?? null;
   if (p1 === null) return null;
   const p2 = (1 - p1) as Side;
@@ -300,6 +323,7 @@ function buildTestcase(players: ReturnType<typeof describePlayer>[], rounds: Rou
   const tc: Testcase = {
     cards: [...players[p1].hand.map((c) => c.name!), ...players[p2].hand.map((c) => c.name!)],
     levels: [...players[p1].hand.map((c) => c.level), ...players[p2].hand.map((c) => c.level)],
+    night,
     flip: false,
     life: players[p1].baseLife,
     pillz: players[p1].basePillz,

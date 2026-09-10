@@ -32,11 +32,11 @@ deno task bench / deno task time # solver benchmark
 ## Current priorities (Sept 2026)
 
 1. Capture many real PvP games and make the engine reproduce them (`tests/replay/`).
-   As of 2026-09-10: 56 battles captured, 52 replayable, 30 replay exactly (life, pillz,
-   power, damage, attack, winner per round), 22 mismatch. The mismatches are triaged into
-   ~11 root causes in `docs/replay-triage.md` (Day/Night, Support count, Montana min clamp,
-   Brawl, Growth/Degrowth, modifier ordering, post-KO gains, Recover, Symmetry, unparsed
-   keywords). Work through that list; re-run the replay suite after each fix.
+   As of 2026-09-10: 56 battles captured, 54 replayable, 44 replay exactly (life, pillz,
+   power, damage, attack, winner per round), 10 mismatch. `docs/replay-triage.md` tracks
+   what was fixed (modifier ordering, Day/Night, post-KO gains) and what is open (Brawl,
+   Repair, After, Cards, Sinister Symmetry, Unison, Revenge/Impose, Recover rounding).
+   Work through that list; re-run the replay suite after each fix.
 2. Card data is complete as of 2026-09-10 (2496 cards, every level, 36 clans incl. the new
    Tolvack). To refresh: `__ur.dumpCharacters()` and `__ur.dumpClans()` in the browser (log
    server running), then `deno task cards`. A new clan must also be added to `Clans` in

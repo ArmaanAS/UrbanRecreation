@@ -21,6 +21,7 @@ interface MoveResult {
 interface Testcase {
   cards: string[];
   levels?: number[];
+  night?: boolean;
   life: number;
   pillz: number;
   moves: {
@@ -62,7 +63,7 @@ for (const rec of records) {
     const h2 = HandGenerator.handOf(tc!.cards.slice(4, 8) as HandOf<string>, lv.slice(4, 8) as HandOf<number | undefined>);
     const p1 = new Player(tc!.life, tc!.pillz, 0);
     const p2 = new Player(tc!.life, tc!.pillz, 1);
-    const g = new Game(p1, p2, h1, h2, Turn.PLAYER_1, false);
+    const g = new Game(p1, p2, h1, h2, Turn.PLAYER_1, false, tc!.night ?? false);
 
     tc!.moves.forEach((move, i) => {
       g.select(move.s1[0], move.s1[1], move.s1[2], false);

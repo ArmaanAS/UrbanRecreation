@@ -43,6 +43,7 @@ interface ClanInfo {
   name: string;
   bonus: string;
   bonusId: number;
+  nightBonus?: string;
 }
 
 // ---- clan map ---------------------------------------------------------------------------
@@ -70,7 +71,8 @@ try {
     const bonus = typeof c.bonus === "string" ? c.bonus : c.bonus?.description?.en ?? c.bonus?.en;
     if (!name || !bonus) continue;
     const bonusId = c.bonusId?.id ?? c.bonusId ?? c.bonus?.id ?? clans.get(c.id)?.bonusId ?? 0;
-    clans.set(c.id, { id: c.id, name, bonus, bonusId: typeof bonusId === "number" ? bonusId : 0 });
+    const nightBonus: string | undefined = Array.isArray(c.nightBonus) ? undefined : c.nightBonus?.description?.en;
+    clans.set(c.id, { id: c.id, name, bonus, bonusId: typeof bonusId === "number" ? bonusId : 0, nightBonus });
   }
   console.log(`Loaded ${site.length} clans from ${SITE_CLANS}`.green);
 } catch {
@@ -102,6 +104,8 @@ for (const c of characters.sort((a, b) => a.id - b.id)) {
     const evo = c.evos[String(level)];
     if (!evo) continue;
     const unlocked = evo.ability.unlockLevel <= level;
+    const na = evo.nightAbility;
+    const nightAbility = !Array.isArray(na) && na?.id && na.unlockLevel <= level ? na.description.en : undefined;
     rows.push({
       id: c.id,
       name: c.name,
@@ -119,6 +123,8 @@ for (const c of characters.sort((a, b) => a.id - b.id)) {
       bonus: clan.bonus,
       bonus_id: clan.bonusId,
       release_date: c.timestampAvailable,
+      ...(nightAbility ? { night_ability: nightAbility } : {}),
+      ...(clan.nightBonus ? { night_bonus: clan.nightBonus } : {}),
     });
   }
 }

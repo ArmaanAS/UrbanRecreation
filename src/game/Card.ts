@@ -30,6 +30,8 @@ import {
 export default class Card {
   private key: number;
   played = false;
+  /** Set by Game when Clint City is at night: use the night ability / bonus variant. */
+  night = false;
   private data: BaseData;
   constructor(json: CardJSON) {
     this.key = getBaseKey(json.id, json.level);
@@ -45,6 +47,7 @@ export default class Card {
     return Object.setPrototypeOf({
       key: this.key,
       played: this.played,
+      night: this.night,
       data: { ...this.data },
     }, Card.prototype);
   }
@@ -92,14 +95,13 @@ export default class Card {
   }
 
   get abilityString(): string {
-    return this.ability.string === AbilityString.DEFAULT
-      ? this.base.ability
-      : "No Ability";
+    if (this.ability.string !== AbilityString.DEFAULT) return "No Ability";
+    return (this.night ? this.base.nightAbility : undefined) ?? this.base.ability;
   }
   get bonusString(): string {
-    return this.bonus.string === AbilityString.DEFAULT
-      ? this.base.infiltratedBonus ?? this.base.bonus
-      : "No Bonus";
+    if (this.bonus.string !== AbilityString.DEFAULT) return "No Bonus";
+    if (this.base.infiltratedBonus !== undefined) return this.base.infiltratedBonus;
+    return (this.night ? this.base.nightBonus : undefined) ?? this.base.bonus;
   }
   set bonusString(text: string) {
     this.base.infiltratedBonus = text;

@@ -63,6 +63,9 @@ export interface CardJSON {
   damage: Damage;
   ability: string;
   bonus: string;
+  /** Night variants (GhosTown and a few others); undefined = same as day. */
+  night_ability?: string;
+  night_bonus?: string;
 }
 
 export type HandOf<T> = [T, T, T, T];
@@ -89,6 +92,8 @@ export interface BaseCard {
   rarity: Rarity;
   ability: string;
   bonus: string;
+  nightAbility?: string;
+  nightBonus?: string;
   infiltratedBonus?: string;
   // ability: CardString; // 3 bits
   // bonus: CardString; // 3 bits

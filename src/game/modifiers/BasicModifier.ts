@@ -126,7 +126,7 @@ export default class BasicModifier extends Modifier {
 
     this.type = type;
     this.win = type.win;
-    this.eventTime = type.eventTime;
+    this.updateEventTime();
 
     console.log(`Set modifier type: ${type.name}`);
 
@@ -139,13 +139,32 @@ export default class BasicModifier extends Modifier {
     }
 
     this.opp = opp;
+    this.updateEventTime();
 
     return this;
   }
 
+  /**
+   * The server applies a card's own Power / Damage / Attack modifiers (incl. Support,
+   * per-X, Max caps) before the opponent's reductions and their Min clamps, e.g.
+   * Aurora 7×2 + Support 12 = 26, then Montana -12 Min 8 → 14 (not 14-12→8, +12 = 20).
+   * So opponent-targeting stat modifiers run one phase later than own ones.
+   * Verified against captured games in tests/replay.
+   */
+  private updateEventTime() {
+    if (this.type === undefined) return;
+    let et = this.type.eventTime;
+    if (this.opp) {
+      if (this.type === Type.POWER || this.type === Type.DAMAGE) et = EventTime.PRE1;
+      else if (this.type === Type.ATTACK) et = EventTime.POST2;
+    }
+    this.eventTime = et;
+  }
+
   canApply(data: BattleData) {
-    // Stop Heal if life <= 0
-    if (this.type === Type.LIFE && !this.opp && data.player.life <= 0) {
+    // A player who has been KO'd this round gains nothing (no heal, no pillz) — server
+    // behaviour seen in captured games (Kubra "Defeat: +1 Pillz And Life" at 0 life).
+    if ((this.type === Type.LIFE || this.type === Type.PILLZ) && !this.opp && data.player.life <= 0) {
       return false;
     }
 

@@ -9,6 +9,7 @@
     "idDeckFormat": 54363
   },
   "battleRuleId": 10,
+  "night": true,
   "myId": 19309601,
   "mySide": 1,
   "firstPlayer": 1,
@@ -393,6 +394,7 @@
       2,
       3
     ],
+    "night": true,
     "flip": false,
     "life": 12,
     "pillz": 12,

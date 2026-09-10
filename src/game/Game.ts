@@ -46,12 +46,18 @@ export default class Game {
     h2: Hand,
     first: Turn = Turn.PLAYER_1,
     draw = true,
+    /** Clint City is at night: Night: conditions hold and cards use their night ability / bonus. */
+    night = false,
   ) {
     this.p1 = p1;
     this.p2 = p2;
 
     this.h1 = h1;
     this.h2 = h2;
+
+    if (night) {
+      for (const hand of [h1, h2]) for (const card of hand) card.night = true;
+    }
 
     this.id = this.createBaseGameCache(first);
 
@@ -64,12 +70,14 @@ export default class Game {
       first === Turn.PLAYER_1,
       h1,
       h2,
+      !night,
     );
     this.r2 = new PlayerRound(
       1,
       first === Turn.PLAYER_2,
       h2,
       h1,
+      !night,
     );
 
     for (const hand of [h1, h2]) {

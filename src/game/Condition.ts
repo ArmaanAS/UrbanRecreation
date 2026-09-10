@@ -63,11 +63,12 @@ export default class Condition {
     switch (this.type) {
       case ConditionType.DEFEAT:
         return data.player.won === false;
-      // case ConditionType.NIGHT: return data.round.day == false;
-      // case ConditionType.DAY: return data.round.day == true;
+      // Clint City alternates day/night every 4 hours (night 06-10, 14-18, 22-02 Paris
+      // time); Game takes a `night` flag and the cards swap to their night variants.
       case ConditionType.NIGHT:
+        return !data.round.day;
       case ConditionType.DAY:
-        return true;
+        return data.round.day;
       case ConditionType.COURAGE:
         return data.round.first;
       case ConditionType.REVENGE:

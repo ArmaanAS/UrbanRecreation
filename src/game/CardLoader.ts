@@ -31,6 +31,8 @@ export function registerCardJSON(j: CardJSON) {
 
     ability: j.ability,
     bonus: j.bonus,
+    nightAbility: j.night_ability,
+    nightBonus: j.night_bonus,
     // ability: { string: j.ability, prot: false, cancel: false },
     // bonus: { string: j.bonus, prot: false, cancel: false },
 

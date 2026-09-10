@@ -102,6 +102,7 @@ export default class GameRenderer {
     Sakrohm: (s: string) => s.green,
     Sentinel: (s: string) => s.yellow.dim,
     Skeelz: (s: string) => s.magenta.dim,
+    Tolvack: (s: string) => s.cyan,
     "Ulu Watu": (s: string) => s.green,
     Uppers: (s: string) => s.green,
     Vortex: (s: string) => s.grey,
