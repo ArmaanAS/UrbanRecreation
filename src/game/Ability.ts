@@ -473,8 +473,11 @@ export default class Ability {
   }
 
   static card(card: Card, data: BattleData | CachedBattleData) {
-    new Ability(card.abilityString, AbilityType.ABILITY).compile(data);
+    // Within a phase the server resolves the clan bonus before the ability, e.g. Don Cr
+    // (bonus -12 Opp Attack Min 8, ability -4 Opp Attack Min 2) vs 18 attack → 8 → 4, not
+    // 14 → 2 → Min 8. Seen in captured battles 875272 and 901613.
     new Ability(card.bonusString, AbilityType.BONUS).compile(data);
+    new Ability(card.abilityString, AbilityType.ABILITY).compile(data);
   }
 
   static leader(card: Card, data: BattleData | CachedBattleData) {

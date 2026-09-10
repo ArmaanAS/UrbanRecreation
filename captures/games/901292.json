@@ -1,0 +1,485 @@
+{
+  "id": 901292,
+  "capturedAt": "2026-09-10T13:29:29.431Z",
+  "creationTime": 1789046971,
+  "room": {
+    "id": 1202394,
+    "name": "Survivor",
+    "idBattleRule": 4,
+    "idDeckFormat": 55009
+  },
+  "battleRuleId": 4,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 13,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 271,
+          "name": "Hugo",
+          "clan": "Leader",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 4237,
+            "description": "Team: +7 Attack"
+          },
+          "bonus": null
+        },
+        {
+          "id": 230,
+          "name": "GraksmxxT Cr",
+          "clan": "Sakrohm",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "m1",
+          "ability": {
+            "id": 90,
+            "description": "-5 Opp Damage, Min 1"
+          },
+          "bonus": {
+            "id": 42,
+            "description": "-8 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 913,
+          "name": "Miss Stella",
+          "clan": "Sakrohm",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 4620,
+            "description": "-8 Opp Attack, Min 11"
+          },
+          "bonus": {
+            "id": 42,
+            "description": "-8 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 355,
+          "name": "SkrumxxT",
+          "clan": "Sakrohm",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 186,
+            "description": "Damage +5"
+          },
+          "bonus": {
+            "id": 42,
+            "description": "-8 Opp Attack, Min 3"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 28043421,
+      "name": "Glorg Black",
+      "level": 263,
+      "grade": "Legend",
+      "country": "mx",
+      "club": {
+        "id": 2064249,
+        "name": "Ⓛⓞⓢ ⒼⒶⓁⒶⒸⓉⒾⓀⓄⓈ"
+      },
+      "registrationTime": 1368302691,
+      "certificationLevel": 0,
+      "baseLife": 13,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2279,
+          "name": "Ali",
+          "clan": "Oblivion",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3067,
+            "description": "Growth: -1 Opp Power, Min 0"
+          },
+          "bonus": {
+            "id": 186,
+            "description": "Damage +5"
+          }
+        },
+        {
+          "id": 2684,
+          "name": "Azhdar",
+          "clan": "Oblivion",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 5702,
+            "description": "After [clan:54][clan:57]: +3 Pillz And Life"
+          },
+          "bonus": {
+            "id": 2918,
+            "description": "Copy: Opp. Ability"
+          }
+        },
+        {
+          "id": 2553,
+          "name": "El-Khazari",
+          "clan": "Oblivion",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 4513,
+            "description": "Equalizer: Damage +1"
+          },
+          "bonus": {
+            "id": 4620,
+            "description": "-8 Opp Attack, Min 11"
+          }
+        },
+        {
+          "id": 2243,
+          "name": "Kochar",
+          "clan": "Oblivion",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 2921,
+            "description": "Damage Impose"
+          },
+          "bonus": {
+            "id": 90,
+            "description": "-5 Opp Damage, Min 1"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 230,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1789046983076
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 2243,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789046989911
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 1,
+          "damageAfter": 5,
+          "attack": 31,
+          "won": true
+        },
+        {
+          "power": 8,
+          "damage": 1,
+          "damageAfter": 2,
+          "attack": 3,
+          "won": false
+        }
+      ],
+      "life": [
+        13,
+        12
+      ],
+      "pillz": [
+        10,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 30796
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 2553,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1789047043861
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 913,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789047059873
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 11,
+          "won": true
+        },
+        {
+          "power": 9,
+          "damage": 7,
+          "damageAfter": 2,
+          "attack": 3,
+          "won": false
+        }
+      ],
+      "life": [
+        13,
+        6
+      ],
+      "pillz": [
+        10,
+        11
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 71080
+    },
+    {
+      "round": 2,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 355,
+          "pillz": 10,
+          "pillzUsed": 11,
+          "fury": false,
+          "t": 1789047081752
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 2279,
+          "pillz": 8,
+          "pillzUsed": 9,
+          "fury": true,
+          "t": 1789047095131
+        }
+      ],
+      "resolution": [
+        {
+          "power": 5,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 62,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 14,
+          "damageAfter": 14,
+          "attack": 64,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        6
+      ],
+      "pillz": [
+        0,
+        0
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 39118
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 0,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 6,
+      "pillz": 0
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 200
+      },
+      {
+        "type": "playerXP",
+        "value": 52
+      },
+      {
+        "type": "characterXP",
+        "value": 600
+      }
+    ],
+    "t": 1789047095333
+  },
+  "finalStatus": "done",
+  "snapshots": 29,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Hugo",
+      "GraksmxxT Cr",
+      "Miss Stella",
+      "SkrumxxT",
+      "Ali",
+      "Azhdar",
+      "El-Khazari",
+      "Kochar"
+    ],
+    "levels": [
+      5,
+      4,
+      5,
+      5,
+      5,
+      5,
+      4,
+      3
+    ],
+    "night": true,
+    "flip": false,
+    "life": 13,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          2,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          false
+        ],
+        "p1life": 13,
+        "p2life": 12,
+        "p1pillz": 10,
+        "p2pillz": 12,
+        "r1": {
+          "power": 8,
+          "damage": 1,
+          "attack": 31,
+          "won": true
+        },
+        "r2": {
+          "power": 8,
+          "damage": 1,
+          "attack": 3,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          1,
+          false
+        ],
+        "s2": [
+          2,
+          0,
+          false
+        ],
+        "p1life": 13,
+        "p2life": 6,
+        "p1pillz": 10,
+        "p2pillz": 11,
+        "r1": {
+          "power": 7,
+          "damage": 6,
+          "attack": 11,
+          "won": true
+        },
+        "r2": {
+          "power": 9,
+          "damage": 7,
+          "attack": 3,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          3,
+          10,
+          false
+        ],
+        "s2": [
+          0,
+          8,
+          true
+        ],
+        "p1life": 0,
+        "p2life": 6,
+        "p1pillz": 0,
+        "p2pillz": 0,
+        "r1": {
+          "power": 5,
+          "damage": 8,
+          "attack": 62,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 14,
+          "attack": 64,
+          "won": true
+        }
+      }
+    ]
+  }
+}

@@ -75,10 +75,19 @@ function print(label: string, t: number, summary: string) {
   );
 }
 
+// Requests arrive concurrently (the game client fires several polls at once); process them
+// strictly in arrival order so appended lines and capture state stay consistent.
+let queue: Promise<unknown> = Promise.resolve();
+
 Deno.serve({ port: 8787, onListen: ({ port }) => console.log(`UR log server on :${port} → ${RAW_LOG}, ${CAPTURE_DIR}/`) }, async (r) => {
   if (r.method !== "POST") return new Response(null, { status: 204, headers: cors });
-
   const body = await r.text();
+  const run = queue.then(() => handle(body));
+  queue = run.catch(() => {});
+  return run;
+});
+
+async function handle(body: string): Promise<Response> {
   await Deno.writeTextFile(RAW_LOG, body + "\n", { append: true });
 
   let rec: RawRecord;
@@ -153,4 +162,4 @@ Deno.serve({ port: 8787, onListen: ({ port }) => console.log(`UR log server on :
     print("err", rec.t, `${(e as Error).message}  ${DIM}${clip(body)}${RESET}`);
   }
   return new Response(null, { status: 204, headers: cors });
-});
+}

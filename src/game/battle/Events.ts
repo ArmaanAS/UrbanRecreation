@@ -35,8 +35,17 @@ export default class Events {
   }
 
   execute(event: EventTime, data: BattleData) {
-    // let ability: Ability | undefined;
-    // while ((ability = this.events[event].pop()) !== undefined) {
+    // Opponent-targeting reductions (PRE1 = power/damage, POST2 = attack) are applied by
+    // the server in descending order of their Min clamp: Miss Stella (ability -8 Min 11,
+    // bonus -8 Min 3) on 18 → 11 → 3; Don Cr (bonus -12 Min 8, ability -4 Min 2) on 18
+    // → 8 → 4. Captured battles 875272, 901613, 901292.
+    if (event === EventTime.PRE1 || event === EventTime.POST2) {
+      const min = (a: Ability) => {
+        const m = a.mods[0] as { min?: number } | undefined;
+        return m?.min === undefined || !Number.isFinite(m.min) ? -Infinity : m.min;
+      };
+      this.events[event].sort((a, b) => min(b) - min(a));
+    }
     for (const ability of this.events[event]) {
       ability.apply(data);
     }

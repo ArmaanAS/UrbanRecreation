@@ -32,11 +32,29 @@ deno task bench / deno task time # solver benchmark
 ## Current priorities (Sept 2026)
 
 1. Capture many real PvP games and make the engine reproduce them (`tests/replay/`).
-   As of 2026-09-10: 56 battles captured, 54 replayable, 44 replay exactly (life, pillz,
+   As of 2026-09-11: 62 battles captured, 60 replayable, 50 replay exactly (life, pillz,
    power, damage, attack, winner per round), 10 mismatch. `docs/replay-triage.md` tracks
-   what was fixed (modifier ordering, Day/Night, post-KO gains) and what is open (Brawl,
-   Repair, After, Cards, Sinister Symmetry, Unison, Revenge/Impose, Recover rounding).
+   what was fixed and what is open (Brawl, Repair, After, Cards, Sinister Symmetry, Unison,
+   Revenge/Impose, Toxin/Mindwipe, inactive "None" bonus, Recover rounding).
    Work through that list; re-run the replay suite after each fix.
+
+## How to resume (read this first in a new session)
+
+1. `deno test -A --no-check tests/replay/` — the score to beat is in the table at the top of
+   `docs/replay-triage.md`. Type-checking fails on a pre-existing issue in
+   `src/utils/Utils.ts:184`, hence `--no-check`.
+2. New games: the owner runs `deno task log` and plays; then `deno task extract` and re-run
+   the replay suite. Failures print the round, both cards and the engine-vs-server diff;
+   `captures/games/<id>.json` has the full round (moves, abilities, server results,
+   post-round effects). Group new failures by ability keyword before fixing anything.
+3. Fix loop: change the engine → replay suite → full `deno test -A --no-check` (two legacy
+   failures are expected: `Game_2 Protection`, `Oculus Infiltrated`) → update the triage doc
+   → commit with a subject in the repo's "Add X, Fix Y" style.
+4. Prefer fixes backed by ≥2 captured data points; note single-point hypotheses in the
+   triage doc instead of coding them. Every ability rule fixed so far was confirmed by
+   arithmetic against the server's power/damage/attack numbers, not by reading rules text.
+5. Do not push without asking the owner. Never commit `ur_log*.jsonl`, `tokens.json`, `.env`,
+   `data/site_characters.jsonl`.
 2. Card data is complete as of 2026-09-10 (2496 cards, every level, 36 clans incl. the new
    Tolvack). To refresh: `__ur.dumpCharacters()` and `__ur.dumpClans()` in the browser (log
    server running), then `deno task cards`. A new clan must also be added to `Clans` in

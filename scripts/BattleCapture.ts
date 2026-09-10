@@ -311,12 +311,15 @@ export function expandStatus(s: BattleStatic, d: BattleDynamic, abilities: Abili
  * so consumers can treat old and new files alike.
  */
 export function expandEntries(entries: CaptureEntry[], abilities: AbilityDict): CaptureEntry[] {
-  let s: BattleStatic | undefined;
+  // Lines may be slightly out of order (concurrent polls appended by the log server), so a
+  // snapshot can precede its static block: fall back to the first static block in the file.
+  const firstStatic = entries.find((e): e is Extract<CaptureEntry, { kind: "static" }> => e.kind === "static")?.s;
+  let s: BattleStatic | undefined = firstStatic;
   const out: CaptureEntry[] = [];
   for (const e of entries) {
     if (e.kind === "static") s = e.s;
     else if (e.kind === "s") {
-      if (!s) throw new Error("compact snapshot before static block");
+      if (!s) throw new Error("compact snapshot without any static block");
       out.push({ kind: "status", t: e.t, battle: expandStatus(s, e.d, abilities) });
     } else out.push(e);
   }
