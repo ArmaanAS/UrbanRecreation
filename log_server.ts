@@ -2,10 +2,11 @@
 //
 //   deno task log
 //
-// Every record is appended verbatim to ur_log.jsonl (gitignored: it contains access
-// tokens and account details). Battle traffic is additionally split into one file per
-// battle under captures/battles/<battleId>.jsonl with all secrets removed, which is the
-// input for scripts/ExtractBattle.ts.
+// Every record is appended to ur_log.jsonl (gitignored: it contains access tokens and
+// account details), minus response bodies that are binary or absurdly large - see
+// elideBinary. Battle traffic is additionally split into one file per battle under
+// captures/battles/<battleId>.jsonl with all secrets removed, which is the input for
+// scripts/ExtractBattle.ts.
 import { type BattleStatic, expandStatus, extractFromRecord, loadAbilities, newCaptureState, type RawRecord, saveAbilities } from "./scripts/BattleCapture.ts";
 
 const RAW_LOG = "ur_log.jsonl";
@@ -41,6 +42,34 @@ const QUIET_API = new Set([
 ]);
 const QUIET_WS = /^(\[binary\]|b64:|\{"(type":"pong"|code":(0|14|18|39|42))\})/;
 const QUIET_URL = /\/ajax\/news\/|\.(jpg|png|gif|webp|data|wasm|js|css)(\?|$)/;
+
+// Response bodies that can never be read back. ur-logger.user.js >= 0.5 already leaves these
+// out, but the raw log is the one thing here that grows without bound, so do not depend on
+// the version of the script the browser happens to have installed: an earlier one mirrored
+// WebGL asset bundles decoded as lossy UTF-8 (about a third U+FFFD, so the bytes are gone),
+// and they were 65% of the first real log - 3.5 GB of 5.4 GB from 289 of 26227 lines.
+// scripts/PruneLog.ts applies the same rule to logs captured before this existed.
+const MAX_RESP = 4 * 1024 * 1024;
+
+function elideBinary(body: string): string {
+  // Cheap outs first: this runs on every record, and battle traffic must pass through intact.
+  if (body.length < 8192 || body.includes("/api/private/v2/")) return body;
+  try {
+    const rec = JSON.parse(body);
+    const p = rec.payload;
+    if (!p || typeof p !== "object") return body;
+    let hit = false;
+    for (const k of ["resp", "body"]) {
+      const v = p[k];
+      if (typeof v !== "string" || (v.length <= MAX_RESP && !v.includes("�"))) continue;
+      p[k] = `[dropped by log_server: ${v.length} chars${v.includes("�") ? " of binary" : ""}]`;
+      hit = true;
+    }
+    return hit ? JSON.stringify(rec) : body;
+  } catch {
+    return body; // not JSON; the console path logs it verbatim too
+  }
+}
 
 await Deno.mkdir(CAPTURE_DIR, { recursive: true });
 
@@ -88,7 +117,7 @@ Deno.serve({ port: 8787, onListen: ({ port }) => console.log(`UR log server on :
 });
 
 async function handle(body: string): Promise<Response> {
-  await Deno.writeTextFile(RAW_LOG, body + "\n", { append: true });
+  await Deno.writeTextFile(RAW_LOG, elideBinary(body) + "\n", { append: true });
 
   let rec: RawRecord;
   try {

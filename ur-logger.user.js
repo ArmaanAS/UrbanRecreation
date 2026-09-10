@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UR logger
 // @namespace    urban-recreation
-// @version      0.4
+// @version      0.5
 // @description  Mirror Urban Rivals network traffic to a local log server (see log_server.ts)
 // @match        https://www.urban-rivals.com/*
 // @run-at       document-start
@@ -16,7 +16,8 @@
 // Record shape: { t: epoch ms, kind: 'fetch'|'xhr'|'ws_open'|'ws_in'|'ws_out'|'page', payload }
 //   fetch/xhr payload: { m, u, body?, status, resp }
 //   Request bodies that are not text are decoded as UTF-8 when possible, otherwise sent
-//   as 'b64:<base64>' so nothing is lost.
+//   as 'b64:<base64>' so nothing is lost. Response bodies that are not text are not sent
+//   at all (see respText).
 (() => {
   const SERVER = 'http://localhost:8787/log';
   const nativeFetch = window.fetch.bind(window); // saved BEFORE we patch anything
@@ -45,6 +46,29 @@
     // Replacement char means it was not UTF-8 text (compressed / msgpack / ...). Keep the raw bytes.
     return txt.includes('�') ? b64(bytes) : txt;
   };
+  // ---- response bodies worth mirroring ------------------------------------------------
+  // The game streams WebGL asset bundles (UnityFS, several MB each), images and wasm through
+  // fetch. Reading one with res.text() decodes it as lossy UTF-8: about a third of the result
+  // is U+FFFD, so the bytes are already destroyed and the log entry can never be used for
+  // anything. Unfiltered they were 65% of the first real capture log — 3.5 GB of 5.4 GB, from
+  // 289 of 26227 lines. Keep the request line, drop the body. log_server.ts applies the same
+  // rule to anything that still gets through, so old versions of this script stay safe.
+  const MAX_RESP = 4 * 1024 * 1024;
+  const TEXTUAL = /^(?:$|text\/|application\/(?:json|javascript|xml|x-www-form-urlencoded))/i;
+  const capped = (txt, what) =>
+    txt.includes('�') ? `[skipped: ${txt.length} chars of binary ${what}]`
+      : txt.length > MAX_RESP ? `[skipped: ${txt.length} chars of ${what}]`
+      : txt;
+  // Cross-origin responses can hide their headers; then the checks above catch it after the
+  // read instead, which is why the U+FFFD test and not just the content type is needed.
+  const respText = async (res) => {
+    const type = (res.headers.get('content-type') || '').split(';')[0].trim();
+    const len = Number(res.headers.get('content-length') || 0);
+    if (!TEXTUAL.test(type)) return `[skipped: ${type}]`;
+    if (len > MAX_RESP) return `[skipped: ${len} bytes of ${type || 'unknown type'}]`;
+    return capped(await res.clone().text(), type || 'unknown type');
+  };
+
   const bodyText = async (body, request) => {
     try {
       if (body == null) {
@@ -100,9 +124,9 @@
     this.addEventListener('load', () => {
       let resp;
       try {
-        resp = this.responseType === '' || this.responseType === 'text' ? this.responseText
+        resp = this.responseType === '' || this.responseType === 'text' ? capped(this.responseText, 'text')
           : this.responseType === 'json' ? JSON.stringify(this.response)
-          : this.responseType === 'arraybuffer' ? decodeBytes(new Uint8Array(this.response))
+          : this.responseType === 'arraybuffer' ? capped(decodeBytes(new Uint8Array(this.response)), 'arraybuffer')
           : `[${this.responseType}]`;
       } catch { resp = `[${this.responseType}]`; }
       bodyP.then((b) => log('xhr', { ...this._ur, body: b, status: this.status, resp }));
@@ -128,7 +152,9 @@
       lastApiInit = { method, headers, credentials: (init && init.credentials) || (input instanceof Request ? input.credentials : 'same-origin'), mode: init && init.mode };
     }
     const res = await nativeFetch(...args);
-    res.clone().text()
+    // The capture pipeline reads nothing but the private API, and needs those bodies whole
+    // whatever they claim to be; everything else is subject to respText.
+    (url.startsWith(API) ? res.clone().text() : respText(res))
       .then((txt) => log('fetch', { m: method, u: url, body: reqBody, status: res.status, resp: txt }))
       .catch(() => {});
     return res;

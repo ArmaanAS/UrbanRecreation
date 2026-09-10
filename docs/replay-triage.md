@@ -1,9 +1,16 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 56 captured battles
-(54 replayable, 2 in progress/Dojo ignored). Each entry is the first mismatching round of
+Status from `deno test -A --no-check tests/replay/` against 62 captured battles
+(60 replayable, 2 in progress/Dojo ignored). Each entry is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
+
+Before coding against an entry here, check it against `captures/games/<id>.json`: three of
+the entries below turned out to be misattributed, and two of those pointed at abilities that
+were already implemented. The per-card `abilityData` the server sends (collected in
+`captures/abilities.json`) is the authority on what an ability actually does - `isSupport`,
+`isAntiSupport`, `isPermanent`, `currentRoundRequirement`, `indexRequirement` and
+`specialAction` between them describe most keywords exactly.
 
 | Date | Exact | Mismatch | Change |
 | --- | --- | --- | --- |
@@ -11,6 +18,7 @@ one battle; engine value first, server value second. Battle ids refer to
 | 2026-09-10 | 31 | 23 | Tolvack clan added (one more game replayable) |
 | 2026-09-10 | 44 | 10 | modifier ordering, Day/Night, post-KO gains (below) |
 | 2026-09-11 | 50 | 10 | +6 games; bonus before ability; same-phase reductions by descending Min |
+| 2026-09-11 | 53 | 7 | permanents latch on their own trigger; Repair; Sinister Symmetry |
 
 ## Fixed
 
@@ -42,7 +50,36 @@ Miss Stella (ability -8 Min 11, bonus -8 Min 3) on 18 → 11 → 3; Don Cr (bonu
 ability -4 Min 2) on 18 → 8 → 4; Donna Black (bonus -12 Min 8, ability -10 Min 3) → 3.
 Fixed 875272, 876752, 901613, 901292. Three data points; keep an eye on it.
 
-## Open (10 battles)
+### Permanents latch on their own trigger, not always on a win
+`Ability.canApply` gated every permanent (the Poison / Heal / Toxin / Combust / Mindwipe /
+Repair family, which compile to `GLOBAL_ABILITY` / `GLOBAL_BONUS` and repeat at each round
+end) behind `data.player.won`, and deleted the effect outright when the card lost. Anything
+triggered by losing therefore never started: Frogo's "Defeat : Heal 1 Max. 13" in 875230,
+Dame Karkass Cr's "Victory Or Defeat: Toxin 1, Min 0" and Merweiss Cr's "Revenge: Mindwipe
+2, Min 0" in 901092. The trigger is now `Ability.latches()`: every condition must be met,
+and the card must have won *unless* a condition already pinned the outcome (Defeat, Victory
+Or Defeat and Reanimate all clear `win` on the modifier when they compile). Once latched the
+effect repeats unconditionally, so the conditions are no longer re-checked each round - a
+"Defeat: Poison" would otherwise switch itself off in any round its owner won.
+Fixed 875230, 901092. Tests in `tests/ability/Heal.test.ts`.
+
+### Repair N, Max M
+Unimplemented; now the own-side positive mirror of Mindwipe. On a win the owner gains N Life
+*and* N Pillz at the end of that round and of every following one, each capped at M
+(`abilityData` 3796: `life&pillz`, `increase`, `isPermanent` + `isImmediatePermanent`,
+`currentRoundRequirement` "win" - so unlike Poison it is not delayed past its own round).
+Tests in `tests/ability/Repair.test.ts`. No captured battle exercises it yet: Wilo Ld lost
+the only round it was played in.
+
+### Sinister Symmetry
+Unimplemented; now a Life modifier on the opponent of -Infinity Min 0 (i.e. all of it) under
+a Symmetry condition. `abilityData` 4303 pins the semantics: `currentRoundRequirement` win,
+`indexRequirement` "symmetry", `specialAction` "ko". 874399 r3 is the confirmation - Karkass
+Cr at index 3 beats Tina at index 3, deals 4 to an opponent on 9 Life, and the server then
+reports a post-round life decrease of exactly the remaining 5, with `byKo: true`.
+Fixed 874399. Tests in `tests/ability/SinisterSymmetry.test.ts`.
+
+## Open (7 battles)
 
 ### Inactive clan bonus ("None") and Damage Exchange — Free Fight / mixed decks
 - 901004 r0 (Free Fight): Kubrat Cr's bonus is sent as "None" (only card of its clan in
@@ -50,20 +87,11 @@ Fixed 875272, 876752, 901613, 901292. Three data points; keep an eye on it.
   parses to nothing. Same round: Waldegrin Cr "Damage Exchange" lost with 8 damage vs 1;
   server dealt 1 (engine 6) — Exchange semantics / activation on loss to verify.
 
-### Poison-family keywords
-- 901092 r1: Dame Karkass Cr "Victory Or Defeat: Toxin 1, Min 0" and Merweiss Cr
-  "Revenge: Mindwipe 2, Min 0" — permanent post-round life decreases (server -1 / -2);
-  engine left the player at 1 life instead of 0.
-
 ### Unimplemented / unparsed keywords
-- **Brawl** (per opposing card of the same clan as the opposing card):
-  874590 r0 Karkass Cr "Brawl: Damage + 1" vs 4 Rescue → damage 8 (engine 4).
-- **Repair N, Max M**: permanent +N life post-round (`isPermanent: true`): 875230 r3 Wilo Ld.
 - **Cards Damage +2**: 874795 r0 El Resbaladizo damage 8 vs 6 (+4 → "+2 per something"; TBD).
 - **After [clan:…]**: Tolvack bonus "After [clan:56][clan:60] : Power +3" activates once a
   listed clan's card was played earlier in the game. Engine currently parses it as an
   unconditional +3: 876464 r0 Tør power 9 vs 6 (r1/r2 it *is* active).
-- **Sinister Symmetry**: 874399 r3 Karkass Cr → post-round -5 life to opponent (KO).
 - **Unison** (all four cards same clan): 877733 r1 Korakine "Unison : +2 Pillz And Life"
   lost the round; engine still gave +1 life (server +0). Check both the Unison condition
   and "Pillz And Life" parsing.
@@ -78,6 +106,16 @@ Fixed 875272, 876752, 901613, 901292. Three data points; keep an eye on it.
   ceil(4×2/3) = 3). So the free pill is *not* counted, yet a 0-pill bet still recovers 1.
   Hypothesis: max(1, ceil(bet × N / M)). Two data points; needs more.
 
+### Not reproducible from a testcase
+- 874590 is a **Hazard** game and cannot be replayed as it stands. Administrator (Leader,
+  ability 4144) "replaces the abilities of the three cards present in the draw with random
+  abilities that are already being used in the game", so ReV_Next_'s Diabolus, Karkass Cr and
+  Nero Cr each fought with an ability their card does not own - Karkass Cr with "Brawl:
+  Damage + 1" instead of its real Sinister Symmetry, which is why this looked like a missing
+  Brawl. A testcase carrying only card names and levels cannot express that. Either teach
+  `ExtractBattle.ts` to record the server's per-card ability in the testcase and have the
+  replay use it, or skip games whose draw contains a Hazard leader.
+
 ## Legacy tests
 - `tests/Game_2.test.ts` "Protection" uses empty card names (never passed).
 - `tests/ability/Oculus.test.ts` "Infiltrated" expects the opponent to lose 4 life; the
@@ -87,3 +125,14 @@ Fixed 875272, 876752, 901613, 901292. Three data points; keep an eye on it.
 ## Data notes
 - The card DB dump does not include the structured `abilityData`; only battle snapshots do.
   `captures/abilities.json` accumulates it for every ability seen in a battle.
+- A card's ability in a battle is **not** always the one the card DB lists for it. Comparing
+  every captured hand against `data/data.json` gives 66 differences, and they are all one of
+  four things: a Copy card, where the server reports the ability it resolved to rather than
+  "Copy: Opp. Ability"; a bonus sent as "None" because the hand holds fewer than two cards of
+  that clan; a Day/Night card, where the DB row is the day variant; or a Hazard game (874590),
+  where the abilities are random. None of these are card-data bugs, but all of them will look
+  like engine bugs in a replay.
+- Brawl, Support, Growth, Degrowth, Equalizer, Symmetry and Asymmetry are per-X multipliers
+  (`Per` in `BasicModifier.ts`, wired up by `Condition.compile`), not conditions that gate an
+  effect. A replay mismatch on a card carrying one of these is much more likely to be the
+  card data or another ability in the round than the multiplier itself.

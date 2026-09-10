@@ -74,20 +74,40 @@ export default class Ability {
     return o;
   }
 
+  /**
+   * Whether a permanent effect starts at all. It latches in the round its card is played,
+   * so the conditions describe that one round; unless one of them already pins the outcome
+   * (Defeat, Victory Or Defeat and Reanimate all clear `win` on the modifier) the card has
+   * to have won. Frogo's "Defeat : Heal 1 Max. 13" heals from the round after it loses -
+   * requiring a win here discarded the effect instead (captured battle 875230).
+   */
+  private latches(data: BattleData) {
+    for (const cond of this.conditions) {
+      if (!cond.met(data)) {
+        console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
+        return false;
+      }
+      console.log(`[Condition] ${cond.s} met: true`.green);
+    }
+
+    return this.mods[0].win === false || data.player.won === true;
+  }
+
   canApply(data: BattleData) {
     // let apply = true;
 
-    if (
-      (this.type === AbilityType.GLOBAL_ABILITY ||
-        this.type === AbilityType.GLOBAL_BONUS) &&
-      this.won === undefined
-    ) {
-      if (!data.player.won) {
+    // Poison / Heal / Toxin / Repair and friends compile to permanents: they latch once and
+    // then repeat at the end of every later round, so the conditions gate the latch only.
+    const permanent = this.type === AbilityType.GLOBAL_ABILITY ||
+      this.type === AbilityType.GLOBAL_BONUS;
+
+    if (permanent && this.won === undefined) {
+      if (!this.latches(data)) {
         data.events.removeGlobal(this.mods[0].eventTime, this);
         return false;
-      } else {
-        this.won = true;
       }
+
+      this.won = true;
     }
 
     if (this.delayed) {
@@ -95,12 +115,14 @@ export default class Ability {
       return false;
     }
 
-    for (const cond of this.conditions) {
-      if (!cond.met(data)) {
-        console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
-        return false;
+    if (!permanent) {
+      for (const cond of this.conditions) {
+        if (!cond.met(data)) {
+          console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
+          return false;
+        }
+        console.log(`[Condition] ${cond.s} met: true`.green);
       }
-      console.log(`[Condition] ${cond.s} met: true`.green);
     }
 
     if (
@@ -357,6 +379,22 @@ export default class Ability {
       mod.setType("TUNEOUT");
 
       this.mods.push(mod);
+    } else if (tokens[0] == "Sinister" && tokens[1] == "Symmetry") {
+      // captures/abilities.json 4303 (Karkass Cr): win the round against the card opposite
+      // this one (indexRequirement "symmetry") and the opponent loses the match outright.
+      // The server sends specialAction "ko" and takes their Life to 0, whatever is left of
+      // it - captured battle 874399 r3 has them on 9 Life, takes 4 as damage, then reports
+      // a post-round life decrease of exactly the remaining 5.
+      failed = false;
+
+      const mod = new BasicModifier();
+      mod.setType("Life");
+      mod.setOpp(true);
+      mod.change = -Infinity; // "all of it", clamped by the Min below
+      mod.setMin(0);
+
+      this.mods.push(mod);
+      this.conditions.push(new Condition("Symmetry"));
     } else if (
       ["Poison", "Toxin", "Consume", "Regen", "Heal", "Dope"].includes(
         tokens[1],
@@ -401,6 +439,34 @@ export default class Ability {
       }
 
       this.mods.push(mod);
+    } else if (tokens[1] == "Repair") {
+      // "Repair 1, Max. 14" normalises to "1 Repair Max 14": if the card wins its round its
+      // owner gains N Life *and* N Pillz at the end of that round and of every following
+      // one, each capped at M. The server sends it as isPermanent + isImmediatePermanent
+      // with currentRoundRequirement "win" (captures/abilities.json 3796, Wilo Ld), so
+      // unlike Poison it is not delayed past the round that started it.
+      failed = false;
+
+      if (this.type === AbilityType.ABILITY) {
+        this.type = AbilityType.GLOBAL_ABILITY;
+      } else if (this.type === AbilityType.BONUS) {
+        this.type = AbilityType.GLOBAL_BONUS;
+      }
+
+      for (const type of ["Life", "Pillz"]) {
+        const mod = new BasicModifier();
+        mod.eventTime = EventTime.END;
+        mod.setType(type);
+        mod.change = +tokens[0];
+        mod.always = true;
+        if (tokens[2] == "Max") {
+          mod.setMax(+tokens[3]);
+        } else if (tokens[2] == "Min") {
+          mod.setMin(+tokens[3]);
+        }
+
+        this.mods.push(mod);
+      }
     } else if (tokens[1] == "Combust" || tokens[1] == "Mindwipe") {
       failed = false;
 
