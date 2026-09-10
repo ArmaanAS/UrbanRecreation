@@ -33,11 +33,11 @@ deno task bench / deno task time # solver benchmark
 ## Current priorities (Sept 2026)
 
 1. Capture many real PvP games and make the engine reproduce them (`tests/replay/`).
-   As of 2026-09-11: 62 battles captured, 60 replayable, 56 replay exactly (life, pillz,
-   power, damage, attack, winner per round), 4 mismatch. `docs/replay-triage.md` tracks what
-   was fixed and what is open (Damage Exchange, Revenge/Impose, Recover rounding, plus one
-   Hazard game that a name-and-level testcase cannot express). It also says which of those
-   need more captured games and what to play to get them.
+   As of 2026-09-11: 62 battles captured, 60 replayable, 57 replay exactly (life, pillz,
+   power, damage, attack, winner per round), 3 mismatch. `docs/replay-triage.md` tracks what
+   was fixed and what is open (Damage Exchange, Revenge/Impose, plus one Hazard game that a
+   name-and-level testcase cannot express). It also says which open questions need more
+   captured games and what to play to answer them.
    Work through that list, but check each entry against `captures/games/<id>.json` before
    coding: several turned out to be misattributed, two of them to abilities that were
    already implemented. Re-run the replay suite after each fix.

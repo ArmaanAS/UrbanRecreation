@@ -40,7 +40,15 @@ export default class RecoverModifier extends Modifier {
   apply(data: BattleData) {
     if (this.rec === Recover.PILLZ) {
       if (!data.card.pillz.blocked) {
-        const gain = Math.ceil(data.playerPillzUsed * (this.n / this.outOf));
+        // Rounding is always up, and a triggered Recover never gives nothing: captured
+        // battle 877983 r1 has Eebiza "Defeat: Recover 1 Pillz Out Of 2" lose on a bet of 0
+        // and still recover 1, where the proportion alone would be 0. 901400 r1 pins the
+        // proportional half - D-aleq "Recover 2 Pillz Out Of 3" loses on a bet of 3 and
+        // recovers 2, so the free pill is not part of the count.
+        const gain = Math.max(
+          1,
+          Math.ceil(data.playerPillzUsed * (this.n / this.outOf)),
+        );
         console.log(`Player recovered ${gain} pillz / ${data.playerPillzUsed}`);
         data.player.pillz += gain;
 

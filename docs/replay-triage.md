@@ -21,6 +21,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-11 | 53 | 7 | permanents latch on their own trigger; Repair; Sinister Symmetry |
 | 2026-09-11 | 55 | 5 | After [clan:...] is a previous-round look-back; stopped permanents never start |
 | 2026-09-11 | 56 | 4 | Cards <stat> +N applies to both sides |
+| 2026-09-11 | 57 | 3 | Recover never gives nothing |
 
 ## Fixed
 
@@ -112,7 +113,22 @@ branch only treated "Players" as a both-sides marker, though the negative one al
 round: El Resbaladizo lv4 (base 6) fights at 8, Aurora lv5 (base 5) at 7.
 Fixed 874795. Tests in `tests/ability/CardsDamage.test.ts`.
 
-## Open (4 battles)
+### Recover N Pillz Out Of M
+A triggered Recover gives back `max(1, ceil(bet x N / M))`, where the bet excludes the free
+pill. Rounding up is confirmed by the repo owner; the two captured rounds fix the rest:
+877983 r1 Eebiza "Defeat: Recover 1 Pillz Out Of 2" loses on a bet of 0 and still gets 1,
+where the proportion alone gives 0, and 901400 r1 D-aleq "Defeat: Recover 2 Pillz Out Of 3"
+loses on a bet of 3 and gets 2, where counting the free pill would give ceil(4 x 2/3) = 3.
+The engine already rounded up on the right quantity; only the minimum was missing.
+Fixed 877983. Tests in `tests/ability/Recover.test.ts`.
+
+Still worth a data point when one turns up: no captured round has a bet large enough to
+separate the proportion from a flat N, since bet 3 with N=2 M=3 gives 2 either way. A loss
+on 5 pillz with "Recover 2 Out Of 3" would settle it - the proportion says 4, a flat N says 2.
+The `both` branch of `RecoverModifier` ("Recover Players Pillz") and the Life branch have no
+captured data at all, and the Life branch has no minimum applied.
+
+## Open (3 battles)
 
 ### Damage Exchange — 901004
 The inactive-bonus half of this entry is a false lead: across the captures there are 23
@@ -133,27 +149,6 @@ Exchange card at all, one of them on a loss.
 ### Revenge / Damage Impose
 - 874712 r1 Tina "Revenge: Power And Damage +2" (lost previous round) vs Kochar "Damage
   Impose" + "Copy: Opp. Ability": engine damage 2, server 4.
-
-### Recover N Pillz Out Of M
-Every Recover round in the captures, with the pillz arithmetic done against the round's own
-`postRoundAbilities` and the other effects in play:
-
-- 877983 r1 Eebiza "Defeat: Recover 1 Pillz Out Of 2", bet 0, **lost** → **+1**
-  (12 → 13 with nothing else on that side granting pillz).
-- 901400 r1 D-aleq "Defeat: Recover 2 Pillz Out Of 3", bet 3, **lost** → **+2**
-  (10 → 9 having spent 3).
-- 901400 r0 Lovhak and r2 Behemoth Cr, same bonus, both **won**: pillz falls by exactly the
-  bet, confirming Defeat-only.
-- 867173 r2 AI-Lycs "Defeat: Recover 2 Pillz Out Of 3", bet 4, **won**: no recovery. The
-  extra -1 that round is Prince Candle's Combust, which also takes the matching 1 Life.
-  (The earlier note here claimed this was r1 with a bet of 3 and a +2; it is not.)
-
-max(1, ceil(bet × N / M)) fits both triggering rounds, but they cannot discriminate the
-rounding: bet 3 with N=2 M=3 is exactly 2, so ceil, floor and round all agree, and bet 0
-only exercises the max(1, ...) clause. **The rounding is completely untested.** What would
-settle it is losing a round with a Recover card on a bet that is not a multiple of M -
-"Recover 2 Out Of 3" on 2, 4 or 5 pillz (ceil gives 2, 3, 4; floor gives 1, 2, 3), or
-"Recover 1 Out Of 2" on 3 or 5.
 
 ### Not reproducible from a testcase
 - 874590 is a **Hazard** game and cannot be replayed as it stands. Administrator (Leader,
