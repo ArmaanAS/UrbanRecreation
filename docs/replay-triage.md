@@ -1,7 +1,8 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 62 captured battles
-(60 replayable, 2 in progress/Dojo ignored). Each entry is the first mismatching round of
+Status from `deno test -A --no-check tests/replay/` against 326 captured battles
+(320 replayable, 6 incomplete/Dojo ignored): 267 replay exactly and 53 mismatch. Each entry
+is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
 
@@ -22,6 +23,12 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-11 | 55 | 5 | After [clan:...] is a previous-round look-back; stopped permanents never start |
 | 2026-09-11 | 56 | 4 | Cards <stat> +N applies to both sides |
 | 2026-09-11 | 57 | 3 | Recover never gives nothing |
+| 2026-09-12 | 82 | 17 | +39 fresh captures; 14 new mismatches awaiting triage |
+| 2026-09-13 | 85 | 14 | Tune Out ignores every Attack modifier |
+| 2026-09-13 | 86 | 14 | +1 capture; Per Life/Pillz Lost fixed in live battle 1060510 |
+| 2026-09-13 | 92 | 11 | +3 captures; Stop effects resolve by dependency; refreshed after pending fixes |
+| 2026-09-14 | 92 | 12 | +1 capture; live advisor now resynchronises resources after engine drift |
+| 2026-09-14 | 267 | 53 | +220 extracted captures; fresh replay baseline, new mismatches awaiting triage |
 
 ## Fixed
 
@@ -52,6 +59,19 @@ opponent-reduction phases (PRE1 power/damage, POST2 attack) by descending Min cl
 Miss Stella (ability -8 Min 11, bonus -8 Min 3) on 18 → 11 → 3; Don Cr (bonus -12 Min 8,
 ability -4 Min 2) on 18 → 8 → 4; Donna Black (bonus -12 Min 8, ability -10 Min 3) → 3.
 Fixed 875272, 876752, 901613, 901292. Three data points; keep an eye on it.
+
+### Stop effects resolve by dependency
+The PRE4 cancellation phase cannot use fixed P1/P2 order or first-mover order. It must first
+run a Stop effect whose own ability/bonus cannot be stopped by another unresolved effect,
+then discard newly blocked effects and continue. Battle 867116 pins one direction: Miyo's
+ability stops Bonnie Ld's Piranas Stop Bonus, so Miyo's Hive bonus remains active even though
+Bonnie moved first. Battle 1090338 pins the other: Burdock's Roots bonus stops Spidee's
+Reprisal Stop Ability, leaving Burdock's `After Roots: Stop Opp. Bonus` active. The old P1
+order gave Spidee an impossible +12 Rescue Attack and made its five-pill move display as a
+100% win; it is actually 89% against Burdock's hidden bets with a losing worst case.
+`Events.executeCancels()` now resolves the dependency graph, with the historical order only
+as a deterministic fallback for a true mutual-stop cycle. Tests cover both captures plus the
+advisor percentage.
 
 ### Permanents latch on their own trigger, not always on a win
 `Ability.canApply` gated every permanent (the Poison / Heal / Toxin / Combust / Mindwipe /
@@ -128,7 +148,42 @@ on 5 pillz with "Recover 2 Out Of 3" would settle it - the proportion says 4, a 
 The `both` branch of `RecoverModifier` ("Recover Players Pillz") and the Life branch have no
 captured data at all, and the Life branch has no minimum applied.
 
-## Open (3 battles)
+### Tune Out ignores every Attack modifier
+The server's long description says the Attack calculation is ignored and the player who
+bet the most Pillz wins; equal bets use the normal card tie-break. The engine already set
+both cards' Power to 1, but then still applied Attack additions and reductions. In 964404
+round 2 that let Hive's `-3 Opp Attack, Min 5` turn Pepe Andrei's pillz-only 7 Attack into
+5, so Nebula's 6 Attack was incorrectly evaluated as a guaranteed immediate KO. Tune Out
+now cancels Attack modifiers on both cards before the pillz-only totals are calculated.
+Fixed 924146, 925868, 926071 and 964404. Tests in `tests/ability/TuneOut.test.ts`.
+
+### Per Life/Pillz Lost
+The parser treated `Per Pillz Lost` as ordinary `Per Pillz`, silently ignoring `Lost`, so
+Nolegs received a multiplier of its zero remaining pillz rather than the twelve spent since
+the match began. In 1060510 round 3 it therefore had 6 Attack in the engine instead of the
+server's exact `6 x 1 + 2 x 12 = 30`; Wesley's 18 was incorrectly marked as a guaranteed
+win and the advisor recommended the losing play. `Player` now retains its match-start Life
+and Pillz in its existing packed integer, and `BasicModifier` has distinct lost-resource
+multipliers. The same parser fix covers the corresponding Life Lost and opponent-targeting
+cards, including Max/Min clauses after `Lost`. Fixed 1060510. Test in
+`tests/ability/LostResources.test.ts` plus the captured replay.
+
+## Previously triaged open rules
+
+### End-of-round gain/reduction order — 1093173
+Round 1 (zero-based) has Goose's `-2 Opp. Pillz And Life, Min 5` beat Dr Web Ld,
+whose Riots bonus is `Victory Or Defeat: +1 Pillz`. DashSmashing starts the round on 7,
+bets 2, and the server finishes on 5. That arithmetic requires the Riots gain to apply
+before Goose's reduction: `7 - 2 + 1 - 2`, clamped to 5. The engine executes internal P1's
+END events first, so it clamps Goose's reduction at 5 and then adds Riots: `7 - 2 - 0 + 1
+= 6`. This is the only captured round found with an opposing Pillz reduction and a
+simultaneous own Pillz gain, so retain it as an ordering hypothesis until a second data
+point confirms the general rule.
+
+The live advisor now reports the disagreement and then replaces replayed life/pillz with
+the server's completed-round totals before solving the next decision. Therefore round 4
+correctly starts with 3 pillz and cannot offer the impossible fourth pill, while the replay
+continues to fail and keeps the engine bug visible.
 
 ### Damage Exchange — 901004
 The inactive-bonus half of this entry is a false lead: across the captures there are 23
@@ -159,6 +214,19 @@ Exchange card at all, one of them on a loss.
   Brawl. A testcase carrying only card names and levels cannot express that. Either teach
   `ExtractBattle.ts` to record the server's per-card ability in the testcase and have the
   replay use it, or skip games whose draw contains a Hazard leader.
+
+## Fresh capture backlog
+
+The expanded 326-game corpus exposed 49 additional mismatches that have not yet been
+grouped or attributed to rules. They are recorded as regression targets only; inspect the
+first failing round and group them by ability keyword before changing the engine:
+
+924320, 924573, 924615, 924669, 924740, 924853, 924890, 925818, 942983, 943111,
+943231, 946810, 947010, 947670, 948108, 948390, 949439, 956902, 1023946,
+1024592, 1024732, 1024821, 1025413, 1058366, 1059149, 1060341, 1065308,
+1066210, 1069506, 1078555, 1078669, 1078820, 1078906, 1079078, 1079482,
+1081234, 1088641, 1089830, 1089933, 1089974, 1090269, 1091235, 1091381,
+1092066, 1092369, 1092909, 1093129, 1093451, 1093569.
 
 ## Legacy tests
 - `tests/Game_2.test.ts` "Protection" uses empty card names (never passed).

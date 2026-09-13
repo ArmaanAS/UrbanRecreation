@@ -1,0 +1,493 @@
+{
+  "id": 1066210,
+  "capturedAt": "2026-09-13T15:23:08.436Z",
+  "creationTime": 1789312988,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 448,
+          "name": "Anita",
+          "clan": "Rescue",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 274,
+            "description": "Courage: +1 Life Per Dmg"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 559,
+          "name": "Aurora",
+          "clan": "Rescue",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 377,
+            "description": "+3 Life"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 1498,
+          "name": "Spidee",
+          "clan": "Rescue",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1310,
+            "description": "Reprisal: Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 1089,
+          "name": "Sue",
+          "clan": "Rescue",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 916,
+            "description": "-1 Opp Power And Damage, Min 3"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 143345,
+      "name": "-Fate",
+      "level": 127,
+      "grade": "Imperator",
+      "country": "ca",
+      "club": {
+        "id": 4987,
+        "name": "Wise Men Distracted"
+      },
+      "registrationTime": 1164559122,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 231,
+          "name": "Dorian Cr",
+          "clan": "Uppers",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": null,
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 1138,
+          "name": "Gradymag",
+          "clan": "Uppers",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 965,
+            "description": "Revenge: Power And Damage +2"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 1843,
+          "name": "Joan Cena",
+          "clan": "Uppers",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1690,
+            "description": "Power Exchange"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 1401,
+          "name": "Nega D Ld",
+          "clan": "Uppers",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 5286,
+            "description": "Corrupt 2 Min. 5"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1843,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789313000308
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1498,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1789313027085
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 38,
+          "won": true
+        },
+        {
+          "power": 5,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 5,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        6
+      ],
+      "pillz": [
+        7,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 47357
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 448,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789313056561
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 1138,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1789313061631
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 9,
+          "won": false
+        },
+        {
+          "power": 9,
+          "damage": 7,
+          "damageAfter": 5,
+          "attack": 18,
+          "won": true
+        }
+      ],
+      "life": [
+        5,
+        6
+      ],
+      "pillz": [
+        7,
+        11
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 35929
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1401,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": true,
+          "t": 1789313089624
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 559,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": true,
+          "t": 1789313096032
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 37,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 10,
+          "damageAfter": 10,
+          "attack": 64,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        5
+      ],
+      "pillz": [
+        0,
+        1
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 143345,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": false,
+          "quantity": 1
+        }
+      ],
+      "durationMs": 36372
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 431,
+    "scoreDiff": 32,
+    "player": {
+      "life": 0,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 5,
+      "pillz": 1
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 200
+      },
+      {
+        "type": "playerXP",
+        "value": 11
+      },
+      {
+        "type": "characterXP",
+        "value": 600
+      }
+    ],
+    "t": 1789313096228
+  },
+  "finalStatus": "done",
+  "snapshots": 28,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Dorian Cr",
+      "Gradymag",
+      "Joan Cena",
+      "Nega D Ld",
+      "Anita",
+      "Aurora",
+      "Spidee",
+      "Sue"
+    ],
+    "levels": [
+      5,
+      5,
+      3,
+      5,
+      3,
+      5,
+      4,
+      2
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          2,
+          0,
+          false
+        ],
+        "s2": [
+          2,
+          5,
+          false
+        ],
+        "p1life": 6,
+        "p2life": 12,
+        "p1pillz": 12,
+        "p2pillz": 7,
+        "r1": {
+          "power": 5,
+          "damage": 4,
+          "attack": 5,
+          "won": false
+        },
+        "r2": {
+          "power": 6,
+          "damage": 6,
+          "attack": 38,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          0,
+          0,
+          false
+        ],
+        "s2": [
+          1,
+          1,
+          false
+        ],
+        "p1life": 6,
+        "p2life": 5,
+        "p1pillz": 11,
+        "p2pillz": 7,
+        "r1": {
+          "power": 9,
+          "damage": 7,
+          "attack": 18,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 3,
+          "attack": 9,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          3,
+          7,
+          true
+        ],
+        "s2": [
+          1,
+          4,
+          true
+        ],
+        "p1life": 5,
+        "p2life": 0,
+        "p1pillz": 1,
+        "p2pillz": 0,
+        "r1": {
+          "power": 8,
+          "damage": 10,
+          "attack": 64,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 7,
+          "attack": 37,
+          "won": false
+        }
+      }
+    ]
+  }
+}

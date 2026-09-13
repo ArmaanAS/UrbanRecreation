@@ -1,0 +1,488 @@
+{
+  "id": 964352,
+  "capturedAt": "2026-09-11T19:49:48.583Z",
+  "creationTime": 1789156189,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 16419852,
+      "name": "PicaFumo_",
+      "level": 111,
+      "grade": "Colossus",
+      "country": "br",
+      "club": {
+        "id": 1113469,
+        "name": "Visão da Morte"
+      },
+      "registrationTime": 1309991717,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2618,
+          "name": "Hypnos",
+          "clan": "Oculus",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 5072,
+            "description": "[clan:46][clan:58][clan:40][clan:55][clan:42][clan:50] Asy. : -3 Opp Dam., Min 1"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        },
+        {
+          "id": 1379,
+          "name": "Drakorah Cr",
+          "clan": "Raptors",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 4785,
+            "description": "Killshot: -5 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        },
+        {
+          "id": 1681,
+          "name": "Kruger",
+          "clan": "Raptors",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1506,
+            "description": "-2 Opp Power And Damage, Min 4"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        },
+        {
+          "id": 1932,
+          "name": "Mel-T",
+          "clan": "Raptors",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 4661,
+            "description": "+2 Attack Per Opp. Power"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1536,
+          "name": "Aegis Cr",
+          "clan": "Hive",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1342,
+            "description": "Equalizer: Power +1"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1605,
+          "name": "Hal Gladius",
+          "clan": "Hive",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1415,
+            "description": "Equalizer: - 1 Opp. Life Min 2"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1535,
+          "name": "Lumia Cr",
+          "clan": "Hive",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1341,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1788,
+          "name": "Uuber",
+          "clan": "Hive",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1628,
+            "description": "Victory Or Defeat: - 1 Opp. Life Min 1"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 1605,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789156206463
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1379,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1789156216428
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 48,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 35,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        8
+      ],
+      "pillz": [
+        7,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 35130
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1932,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1789156231807
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1788,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789156236468
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 28,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 7,
+          "won": false
+        }
+      ],
+      "life": [
+        11,
+        3
+      ],
+      "pillz": [
+        6,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 22483
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1536,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789156250796
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1681,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1789156256484
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 49,
+          "won": true
+        },
+        {
+          "power": 6,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 30,
+          "won": false
+        }
+      ],
+      "life": [
+        11,
+        0
+      ],
+      "pillz": [
+        0,
+        4
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 20245
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 439,
+    "scoreDiff": 18,
+    "player": {
+      "life": 0,
+      "pillz": 4,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 11,
+      "pillz": 0
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 270
+      },
+      {
+        "type": "characterXP",
+        "value": 600
+      }
+    ],
+    "t": 1789156256691
+  },
+  "finalStatus": "done",
+  "snapshots": 23,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Aegis Cr",
+      "Hal Gladius",
+      "Lumia Cr",
+      "Uuber",
+      "Hypnos",
+      "Drakorah Cr",
+      "Kruger",
+      "Mel-T"
+    ],
+    "levels": [
+      5,
+      2,
+      4,
+      2,
+      3,
+      3,
+      3,
+      4
+    ],
+    "night": false,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          4,
+          false
+        ],
+        "s2": [
+          1,
+          5,
+          false
+        ],
+        "p1life": 8,
+        "p2life": 12,
+        "p1pillz": 8,
+        "p2pillz": 7,
+        "r1": {
+          "power": 7,
+          "damage": 1,
+          "attack": 35,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 4,
+          "attack": 48,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          1,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          false
+        ],
+        "p1life": 3,
+        "p2life": 11,
+        "p1pillz": 8,
+        "p2pillz": 6,
+        "r1": {
+          "power": 7,
+          "damage": 2,
+          "attack": 7,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 5,
+          "attack": 28,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          0,
+          4,
+          false
+        ],
+        "s2": [
+          2,
+          6,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 11,
+        "p1pillz": 4,
+        "p2pillz": 0,
+        "r1": {
+          "power": 6,
+          "damage": 5,
+          "attack": 30,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 4,
+          "attack": 49,
+          "won": true
+        }
+      }
+    ]
+  }
+}

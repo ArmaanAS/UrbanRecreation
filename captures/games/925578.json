@@ -1,0 +1,488 @@
+{
+  "id": 925578,
+  "capturedAt": "2026-09-11T00:13:29.746Z",
+  "creationTime": 1789085612,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1608,
+          "name": "AI-Lycs",
+          "clan": "Hive",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1418,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1605,
+          "name": "Hal Gladius",
+          "clan": "Hive",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1415,
+            "description": "Equalizer: - 1 Opp. Life Min 2"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1535,
+          "name": "Lumia Cr",
+          "clan": "Hive",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1341,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1556,
+          "name": "Miyo",
+          "clan": "Hive",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1359,
+            "description": "Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 7052736,
+      "name": "PmB_Dany",
+      "level": 151,
+      "grade": "Titan",
+      "country": "it",
+      "club": {
+        "id": 321645,
+        "name": "UNION OF THE SUPREMES"
+      },
+      "registrationTime": 1256206597,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2098,
+          "name": "Barcelo",
+          "clan": "Piranas",
+          "level": 1,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 4311,
+            "description": "Killshot: +3 Pillz"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 808,
+          "name": "Bonnie Ld",
+          "clan": "Piranas",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 5085,
+            "description": "Victory Or Defeat : +1 Pillz"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 1046,
+          "name": "Miss Lizbeth",
+          "clan": "Piranas",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 4618,
+            "description": "Power And Damage +2"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 1962,
+          "name": "Sooko Cr",
+          "clan": "Piranas",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1825,
+            "description": "-4 Opp Power, Min 0"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1608,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789085638079
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1962,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1789085644880
+        }
+      ],
+      "resolution": [
+        {
+          "power": 2,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 10,
+          "won": true
+        },
+        {
+          "power": 4,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 8,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        7
+      ],
+      "pillz": [
+        8,
+        11
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 43590
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 808,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1789085659509
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1605,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789085670103
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 7,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 32,
+          "won": true
+        }
+      ],
+      "life": [
+        10,
+        7
+      ],
+      "pillz": [
+        8,
+        9
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 26416
+    },
+    {
+      "round": 2,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1535,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": true,
+          "t": 1789085693637
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1046,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1789085699601
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 36,
+          "won": true
+        },
+        {
+          "power": 5,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 35,
+          "won": false
+        }
+      ],
+      "life": [
+        10,
+        0
+      ],
+      "pillz": [
+        0,
+        3
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 29894
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 93,
+    "scoreDiff": 55,
+    "player": {
+      "life": 10,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 3
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 3000
+      },
+      {
+        "type": "playerXP",
+        "value": 25
+      },
+      {
+        "type": "characterXP",
+        "value": 950
+      }
+    ],
+    "t": 1789085699840
+  },
+  "finalStatus": "done",
+  "snapshots": 25,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "AI-Lycs",
+      "Hal Gladius",
+      "Lumia Cr",
+      "Miyo",
+      "Barcelo",
+      "Bonnie Ld",
+      "Miss Lizbeth",
+      "Sooko Cr"
+    ],
+    "levels": [
+      3,
+      2,
+      4,
+      3,
+      1,
+      2,
+      5,
+      2
+    ],
+    "night": false,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          4,
+          false
+        ],
+        "s2": [
+          3,
+          1,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 7,
+        "p1pillz": 8,
+        "p2pillz": 11,
+        "r1": {
+          "power": 2,
+          "damage": 5,
+          "attack": 10,
+          "won": true
+        },
+        "r2": {
+          "power": 4,
+          "damage": 3,
+          "attack": 8,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          1,
+          3,
+          false
+        ],
+        "s2": [
+          1,
+          0,
+          false
+        ],
+        "p1life": 10,
+        "p2life": 7,
+        "p1pillz": 8,
+        "p2pillz": 9,
+        "r1": {
+          "power": 7,
+          "damage": 1,
+          "attack": 7,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 2,
+          "attack": 32,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          2,
+          5,
+          true
+        ],
+        "s2": [
+          2,
+          6,
+          false
+        ],
+        "p1life": 10,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 3,
+        "r1": {
+          "power": 6,
+          "damage": 8,
+          "attack": 36,
+          "won": true
+        },
+        "r2": {
+          "power": 5,
+          "damage": 7,
+          "attack": 35,
+          "won": false
+        }
+      }
+    ]
+  }
+}

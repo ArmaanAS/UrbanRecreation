@@ -1,0 +1,404 @@
+{
+  "id": 1023396,
+  "capturedAt": "2026-09-12T22:36:23.859Z",
+  "creationTime": 1789252586,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2058,
+          "name": "Doela Noel",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 4708,
+            "description": "Symmetry: - 4 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 1980,
+          "name": "Galahad",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1845,
+            "description": "Attack +10"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2179,
+          "name": "Nantosuelte",
+          "clan": "Paradox",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 2535,
+            "description": "Support: -1 Opp Attack, Min 0"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 1988,
+          "name": "Ramak",
+          "clan": "Paradox",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1852,
+            "description": "Symmetry: +1 Pillz Per Damage"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 21644755,
+      "name": "El_Dude",
+      "level": 101,
+      "grade": "Imperator",
+      "country": "mx",
+      "club": null,
+      "registrationTime": 1336273957,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 992,
+          "name": "Bankee Cr",
+          "clan": "Frozn",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 814,
+            "description": "Confidence : +4 Life"
+          },
+          "bonus": {
+            "id": 801,
+            "description": "Revenge: Power And Damage +2"
+          }
+        },
+        {
+          "id": 987,
+          "name": "Sah Brinak Cr",
+          "clan": "Frozn",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 809,
+            "description": "+1 Pillz Per Damage"
+          },
+          "bonus": {
+            "id": 801,
+            "description": "Revenge: Power And Damage +2"
+          }
+        },
+        {
+          "id": 1030,
+          "name": "Thorpah Cr",
+          "clan": "Frozn",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "m1",
+          "ability": {
+            "id": 854,
+            "description": "-2 Opp Pillz. Min 1"
+          },
+          "bonus": {
+            "id": 801,
+            "description": "Revenge: Power And Damage +2"
+          }
+        },
+        {
+          "id": 834,
+          "name": "Ivana",
+          "clan": "Pussycats",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 654,
+            "description": "Stop: -3 Opp. Dmg, Min 3"
+          },
+          "bonus": null
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1030,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789252609539
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1980,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789252631819
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 5,
+          "damageAfter": 2,
+          "attack": 16,
+          "won": true
+        },
+        {
+          "power": 8,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 8,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        7
+      ],
+      "pillz": [
+        12,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 57242
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1988,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": false,
+          "t": 1789252649225
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 987,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789252668355
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 64,
+          "won": true
+        },
+        {
+          "power": 9,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 45,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        0
+      ],
+      "pillz": [
+        5,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 37169
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 214,
+    "scoreDiff": 61,
+    "player": {
+      "life": 12,
+      "pillz": 5,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 8
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 4000
+      },
+      {
+        "type": "playerXP",
+        "value": 30
+      },
+      {
+        "type": "characterXP",
+        "value": 950
+      }
+    ],
+    "t": 1789252668544
+  },
+  "finalStatus": "done",
+  "snapshots": 21,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Bankee Cr",
+      "Sah Brinak Cr",
+      "Thorpah Cr",
+      "Ivana",
+      "Doela Noel",
+      "Galahad",
+      "Nantosuelte",
+      "Ramak"
+    ],
+    "levels": [
+      4,
+      3,
+      5,
+      2,
+      2,
+      2,
+      3,
+      4
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          2,
+          0,
+          false
+        ],
+        "s2": [
+          1,
+          0,
+          false
+        ],
+        "p1life": 7,
+        "p2life": 12,
+        "p1pillz": 12,
+        "p2pillz": 12,
+        "r1": {
+          "power": 8,
+          "damage": 5,
+          "attack": 8,
+          "won": false
+        },
+        "r2": {
+          "power": 6,
+          "damage": 5,
+          "attack": 16,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          7,
+          false
+        ],
+        "s2": [
+          1,
+          4,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 12,
+        "p1pillz": 8,
+        "p2pillz": 5,
+        "r1": {
+          "power": 9,
+          "damage": 4,
+          "attack": 45,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 7,
+          "attack": 64,
+          "won": true
+        }
+      }
+    ]
+  }
+}

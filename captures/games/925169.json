@@ -1,0 +1,319 @@
+{
+  "id": 925169,
+  "capturedAt": "2026-09-10T23:56:29.725Z",
+  "creationTime": 1789084592,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1608,
+          "name": "AI-Lycs",
+          "clan": "Hive",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1418,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1605,
+          "name": "Hal Gladius",
+          "clan": "Hive",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1415,
+            "description": "Equalizer: - 1 Opp. Life Min 2"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1535,
+          "name": "Lumia Cr",
+          "clan": "Hive",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1341,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1589,
+          "name": "Mou",
+          "clan": "Hive",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1399,
+            "description": "-5 Opp. Life Min 5"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 34600003,
+      "name": "Krillstreet",
+      "level": 137,
+      "grade": "Imperator",
+      "country": "us",
+      "club": {
+        "id": 1405953,
+        "name": "Crépuscule"
+      },
+      "registrationTime": 1515555825,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1201,
+          "name": "Jordygn",
+          "clan": "Vortex",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1029,
+            "description": "Copy: Opp. Bonus"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 1725,
+          "name": "Pr Vronkxxt",
+          "clan": "Vortex",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1557,
+            "description": "Damage +3"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 1896,
+          "name": "RiK-L",
+          "clan": "Vortex",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1745,
+            "description": "Reprisal: -2 Opp Pow. & Dmg,min 1"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 1466,
+          "name": "Sarah",
+          "clan": "Vortex",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1282,
+            "description": "Growth: Poison 1, Min 1"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 1725,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1789084605190
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1589,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789084621067
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 30,
+          "won": true
+        },
+        {
+          "power": 9,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 18,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        5
+      ],
+      "pillz": [
+        8,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 41611
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": false,
+    "score": 635,
+    "scoreDiff": 18,
+    "player": {
+      "life": 12,
+      "pillz": 8,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 5,
+      "pillz": 12
+    },
+    "rewards": [],
+    "t": 1789084672060
+  },
+  "finalStatus": "timeout",
+  "snapshots": 17,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Jordygn",
+      "Pr Vronkxxt",
+      "RiK-L",
+      "Sarah",
+      "AI-Lycs",
+      "Hal Gladius",
+      "Lumia Cr",
+      "Mou"
+    ],
+    "levels": [
+      4,
+      3,
+      5,
+      3,
+      3,
+      2,
+      4,
+      3
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          2,
+          false
+        ],
+        "s2": [
+          3,
+          4,
+          false
+        ],
+        "p1life": 5,
+        "p2life": 12,
+        "p1pillz": 12,
+        "p2pillz": 8,
+        "r1": {
+          "power": 9,
+          "damage": 5,
+          "attack": 18,
+          "won": false
+        },
+        "r2": {
+          "power": 6,
+          "damage": 2,
+          "attack": 30,
+          "won": true
+        }
+      }
+    ]
+  }
+}

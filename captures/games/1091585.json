@@ -1,0 +1,493 @@
+{
+  "id": 1091585,
+  "capturedAt": "2026-09-13T22:24:53.547Z",
+  "creationTime": 1789338293,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 36409079,
+      "name": "jhuty",
+      "level": 205,
+      "grade": "Guru",
+      "country": "fr",
+      "club": {
+        "id": 2067118,
+        "name": "Les Poissons !"
+      },
+      "registrationTime": 1787614958,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1750,
+          "name": "Ax Battler Cr",
+          "clan": "Dominion",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1580,
+            "description": "Degrowth: Attack +4"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1976,
+          "name": "Fridlia Cr",
+          "clan": "Dominion",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "p",
+          "ability": {
+            "id": 1840,
+            "description": "Toxin 1, Min 0"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1848,
+          "name": "Nidory",
+          "clan": "Dominion",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "p",
+          "ability": {
+            "id": 1694,
+            "description": "Degrowth: Power And Damage +1"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1274,
+          "name": "Kenjy Noel",
+          "clan": "Riots",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "m1",
+          "ability": {
+            "id": 4711,
+            "description": "Revenge: Attack +10"
+          },
+          "bonus": null
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1536,
+          "name": "Aegis Cr",
+          "clan": "Hive",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1342,
+            "description": "Equalizer: Power +1"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1556,
+          "name": "Miyo",
+          "clan": "Hive",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1359,
+            "description": "Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1589,
+          "name": "Mou",
+          "clan": "Hive",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1399,
+            "description": "-5 Opp. Life Min 5"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        },
+        {
+          "id": 1788,
+          "name": "Uuber",
+          "clan": "Hive",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1628,
+            "description": "Victory Or Defeat: - 1 Opp. Life Min 1"
+          },
+          "bonus": {
+            "id": 1338,
+            "description": "Equalizer: -3 Opp Attack, Min 5"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1848,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1789338303579
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1536,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": false,
+          "t": 1789338312664
+        }
+      ],
+      "resolution": [
+        {
+          "power": 10,
+          "damage": 5,
+          "damageAfter": 1,
+          "attack": 51,
+          "won": false
+        },
+        {
+          "power": 7,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 56,
+          "won": true
+        }
+      ],
+      "life": [
+        5,
+        12
+      ],
+      "pillz": [
+        7,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 28674
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1788,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789338331670
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1976,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789338335600
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 28,
+          "won": true
+        },
+        {
+          "power": 5,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 5,
+          "won": false
+        }
+      ],
+      "life": [
+        4,
+        8
+      ],
+      "pillz": [
+        3,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 23785
+    },
+    {
+      "round": 2,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1750,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1789338349949
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 1556,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1789338358619
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 17,
+          "won": false
+        },
+        {
+          "power": 6,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 18,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        7
+      ],
+      "pillz": [
+        0,
+        3
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": true,
+          "quantity": 1
+        }
+      ],
+      "durationMs": 23396
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 310,
+    "scoreDiff": 58,
+    "player": {
+      "life": 7,
+      "pillz": 3,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 0
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 3000
+      },
+      {
+        "type": "playerXP",
+        "value": 840
+      },
+      {
+        "type": "characterXP",
+        "value": 1000
+      }
+    ],
+    "t": 1789338358970
+  },
+  "finalStatus": "done",
+  "snapshots": 23,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Ax Battler Cr",
+      "Fridlia Cr",
+      "Nidory",
+      "Kenjy Noel",
+      "Aegis Cr",
+      "Miyo",
+      "Mou",
+      "Uuber"
+    ],
+    "levels": [
+      5,
+      4,
+      3,
+      2,
+      5,
+      3,
+      3,
+      2
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          2,
+          5,
+          false
+        ],
+        "s2": [
+          0,
+          7,
+          false
+        ],
+        "p1life": 5,
+        "p2life": 12,
+        "p1pillz": 7,
+        "p2pillz": 5,
+        "r1": {
+          "power": 10,
+          "damage": 5,
+          "attack": 51,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 7,
+          "attack": 56,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          0,
+          false
+        ],
+        "s2": [
+          1,
+          4,
+          false
+        ],
+        "p1life": 4,
+        "p2life": 8,
+        "p1pillz": 3,
+        "p2pillz": 5,
+        "r1": {
+          "power": 8,
+          "damage": 3,
+          "attack": 28,
+          "won": true
+        },
+        "r2": {
+          "power": 5,
+          "damage": 2,
+          "attack": 5,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          0,
+          3,
+          false
+        ],
+        "s2": [
+          1,
+          2,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 7,
+        "p1pillz": 0,
+        "p2pillz": 3,
+        "r1": {
+          "power": 6,
+          "damage": 7,
+          "attack": 17,
+          "won": false
+        },
+        "r2": {
+          "power": 6,
+          "damage": 5,
+          "attack": 18,
+          "won": true
+        }
+      }
+    ]
+  }
+}

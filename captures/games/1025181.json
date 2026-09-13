@@ -1,0 +1,496 @@
+{
+  "id": 1025181,
+  "capturedAt": "2026-09-12T23:18:24.016Z",
+  "creationTime": 1789255106,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1985,
+          "name": "Aneta",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1850,
+            "description": "Courage: -2 Opp Pow. & Dam., Min 2"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2058,
+          "name": "Doela Noel",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 4708,
+            "description": "Symmetry: - 4 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 1980,
+          "name": "Galahad",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1845,
+            "description": "Attack +10"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2020,
+          "name": "Jairin",
+          "clan": "Paradox",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 2028,
+            "description": "-3 Opp Power, Min 5"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 22554226,
+      "name": "LyoMajin",
+      "level": 207,
+      "grade": "Legend",
+      "country": "es",
+      "club": {
+        "id": 2065996,
+        "name": "La Mesa Redonda."
+      },
+      "registrationTime": 1339064462,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1363,
+          "name": "Arturo Cr",
+          "clan": "Freaks",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 4507,
+            "description": "Growth: -1 Opp Power, Min 4"
+          },
+          "bonus": {
+            "id": 206,
+            "description": "Poison 2, Min 3"
+          }
+        },
+        {
+          "id": 378,
+          "name": "Boris Cr",
+          "clan": "Freaks",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "p",
+          "ability": {
+            "id": 3265,
+            "description": "-4 Opp Power, Min 0"
+          },
+          "bonus": {
+            "id": 206,
+            "description": "Poison 2, Min 3"
+          }
+        },
+        {
+          "id": 1688,
+          "name": "Pl4gue Ld",
+          "clan": "Freaks",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "p",
+          "ability": {
+            "id": 2859,
+            "description": "Brawl: Power +1"
+          },
+          "bonus": {
+            "id": 206,
+            "description": "Poison 2, Min 3"
+          }
+        },
+        {
+          "id": 2505,
+          "name": "Porcusite",
+          "clan": "Freaks",
+          "level": 1,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "p",
+          "ability": {
+            "id": 4050,
+            "description": "Unison : Recover 1 Pillz Out Of 2"
+          },
+          "bonus": {
+            "id": 206,
+            "description": "Poison 2, Min 3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1985,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789255119854
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 2505,
+          "pillz": 10,
+          "pillzUsed": 11,
+          "fury": false,
+          "t": 1789255147059
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 6,
+          "damageAfter": 3,
+          "attack": 6,
+          "won": false
+        },
+        {
+          "power": 5,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 55,
+          "won": true
+        }
+      ],
+      "life": [
+        11,
+        12
+      ],
+      "pillz": [
+        12,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 54298
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 378,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1789255166177
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1980,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789255175241
+        }
+      ],
+      "resolution": [
+        {
+          "power": 2,
+          "damage": 5,
+          "damageAfter": 2,
+          "attack": 20,
+          "won": true
+        },
+        {
+          "power": 5,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 20,
+          "won": false
+        }
+      ],
+      "life": [
+        9,
+        7
+      ],
+      "pillz": [
+        8,
+        4
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 27357
+    },
+    {
+      "round": 2,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 2020,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": true,
+          "t": 1789255191717
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1688,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789255203271
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 48,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 7,
+          "won": false
+        }
+      ],
+      "life": [
+        7,
+        0
+      ],
+      "pillz": [
+        0,
+        4
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": true,
+          "quantity": 2
+        }
+      ],
+      "durationMs": 29873
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 492,
+    "scoreDiff": 69,
+    "player": {
+      "life": 7,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 4
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 3000
+      },
+      {
+        "type": "playerXP",
+        "value": 25
+      },
+      {
+        "type": "characterXP",
+        "value": 950
+      }
+    ],
+    "t": 1789255203568
+  },
+  "finalStatus": "done",
+  "snapshots": 26,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Aneta",
+      "Doela Noel",
+      "Galahad",
+      "Jairin",
+      "Arturo Cr",
+      "Boris Cr",
+      "Pl4gue Ld",
+      "Porcusite"
+    ],
+    "levels": [
+      2,
+      2,
+      2,
+      4,
+      2,
+      3,
+      2,
+      1
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          0,
+          false
+        ],
+        "s2": [
+          3,
+          10,
+          false
+        ],
+        "p1life": 11,
+        "p2life": 12,
+        "p1pillz": 12,
+        "p2pillz": 7,
+        "r1": {
+          "power": 6,
+          "damage": 6,
+          "attack": 6,
+          "won": false
+        },
+        "r2": {
+          "power": 5,
+          "damage": 1,
+          "attack": 55,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          1,
+          3,
+          false
+        ],
+        "s2": [
+          2,
+          4,
+          false
+        ],
+        "p1life": 9,
+        "p2life": 7,
+        "p1pillz": 8,
+        "p2pillz": 4,
+        "r1": {
+          "power": 2,
+          "damage": 5,
+          "attack": 20,
+          "won": true
+        },
+        "r2": {
+          "power": 5,
+          "damage": 4,
+          "attack": 20,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          3,
+          5,
+          true
+        ],
+        "s2": [
+          2,
+          0,
+          false
+        ],
+        "p1life": 7,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 4,
+        "r1": {
+          "power": 8,
+          "damage": 8,
+          "attack": 48,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 3,
+          "attack": 7,
+          "won": false
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,410 @@
+{
+  "id": 1009386,
+  "capturedAt": "2026-09-12T17:02:23.273Z",
+  "creationTime": 1789232545,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2058,
+          "name": "Doela Noel",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 4708,
+            "description": "Symmetry: - 4 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2020,
+          "name": "Jairin",
+          "clan": "Paradox",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 2028,
+            "description": "-3 Opp Power, Min 5"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2179,
+          "name": "Nantosuelte",
+          "clan": "Paradox",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 2535,
+            "description": "Support: -1 Opp Attack, Min 0"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 1988,
+          "name": "Ramak",
+          "clan": "Paradox",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1852,
+            "description": "Symmetry: +1 Pillz Per Damage"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 34600003,
+      "name": "Krillstreet",
+      "level": 139,
+      "grade": "Imperator",
+      "country": "us",
+      "club": {
+        "id": 1405953,
+        "name": "Crépuscule"
+      },
+      "registrationTime": 1515555825,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1995,
+          "name": "Salvatore",
+          "clan": "Paradox",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1907,
+            "description": "Damage Exchange"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2410,
+          "name": "Suplicius Cr",
+          "clan": "Paradox",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 3622,
+            "description": "Courage: Power Exchange"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 796,
+          "name": "C Beast",
+          "clan": "Vortex",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 616,
+            "description": "-4 Opp Power, Min 4"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 1466,
+          "name": "Sarah",
+          "clan": "Vortex",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1282,
+            "description": "Growth: Poison 1, Min 1"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 2410,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1789232577115
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 2179,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1789232609255
+        }
+      ],
+      "resolution": [
+        {
+          "power": 5,
+          "damage": 7,
+          "damageAfter": 4,
+          "attack": 20,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 7,
+          "damageAfter": 4,
+          "attack": 44,
+          "won": true
+        }
+      ],
+      "life": [
+        5,
+        12
+      ],
+      "pillz": [
+        9,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 75530
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 2058,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789232632387
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 796,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": false,
+          "t": 1789232652449
+        }
+      ],
+      "resolution": [
+        {
+          "power": 4,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 20,
+          "won": false
+        },
+        {
+          "power": 5,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 40,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        12
+      ],
+      "pillz": [
+        5,
+        0
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 45538
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 60,
+    "scoreDiff": 23,
+    "player": {
+      "life": 0,
+      "pillz": 5,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 12,
+      "pillz": 0
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 7
+      },
+      {
+        "type": "characterXP",
+        "value": 500
+      }
+    ],
+    "t": 1789232652802
+  },
+  "finalStatus": "done",
+  "snapshots": 23,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Salvatore",
+      "Suplicius Cr",
+      "C Beast",
+      "Sarah",
+      "Doela Noel",
+      "Jairin",
+      "Nantosuelte",
+      "Ramak"
+    ],
+    "levels": [
+      5,
+      3,
+      5,
+      3,
+      2,
+      4,
+      3,
+      4
+    ],
+    "night": false,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          5,
+          false
+        ],
+        "s2": [
+          2,
+          3,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 5,
+        "p1pillz": 7,
+        "p2pillz": 9,
+        "r1": {
+          "power": 8,
+          "damage": 7,
+          "attack": 44,
+          "won": true
+        },
+        "r2": {
+          "power": 5,
+          "damage": 7,
+          "attack": 20,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          0,
+          4,
+          false
+        ],
+        "s2": [
+          2,
+          7,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 5,
+        "r1": {
+          "power": 5,
+          "damage": 8,
+          "attack": 40,
+          "won": true
+        },
+        "r2": {
+          "power": 4,
+          "damage": 5,
+          "attack": 20,
+          "won": false
+        }
+      }
+    ]
+  }
+}

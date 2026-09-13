@@ -1,0 +1,418 @@
+{
+  "id": 1092729,
+  "capturedAt": "2026-09-13T22:59:38.681Z",
+  "creationTime": 1789340378,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1333,
+          "name": "Argos",
+          "clan": "Riots",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1158,
+            "description": "Defeat: +2 Pillz Max. 11"
+          },
+          "bonus": {
+            "id": 1034,
+            "description": "Victory Or Defeat : +1 Pillz"
+          }
+        },
+        {
+          "id": 1730,
+          "name": "Dr Web Ld",
+          "clan": "Riots",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 4041,
+            "description": "-2 Opp Power And Damage, Min 0"
+          },
+          "bonus": {
+            "id": 1034,
+            "description": "Victory Or Defeat : +1 Pillz"
+          }
+        },
+        {
+          "id": 2021,
+          "name": "Olivia",
+          "clan": "Riots",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 2021,
+            "description": "Asymmetry: Power +3"
+          },
+          "bonus": {
+            "id": 1034,
+            "description": "Victory Or Defeat : +1 Pillz"
+          }
+        },
+        {
+          "id": 1568,
+          "name": "Pr Hide",
+          "clan": "Riots",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1375,
+            "description": "Victory Or Defeat : +1 Pillz"
+          },
+          "bonus": {
+            "id": 1034,
+            "description": "Victory Or Defeat : +1 Pillz"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 32845293,
+      "name": "Rodscrazy",
+      "level": 54,
+      "grade": "Hero",
+      "country": "br",
+      "club": {
+        "id": 1397761,
+        "name": "Gli squali della notte"
+      },
+      "registrationTime": 1426898385,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 769,
+          "name": "Cliff",
+          "clan": "Rescue",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 589,
+            "description": "Revenge: Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 2255,
+          "name": "Dr L Home",
+          "clan": "Rescue",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 2973,
+            "description": "Brawl: Attack +2"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 2632,
+          "name": "Elias Renko",
+          "clan": "Rescue",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 5199,
+            "description": "Equalizer: +1 Life"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 2284,
+          "name": "Hydrant",
+          "clan": "Rescue",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 2021,
+            "description": "Asymmetry: Power +3"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 2284,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1789340399598
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 2021,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": false,
+          "t": 1789340405408
+        }
+      ],
+      "resolution": [
+        {
+          "power": 10,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 80,
+          "won": false
+        },
+        {
+          "power": 10,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 82,
+          "won": true
+        }
+      ],
+      "life": [
+        6,
+        12
+      ],
+      "pillz": [
+        6,
+        6
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 37741
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1730,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789340426071
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 2632,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789340432272
+        }
+      ],
+      "resolution": [
+        {
+          "power": 5,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 5,
+          "won": false
+        },
+        {
+          "power": 5,
+          "damage": 0,
+          "damageAfter": 2,
+          "attack": 17,
+          "won": true
+        }
+      ],
+      "life": [
+        6,
+        14
+      ],
+      "pillz": [
+        7,
+        6
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 27619
+    },
+    {
+      "round": 2,
+      "first": null,
+      "moves": [],
+      "resolution": [
+        null,
+        null
+      ],
+      "life": [
+        6,
+        14
+      ],
+      "pillz": [
+        7,
+        6
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 253
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": false,
+    "score": 776,
+    "scoreDiff": 6,
+    "player": {
+      "life": 6,
+      "pillz": 7,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 14,
+      "pillz": 6
+    },
+    "rewards": [],
+    "t": 1789340448965
+  },
+  "finalStatus": "playing",
+  "snapshots": 20,
+  "issues": [
+    "round 2: expected 2 moves, saw 0"
+  ],
+  "testcase": {
+    "cards": [
+      "Cliff",
+      "Dr L Home",
+      "Elias Renko",
+      "Hydrant",
+      "Argos",
+      "Dr Web Ld",
+      "Olivia",
+      "Pr Hide"
+    ],
+    "levels": [
+      5,
+      4,
+      2,
+      5,
+      2,
+      2,
+      3,
+      3
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          3,
+          6,
+          false
+        ],
+        "s2": [
+          2,
+          7,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 6,
+        "p1pillz": 6,
+        "p2pillz": 6,
+        "r1": {
+          "power": 10,
+          "damage": 6,
+          "attack": 82,
+          "won": true
+        },
+        "r2": {
+          "power": 10,
+          "damage": 4,
+          "attack": 80,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          1,
+          0,
+          false
+        ],
+        "s2": [
+          2,
+          0,
+          false
+        ],
+        "p1life": 14,
+        "p2life": 6,
+        "p1pillz": 6,
+        "p2pillz": 7,
+        "r1": {
+          "power": 5,
+          "damage": 0,
+          "attack": 17,
+          "won": true
+        },
+        "r2": {
+          "power": 5,
+          "damage": 3,
+          "attack": 5,
+          "won": false
+        }
+      }
+    ]
+  }
+}

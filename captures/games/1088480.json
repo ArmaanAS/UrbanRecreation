@@ -1,0 +1,488 @@
+{
+  "id": 1088480,
+  "capturedAt": "2026-09-13T21:13:23.424Z",
+  "creationTime": 1789334003,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1707,
+          "name": "Callie",
+          "clan": "Rescue",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1536,
+            "description": "-1 Opp Power And Damage, Min 1"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 792,
+          "name": "Lothar",
+          "clan": "Rescue",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 612,
+            "description": "-3 Opp Power, Min 4"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 1498,
+          "name": "Spidee",
+          "clan": "Rescue",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1310,
+            "description": "Reprisal: Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 1089,
+          "name": "Sue",
+          "clan": "Rescue",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 916,
+            "description": "-1 Opp Power And Damage, Min 3"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 21516502,
+      "name": "4Un4GiVeN4",
+      "level": 93,
+      "grade": "Master",
+      "country": "pe",
+      "club": {
+        "id": 1052260,
+        "name": "makochi gremio"
+      },
+      "registrationTime": 1335925949,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1003,
+          "name": "Andy Ld",
+          "clan": "Skeelz",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3597,
+            "description": "-20 Opp Attack, Min 5"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        },
+        {
+          "id": 646,
+          "name": "Chiara Cr",
+          "clan": "Skeelz",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 465,
+            "description": "Revenge: -2 Opp. Power, Min 1"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        },
+        {
+          "id": 2259,
+          "name": "Gosalyn",
+          "clan": "Skeelz",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 2987,
+            "description": "Copy: Opp. Ability"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        },
+        {
+          "id": 1088,
+          "name": "Plunk",
+          "clan": "Skeelz",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 912,
+            "description": "Defeat: -2 Opp. Pillz, Min 4"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1003,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1789334017580
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1707,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1789334031786
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 34,
+          "won": true
+        },
+        {
+          "power": 4,
+          "damage": 5,
+          "damageAfter": 6,
+          "attack": 12,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        7
+      ],
+      "pillz": [
+        6,
+        10
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 37420
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 792,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1789334048389
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 646,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1789334070752
+        }
+      ],
+      "resolution": [
+        {
+          "power": 1,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 15,
+          "won": true
+        },
+        {
+          "power": 5,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 15,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        2
+      ],
+      "pillz": [
+        4,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 39289
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1088,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789334082717
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1089,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789334088458
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 42,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 7,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        0
+      ],
+      "pillz": [
+        0,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 17277
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 340,
+    "scoreDiff": 79,
+    "player": {
+      "life": 12,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 8
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 4000
+      },
+      {
+        "type": "playerXP",
+        "value": 32
+      },
+      {
+        "type": "characterXP",
+        "value": 1020
+      }
+    ],
+    "t": 1789334088688
+  },
+  "finalStatus": "done",
+  "snapshots": 25,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Andy Ld",
+      "Chiara Cr",
+      "Gosalyn",
+      "Plunk",
+      "Callie",
+      "Lothar",
+      "Spidee",
+      "Sue"
+    ],
+    "levels": [
+      3,
+      3,
+      2,
+      3,
+      3,
+      2,
+      4,
+      2
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          2,
+          false
+        ],
+        "s2": [
+          0,
+          6,
+          false
+        ],
+        "p1life": 7,
+        "p2life": 12,
+        "p1pillz": 10,
+        "p2pillz": 6,
+        "r1": {
+          "power": 4,
+          "damage": 5,
+          "attack": 12,
+          "won": false
+        },
+        "r2": {
+          "power": 6,
+          "damage": 5,
+          "attack": 34,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          1,
+          2,
+          false
+        ],
+        "s2": [
+          1,
+          2,
+          false
+        ],
+        "p1life": 2,
+        "p2life": 12,
+        "p1pillz": 8,
+        "p2pillz": 4,
+        "r1": {
+          "power": 5,
+          "damage": 4,
+          "attack": 15,
+          "won": false
+        },
+        "r2": {
+          "power": 1,
+          "damage": 5,
+          "attack": 15,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          0,
+          false
+        ],
+        "s2": [
+          3,
+          4,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 12,
+        "p1pillz": 8,
+        "p2pillz": 0,
+        "r1": {
+          "power": 7,
+          "damage": 3,
+          "attack": 7,
+          "won": false
+        },
+        "r2": {
+          "power": 6,
+          "damage": 3,
+          "attack": 42,
+          "won": true
+        }
+      }
+    ]
+  }
+}

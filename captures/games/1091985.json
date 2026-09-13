@@ -1,0 +1,415 @@
+{
+  "id": 1091985,
+  "capturedAt": "2026-09-13T22:37:38.965Z",
+  "creationTime": 1789339058,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 35009951,
+      "name": "Killuadaniel",
+      "level": 165,
+      "grade": "Titan",
+      "country": "br",
+      "club": null,
+      "registrationTime": 1555854302,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1875,
+          "name": "Duygu",
+          "clan": "Komboka",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1724,
+            "description": "Growth: -5 Opp Attack, Min 2"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 2027,
+          "name": "Eeok Ld",
+          "clan": "Komboka",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 5650,
+            "description": "Brawl: - 1 Opp. Life Min 3"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 1870,
+          "name": "Pavam Cr",
+          "clan": "Komboka",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1718,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        },
+        {
+          "id": 2111,
+          "name": "Dark Nunavik",
+          "clan": "Oculus",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 4680,
+            "description": "[clan:38][clan:25][clan:47][clan:54][clan:59] Courage: Power +4"
+          },
+          "bonus": {
+            "id": 1714,
+            "description": "+1 Pillz And Life"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 488,
+          "name": "Buck",
+          "clan": "Ulu Watu",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 310,
+            "description": "Power +2"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 1019,
+          "name": "Fanny",
+          "clan": "Ulu Watu",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 844,
+            "description": "Power +2"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 978,
+          "name": "Lianah Ld",
+          "clan": "Ulu Watu",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 3526,
+            "description": "Heal 1 Max. 20"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 1154,
+          "name": "Shaun",
+          "clan": "Ulu Watu",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 980,
+            "description": "Reprisal: Power And Damage +1"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 2111,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1789339070130
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 488,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1789339082908
+        }
+      ],
+      "resolution": [
+        {
+          "power": 10,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 20,
+          "won": false
+        },
+        {
+          "power": 9,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 63,
+          "won": true
+        }
+      ],
+      "life": [
+        5,
+        12
+      ],
+      "pillz": [
+        11,
+        6
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 33493
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 978,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": true,
+          "t": 1789339101114
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 2027,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1789339106726
+        }
+      ],
+      "resolution": [
+        {
+          "power": 9,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 27,
+          "won": false
+        },
+        {
+          "power": 10,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 40,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        12
+      ],
+      "pillz": [
+        9,
+        0
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "increase",
+          "isPermanent": true,
+          "quantity": 0
+        }
+      ],
+      "durationMs": 23746
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 205,
+    "scoreDiff": 48,
+    "player": {
+      "life": 12,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 9
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 4000
+      },
+      {
+        "type": "playerXP",
+        "value": 25
+      },
+      {
+        "type": "characterXP",
+        "value": 800
+      }
+    ],
+    "t": 1789339107120
+  },
+  "finalStatus": "done",
+  "snapshots": 16,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Duygu",
+      "Eeok Ld",
+      "Pavam Cr",
+      "Dark Nunavik",
+      "Buck",
+      "Fanny",
+      "Lianah Ld",
+      "Shaun"
+    ],
+    "levels": [
+      4,
+      2,
+      4,
+      2,
+      4,
+      2,
+      3,
+      3
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          3,
+          1,
+          false
+        ],
+        "s2": [
+          0,
+          6,
+          false
+        ],
+        "p1life": 5,
+        "p2life": 12,
+        "p1pillz": 11,
+        "p2pillz": 6,
+        "r1": {
+          "power": 10,
+          "damage": 3,
+          "attack": 20,
+          "won": false
+        },
+        "r2": {
+          "power": 9,
+          "damage": 7,
+          "attack": 63,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          2,
+          3,
+          true
+        ],
+        "s2": [
+          1,
+          2,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 12,
+        "p1pillz": 9,
+        "p2pillz": 0,
+        "r1": {
+          "power": 9,
+          "damage": 1,
+          "attack": 27,
+          "won": false
+        },
+        "r2": {
+          "power": 10,
+          "damage": 5,
+          "attack": 40,
+          "won": true
+        }
+      }
+    ]
+  }
+}

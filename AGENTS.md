@@ -8,8 +8,8 @@ Written by hand by the repo owner (armaanas); AI assistance started September 20
 
 | Path | Purpose |
 | --- | --- |
-| `src/game/` | Engine: `Game`, `Hand`, `Card`, `Player`, `PlayerRound`; abilities are parsed from text by `AbilityParser.ts` → `Ability.ts` → `modifiers/*`; a round is resolved by `battle/CardBattle.ts` firing `Events` at ordered `EventTime`s (START, PRE4..PRE1, POST1..POST4, END). `battle/Cached*` are memoised variants used by the solver. |
-| `src/solver/` | Minimax / iterative game-tree analysis with worker threads. |
+| `src/game/` | Engine: `Game` (incl. `make`/`unmake` + `Undo`, the allocation-free way the solver explores), `Hand`, `Card`, `Player`, `PlayerRound`; abilities are parsed from text by `AbilityParser.ts` → `Ability.ts` → `modifiers/*`; a round is resolved by `battle/CardBattle.ts` firing `Events` at ordered `EventTime`s (START, PRE4..PRE1, POST1..POST4, END). `battle/Cached*` are memoised variants used by the solver. |
+| `src/solver/` | `Minimax.ts` + `Analysis.ts` = the original breadth-first game-tree search (`iterTree`, used by `worker.ts` and `Main.ts`; `iterTree3`/`processRound` is an unused DFS rewrite). `Deep.ts` is its allocation-free perfect-information reference. `Search.ts` divides live work into depth-2 units and hands each future subtree to `Policy.ts`, whose conservative pure policy never conditions our reply on hidden pillz/Fury. `Advisor.ts` + `SolverView.ts` are the live terminal view. |
 | `src/utils/` | Console rendering, misc helpers. |
 | `data/` | `data.json` = the card list the engine loads, **one row per card per level** (power, damage and ability differ by level), built by `deno task cards` from `site_characters.jsonl` (gitignored 40 MB dump of the site's own card DB, refreshed via `__ur.dumpCharacters()` in the browser). `site_clans.json` (from `__ur.dumpClans()`) supplies clan names/bonuses; otherwise they come from the legacy `cards.json`. `cards.json` / `data.maxlevel.json` = older OAuth-API dumps (Dec 2024, max level only, stale); `compiled.json` = ability inventory from `deno task compile`. |
 | `scripts/` | Card data (`BuildCardData.ts` is the live path; `RequestCards.ts` / `RequestAllCardLevels.ts` / `UR_API.ts` are the OAuth-API path, needs API_KEY/API_SECRET in `.env` plus a browser auth step), ability compiler (`CompileAbilities.js`), battle capture (`BattleCapture.ts`, `ExtractBattle.ts`). |
@@ -21,20 +21,29 @@ Written by hand by the repo owner (armaanas); AI assistance started September 20
 
 ```bash
 deno test -A --no-check          # run tests (type-check currently fails on src/utils/Utils.ts:184)
-deno task log                    # start capture server, then play on urban-rivals.com with the userscript on
+deno task log                    # optional standalone capture/debug server
 deno task extract                # captures/battles/*.jsonl → captures/games/*.json
 deno task extract --raw ur_log.jsonl   # re-split a raw log into battle files
 deno task prune                  # shrink ur_log.jsonl (dropped 5.4 GB -> 82 MB once); --replace to swap it in
 deno test -A --no-check tests/replay/  # replay captured games through the engine
 deno task cards                  # rebuild data/data.json from data/site_characters.jsonl (after __ur.dumpCharacters())
-deno task bench / deno task time # solver benchmark
+deno task bench / deno task time # iterTree benchmark (the breadth-first reference)
+deno task time-search            # Search benchmark - the depth-first path the advisor uses
+deno task advise                 # live view; starts its capture server automatically
+deno task advise --replay 866431 --budget 10   # grade your moves in a captured battle
+UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (off by default)
 ```
 
 ## Current priorities (Sept 2026)
 
 1. Capture many real PvP games and make the engine reproduce them (`tests/replay/`).
-   As of 2026-09-11: 62 battles captured, 60 replayable, 57 replay exactly (life, pillz,
-   power, damage, attack, winner per round), 3 mismatch. `docs/replay-triage.md` tracks what
+   As of 2026-09-14: **326 battles captured, 320 replayable, 267 replay exactly** (life,
+   pillz, power, damage, attack, winner per round), **53 mismatch**, and 6 incomplete/Dojo
+   captures ignored. Four open cases have already been investigated (874590, 874712,
+   901004, 1093173); the other 49 are fresh regression targets from the expanded corpus and
+   remain untriaged. This is fresh ground truth rather than evidence that earlier working
+   replays regressed.
+   `docs/replay-triage.md` tracks what
    was fixed and what is open (Damage Exchange, Revenge/Impose, plus one Hazard game that a
    name-and-level testcase cannot express). It also says which open questions need more
    captured games and what to play to answer them.
@@ -47,9 +56,9 @@ deno task bench / deno task time # solver benchmark
 1. `deno test -A --no-check tests/replay/` — the score to beat is in the table at the top of
    `docs/replay-triage.md`. Type-checking fails on a pre-existing issue in
    `src/utils/Utils.ts:184`, hence `--no-check`.
-2. New games: the owner runs `deno task log` (it restarts itself when the server file
-   changes) and plays; then `deno task extract` and re-run the replay suite. The userscript
-   is at 0.5 - if `ur_log.jsonl` starts growing by gigabytes again, Tampermonkey is still
+2. New games: the owner runs `deno task advise` (or standalone `deno task log` for capture
+   without the TUI) and plays; then `deno task extract` and re-run the replay suite. The userscript
+   is at 0.7 - if `ur_log.jsonl` starts growing by gigabytes again, Tampermonkey is still
    running an older copy and needs it re-pasted. Failures print the round, both cards and the engine-vs-server diff;
    `captures/games/<id>.json` has the full round (moves, abilities, server results,
    post-round effects). Group new failures by ability keyword before fixing anything.
@@ -71,6 +80,143 @@ deno task bench / deno task time # solver benchmark
    include it), and build a "what do players play" dataset from captured moves and timings.
 4. Engine bugs are addressed only when a replay exposes them; two legacy tests
    (`Game_2 Protection` — empty card names, `Oculus Infiltrated`) fail and predate this work.
+
+## Solver notes (reviewed Sept 2026)
+
+- **Ranking prefers a knockout, then safety, on ties.** `Search.ranked()` orders by win
+  chance *as displayed* (rounded to a whole percent), then by the share of sampled lines
+  that end the game outright this round, then by the share that end *you* on the spot
+  (lower first), then by the cheaper bet. Rounding the sort key matters: sorting on the raw
+  mean produced orders the screen could not explain - two bets both reading 90% with the
+  riskier one above, over a difference of half a point that is well inside the error of a
+  model assuming a uniformly random opponent. Equal on screen now means equal in the sort,
+  so every tie is decided by something visible. Win chance still dominates, and ending it now beats
+  winning on life at the end of round 4, because a knockout stops depending on the
+  evaluation being right - everything below depth 2 assumes an opponent who can see your
+  pillz. `Minimax.best()` breaks these ties on cost alone, so `Search.best()` and
+  `Minimax.best()` can now pick different moves of equal value; `tests/solver/` pins the
+  value rather than the move for that reason.
+
+- **The terminal view has two hard rules** (`SolverView.ts`), both learned from a real
+  game on an 80-column terminal where the matrix was 116 wide and the frame overprinted
+  itself into duplicated letters and misaligned tables. Nothing may wrap or scroll:
+  `frame()` clips every line to the real width and drops any past the last row, and the
+  matrix sizes its columns to fit before drawing. And colours come from the terminal's own
+  sixteen, never the 256-colour cube, so it sits in the user's theme.
+  `tests/solver/View.test.ts` pins both and fails if the clamp is removed.
+
+  Related: `Debug.ts` asks `Deno.permissions.querySync` before reading `UR_DEBUG`. A bare
+  `Deno.env.get` on an ungranted variable makes Deno *prompt*, and a permission prompt
+  drawn over the advisor's alt-screen is unanswerable and corrupts the frame.
+
+- **Shape.** `iterTree` is breadth-first over the whole tree, so no answer exists until it
+  finishes: ~5.2M states and ~17s from round 2 with one card down (`deno task time`; it was
+  ~40s before the performance work below).
+  `Search.ts` evaluates one depth-2 state at a time, which is what makes a live ranking,
+  cancellation and a bounded memory footprint possible. It takes a `stride`/`offset` so
+  the units can be split across workers (also tested). Its original perfect-information
+  evaluator reproduced `iterTree` + `best()` exactly; the live information-aware policy
+  now deliberately differs when the reference relies on seeing a hidden bet. A
+  worker pool splits those units across processes from round 2 onward. Round 1 no longer
+  recursively solves the remaining game: the advisor evaluates all 92 × 92 current-round
+  pairings with a life/pillz/remaining-card position heuristic on one worker (~80ms in the
+  reference opening). Opponent replies are weighted by the 198 captured round-one plays
+  (plus Laplace smoothing), and remaining pillz use a nonlinear reserve term so implausible
+  all-ins do not dominate. The view labels its weighted average and floor-to-ceiling range
+  as opening scores rather than win percentages, then returns to exact search in round 2.
+  When the opponent moves first in rounds 3–4,
+  a blind-second search also ranks our replies across every card and hidden bet they might
+  choose; their actual card replaces it with the ordinary precise SECOND-mode search.
+- **What the percentage means.** From round 2 onward, each root move is averaged over the
+  opponent's possible current replies (uniformly; this is still a model rather than an
+  empirical probability). Every later continuation is evaluated by `Policy.ts` as a
+  conservative pure policy that can actually be followed with the information visible in
+  the live game. When we move second, one reply may depend on the revealed opposing card,
+  but never on its hidden pillz/Fury; that hidden bet is adversarial. When we move first,
+  our move must survive the worst opposing reply. This deliberately differs from the old
+  perfect-information recursion, which produced a false 100% in capture 1065812 by choosing
+  a different future Lothar bet for each hidden Scott bet. The visible Worst column is the
+  extremum over the opponent's current choice. Exact endpoints are reserved for exact
+  results: rounded near-wins/near-losses display as 99%/1%, not 100%/0%. A mixed-strategy
+  equilibrium would be less conservative, but remains a separate future solver model.
+- **Reference pruning.** `Deep.ts` retains two rules from the original solver, both only on
+  terminal children: a cutoff when the mover finds
+  a win (sound), and a domination rule — if the all-in bet and the biggest fury bet both
+  lose, skip the rest of that card's bets, since every other bet is dominated in attack *and*
+  damage by one of those two. That argument assumes more attack/damage is never worse for
+  the mover, which **Backlash** and **Defeat** abilities violate. It can also truncate the
+  set of replies that then gets averaged, though only when solving round 4. `Policy.ts`
+  does not use that domination rule; it only stops once an exact best/worst terminal result
+  means the remaining actions cannot change the value.
+- **Fixed here.** A double KO left `winner` on `PLAYING`, so the solver treated a finished
+  game as live, walked `id` off the end of its half of `baseGames`, and produced leaves with
+  neither result nor children — `Node.rating()`'s `Infinity` sentinel, inherited by every
+  MAX ancestor (one position went from 825,715 poisoned nodes to 199 clean ones).
+  `Ability.clone()` shared any permanent whose `delayed` was unset (Toxin, Consume, Regen,
+  Dope, Repair, Mindwipe), so the first branch that won with one latched it for the whole
+  tree. `Node.toString()` scaled `[-1, 1]` as if it were `[0, 100]`, printing a draw as
+  `[Loss]` and a P2 win as `[Win -100%]`.
+- **Still open.** `Card`'s `clan` / `bonusString` setters write to the process-global base
+  row, so an Oculus infiltration outlives its game. `Game.createBattleDataCache` keys a
+  process-global cache by card-index pair, so only one `Game` may be alive at a time in a
+  process.
+
+## Performance (measured Sept 2026)
+
+`deno task time` went from **40.0s to 17.0s** (2.36x) on the round-2 bench, same tree
+explored (2,303,378 states at the last ply, unchanged). Both changes came from profiling,
+not from reading the code - the first guess was wrong by 20x, so measure before believing
+anything below. `deno bench -A --no-check tests/CardAccess.bench.ts` holds the micro
+numbers; a full profile is `--v8-flags=--prof,--logfile=<path>` then `node --prof-process`.
+
+- **The packing is not the problem, and never was.** One object per card holding two SMIs
+  is what makes `clone()` cheap enough to hold millions of nodes; cloning measured
+  identically (1.01x) whichever way the stat views are built. What cost was
+  `Object.setPrototypeOf` as the *dispatch*: it cannot be inlined, it moves a finished
+  object onto a new map through the runtime, and it drove the `.final` sites megamorphic.
+  Replacing it with a throwaway view object per access was worth **10.8%** - the view
+  itself is free, since one view class per site keeps the site monomorphic and escape
+  analysis then drops the allocation.
+- **The same call in the clone path was worth far more.** A profile put
+  `ObjectSetPrototypeOf` at **29% of the whole search** (665 of 2309 ticks), 57% of that
+  from `Game.clone` and 32% from `Hand.clone`, both of which built a literal and then
+  re-prototyped it. `Object.create` + assignment in declaration order is ~1600x cheaper for
+  an object and ~345x for an array (`Hand.of` is worse than either). That change alone took
+  35.7s to 17.0s. The builtin no longer appears in the profile at all.
+- **Make/unmake killed the allocation bound.** After the two fixes above the search was
+  allocation-bound - GC 27% of ticks, `Game.clone` 15% of JS - because `iterTree` clones a
+  game per node (~23 objects) to keep its breadth-first frontier. `Game.make`/`unmake` plus
+  the depth-first evaluators in `Deep.ts` and `Policy.ts` mutate one game and walk it back, which
+  costs no allocation at all: the mutable state is already packed (a Player and a
+  PlayerRound are one int each) and the two cards a battle touches are *replaced* in the
+  hand rather than edited, so undoing them is restoring two references. The original
+  perfect-information `Search` used `Deep.ts` instead of `iterTree(game, false)` per unit:
+  **`deno task time-search` went 12.0s ->
+  7.9s** (1.53x) with an identical result checksum, and **GC fell from 27% of ticks to
+  1%**. What is left is battle resolution itself - `Events.execute` is 122 of 152
+  shared-library ticks - so the next lever would be algorithmic (transpositions, better
+  pruning), not allocation. `shiftRange` at 1.7% and `unplayedCardIndexes` at 0.3% are not
+  worth chasing.
+
+  `iterTree` and `Deep.ts` are deliberately left as-is as the perfect-information reference
+  (`tests/solver/DeepEquivalence.test.ts` checks `deepValue` returns the same number *and*
+  leaves the game byte-identical, on hands chosen for latching permanents and Backlash).
+  `deno task time` still measures it; `deno task time-search` measures the current live path.
+- **Engine tracing is behind `DEBUG`** (`src/utils/Debug.ts`): 39 sites across `Ability`,
+  `Condition`, `CardBattle` and the modifiers read `if (DEBUG) console.log(...)`, so the
+  strings and their ANSI colours are never built when it is off. `UR_DEBUG=1` turns it back
+  on, which `deno task run` does, so playing by hand narrates itself exactly as before
+  (verified byte-identical, 265 lines either way). The user-facing output in `Game.ts` -
+  prompts, game-over banners - is not guarded.
+
+  Worth knowing why it is *not* justified on speed any more: building those strings
+  measured at 5.9% **before** the clone-path fix (35.7s -> 33.6s), but re-measured after it
+  over 6 runs a side it is 17.2s vs 17.4s - about 1%, inside the noise. The clone fix
+  absorbed it. The likely reason is that the cost was mostly marginal GC pressure, which
+  stopped mattering once total allocation roughly halved, though that is a hypothesis and
+  was not measured directly. Kept anyway: it is free, it matches the rule below about not
+  allocating in `CardBattle` / `Events` / modifiers, and it stops the tracing flooding any
+  caller that has not stubbed `console.log`.
 
 ## Conventions
 

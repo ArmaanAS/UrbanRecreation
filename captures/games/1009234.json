@@ -1,0 +1,354 @@
+{
+  "id": 1009234,
+  "capturedAt": "2026-09-12T16:58:23.209Z",
+  "creationTime": 1789232305,
+  "room": {
+    "id": 16193,
+    "name": "Tourney",
+    "idBattleRule": 10,
+    "idDeckFormat": 54363
+  },
+  "battleRuleId": 10,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 22741973,
+      "name": "yoshidu92",
+      "level": 576,
+      "grade": "Legend",
+      "country": "fr",
+      "club": {
+        "id": 2063833,
+        "name": "Zone 69"
+      },
+      "registrationTime": 1339752114,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2023,
+          "name": "Gravelsnout",
+          "clan": "Dominion",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 5090,
+            "description": "Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 2326,
+          "name": "Sir Taco",
+          "clan": "Dominion",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 3276,
+            "description": "+1 Power Per Life Left Max. 8"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 808,
+          "name": "Bonnie Ld",
+          "clan": "Piranas",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "s",
+          "ability": {
+            "id": 5085,
+            "description": "Victory Or Defeat : +1 Pillz"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 1691,
+          "name": "De4th Ld",
+          "clan": "Piranas",
+          "level": 1,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "m1",
+          "ability": {
+            "id": 5519,
+            "description": "Brawl: -4 Opp Attack, Min 5"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 162,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2058,
+          "name": "Doela Noel",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 4708,
+            "description": "Symmetry: - 4 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 1980,
+          "name": "Galahad",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1845,
+            "description": "Attack +10"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 1986,
+          "name": "Leonaparte",
+          "clan": "Paradox",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": null,
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 1988,
+          "name": "Ramak",
+          "clan": "Paradox",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1852,
+            "description": "Symmetry: +1 Pillz Per Damage"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1986,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789232325231
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 2326,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789232327795
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 40,
+          "won": true
+        },
+        {
+          "power": 8,
+          "damage": 6,
+          "damageAfter": 3,
+          "attack": 40,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        7
+      ],
+      "pillz": [
+        8,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 33868
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 808,
+          "pillz": 0,
+          "pillzUsed": 0,
+          "fury": false,
+          "t": 1789232340873
+        }
+      ],
+      "resolution": [
+        {
+          "power": -1,
+          "damage": -1,
+          "damageAfter": -1,
+          "attack": -1,
+          "won": false
+        },
+        null
+      ],
+      "life": [
+        12,
+        7
+      ],
+      "pillz": [
+        8,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 11259
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": false,
+    "score": 13,
+    "scoreDiff": 13,
+    "player": {
+      "life": 7,
+      "pillz": 8,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 12,
+      "pillz": 8
+    },
+    "rewards": [],
+    "t": 1789232350701
+  },
+  "finalStatus": "playing",
+  "snapshots": 13,
+  "issues": [
+    "round 1: no resolution snapshot captured for side 0 (attack unknown)",
+    "round 1: expected 2 moves, saw 1"
+  ],
+  "testcase": {
+    "cards": [
+      "Doela Noel",
+      "Galahad",
+      "Leonaparte",
+      "Ramak",
+      "Gravelsnout",
+      "Sir Taco",
+      "Bonnie Ld",
+      "De4th Ld"
+    ],
+    "levels": [
+      2,
+      2,
+      3,
+      4,
+      2,
+      2,
+      2,
+      1
+    ],
+    "night": false,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          2,
+          4,
+          false
+        ],
+        "s2": [
+          1,
+          4,
+          false
+        ],
+        "p1life": 7,
+        "p2life": 12,
+        "p1pillz": 8,
+        "p2pillz": 8,
+        "r1": {
+          "power": 8,
+          "damage": 6,
+          "attack": 40,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 5,
+          "attack": 40,
+          "won": true
+        }
+      }
+    ]
+  }
+}
