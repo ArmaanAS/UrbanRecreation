@@ -9,6 +9,7 @@
 //   { kind: "s",      t, d: BattleDynamic }       — one battles.status snapshot, dynamic
 //                                                   fields only (life, pillz, per-card round
 //                                                   state). ~300 bytes instead of ~15 KB.
+//   { kind: "hover",  t, side, index, active }     — opponent mouse entered/left a card.
 //   { kind: "play",   t, request, response }
 //   { kind: "result", t, result, ranking? }
 // Ability / bonus definitions (id → description + abilityData) live in a single shared
@@ -32,6 +33,10 @@ export interface CaptureState {
   abilities: AbilityDict;
   /** Set to true whenever `abilities` gained an entry (caller persists and resets). */
   abilitiesDirty?: boolean;
+  /** Whether the most recent battle snapshot can still receive meaningful hover events. */
+  battleActive: boolean;
+  /** Active absolute card slots, used to collapse duplicate WebSocket frames. */
+  hoveredSlots: Set<number>;
 }
 
 export interface AbilityDef {
@@ -101,10 +106,51 @@ export interface BattleDynamic {
   extra?: Record<string, unknown>;
 }
 
-const CHAR_KEYS = new Set(["id", "level", "index", "inBattleId", "ability", "bonus", "roundPlayed", "pillzUsed", "isFury", "roundWon", "roundPower", "roundDamage", "roundAttack", "state", "position"]);
-const PLAYER_KEYS = new Set(["player", "baseLife", "basePillz", "characters", "life", "pillz", "preRoundAbilities", "postRoundAbilities", "teamBattleEffects"]);
-const BATTLE_KEYS = new Set(["id", "creationTime", "battleRuleId", "teamBattleManagerId", "status", "round", "roundTotalTime", "roundElapsedTime", "turnPlayerId", "player0", "player1"]);
-function extras(obj: Record<string, unknown>, known: Set<string>): Record<string, unknown> | undefined {
+const CHAR_KEYS = new Set([
+  "id",
+  "level",
+  "index",
+  "inBattleId",
+  "ability",
+  "bonus",
+  "roundPlayed",
+  "pillzUsed",
+  "isFury",
+  "roundWon",
+  "roundPower",
+  "roundDamage",
+  "roundAttack",
+  "state",
+  "position",
+]);
+const PLAYER_KEYS = new Set([
+  "player",
+  "baseLife",
+  "basePillz",
+  "characters",
+  "life",
+  "pillz",
+  "preRoundAbilities",
+  "postRoundAbilities",
+  "teamBattleEffects",
+]);
+const BATTLE_KEYS = new Set([
+  "id",
+  "creationTime",
+  "battleRuleId",
+  "teamBattleManagerId",
+  "status",
+  "round",
+  "roundTotalTime",
+  "roundElapsedTime",
+  "turnPlayerId",
+  "player0",
+  "player1",
+]);
+function extras(
+  obj: Record<string, unknown>,
+  known: Set<string>,
+): Record<string, unknown> | undefined {
   let out: Record<string, unknown> | undefined;
   for (const k of Object.keys(obj)) {
     if (!known.has(k)) (out ??= {})[k] = obj[k];
@@ -119,6 +165,8 @@ export type CaptureEntry =
   // Legacy (pre-compaction) full snapshot; still accepted by expandEntries().
   // deno-lint-ignore no-explicit-any
   | { kind: "status"; t: number; battle: any }
+  /** A remote hover over an absolute server-side hand slot (not a committed selection). */
+  | { kind: "hover"; t: number; side: 0 | 1; index: number; active: boolean }
   | { kind: "play"; t: number; request: unknown; response: unknown }
   // deno-lint-ignore no-explicit-any
   | { kind: "result"; t: number; result: any; ranking?: unknown };
@@ -129,7 +177,14 @@ export interface CaptureEvent {
 }
 
 export function newCaptureState(abilities: AbilityDict = {}): CaptureState {
-  return { myId: 0, room: undefined, lastBattleId: 0, abilities };
+  return {
+    myId: 0,
+    room: undefined,
+    lastBattleId: 0,
+    abilities,
+    battleActive: false,
+    hoveredSlots: new Set(),
+  };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -157,7 +212,9 @@ export function parseBody(body: unknown): unknown {
   let text = body;
   if (text.startsWith("b64:")) {
     try {
-      text = new TextDecoder().decode(Uint8Array.from(atob(text.slice(4)), (c) => c.charCodeAt(0)));
+      text = new TextDecoder().decode(
+        Uint8Array.from(atob(text.slice(4)), (c) => c.charCodeAt(0)),
+      );
     } catch {
       return { raw: body };
     }
@@ -165,7 +222,13 @@ export function parseBody(body: unknown): unknown {
   // The site posts form-encoded `requests=<urlencoded JSON array of {call, params}>`.
   if (/^requests=/.test(text)) {
     try {
-      return { requests: JSON.parse(decodeURIComponent(text.slice("requests=".length).replace(/\+/g, " "))) };
+      return {
+        requests: JSON.parse(
+          decodeURIComponent(
+            text.slice("requests=".length).replace(/\+/g, " "),
+          ),
+        ),
+      };
     } catch { /* fall through */ }
   }
   try {
@@ -176,9 +239,13 @@ export function parseBody(body: unknown): unknown {
 }
 
 /** Parse a private-API response into [method, payload] or undefined. */
-export function parseApi(rec: RawRecord): { method: string; data: unknown; body: unknown } | undefined {
+export function parseApi(
+  rec: RawRecord,
+): { method: string; data: unknown; body: unknown } | undefined {
   const p = rec.payload;
-  if ((rec.kind !== "fetch" && rec.kind !== "xhr") || typeof p !== "object") return;
+  if ((rec.kind !== "fetch" && rec.kind !== "xhr") || typeof p !== "object") {
+    return;
+  }
   if (!String(p.u ?? "").includes("/api/private/v2/")) return;
   try {
     const j = JSON.parse(p.resp);
@@ -200,19 +267,34 @@ function trimPlayer(player: any) {
 // Compaction: full battles.status → static + dynamic
 // ---------------------------------------------------------------------------------------
 // deno-lint-ignore no-explicit-any
-function registerAbility(dict: AbilityDict, a: any, state: CaptureState): { id: number | null; long?: string } {
+function registerAbility(
+  dict: AbilityDict,
+  a: any,
+  state: CaptureState,
+): { id: number | null; long?: string } {
   if (!a || typeof a.id !== "number") return { id: null };
   const key = String(a.id);
   if (!dict[key]) {
-    dict[key] = { id: a.id, unlockLevel: a.unlockLevel, description: a.description, longDescription: a.longDescription, abilityData: a.abilityData };
+    dict[key] = {
+      id: a.id,
+      unlockLevel: a.unlockLevel,
+      description: a.description,
+      longDescription: a.longDescription,
+      abilityData: a.abilityData,
+    };
     state.abilitiesDirty = true;
   }
-  const long = a.longDescription !== dict[key].longDescription ? a.longDescription : undefined;
+  const long = a.longDescription !== dict[key].longDescription
+    ? a.longDescription
+    : undefined;
   return { id: a.id, long };
 }
 
 // deno-lint-ignore no-explicit-any
-export function splitStatus(battle: any, state: CaptureState): { s: BattleStatic; d: BattleDynamic } {
+export function splitStatus(
+  battle: any,
+  state: CaptureState,
+): { s: BattleStatic; d: BattleDynamic } {
   const sides = [battle.player0, battle.player1];
   const s: BattleStatic = {
     id: battle.id,
@@ -224,14 +306,22 @@ export function splitStatus(battle: any, state: CaptureState): { s: BattleStatic
       baseLife: p.baseLife,
       basePillz: p.basePillz,
       // deno-lint-ignore no-explicit-any
-      characters: [...p.characters].sort((a: any, b: any) => a.index - b.index).map((c: any) => {
-        const ab = registerAbility(state.abilities, c.ability, state);
-        const bo = registerAbility(state.abilities, c.bonus, state);
-        const sc: StaticCharacter = { id: c.id, level: c.level, index: c.index, inBattleId: c.inBattleId, ability: ab.id, bonus: bo.id };
-        if (ab.long !== undefined) sc.abilityLong = ab.long;
-        if (bo.long !== undefined) sc.bonusLong = bo.long;
-        return sc;
-      }),
+      characters: [...p.characters].sort((a: any, b: any) => a.index - b.index)
+        .map((c: any) => {
+          const ab = registerAbility(state.abilities, c.ability, state);
+          const bo = registerAbility(state.abilities, c.bonus, state);
+          const sc: StaticCharacter = {
+            id: c.id,
+            level: c.level,
+            index: c.index,
+            inBattleId: c.inBattleId,
+            ability: ab.id,
+            bonus: bo.id,
+          };
+          if (ab.long !== undefined) sc.abilityLong = ab.long;
+          if (bo.long !== undefined) sc.bonusLong = bo.long;
+          return sc;
+        }),
     })) as [StaticPlayer, StaticPlayer],
   };
   const d: BattleDynamic = {
@@ -245,12 +335,24 @@ export function splitStatus(battle: any, state: CaptureState): { s: BattleStatic
         life: p.life,
         pillz: p.pillz,
         // deno-lint-ignore no-explicit-any
-        c: [...p.characters].sort((a: any, b: any) => a.index - b.index).map((c: any) => {
-          const dc = [c.roundPlayed, c.pillzUsed, c.isFury, c.roundWon, c.roundPower, c.roundDamage, c.roundAttack, c.state, c.position] as DynCharacter;
-          const x = extras(c, CHAR_KEYS);
-          if (x) dc.push(x);
-          return dc;
-        }),
+        c: [...p.characters].sort((a: any, b: any) => a.index - b.index).map(
+          (c: any) => {
+            const dc = [
+              c.roundPlayed,
+              c.pillzUsed,
+              c.isFury,
+              c.roundWon,
+              c.roundPower,
+              c.roundDamage,
+              c.roundAttack,
+              c.state,
+              c.position,
+            ] as DynCharacter;
+            const x = extras(c, CHAR_KEYS);
+            if (x) dc.push(x);
+            return dc;
+          },
+        ),
       };
       if (p.preRoundAbilities?.length) dp.pre = p.preRoundAbilities;
       if (p.postRoundAbilities?.length) dp.post = p.postRoundAbilities;
@@ -267,7 +369,11 @@ export function splitStatus(battle: any, state: CaptureState): { s: BattleStatic
 
 /** Inverse of splitStatus: rebuild the original battles.status `battle` object. */
 // deno-lint-ignore no-explicit-any
-export function expandStatus(s: BattleStatic, d: BattleDynamic, abilities: AbilityDict): any {
+export function expandStatus(
+  s: BattleStatic,
+  d: BattleDynamic,
+  abilities: AbilityDict,
+): any {
   const side = (i: 0 | 1) => {
     const sp = s.players[i], dp = d.p[i];
     return {
@@ -277,11 +383,48 @@ export function expandStatus(s: BattleStatic, d: BattleDynamic, abilities: Abili
       baseLife: sp.baseLife,
       basePillz: sp.basePillz,
       characters: sp.characters.map((c, j) => {
-        const [roundPlayed, pillzUsed, isFury, roundWon, roundPower, roundDamage, roundAttack, state, position, extra] = dp.c[j];
+        const [
+          roundPlayed,
+          pillzUsed,
+          isFury,
+          roundWon,
+          roundPower,
+          roundDamage,
+          roundAttack,
+          state,
+          position,
+          extra,
+        ] = dp.c[j];
         // deno-lint-ignore no-explicit-any
-        const out: any = { id: c.id, level: c.level, state, roundPlayed, inBattleId: c.inBattleId, roundWon, pillzUsed, roundPower, roundDamage, roundAttack, isFury, position, index: c.index, ...(extra ?? {}) };
-        if (c.ability !== null) out.ability = c.abilityLong !== undefined ? { ...abilities[String(c.ability)], longDescription: c.abilityLong } : abilities[String(c.ability)];
-        if (c.bonus !== null) out.bonus = c.bonusLong !== undefined ? { ...abilities[String(c.bonus)], longDescription: c.bonusLong } : abilities[String(c.bonus)];
+        const out: any = {
+          id: c.id,
+          level: c.level,
+          state,
+          roundPlayed,
+          inBattleId: c.inBattleId,
+          roundWon,
+          pillzUsed,
+          roundPower,
+          roundDamage,
+          roundAttack,
+          isFury,
+          position,
+          index: c.index,
+          ...(extra ?? {}),
+        };
+        if (c.ability !== null) {
+          out.ability = c.abilityLong !== undefined
+            ? {
+              ...abilities[String(c.ability)],
+              longDescription: c.abilityLong,
+            }
+            : abilities[String(c.ability)];
+        }
+        if (c.bonus !== null) {
+          out.bonus = c.bonusLong !== undefined
+            ? { ...abilities[String(c.bonus)], longDescription: c.bonusLong }
+            : abilities[String(c.bonus)];
+        }
         return out;
       }),
       postRoundAbilities: dp.post ?? [],
@@ -310,24 +453,36 @@ export function expandStatus(s: BattleStatic, d: BattleDynamic, abilities: Abili
  * Normalise a battle file's entries to full `status` snapshots (expanding compact ones),
  * so consumers can treat old and new files alike.
  */
-export function expandEntries(entries: CaptureEntry[], abilities: AbilityDict): CaptureEntry[] {
+export function expandEntries(
+  entries: CaptureEntry[],
+  abilities: AbilityDict,
+): CaptureEntry[] {
   // Lines may be slightly out of order (concurrent polls appended by the log server), so a
   // snapshot can precede its static block: fall back to the first static block in the file.
-  const firstStatic = entries.find((e): e is Extract<CaptureEntry, { kind: "static" }> => e.kind === "static")?.s;
+  const firstStatic = entries.find((
+    e,
+  ): e is Extract<CaptureEntry, { kind: "static" }> => e.kind === "static")?.s;
   let s: BattleStatic | undefined = firstStatic;
   const out: CaptureEntry[] = [];
   for (const e of entries) {
     if (e.kind === "static") s = e.s;
     else if (e.kind === "s") {
       if (!s) throw new Error("compact snapshot without any static block");
-      out.push({ kind: "status", t: e.t, battle: expandStatus(s, e.d, abilities) });
+      out.push({
+        kind: "status",
+        t: e.t,
+        battle: expandStatus(s, e.d, abilities),
+      });
     } else out.push(e);
   }
   return out;
 }
 
 /** Convert a legacy (full-snapshot) battle file into the compact format. */
-export function compactEntries(entries: CaptureEntry[], state: CaptureState): CaptureEntry[] {
+export function compactEntries(
+  entries: CaptureEntry[],
+  state: CaptureState,
+): CaptureEntry[] {
   const out: CaptureEntry[] = [];
   let lastStatic: string | undefined;
   for (const e of entries) {
@@ -353,7 +508,76 @@ export function compactEntries(entries: CaptureEntry[], state: CaptureState): Ca
  * Feed one raw record; returns zero or more capture events. `state` persists across
  * calls so battle-less responses (battles.play, battles.result) can be attributed.
  */
-export function extractFromRecord(rec: RawRecord, state: CaptureState): CaptureEvent[] {
+export function extractFromRecord(
+  rec: RawRecord,
+  state: CaptureState,
+): CaptureEvent[] {
+  // The battle socket sends code 5 when the other player enters a card and code 6 when
+  // they leave it. Values 1..4 are player0's hand and 5..8 are player1's. Each frame is
+  // commonly delivered twice, so retain active state and only emit real transitions.
+  if (rec.kind === "ws_in" && state.lastBattleId && state.battleActive) {
+    try {
+      const message = typeof rec.payload === "string"
+        ? JSON.parse(rec.payload)
+        : rec.payload;
+      const active = message?.code === 5
+        ? true
+        : message?.code === 6
+        ? false
+        : undefined;
+      const value = Number(message?.values?.[0]);
+      if (
+        active === undefined || !Number.isInteger(value) || value < 1 ||
+        value > 8
+      ) {
+        return [];
+      }
+      const slot = value - 1;
+      if (
+        active && state.hoveredSlots.size === 1 && state.hoveredSlots.has(slot)
+      ) {
+        return [];
+      }
+      if (!active && !state.hoveredSlots.has(slot)) return [];
+
+      const events: CaptureEvent[] = [];
+      if (active) {
+        // ws_in is one remote mouse, so it cannot genuinely hover two cards. If a leave
+        // frame was dropped or reordered, close the stale slot before entering the new one.
+        for (const previous of state.hoveredSlots) {
+          if (previous === slot) continue;
+          events.push({
+            battleId: state.lastBattleId,
+            entry: {
+              kind: "hover",
+              t: rec.t,
+              side: previous < 4 ? 0 : 1,
+              index: previous % 4,
+              active: false,
+            },
+          });
+        }
+        state.hoveredSlots.clear();
+        state.hoveredSlots.add(slot);
+      } else {
+        state.hoveredSlots.delete(slot);
+      }
+      events.push({
+        battleId: state.lastBattleId,
+        entry: {
+          kind: "hover",
+          t: rec.t,
+          side: slot < 4 ? 0 : 1,
+          index: slot % 4,
+          active,
+        },
+      });
+      return events;
+    } catch {
+      return [];
+    }
+  }
+
   const api = parseApi(rec);
   if (!api) return [];
   // deno-lint-ignore no-explicit-any
@@ -377,8 +601,14 @@ export function extractFromRecord(rec: RawRecord, state: CaptureState): CaptureE
       if (battle.id !== state.lastBattleId) {
         state.lastBattleId = battle.id;
         state.lastStatic = undefined;
-        events.push({ battleId: battle.id, entry: { kind: "meta", t, myId: state.myId, room: state.room } });
+        state.hoveredSlots.clear();
+        events.push({
+          battleId: battle.id,
+          entry: { kind: "meta", t, myId: state.myId, room: state.room },
+        });
       }
+      state.battleActive = battle.status === "playing";
+      if (!state.battleActive) state.hoveredSlots.clear();
       const { s, d } = splitStatus(battle, state);
       const sj = JSON.stringify(s);
       if (sj !== state.lastStatic) {
@@ -390,13 +620,29 @@ export function extractFromRecord(rec: RawRecord, state: CaptureState): CaptureE
     }
     case "battles.play":
       if (!state.lastBattleId) return [];
-      return [{ battleId: state.lastBattleId, entry: { kind: "play", t, request: redact(api.body), response: redact(data) } }];
+      return [{
+        battleId: state.lastBattleId,
+        entry: {
+          kind: "play",
+          t,
+          request: redact(api.body),
+          response: redact(data),
+        },
+      }];
     case "battles.result": {
       if (!state.lastBattleId || !data?.battle) return [];
+      state.battleActive = false;
+      state.hoveredSlots.clear();
       const ranking = Array.isArray(data.ranking)
-        ? data.ranking.map((r: { player?: Record<string, unknown> }) => ({ ...r, player: trimPlayer(r.player) }))
+        ? data.ranking.map((r: { player?: Record<string, unknown> }) => ({
+          ...r,
+          player: trimPlayer(r.player),
+        }))
         : undefined;
-      return [{ battleId: state.lastBattleId, entry: { kind: "result", t, result: data.battle, ranking } }];
+      return [{
+        battleId: state.lastBattleId,
+        entry: { kind: "result", t, result: data.battle, ranking },
+      }];
     }
   }
   return [];
@@ -407,7 +653,9 @@ export function extractFromRecord(rec: RawRecord, state: CaptureState): CaptureE
 // ---------------------------------------------------------------------------------------
 export const ABILITIES_PATH = "captures/abilities.json";
 
-export async function loadAbilities(path = ABILITIES_PATH): Promise<AbilityDict> {
+export async function loadAbilities(
+  path = ABILITIES_PATH,
+): Promise<AbilityDict> {
   try {
     return JSON.parse(await Deno.readTextFile(path));
   } catch {
@@ -416,6 +664,10 @@ export async function loadAbilities(path = ABILITIES_PATH): Promise<AbilityDict>
 }
 
 export async function saveAbilities(dict: AbilityDict, path = ABILITIES_PATH) {
-  const sorted = Object.fromEntries(Object.keys(dict).map(Number).sort((a, b) => a - b).map((k) => [String(k), dict[String(k)]]));
+  const sorted = Object.fromEntries(
+    Object.keys(dict).map(Number).sort((a, b) => a - b).map((
+      k,
+    ) => [String(k), dict[String(k)]]),
+  );
   await Deno.writeTextFile(path, JSON.stringify(sorted, null, 1));
 }

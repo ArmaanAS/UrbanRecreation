@@ -13,8 +13,9 @@ import ProtectionModifier from "./modifiers/ProtectionModifier.ts";
 import RecoverModifier from "./modifiers/RecoverModifier.ts";
 import EventTime from "./types/EventTime.ts";
 import { clone } from "../utils/Utils.ts";
-
+import { DEBUG } from "../utils/Debug.ts";
 export enum AbilityType {
+
   UNDEFINED = 0,
   GLOBAL = 1,
   ABILITY = 2,
@@ -47,8 +48,20 @@ export default class Ability {
       .map((s) => new Condition(s));
   }
 
+  /**
+   * A permanent latches by writing `won` on itself and a delayed one clears `delayed`, so
+   * both carry state that belongs to one line of play and have to be copied. Everything
+   * else is fixed once compiled and can be shared, which matters: the solver merges these
+   * into millions of `Events`.
+   *
+   * Sharing a permanent used to leak its latch across the whole search tree. Only Poison,
+   * Heal and Combust set `delayed`, so Toxin / Consume / Regen / Dope / Repair / Mindwipe
+   * fell through to `return this`, and the first branch that won with one set `won = true`
+   * on the single shared instance - after which every other branch, including the ones
+   * where that card lost its round, applied the effect anyway.
+   */
   clone() {
-    if (this.delayed === undefined) return this;
+    if (this.delayed === undefined && !this.permanent) return this;
 
     return Object.setPrototypeOf({
       // conditions: this.conditions.map(c => c.clone()),
@@ -74,6 +87,12 @@ export default class Ability {
     return o;
   }
 
+  /** Poison / Heal / Toxin / Repair and friends: latch once, then repeat every later round. */
+  private get permanent() {
+    return this.type === AbilityType.GLOBAL_ABILITY ||
+      this.type === AbilityType.GLOBAL_BONUS;
+  }
+
   /**
    * Whether a permanent effect starts at all. It latches in the round its card is played,
    * so the conditions describe that one round; unless one of them already pins the outcome
@@ -95,10 +114,10 @@ export default class Ability {
 
     for (const cond of this.conditions) {
       if (!cond.met(data)) {
-        console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
+        if (DEBUG) console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
         return false;
       }
-      console.log(`[Condition] ${cond.s} met: true`.green);
+      if (DEBUG) console.log(`[Condition] ${cond.s} met: true`.green);
     }
 
     return this.mods[0].win === false || data.player.won === true;
@@ -107,12 +126,9 @@ export default class Ability {
   canApply(data: BattleData) {
     // let apply = true;
 
-    // Poison / Heal / Toxin / Repair and friends compile to permanents: they latch once and
-    // then repeat at the end of every later round, so the conditions gate the latch only.
-    const permanent = this.type === AbilityType.GLOBAL_ABILITY ||
-      this.type === AbilityType.GLOBAL_BONUS;
-
-    if (permanent) {
+    // Permanents latch once and then repeat at the end of every later round, so the
+    // conditions gate the latch only.
+    if (this.permanent) {
       if (this.won === undefined) {
         if (!this.latches(data)) {
           data.events.removeGlobal(this.mods[0].eventTime, this);
@@ -139,10 +155,10 @@ export default class Ability {
 
     for (const cond of this.conditions) {
       if (!cond.met(data)) {
-        console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
+        if (DEBUG) console.log(`[Condition] ${cond.s} met: false`.yellow.dim);
         return false;
       }
-      console.log(`[Condition] ${cond.s} met: true`.green);
+      if (DEBUG) console.log(`[Condition] ${cond.s} met: true`.green);
     }
 
     if (
@@ -226,7 +242,7 @@ export default class Ability {
             mod.setType(a);
           } else {
             failed = true;
-            console.log(
+            if (DEBUG) console.log(
               "Unknown token[1]:".red + '"' + tokens[1] + '"',
               this.ability,
             );
@@ -260,7 +276,7 @@ export default class Ability {
         if (["Power", "Damage", "Life", "Pillz", "Attack"].includes(a)) {
           mod.setType(a);
         } else {
-          console.log(
+          if (DEBUG) console.log(
             `Unknown token[${i}]: `.red + `"${tokens[i]}"`,
             this.ability,
           );
@@ -330,32 +346,32 @@ export default class Ability {
 
       if (tokens[1] == "Bonus") {
         if (/Copy.+Bonus/i.test(data.oppCard.bonusString)) {
-          console.log("Copy Bonus loop detected. Skipping...");
+          if (DEBUG) console.log("Copy Bonus loop detected. Skipping...");
           return;
         } else if (
           /Copy.+Ability/i.test(data.oppCard.bonusString) &&
           /Copy.+Bonus/i.test(data.oppCard.abilityString)
         ) {
-          console.log("Copy Ability and Bonus loop detected. Skipping...");
+          if (DEBUG) console.log("Copy Ability and Bonus loop detected. Skipping...");
           return;
         }
-        console.log("Copying", data.oppCard.bonusString);
+        if (DEBUG) console.log("Copying", data.oppCard.bonusString);
         // new Ability(data.oppCard.bonus.string, this.type).compile(data);
         new Ability(data.oppCard.bonusString, this.type).compile(data);
 
         return;
       } else if (tokens[1] == "Ability") {
         if (/Copy.+Ability/i.test(data.oppCard.abilityString)) {
-          console.log("Copy Ability loop detected. Skipping...");
+          if (DEBUG) console.log("Copy Ability loop detected. Skipping...");
           return;
         } else if (
           /Copy.+Bonus/i.test(data.oppCard.abilityString) &&
           /Copy.+Ability/i.test(data.oppCard.bonusString)
         ) {
-          console.log("Copy Ability and Bonus loop detected. Skipping...");
+          if (DEBUG) console.log("Copy Ability and Bonus loop detected. Skipping...");
           return;
         }
-        console.log("Copying", data.oppCard.abilityString);
+        if (DEBUG) console.log("Copying", data.oppCard.abilityString);
         new Ability(data.oppCard.abilityString, this.type).compile(data);
 
         return;
@@ -521,7 +537,7 @@ export default class Ability {
     }
 
     if (!failed) {
-      console.log(`[Added] ${this.ability}\n`.green);
+      if (DEBUG) console.log(`[Added] ${this.ability}\n`.green);
       // for (let mod of this.mods) {
       // for (let i in this.mods) {
       //   // if (this.type == Ability.Type.GLOBAL) {
@@ -543,7 +559,7 @@ export default class Ability {
         }
       }
     } else {
-      console.log(`[Failed] ${this.ability}`.red);
+      if (DEBUG) console.log(`[Failed] ${this.ability}`.red);
     }
   }
 
@@ -557,7 +573,7 @@ export default class Ability {
     // let mod = this.mods[i];
     if (this.canApply(data)) {
       for (const mod of this.mods) {
-        console.log(`Applying modifier... (${this.ability})`);
+        if (DEBUG) console.log(`Applying modifier... (${this.ability})`);
         mod.apply(data);
       }
     }

@@ -1,3 +1,4 @@
+import "colors";
 import { Turn } from "../game/types/Types.ts";
 
 export enum GameResult {
@@ -135,94 +136,52 @@ export class Node {
     return this;
   }
 
-  toString() {
+  /**
+   * A node's `turn` is who moves *next*, so the move this node stands for was made by the
+   * other player. Score it from that mover's side, where +1 always means "the mover wins",
+   * and report a win probability with draws counted as half.
+   */
+  get score(): number {
     const rating = this.rating();
-    if (
-      this.average &&
-      !(this.turn === Minimax.MIN ? rating === 1 : rating === -1)
-    ) {
-      let p1wins = 0,
-        draws = 0,
-        p2wins = 0;
+    if (!Number.isFinite(rating)) return NaN;
+    return this.turn === Minimax.MIN ? rating : -rating;
+  }
+
+  /** `score` as a 0-100 win chance for the mover; NaN if the subtree has no value. */
+  get percent(): number {
+    return +(((this.score + 1) / 2) * 100).toFixed(1);
+  }
+
+  toString() {
+    const score = this.score;
+
+    // A node with neither a result nor children rates as Infinity; that is a bug upstream,
+    // so say so rather than printing it as a percentage.
+    if (Number.isNaN(score)) return `[?] ${this.name}`.magenta;
+
+    if (this.average && score !== 1) {
+      let wins = 0, draws = 0, losses = 0;
 
       for (const n of this.nodes) {
         const rating = n.rating();
-        if (rating === GameResult.PLAYER_1_WIN) {
-          p1wins++;
-        } else if (rating === GameResult.TIE) {
-          draws++;
-        } else if (rating === GameResult.PLAYER_2_WIN) {
-          p2wins++;
-        }
+        // `rating` is from P1's side; the mover is P1 exactly when this node's turn is MIN.
+        const forMover = this.turn === Minimax.MIN ? rating : -rating;
+        if (forMover === 1) wins++;
+        else if (forMover === 0) draws++;
+        else if (forMover === -1) losses++;
       }
 
-      if (this.turn === Minimax.MIN) {
-        const s =
-          `[${p1wins} Win | ${draws} Draw | ${p2wins} Loss] ${this.name}`;
-        // if (p1wins > p2wins && p1wins > draws)
-        if (p2wins === 0 && draws === 0) {
-          return s.green;
-        } // else if (p2wins > p1wins && p2wins > draws)
-        else if (p1wins === 0 && p2wins > 0) {
-          return s.red;
-        } else {
-          return s.yellow;
-        }
-      } else {
-        const s =
-          `[${p2wins} Win | ${draws} Draw | ${p1wins} Loss] ${this.name}`;
-
-        // if (p1wins > p2wins && p1wins > draws)
-        //   return s.red;
-        if (p1wins === 0 && draws === 0) {
-          return s.green;
-        } // else if (p2wins > p1wins && p2wins > draws)
-        //   return s.green;
-        else if (p2wins === 0 && p1wins > 0) {
-          return s.red;
-        } else {
-          return s.yellow;
-        }
-      }
-    } else {
-      const g = +(rating * 100).toFixed(1);
-      // if (this.turn === Minimax.MIN) {
-      //   if (g > 0)
-      //     return `[Win ${g}%] ${this.name}`.green;
-      //   else if (g < 0)
-      //     return `[Loss ${-g}%] ${this.name}`.red;
-      //   else
-      //     return `[Draw] ${this.name}`.yellow;
-      // } else {
-      //   if (g > 0)
-      //     return `[Loss ${g}%] ${this.name}`.red;
-      //   else if (g < 0)
-      //     return `[Win ${-g}%] ${this.name}`.green;
-      //   else
-      //     return `[Draw] ${this.name}`.yellow;
-      // }
-      if (this.turn === Minimax.MIN) {
-        if (g === 50) {
-          return `[50/50] ${this.name}`.yellow;
-        } else if (g === 0) {
-          return `[Loss] ${this.name}`.red;
-        } else if (g < 50) {
-          return `[Win ${g}%] ${this.name}`.red;
-        } else {
-          return `[Win ${g}%] ${this.name}`.green;
-        }
-      } else {
-        if (g === 50) {
-          return `[50/50] ${this.name}`.yellow;
-        } else if (g === 100) {
-          return `[Loss] ${this.name}`.red;
-        } else if (g < 50) {
-          return `[Win ${100 - g}%] ${this.name}`.green;
-        } else {
-          return `[Win ${100 - g}%] ${this.name}`.red;
-        }
-      }
+      const s = `[${wins} Win | ${draws} Draw | ${losses} Loss] ${this.name}`;
+      if (losses === 0 && draws === 0) return s.green;
+      else if (wins === 0 && losses > 0) return s.red;
+      else return s.yellow;
     }
+
+    const g = this.percent;
+    if (score === 1) return `[Win] ${this.name}`.green;
+    if (score === -1) return `[Loss] ${this.name}`.red;
+    if (score === 0) return `[Draw] ${this.name}`.yellow;
+    return g >= 50 ? `[Win ${g}%] ${this.name}`.green : `[Win ${g}%] ${this.name}`.red;
   }
 
   debug(depth = 2): string | object {

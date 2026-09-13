@@ -6,3 +6,6 @@ ur_log*.jsonl
 
 # site card database dump (40MB, regenerate with __ur.dumpCharacters())
 data/site_characters.jsonl
+
+# local identity cache used to survive log-server watch restarts
+captures/.player-id

@@ -1,8 +1,9 @@
 import BattleData from "../battle/BattleData.ts";
 import EventTime from "../types/EventTime.ts";
 import Modifier from "./Modifier.ts";
-
+import { DEBUG } from "../../utils/Debug.ts";
 enum Recover {
+
   PILLZ = 1,
   LIFE = 2,
 }
@@ -49,14 +50,14 @@ export default class RecoverModifier extends Modifier {
           1,
           Math.ceil(data.playerPillzUsed * (this.n / this.outOf)),
         );
-        console.log(`Player recovered ${gain} pillz / ${data.playerPillzUsed}`);
+        if (DEBUG) console.log(`Player recovered ${gain} pillz / ${data.playerPillzUsed}`);
         data.player.pillz += gain;
 
         if (this.both) {
           const oppGain = Math.ceil(
             data.oppCard.damage.final * (this.n / this.outOf),
           );
-          console.log(
+          if (DEBUG) console.log(
             `Opponent recovered ${oppGain} life / ${data.oppCard.damage.final} damage`,
           );
           data.opp.life += oppGain;
@@ -67,7 +68,7 @@ export default class RecoverModifier extends Modifier {
         const gain = Math.ceil(
           data.oppCard.damage.final * (this.n / this.outOf),
         );
-        console.log(
+        if (DEBUG) console.log(
           `Player recovered ${gain} life / ${data.oppCard.damage.final} damage`,
         );
         data.player.life += gain;

@@ -5,7 +5,7 @@ import Game from "../Game.ts";
 import Player from "../Player.ts";
 import { Turn } from "../types/Types.ts";
 import EventTime from "@/game/types/EventTime.ts";
-
+import { DEBUG } from "../../utils/Debug.ts";
 export default class CardBattle {
   constructor(
     game: Game,
@@ -61,8 +61,7 @@ export default class CardBattle {
     events1.execute(EventTime.START, b1);
     events2.execute(EventTime.START, b2);
     // console.log("Executing pre", 4);
-    events1.execute(EventTime.PRE4, b1);
-    events2.execute(EventTime.PRE4, b2);
+    Events.executeCancels(events1, b1, events2, b2);
     // console.log("Executing pre", 3);
     events1.execute(EventTime.PRE3, b1);
     events2.execute(EventTime.PRE3, b2);
@@ -97,11 +96,13 @@ export default class CardBattle {
     events1.execute(EventTime.POST4, b1);
     events2.execute(EventTime.POST4, b2);
 
-    console.log(
-      `\t\t\t\t\t${` ${p2.name} `.bgBlue.white} Attack ${card2.attack.final}\
+    if (DEBUG) {
+      console.log(
+        `\t\t\t\t\t${` ${p2.name} `.bgBlue.white} Attack ${card2.attack.final}\
       |       ${` ${p1.name} `.bgBlue.white} Attack ${card1.attack.final}`
-        .white,
-    );
+          .white,
+      );
+    }
 
     p1.pillz -= totalPillz1;
     p2.pillz -= totalPillz2;

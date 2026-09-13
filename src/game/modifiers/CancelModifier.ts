@@ -2,7 +2,7 @@ import BattleData from "../battle/BattleData.ts";
 import EventTime from "../types/EventTime.ts";
 import Modifier from "./Modifier.ts";
 
-enum Cancel {
+export enum Cancel {
   POWER = 1,
   DAMAGE = 2,
   ATTACK = 3,

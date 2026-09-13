@@ -43,13 +43,20 @@ export default class Card {
     this.data = clone(this.base.data);
   }
 
+  /**
+   * Up to four of these per Hand clone, so per search node, which makes this one of the
+   * hottest allocations in the program. Object.create with the fields assigned in
+   * declaration order, rather than re-prototyping a literal (~1600x dearer), and `data`
+   * written as a fixed two-field literal rather than a spread so every card's packed words
+   * share one map instead of going through the object-clone IC.
+   */
   clone(): Card {
-    return Object.setPrototypeOf({
-      key: this.key,
-      played: this.played,
-      night: this.night,
-      data: { ...this.data },
-    }, Card.prototype);
+    const c: Card = Object.create(Card.prototype);
+    c.key = this.key;
+    c.played = this.played;
+    c.night = this.night;
+    c.data = { a: this.data.a, b: this.data.b } as BaseData;
+    return c;
   }
 
   static from(o: Card): Card {
@@ -94,13 +101,23 @@ export default class Card {
     return this.base.rarity;
   }
 
+  /** Unison cards have their own green visual treatment even though rarity remains c/u/r. */
+  get hasUnisonAbility() {
+    const printedAbility = (this.night ? this.base.nightAbility : undefined) ??
+      this.base.ability;
+    return /^\s*Unison\s*:/i.test(printedAbility);
+  }
+
   get abilityString(): string {
     if (this.ability.string !== AbilityString.DEFAULT) return "No Ability";
-    return (this.night ? this.base.nightAbility : undefined) ?? this.base.ability;
+    return (this.night ? this.base.nightAbility : undefined) ??
+      this.base.ability;
   }
   get bonusString(): string {
     if (this.bonus.string !== AbilityString.DEFAULT) return "No Bonus";
-    if (this.base.infiltratedBonus !== undefined) return this.base.infiltratedBonus;
+    if (this.base.infiltratedBonus !== undefined) {
+      return this.base.infiltratedBonus;
+    }
     return (this.night ? this.base.nightBonus : undefined) ?? this.base.bonus;
   }
   set bonusString(text: string) {
@@ -108,25 +125,25 @@ export default class Card {
   }
 
   get ability(): AbilityStat {
-    return Object.setPrototypeOf(this.data, AbilityStat.prototype);
+    return new AbilityStat(this.data);
   }
   get bonus(): BonusStat {
-    return Object.setPrototypeOf(this.data, BonusStat.prototype);
+    return new BonusStat(this.data);
   }
   get power(): PowerStat {
-    return Object.setPrototypeOf(this.data, PowerStat.prototype);
+    return new PowerStat(this.data);
   }
   get damage(): DamageStat {
-    return Object.setPrototypeOf(this.data, DamageStat.prototype);
+    return new DamageStat(this.data);
   }
   get attack(): AttackStat {
-    return Object.setPrototypeOf(this.data, AttackStat.prototype);
+    return new AttackStat(this.data);
   }
   get pillz(): PillzStat {
-    return Object.setPrototypeOf(this.data, PillzStat.prototype);
+    return new PillzStat(this.data);
   }
   get life(): LifeStat {
-    return Object.setPrototypeOf(this.data, LifeStat.prototype);
+    return new LifeStat(this.data);
   }
 
   get index() {
@@ -183,7 +200,6 @@ export class CardGenerator {
     return new Card(getN(cards, 1)[0]);
   }
 
-
   static getRandomHandYear(year = 2006) {
     const card = getN(cardYears[year])[0];
     const cards = cardYears[year].filter((j) => j.clan_name == card.clan_name);
@@ -205,8 +221,12 @@ export class CardGenerator {
 
   static getRandomHand(cards: HandOf<string | number>) {
     const cardsArr = cards.map((c) => {
-      const json = typeof c == "string" ? cardNames[c.toLowerCase()] : cardIds[c];
-      if (json === undefined) throw new Error(`Invalid card ID or Name: ${JSON.stringify(c)}`);
+      const json = typeof c == "string"
+        ? cardNames[c.toLowerCase()]
+        : cardIds[c];
+      if (json === undefined) {
+        throw new Error(`Invalid card ID or Name: ${JSON.stringify(c)}`);
+      }
       return new Card(json);
     }) as HandOf<Card>;
 

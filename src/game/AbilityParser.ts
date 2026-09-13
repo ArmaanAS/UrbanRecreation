@@ -97,29 +97,33 @@ export class AbilityParser {
     return false;
   }
 
+  /** Parse a Per clause and return how many tokens it consumed. */
   static per(tokens: string[], i: number, mod: BasicModifier) {
     if (tokens[i] == "Per") {
+      let stat = i + 1;
+      let opp = false;
       if (tokens[i + 1] == "Opp") {
-        mod.setPer(tokens[i + 2], true);
-      } else {
-        mod.setPer(tokens[i + 1]);
+        opp = true;
+        stat++;
       }
+      const lost = tokens[stat + 1] === "Lost";
+      mod.setPer(tokens[stat] + (lost ? "_LOST" : ""), opp);
 
-      return true;
+      return stat - i + 1 + +lost;
     }
 
-    return false;
+    return 0;
   }
 
   static minmaxper(tokens: string[], i: number, mod: BasicModifier) {
     if (AbilityParser.minmax(tokens, i, mod)) {
       return true;
-    } else if (AbilityParser.per(tokens, i, mod)) {
-      AbilityParser.minmax(tokens, i + 2, mod);
+    } else {
+      const consumed = AbilityParser.per(tokens, i, mod);
+      if (!consumed) return false;
+      AbilityParser.minmax(tokens, i + consumed, mod);
 
       return true;
     }
-
-    return false;
   }
 }

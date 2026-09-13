@@ -7,10 +7,11 @@
 // elideBinary. Battle traffic is additionally split into one file per battle under
 // captures/battles/<battleId>.jsonl with all secrets removed, which is the input for
 // scripts/ExtractBattle.ts.
-import { type BattleStatic, expandStatus, extractFromRecord, loadAbilities, newCaptureState, type RawRecord, saveAbilities } from "./scripts/BattleCapture.ts";
+import { type BattleStatic, type CaptureEntry, expandStatus, extractFromRecord, loadAbilities, newCaptureState, type RawRecord, saveAbilities } from "./scripts/BattleCapture.ts";
 
 const RAW_LOG = "ur_log.jsonl";
 const CAPTURE_DIR = "captures/battles";
+const PLAYER_ID = "captures/.player-id";
 const SITE_CHARACTERS = "data/site_characters.jsonl";
 const SITE_CLANS = "data/site_clans.json";
 const MAX = 160;
@@ -73,9 +74,77 @@ function elideBinary(body: string): string {
 
 await Deno.mkdir(CAPTURE_DIR, { recursive: true });
 
+async function loadPlayerId(): Promise<number> {
+  try {
+    const saved = Number(await Deno.readTextFile(PLAYER_ID));
+    if (Number.isInteger(saved) && saved > 0) return saved;
+  } catch { /* first run with the identity cache */ }
+
+  // Seed an older checkout from the newest capture that still knows which player was us.
+  // Battle ids rise over time, so this normally reads only the one or two newest files.
+  const files: number[] = [];
+  for await (const f of Deno.readDir(CAPTURE_DIR)) {
+    if (f.isFile && /^\d+\.jsonl$/.test(f.name)) files.push(Number(f.name.slice(0, -6)));
+  }
+  files.sort((a, b) => b - a);
+  for (const id of files) {
+    try {
+      const first = (await Deno.readTextFile(`${CAPTURE_DIR}/${id}.jsonl`)).split("\n", 1)[0];
+      const meta = JSON.parse(first);
+      if (meta.kind === "meta" && Number.isInteger(meta.myId) && meta.myId > 0) {
+        await Deno.writeTextFile(PLAYER_ID, String(meta.myId));
+        return meta.myId;
+      }
+    } catch { /* incomplete or legacy capture; try the previous one */ }
+  }
+  return 0;
+}
+
 let n = 0;
 const state = newCaptureState(await loadAbilities());
+state.myId = await loadPlayerId();
 const statics = new Map<number, BattleStatic>();
+
+// Live feed for src/solver/Advisor.ts: the same capture entries that go to disk, with
+// snapshots already expanded so a subscriber needs no ability dictionary to read them.
+// Kept deliberately thin - this process must keep up with the game client's polling, so
+// the solver runs in its own process and merely listens.
+const feeds = new Set<(chunk: string) => void>();
+// Opt-in only and intentionally process-local: it survives consecutive games, but a logger
+// restart returns automation to the safe OFF state. The browser userscript polls this.
+let autoQueue = false;
+
+function broadcast(battleId: number, entry: CaptureEntry) {
+  if (feeds.size === 0) return;
+  const chunk = `data: ${JSON.stringify({ battleId, entry })}\n\n`;
+  for (const send of feeds) {
+    try {
+      send(chunk);
+    } catch {
+      // Subscriber went away mid-write; its cancel handler removes it.
+    }
+  }
+}
+
+function feed(): Response {
+  let send: (chunk: string) => void;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const enc = new TextEncoder();
+      send = (chunk) => controller.enqueue(enc.encode(chunk));
+      feeds.add(send);
+      send(": connected\n\n");
+      console.log(`solver feed attached (${feeds.size} listening)`);
+    },
+    cancel() {
+      feeds.delete(send);
+      console.log(`solver feed detached (${feeds.size} listening)`);
+    },
+  });
+  return new Response(body, {
+    headers: { ...cors, "content-type": "text/event-stream", "cache-control": "no-cache" },
+  });
+}
 
 const battleLine = (b: any) => {
   const side = (p: any) => {
@@ -109,6 +178,28 @@ function print(label: string, t: number, summary: string) {
 let queue: Promise<unknown> = Promise.resolve();
 
 Deno.serve({ port: 8787, onListen: ({ port }) => console.log(`UR log server on :${port} → ${RAW_LOG}, ${CAPTURE_DIR}/`) }, async (r) => {
+  const path = new URL(r.url).pathname;
+  if (r.method === "GET" && path === "/events") return feed();
+  if (path === "/control") {
+    if (r.method === "GET") {
+      return Response.json({ autoQueue }, { headers: { ...cors, "cache-control": "no-store" } });
+    }
+    if (r.method === "POST") {
+      // Only the local Deno advisor may mutate control state. A web page supplies Origin,
+      // even for a no-cors form POST, so it cannot silently switch automation on.
+      if (r.headers.has("origin")) return new Response(null, { status: 403, headers: cors });
+      try {
+        const requested = (await r.json()).autoQueue;
+        if (typeof requested !== "boolean") throw new Error("autoQueue must be boolean");
+        autoQueue = requested;
+        console.log(`auto-queue ${autoQueue ? "enabled" : "disabled"} by advisor`);
+        return Response.json({ autoQueue }, { headers: cors });
+      } catch (e) {
+        return Response.json({ error: (e as Error).message }, { status: 400, headers: cors });
+      }
+    }
+    return new Response(null, { status: 405, headers: cors });
+  }
   if (r.method !== "POST") return new Response(null, { status: 204, headers: cors });
   const body = await r.text();
   const run = queue.then(() => handle(body));
@@ -146,7 +237,11 @@ async function handle(body: string): Promise<Response> {
     }
 
     // Battle capture (secret-free, compact, one file per battle)
+    const previousMyId = state.myId;
     const events = extractFromRecord(rec, state);
+    if (state.myId > 0 && state.myId !== previousMyId) {
+      await Deno.writeTextFile(PLAYER_ID, String(state.myId));
+    }
     if (state.abilitiesDirty) {
       state.abilitiesDirty = false;
       await saveAbilities(state.abilities);
@@ -161,9 +256,18 @@ async function handle(body: string): Promise<Response> {
       if (e.kind === "static") statics.set(ev.battleId, e.s);
       else if (e.kind === "s") {
         const s = statics.get(ev.battleId);
-        if (s) print("battle", rec.t, battleLine(expandStatus(s, e.d, state.abilities)));
-      } else if (e.kind === "result") print("battle", rec.t, `battle ${ev.battleId} RESULT ${e.result.result} byKo=${e.result.byKo} score=${e.result.score}`);
-      else print("battle", rec.t, `battle ${ev.battleId} ${e.kind} ${DIM}${clip(JSON.stringify(e))}${RESET}`);
+        if (s) {
+          const battle = expandStatus(s, e.d, state.abilities);
+          print("battle", rec.t, battleLine(battle));
+          broadcast(ev.battleId, { kind: "status", t: e.t, battle });
+        }
+      } else if (e.kind === "result") {
+        print("battle", rec.t, `battle ${ev.battleId} RESULT ${e.result.result} byKo=${e.result.byKo} score=${e.result.score}`);
+        broadcast(ev.battleId, e);
+      } else {
+        print("battle", rec.t, `battle ${ev.battleId} ${e.kind} ${DIM}${clip(JSON.stringify(e))}${RESET}`);
+        broadcast(ev.battleId, e);
+      }
     }
     if (events.length) return new Response(null, { status: 204, headers: cors });
 

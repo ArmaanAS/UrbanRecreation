@@ -1,12 +1,52 @@
 import Card from "../game/Card.ts";
 import colors from "colors";
-import { Clan } from "../game/types/CardTypes.ts";
+import {
+  type Clan,
+  ClanAbbreviations,
+  type ClanId,
+  ClanIdMap,
+} from "../game/types/CardTypes.ts";
 import Canvas from "./Canvas.ts";
 import { splitLines } from "./Utils.ts";
 import Game from "../game/Game.ts";
 import Player from "../game/Player.ts";
 import Hand from "../game/Hand.ts";
 import { Turn } from "../game/types/Types.ts";
+
+const CLAN_MARKER = "\uE000";
+const clanMarker = (id: ClanId) =>
+  CLAN_MARKER + String.fromCharCode(0xE100 + id);
+
+function replaceClanTags(
+  description: string,
+  replacement: (clan: Clan | undefined, id: ClanId) => string,
+) {
+  return description.replace(
+    /(?:\[clan:\d+\])+/gi,
+    (group) =>
+      Array.from(group.matchAll(/\[clan:(\d+)\]/gi), ([, rawId]) => {
+        const id = Number(rawId) as ClanId;
+        const clan = ClanIdMap[id];
+        return replacement(clan, id);
+      }).join("/"),
+  );
+}
+
+/** Replace site-only clan image tags with fixed-width terminal labels. */
+export function compactClanTags(description: string) {
+  return replaceClanTags(
+    description,
+    (clan, id) => clan === undefined ? `C${id}` : ClanAbbreviations[clan],
+  );
+}
+
+/** Preserve the identity of genuine clan tags while the plain text is line-wrapped. */
+function markedClanTags(description: string) {
+  return replaceClanTags(
+    description,
+    (clan, id) => clan === undefined ? `C${id}` : clanMarker(id),
+  );
+}
 
 export default class GameRenderer {
   static draw(game: Game) {
@@ -42,18 +82,44 @@ export default class GameRenderer {
   }
 
   static drawHand(hand: Hand, col: keyof colors.Color = "cyan") {
+    for (const line of this.handLines(hand, col)) console.log(" " + line);
+  }
+
+  /**
+   * The complete original hand canvas as lines: four bordered 24x15 faces at the original
+   * x positions on a 128-column canvas. The optional outer border belongs to the original
+   * standalone renderer; fixed-screen callers can omit it without changing the cards.
+   */
+  static handLines(
+    hand: readonly Card[],
+    col: keyof colors.Color = "cyan",
+    selected?: number,
+    outerBorder = true,
+    hovered?: number,
+  ) {
     const board = new Canvas(128, 17);
     board.col = col;
 
-    // hand.cards.forEach((c, i) => {
     hand.forEach((c, i) => {
-      board.draw(3 + i * 32, 0, GameRenderer.drawCard(c), true);
+      const isSelected = i === selected;
+      const isHovered = i === hovered;
+      board.draw(
+        3 + i * 32,
+        0,
+        GameRenderer.drawCard(c, isSelected, isHovered),
+        isSelected || isHovered ? "double" : "single",
+      );
     });
-
-    board.print();
+    return outerBorder
+      ? board.borderedLines("rounded")
+      : Array.from(board.lines);
   }
 
   static styledName(c: Card) {
+    // Unison is presented as a green card treatment by the live game, independently of
+    // the ordinary rarity value it sends (Musardine, for example, is still rarity "r").
+    if (c.hasUnisonAbility) return ` ${c.name} `.bgGreen.black;
+
     switch (c.rarity) {
       case "c":
         return ` ${c.name} `.bgRed.white;
@@ -113,7 +179,66 @@ export default class GameRenderer {
     return this.STYLES[c.clan]?.(c.clan) ?? c.clan.rainbow.strikethrough;
   }
 
-  static drawCard(card: Card) {
+  /**
+   * Colour marked clan abbreviations independently of the surrounding ability/bonus.
+   * The private two-character markers have the same width as their final abbreviations,
+   * so splitLines() can still lay out the fixed-size card before ANSI styling is applied.
+   */
+  static styledDescriptionLine(
+    line: string,
+    baseColour: "blue" | "red" | "grey",
+  ) {
+    const base = (text: string) =>
+      (baseColour === "blue"
+        ? text.blue
+        : baseColour === "red"
+        ? text.red
+        : text.grey).bgWhite;
+    let out = "";
+    let plain = "";
+    const flush = () => {
+      if (plain.length === 0) return;
+      out += base(plain);
+      plain = "";
+    };
+
+    for (let i = 0; i < line.length;) {
+      if (line[i] !== CLAN_MARKER || i + 1 >= line.length) {
+        plain += line[i++];
+        continue;
+      }
+      const id = line.charCodeAt(i + 1) - 0xE100 as ClanId;
+      const clan = ClanIdMap[id];
+      if (clan === undefined) {
+        plain += line[i++];
+        continue;
+      }
+
+      flush();
+      const abbreviation = ClanAbbreviations[clan];
+      // Each segment owns its background. A clan style with its own background ends in
+      // ANSI 49 (default background), so relying on one outer bgWhite would leave every
+      // later code and the trailing padding transparent.
+      out += (this.STYLES[clan]?.(abbreviation) ?? abbreviation).bgWhite;
+      i += 2;
+      // Only separators introduced between real clan tags receive the neutral colour.
+      if (line[i] === "/" && line[i + 1] === CLAN_MARKER) {
+        out += "/".grey.bgWhite;
+        i++;
+      }
+    }
+    flush();
+    return out;
+  }
+
+  /** The original full card face as lines, for fixed-screen views as well as stdout. */
+  static cardLines(card: Card, selected = false) {
+    return this.drawCard(card, selected).borderedLines(
+      selected ? "double" : "single",
+    );
+  }
+
+  static drawCard(card: Card, selected = false, hovered = false) {
     const width = 24;
     const canvas = new Canvas(width, 15);
 
@@ -121,8 +246,10 @@ export default class GameRenderer {
       canvas.col = "green";
     } else if (card.won === false) {
       canvas.col = "red";
-    } else if (card.played) {
+    } else if (selected || card.played) {
       canvas.col = "yellow";
+    } else if (hovered) {
+      canvas.col = "cyan";
     }
 
     const long = card.name.length >= 14;
@@ -168,8 +295,8 @@ export default class GameRenderer {
 
     // const a = splitLines(card.ability.string, width - 3, 3);
     // const b = splitLines(card.bonus.string, width - 3, 2);
-    const a = splitLines(card.abilityString, width - 3, 3);
-    const b = splitLines(card.bonusString, width - 3, 2);
+    const a = splitLines(markedClanTags(card.abilityString), width - 3, 3);
+    const b = splitLines(markedClanTags(card.bonusString), width - 3, 2);
 
     const acol = a[0].startsWith("No") ? "grey" : "blue";
     const bcol = b[0].startsWith("No") ? "grey" : "red";
@@ -179,17 +306,32 @@ export default class GameRenderer {
       " ".repeat(width - 1 - " ability ".length) +
         " Ability ".white.bgCyan.underline.bold,
     );
-    canvas.write(6, " " + (" " + a[0])[acol].bgWhite);
-    canvas.write(7, " " + (" " + a[1])[acol].bgWhite);
-    canvas.write(8, " " + (" " + a[2])[acol].bgWhite);
+    canvas.write(
+      6,
+      " " + this.styledDescriptionLine(" " + a[0], acol),
+    );
+    canvas.write(
+      7,
+      " " + this.styledDescriptionLine(" " + a[1], acol),
+    );
+    canvas.write(
+      8,
+      " " + this.styledDescriptionLine(" " + a[2], acol),
+    );
 
     canvas.write(
       10,
       " ".repeat(width - 1 - " bonus ".length) +
         " Bonus ".white.bgRed.underline.bold,
     );
-    canvas.write(11, " " + (" " + b[0])[bcol].bgWhite);
-    canvas.write(12, " " + (" " + b[1])[bcol].bgWhite);
+    canvas.write(
+      11,
+      " " + this.styledDescriptionLine(" " + b[0], bcol),
+    );
+    canvas.write(
+      12,
+      " " + this.styledDescriptionLine(" " + b[1], bcol),
+    );
     // c.write(12, ' ' + b[2].red.bgWhite);
 
     canvas.write(14, ` ${"Clan".grey.bold} | ` + this.styledClan(card).bold);

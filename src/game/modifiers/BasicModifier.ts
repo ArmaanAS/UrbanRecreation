@@ -1,7 +1,7 @@
 import BattleData from "../battle/BattleData.ts";
 import EventTime from "../types/EventTime.ts";
 import Modifier from "./Modifier.ts";
-
+import { DEBUG } from "../../utils/Debug.ts";
 type PerType = {
   opp: boolean;
   type: number;
@@ -19,10 +19,14 @@ const Per: Record<string, PerType> = {
   EQUALIZER: { opp: false, type: 9, name: "EQUALIZER" },
   SYMMETRY: { opp: false, type: 10, name: "SYMMETRY" },
   ASYMMETRY: { opp: false, type: 11, name: "ASYMMETRY" },
+  LIFE_LOST: { opp: false, type: 12, name: "LIFE_LOST" },
+  PILLZ_LOST: { opp: false, type: 13, name: "PILLZ_LOST" },
   OPP_POWER: { opp: true, type: 1, name: "OPP_POWER" },
   OPP_DAMAGE: { opp: true, type: 2, name: "OPP_DAMAGE" },
   OPP_LIFE: { opp: true, type: 3, name: "OPP_LIFE" },
   OPP_PILLZ: { opp: true, type: 4, name: "OPP_PILLZ" },
+  OPP_LIFE_LOST: { opp: true, type: 12, name: "OPP_LIFE_LOST" },
+  OPP_PILLZ_LOST: { opp: true, type: 13, name: "OPP_PILLZ_LOST" },
 };
 function perFromObject(o: PerType): PerType {
   return o && Per[o.name];
@@ -88,14 +92,14 @@ export default class BasicModifier extends Modifier {
 
   setMin(min: number) {
     this.min = min;
-    console.log("Set min:", min);
+    if (DEBUG) console.log("Set min:", min);
 
     return this;
   }
 
   setMax(max: number) {
     this.max = max;
-    console.log("Set max:", max);
+    if (DEBUG) console.log("Set max:", max);
 
     return this;
   }
@@ -108,7 +112,7 @@ export default class BasicModifier extends Modifier {
         this.per = Per[per.toUpperCase()];
       }
     } else this.per = per;
-    console.log(`Set per: ${this.per?.name}`);
+    if (DEBUG) console.log(`Set per: ${this.per?.name}`);
 
     return this;
   }
@@ -128,14 +132,14 @@ export default class BasicModifier extends Modifier {
     this.win = type.win;
     this.updateEventTime();
 
-    console.log(`Set modifier type: ${type.name}`);
+    if (DEBUG) console.log(`Set modifier type: ${type.name}`);
 
     return this;
   }
 
   setOpp(opp = true) {
     if (opp !== this.opp) {
-      console.log("Set opp:", opp);
+      if (DEBUG) console.log("Set opp:", opp);
     }
 
     this.opp = opp;
@@ -155,8 +159,9 @@ export default class BasicModifier extends Modifier {
     if (this.type === undefined) return;
     let et = this.type.eventTime;
     if (this.opp) {
-      if (this.type === Type.POWER || this.type === Type.DAMAGE) et = EventTime.PRE1;
-      else if (this.type === Type.ATTACK) et = EventTime.POST2;
+      if (this.type === Type.POWER || this.type === Type.DAMAGE) {
+        et = EventTime.PRE1;
+      } else if (this.type === Type.ATTACK) et = EventTime.POST2;
     }
     this.eventTime = et;
   }
@@ -164,7 +169,10 @@ export default class BasicModifier extends Modifier {
   canApply(data: BattleData) {
     // A player who has been KO'd this round gains nothing (no heal, no pillz) — server
     // behaviour seen in captured games (Kubra "Defeat: +1 Pillz And Life" at 0 life).
-    if ((this.type === Type.LIFE || this.type === Type.PILLZ) && !this.opp && data.player.life <= 0) {
+    if (
+      (this.type === Type.LIFE || this.type === Type.PILLZ) && !this.opp &&
+      data.player.life <= 0
+    ) {
       return false;
     }
 
@@ -209,7 +217,7 @@ export default class BasicModifier extends Modifier {
         case Type.ATTACK:
           return !data.card.attack.blocked;
         case Type.LIFE:
-          console.log("Player life:", data.player.life);
+          if (DEBUG) console.log("Player life:", data.player.life);
           return !data.card.life.blocked && data.player.life > 0;
         case Type.PILLZ:
           return !data.card.pillz.blocked;
@@ -256,6 +264,13 @@ export default class BasicModifier extends Modifier {
         return +(data.card.index === data.oppCard.index);
       case 11:
         return +(data.card.index !== data.oppCard.index);
+      case 12:
+        return Math.max(0, player.baseLife - player.life);
+      case 13:
+        // `player.pillz` is the amount at the start of this battle: CardBattle deliberately
+        // deducts the current bet after Attack is resolved. That matches 1060510 r3, where
+        // Nolegs had already fallen from 12 to 0 and received +2 x 12 = +24 Attack.
+        return Math.max(0, player.basePillz - player.pillz);
       default:
         return 1;
     }
@@ -269,21 +284,23 @@ export default class BasicModifier extends Modifier {
     const final = base + change;
     const squash = Math.min(Math.max(final, this.min), this.max);
 
-    console.log(`${base} => ${final} >=< ${squash}`);
+    if (DEBUG) console.log(`${base} => ${final} >=< ${squash}`);
     if (isNaN(squash)) {
-      console.log(data.player.life);
-      console.log(`${multiplier} => ${this.change} => ${base}`);
-      console.log(
-        `${typeof multiplier} => ${typeof this
-          .change} => ${typeof base}`,
-      );
+      if (DEBUG) console.log(data.player.life);
+      if (DEBUG) console.log(`${multiplier} => ${this.change} => ${base}`);
+      if (DEBUG) {
+        console.log(
+          `${typeof multiplier} => ${typeof this
+            .change} => ${typeof base}`,
+        );
+      }
     }
     return squash;
   }
 
   apply(data: BattleData) {
     if (this.canApply(data)) {
-      console.log(`canApply modifier`);
+      if (DEBUG) console.log(`canApply modifier`);
       let card, player;
       if (this.opp) {
         card = data.oppCard;
@@ -321,10 +338,18 @@ export default class BasicModifier extends Modifier {
         case Type.TUNEOUT:
           data.card.power.final = 1;
           data.oppCard.power.final = 1;
+          // Tune Out ignores the Attack calculation: the larger pillz bet wins, with the
+          // ordinary card tie-break only when the bets match. Mark both Attack stats as
+          // cancelled after Protection has run, so neither own nor opposing Attack
+          // modifiers can change the pillz-only totals calculated below in CardBattle.
+          data.card.attack.cancel = true;
+          data.card.attack.prot = false;
+          data.oppCard.attack.cancel = true;
+          data.oppCard.attack.prot = false;
           data.card.attack.final = 0;
           data.oppCard.attack.final = 0;
           break;
       }
-    } else console.log(`Failed to apply modifier`.yellow);
+    } else if (DEBUG) console.log(`Failed to apply modifier`.yellow);
   }
 }

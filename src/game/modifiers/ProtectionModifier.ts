@@ -1,8 +1,9 @@
 import BattleData from "../battle/BattleData.ts";
 import EventTime from "../types/EventTime.ts";
 import Modifier from "./Modifier.ts";
-
+import { DEBUG } from "../../utils/Debug.ts";
 enum Prot {
+
   POWER = 1,
   DAMAGE = 2,
   ATTACK = 3,
@@ -23,14 +24,14 @@ export default class ProtectionModifier extends Modifier {
     }
 
     if (both) {
-      console.log("Set both: " + both);
+      if (DEBUG) console.log("Set both: " + both);
     }
     this.both = both;
     this.eventTime = et;
   }
 
   setBoth(both: boolean) {
-    console.log("Set both: " + both);
+    if (DEBUG) console.log("Set both: " + both);
     this.both = both;
 
     return this;

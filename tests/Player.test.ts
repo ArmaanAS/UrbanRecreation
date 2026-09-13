@@ -7,6 +7,8 @@ Deno.test("Player", () => {
   assertEquals(p.name, "Player");
   assertEquals(p.life, 12);
   assertEquals(p.pillz, 12);
+  assertEquals(p.baseLife, 12);
+  assertEquals(p.basePillz, 12);
   assertEquals(p.won, undefined);
   assertEquals(p.wonPrevious, undefined);
 
@@ -16,6 +18,8 @@ Deno.test("Player", () => {
   p.pillz = 14;
   assertEquals(p.life, 24);
   assertEquals(p.pillz, 14);
+  assertEquals(p.baseLife, 12);
+  assertEquals(p.basePillz, 12);
 
   p.won = true;
   assertEquals(p.life, 24);

@@ -3,8 +3,9 @@ import BattleData from "./battle/BattleData.ts";
 import CachedBattleData from "./battle/CachedBattleData.ts";
 import BasicModifier from "./modifiers/BasicModifier.ts";
 import { type Clan, type ClanId, ClanIdMap } from "@/game/types/CardTypes.ts";
-
+import { DEBUG } from "../utils/Debug.ts";
 export enum ConditionType {
+
   UNDEFINED = 0,
   COURAGE = 1,
   DEFEAT = 2,
@@ -42,7 +43,7 @@ export default class Condition {
     if (s.endsWith("]")) {
       const clanIds = [...s.matchAll(/\d+/g)].map((m) => +m[0]) as ClanId[];
       this.clans = clanIds.map((id) => ClanIdMap[id]);
-      console.log("Clans", this.clans);
+      if (DEBUG) console.log("Clans", this.clans);
       if (s.startsWith("Versus")) {
         this.type = ConditionType.VERSUS;
       } else if (s.startsWith("After")) {
@@ -55,7 +56,7 @@ export default class Condition {
         ConditionType[s.toUpperCase() as keyof typeof ConditionType] ??
           ConditionType.UNDEFINED;
     }
-    console.log("Condition", s, this.type);
+    if (DEBUG) console.log("Condition", s, this.type);
   }
 
   static from(o: Condition): Condition {

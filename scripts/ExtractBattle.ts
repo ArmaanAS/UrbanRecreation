@@ -26,7 +26,7 @@ import {
 const BATTLE_DIR = "captures/battles";
 const GAME_DIR = "captures/games";
 
-type Side = 0 | 1;
+export type Side = 0 | 1;
 // deno-lint-ignore no-explicit-any
 type Battle = any;
 // deno-lint-ignore no-explicit-any
@@ -52,7 +52,7 @@ interface Resolution {
   attack: number;
   won: boolean;
 }
-interface Round {
+export interface Round {
   round: number;
   first: Side | null;
   moves: Move[];
@@ -63,13 +63,13 @@ interface Round {
   durationMs: number | null;
 }
 /** Server-reported outcome of one card in a round; `r1`/`r2` in a testcase move. */
-interface MoveResult {
+export interface MoveResult {
   power: number;
   damage: number;
   attack: number;
   won: boolean;
 }
-interface Testcase {
+export interface Testcase {
   cards: string[];
   /** Level (stars) each card was played at, same order as `cards`. */
   levels: number[];
@@ -173,9 +173,28 @@ function describePlayer(side: Battle["player0"], sideIdx: Side, issues: string[]
   };
 }
 
-function reconstruct(id: number, entries: CaptureEntry[]) {
+/** Merge restart-time metadata without letting an empty later field erase a known value. */
+export function mergeCaptureMeta(entries: CaptureEntry[]): { myId: number; room: unknown } {
+  const metas = entries.filter(
+    (e): e is Extract<CaptureEntry, { kind: "meta" }> => e.kind === "meta",
+  );
+  const identityMeta = metas.findLast((e) => e.myId > 0) ?? metas.at(-1);
+  const roomMeta = metas.findLast((e) => e.room != null) ?? metas.at(-1);
+  return { myId: identityMeta?.myId ?? 0, room: roomMeta?.room };
+}
+
+/**
+ * Rebuild one battle from its capture entries: hands, per-round moves and results, and a
+ * `testcase` the engine can replay. Exported because the live advisor rebuilds the game in
+ * progress with the same code the extractor uses, rather than a second implementation of
+ * the same subtle snapshot handling.
+ */
+export function reconstruct(id: number, entries: CaptureEntry[]) {
   const issues: string[] = [];
-  const meta = entries.find((e) => e.kind === "meta") as Extract<CaptureEntry, { kind: "meta" }> | undefined;
+  // A logger restart appends fresh metadata to an in-progress battle. A later entry can
+  // repair an earlier myId: 0, while its room may be empty because rooms.join happened
+  // before the restart. Take the newest useful value of each instead of one whole entry.
+  const meta = mergeCaptureMeta(entries);
   const statuses = entries.filter((e) => e.kind === "status") as Extract<CaptureEntry, { kind: "status" }>[];
   const result = entries.find((e) => e.kind === "result") as Extract<CaptureEntry, { kind: "result" }> | undefined;
   if (statuses.length === 0) throw new Error(`battle ${id}: no status snapshots`);
@@ -185,11 +204,14 @@ function reconstruct(id: number, entries: CaptureEntry[]) {
   const last = statuses[statuses.length - 1].battle;
   const sides = ["player0", "player1"] as const;
   const players = sides.map((k, i) => describePlayer(last[k], i as Side, issues));
-  const myId = meta?.myId ?? 0;
+  const myId = meta.myId;
   const mySide: Side | null = myId ? (last.player0.player.id === myId ? 0 : last.player1.player.id === myId ? 1 : null) : null;
   const sideOf = (playerId: number): Side | null => last.player0.player.id === playerId ? 0 : last.player1.player.id === playerId ? 1 : null;
 
-  const finished = last.status !== "playing"; // "done", "timeout", ...
+  // A forfeit returns battles.result immediately but does not send a final `done` status;
+  // the newest status therefore remains `playing`. The result endpoint is authoritative
+  // evidence that the battle ended, just as it is for the final life/pillz totals below.
+  const finished = last.status !== "playing" || result !== undefined;
   const nRounds = last.round + 1;
   const rounds: Round[] = [];
   for (let r = 0; r < nRounds; r++) {
@@ -281,7 +303,7 @@ function reconstruct(id: number, entries: CaptureEntry[]) {
 
   const levelMismatch = issues.some((i) => /played at level|is not in data\/data.json/.test(i));
   if (levelMismatch) issues.push("engine lacks stats for one or more cards at the level played: no testcase generated (run __ur.dumpCharacters() then `deno task cards`)");
-  const isDojo = first.battleRuleId === 6 || /dojo/i.test(String((meta?.room as { name?: string } | undefined)?.name ?? ""));
+  const isDojo = first.battleRuleId === 6 || /dojo/i.test(String((meta.room as { name?: string } | undefined)?.name ?? ""));
   if (isDojo) issues.push("Dojo (tutorial) battle: rules differ from PvP, no testcase generated");
   const night = isNight(first.creationTime);
   // Sanity check: the server sends the *active* variant of Day:/Night: abilities.
@@ -299,7 +321,7 @@ function reconstruct(id: number, entries: CaptureEntry[]) {
     id,
     capturedAt: new Date(statuses[0].t).toISOString(),
     creationTime: first.creationTime,
-    room: meta?.room ?? null,
+    room: meta.room ?? null,
     battleRuleId: first.battleRuleId,
     night,
     myId: myId || null,
@@ -357,47 +379,49 @@ function buildTestcase(players: ReturnType<typeof describePlayer>[], rounds: Rou
 // ---------------------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------------------
-const args = [...Deno.args];
-const state = newCaptureState(await loadAbilities());
-let ids: number[] = [];
-const rawIdx = args.indexOf("--raw");
-if (rawIdx >= 0) {
-  const [, path] = args.splice(rawIdx, 2);
-  ids = await splitRaw(path, state);
-}
-const recompact = args.includes("--recompact");
-if (recompact) args.splice(args.indexOf("--recompact"), 1);
-if (args.length) ids = args.map(Number);
-if (ids.length === 0) {
-  for await (const f of Deno.readDir(BATTLE_DIR)) {
-    if (f.name.endsWith(".jsonl")) ids.push(Number(f.name.replace(".jsonl", "")));
+if (import.meta.main) {
+  const args = [...Deno.args];
+  const state = newCaptureState(await loadAbilities());
+  let ids: number[] = [];
+  const rawIdx = args.indexOf("--raw");
+  if (rawIdx >= 0) {
+    const [, path] = args.splice(rawIdx, 2);
+    ids = await splitRaw(path, state);
   }
-}
-await Deno.mkdir(GAME_DIR, { recursive: true });
+  const recompact = args.includes("--recompact");
+  if (recompact) args.splice(args.indexOf("--recompact"), 1);
+  if (args.length) ids = args.map(Number);
+  if (ids.length === 0) {
+    for await (const f of Deno.readDir(BATTLE_DIR)) {
+      if (f.name.endsWith(".jsonl")) ids.push(Number(f.name.replace(".jsonl", "")));
+    }
+  }
+  await Deno.mkdir(GAME_DIR, { recursive: true });
 
-for (const id of ids.sort((a, b) => a - b)) {
-  const path = `${BATTLE_DIR}/${id}.jsonl`;
-  const text = await Deno.readTextFile(path);
-  let entries = text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as CaptureEntry);
-  if (recompact && entries.some((e) => e.kind === "status")) {
-    const compact = compactEntries(entries, state);
-    await Deno.writeTextFile(path, compact.map((e) => JSON.stringify(e)).join("\n") + "\n");
-    console.log(`recompacted ${id}: ${text.length} → ${JSON.stringify(compact).length} bytes`.gray);
+  for (const id of ids.sort((a, b) => a - b)) {
+    const path = `${BATTLE_DIR}/${id}.jsonl`;
+    const text = await Deno.readTextFile(path);
+    let entries = text.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as CaptureEntry);
+    if (recompact && entries.some((e) => e.kind === "status")) {
+      const compact = compactEntries(entries, state);
+      await Deno.writeTextFile(path, compact.map((e) => JSON.stringify(e)).join("\n") + "\n");
+      console.log(`recompacted ${id}: ${text.length} → ${JSON.stringify(compact).length} bytes`.gray);
+    }
+    entries = expandEntries(entries, state.abilities);
+    try {
+      const game = reconstruct(id, entries);
+      await Deno.writeTextFile(`${GAME_DIR}/${id}.json`, JSON.stringify(game, null, 2));
+      const p = game.players;
+      const res = game.result ? `${game.result.result}${game.result.byKo ? " (KO)" : ""}` : game.finalStatus;
+      console.log(
+        `battle ${id}`.cyan + `  ${p[0].name} vs ${p[1].name}  ${game.rounds.length} rounds  ${res}` +
+          (game.testcase ? `  testcase ✓ (${game.testcase.moves.length} moves)`.green : "  no testcase".yellow) +
+          (game.issues.length ? `\n  ${game.issues.length} issue(s):\n  - ${game.issues.join("\n  - ")}`.yellow : ""),
+      );
+    } catch (e) {
+      console.error(`battle ${id}: ${(e as Error).message}`.red);
+    }
   }
-  entries = expandEntries(entries, state.abilities);
-  try {
-    const game = reconstruct(id, entries);
-    await Deno.writeTextFile(`${GAME_DIR}/${id}.json`, JSON.stringify(game, null, 2));
-    const p = game.players;
-    const res = game.result ? `${game.result.result}${game.result.byKo ? " (KO)" : ""}` : game.finalStatus;
-    console.log(
-      `battle ${id}`.cyan + `  ${p[0].name} vs ${p[1].name}  ${game.rounds.length} rounds  ${res}` +
-        (game.testcase ? `  testcase ✓ (${game.testcase.moves.length} moves)`.green : "  no testcase".yellow) +
-        (game.issues.length ? `\n  ${game.issues.length} issue(s):\n  - ${game.issues.join("\n  - ")}`.yellow : ""),
-    );
-  } catch (e) {
-    console.error(`battle ${id}: ${(e as Error).message}`.red);
-  }
-}
 
-if (state.abilitiesDirty) await saveAbilities(state.abilities);
+  if (state.abilitiesDirty) await saveAbilities(state.abilities);
+}

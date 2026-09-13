@@ -43,6 +43,46 @@ export const ClanIdMap = Object.fromEntries(
 export type Clan = keyof typeof Clans;
 export type ClanId = typeof Clans[Clan];
 
+/** Compact, stable labels for places where full clan names cannot fit, such as card faces. */
+export const ClanAbbreviations: Record<Clan, string> = {
+  "All Stars": "AS",
+  Bangers: "BA",
+  Berzerk: "BZ",
+  Cosmohnuts: "CO",
+  Dominion: "DO",
+  "Fang Pi Clang": "FP",
+  Freaks: "FR",
+  Frozn: "FZ",
+  GHEIST: "GH",
+  GhosTown: "GT",
+  Hive: "HI",
+  Huracan: "HU",
+  Jungo: "JG",
+  Junkz: "JZ",
+  Komboka: "KO",
+  "La Junta": "LJ",
+  Leader: "LE",
+  Montana: "MO",
+  Nightmare: "NM",
+  Oblivion: "OB",
+  Oculus: "OC",
+  Paradox: "PA",
+  Piranas: "PI",
+  Pussycats: "PC",
+  Raptors: "RA",
+  Rescue: "RE",
+  Riots: "RI",
+  Roots: "RO",
+  Sakrohm: "SA",
+  Sentinel: "SE",
+  Skeelz: "SK",
+  Tolvack: "TO",
+  "Ulu Watu": "UW",
+  Uppers: "UP",
+  Vortex: "VO",
+  Zenith: "ZE",
+};
+
 // export type Rarity = "c" | "u" | "r" | "cr" | "m" | "l";
 export type Rarity = "c" | "u" | "r" | "cr" | "l";
 
@@ -116,22 +156,38 @@ export class BaseData {
   a = 0;
   b = 0;
   get power(): PowerStat {
-    return Object.setPrototypeOf(this, PowerStat.prototype);
+    return new PowerStat(this);
   }
   get damage(): DamageStat {
-    return Object.setPrototypeOf(this, DamageStat.prototype);
+    return new DamageStat(this);
   }
   get attack(): AttackStat {
-    return Object.setPrototypeOf(this, AttackStat.prototype);
+    return new AttackStat(this);
   }
   get pillz(): PillzStat {
-    return Object.setPrototypeOf(this, PillzStat.prototype);
+    return new PillzStat(this);
   }
   get life(): LifeStat {
-    return Object.setPrototypeOf(this, LifeStat.prototype);
+    return new LifeStat(this);
   }
 }
-abstract class BaseAttr extends BaseData {
+
+/**
+ * A stat view over a card's two packed words.
+ *
+ * These used to be selected by swapping the packed object's prototype
+ * (`Object.setPrototypeOf(this, PowerStat.prototype)`), which kept allocation at one
+ * object per card - the thing that makes a clone cheap enough to search millions of
+ * states. That allocation was never the problem; the dispatch was. Each access was an
+ * un-inlinable runtime call that changed the packed object's map, so it churned through
+ * map transitions and every `.final` site went megamorphic. A throwaway view costs
+ * nothing by comparison: one view class per site keeps the site monomorphic, so TurboFan
+ * inlines the getter and escape analysis drops the allocation. See
+ * tests/CardAccess.bench.ts - alternating views were 223x slower through the swap, while
+ * cloning, which is what the packing is really for, is identical either way.
+ */
+abstract class BaseAttr {
+  constructor(protected readonly d: BaseData) {}
   abstract get cancel(): boolean;
   abstract set cancel(n: boolean);
   abstract get prot(): boolean;
@@ -157,74 +213,74 @@ abstract class BaseString extends BaseAttr {
 }
 export class AbilityStat extends BaseString {
   get string(): AbilityString {
-    return this.a >> 20 & 1;
+    return this.d.a >> 20 & 1;
   }
   set string(n: AbilityString) {
-    this.a = (this.a & ~0x100000) | (n << 20);
+    this.d.a = (this.d.a & ~0x100000) | (n << 20);
   }
   get cancel(): boolean {
-    return !!(this.a >> 21 & 1);
+    return !!(this.d.a >> 21 & 1);
   }
   set cancel(n: boolean) {
-    this.a = (this.a & ~0x200000) | (+n << 21);
+    this.d.a = (this.d.a & ~0x200000) | (+n << 21);
   }
   get prot(): boolean {
-    return !!(this.a >> 22 & 1);
+    return !!(this.d.a >> 22 & 1);
   }
   set prot(n: boolean) {
-    this.a = (this.a & ~0x400000) | (+n << 22);
+    this.d.a = (this.d.a & ~0x400000) | (+n << 22);
   }
   get blocked() {
-    return (this.a >> 21 & 0b11) === 0b01;
+    return (this.d.a >> 21 & 0b11) === 0b01;
   }
 }
 export class BonusStat extends BaseString {
   get string(): AbilityString {
-    return this.a >> 23 & 1;
+    return this.d.a >> 23 & 1;
   }
   set string(n: AbilityString) {
-    this.a = (this.a & ~0x800000) | (n << 23);
+    this.d.a = (this.d.a & ~0x800000) | (n << 23);
   }
   get cancel(): boolean {
-    return !!(this.a >> 24 & 1);
+    return !!(this.d.a >> 24 & 1);
   }
   set cancel(n: boolean) {
-    this.a = (this.a & ~0x1000000) | (+n << 24);
+    this.d.a = (this.d.a & ~0x1000000) | (+n << 24);
   }
   get prot(): boolean {
-    return !!(this.a >> 25 & 1);
+    return !!(this.d.a >> 25 & 1);
   }
   set prot(n: boolean) {
-    this.a = (this.a & ~0x2000000) | (+n << 25);
+    this.d.a = (this.d.a & ~0x2000000) | (+n << 25);
   }
   get blocked() {
-    return (this.a >> 24 & 0b11) === 0b01;
+    return (this.d.a >> 24 & 0b11) === 0b01;
   }
 }
 export class PowerStat extends BaseStat {
   get base(): number {
-    return this.a & 0x1f;
+    return this.d.a & 0x1f;
   }
   set base(n: number) {
-    this.a = (this.a & ~0x1f) | (n & 0x1f);
+    this.d.a = (this.d.a & ~0x1f) | (n & 0x1f);
   }
   get final(): number {
-    return this.a >> 5 & 0x1f;
+    return this.d.a >> 5 & 0x1f;
   }
   set final(n: number) {
-    this.a = (this.a & ~0x3e0) | ((n & 0x1f) << 5);
+    this.d.a = (this.d.a & ~0x3e0) | ((n & 0x1f) << 5);
   }
   get cancel(): boolean {
-    return !!(this.b >> 16 & 1);
+    return !!(this.d.b >> 16 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x10000) | (+n << 16);
+    this.d.b = (this.d.b & ~0x10000) | (+n << 16);
   }
   get prot(): boolean {
-    return !!(this.b >> 17 & 1);
+    return !!(this.d.b >> 17 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x20000) | (+n << 17);
+    this.d.b = (this.d.b & ~0x20000) | (+n << 17);
   }
   get blocked() {
     // prot || !cancel
@@ -233,98 +289,98 @@ export class PowerStat extends BaseStat {
     // Cancelled && !prot || prot
     // 01 = true
     // 10, 11, 00 = false,
-    return (this.b >> 16 & 0b11) === 0b01;
+    return (this.d.b >> 16 & 0b11) === 0b01;
   }
 }
 export class DamageStat extends BaseStat {
   get base(): number {
-    return this.a >> 10 & 0x1f;
+    return this.d.a >> 10 & 0x1f;
   }
   set base(n: number) {
-    this.a = (this.a & ~0x7c00) | ((n & 0x1f) << 10);
+    this.d.a = (this.d.a & ~0x7c00) | ((n & 0x1f) << 10);
   }
   get final(): number {
-    return this.a >> 15 & 0x1f;
+    return this.d.a >> 15 & 0x1f;
   }
   set final(n: number) {
-    this.a = (this.a & ~0xf8000) | ((n & 0x1f) << 15);
+    this.d.a = (this.d.a & ~0xf8000) | ((n & 0x1f) << 15);
   }
   get cancel(): boolean {
-    return !!(this.b >> 18 & 1);
+    return !!(this.d.b >> 18 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x40000) | (+n << 18);
+    this.d.b = (this.d.b & ~0x40000) | (+n << 18);
   }
   get prot(): boolean {
-    return !!(this.b >> 19 & 1);
+    return !!(this.d.b >> 19 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x80000) | (+n << 19);
+    this.d.b = (this.d.b & ~0x80000) | (+n << 19);
   }
   get blocked() {
-    return (this.b >> 18 & 0b11) === 0b01;
+    return (this.d.b >> 18 & 0b11) === 0b01;
   }
 }
 export class AttackStat extends BaseStat {
   get base(): number {
-    return this.b & 0xff;
+    return this.d.b & 0xff;
   }
   set base(n: number) {
-    this.b = (this.b & ~0xff) | (n & 0xff);
+    this.d.b = (this.d.b & ~0xff) | (n & 0xff);
   }
   get final(): number {
-    return this.b >> 8 & 0xff;
+    return this.d.b >> 8 & 0xff;
   }
   set final(n: number) {
-    this.b = (this.b & ~0xff00) | ((n & 0xff) << 8);
+    this.d.b = (this.d.b & ~0xff00) | ((n & 0xff) << 8);
   }
   get cancel(): boolean {
-    return !!(this.b >> 20 & 1);
+    return !!(this.d.b >> 20 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x100000) | (+n << 20);
+    this.d.b = (this.d.b & ~0x100000) | (+n << 20);
   }
   get prot(): boolean {
-    return !!(this.b >> 21 & 1);
+    return !!(this.d.b >> 21 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x200000) | (+n << 21);
+    this.d.b = (this.d.b & ~0x200000) | (+n << 21);
   }
   get blocked() {
-    return (this.b >> 20 & 0b11) === 0b01;
+    return (this.d.b >> 20 & 0b11) === 0b01;
   }
 }
 export class PillzStat extends BaseAttr {
   get cancel(): boolean {
-    return !!(this.b >> 22 & 1);
+    return !!(this.d.b >> 22 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x400000) | (+n << 22);
+    this.d.b = (this.d.b & ~0x400000) | (+n << 22);
   }
   get prot(): boolean {
-    return !!(this.b >> 23 & 1);
+    return !!(this.d.b >> 23 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x800000) | (+n << 23);
+    this.d.b = (this.d.b & ~0x800000) | (+n << 23);
   }
   get blocked() {
-    return (this.b >> 22 & 0b11) === 0b01;
+    return (this.d.b >> 22 & 0b11) === 0b01;
   }
 }
 export class LifeStat extends BaseAttr {
   get cancel(): boolean {
-    return !!(this.b >> 24 & 1);
+    return !!(this.d.b >> 24 & 1);
   }
   set cancel(n: boolean) {
-    this.b = (this.b & ~0x1000000) | (+n << 24);
+    this.d.b = (this.d.b & ~0x1000000) | (+n << 24);
   }
   get prot(): boolean {
-    return !!(this.b >> 25 & 1);
+    return !!(this.d.b >> 25 & 1);
   }
   set prot(n: boolean) {
-    this.b = (this.b & ~0x2000000) | (+n << 25);
+    this.d.b = (this.d.b & ~0x2000000) | (+n << 25);
   }
   get blocked() {
-    return (this.b >> 24 & 0b11) === 0b01;
+    return (this.d.b >> 24 & 0b11) === 0b01;
   }
 }

@@ -1,6 +1,6 @@
 export default class Player {
-  // Bit format: 000000 00000 0 00 00
-  // life 6 pillz 5 _name 1 won 2 wonPrevious 2
+  // Bit format: 00000 000000 00 00 0 00000 000000
+  // basePillz 5, baseLife 6, wonPrevious 2, won 2, name 1, pillz 5, life 6
   private a = 0;
   constructor(life: number, pillz: number, name: 0 | 1) {
     if (life < 0 || pillz < 0) {
@@ -8,7 +8,31 @@ export default class Player {
         `life and pillz must be a non-negative integer!\n Pillz: ${pillz}, life: ${life}`,
       );
     }
-    this.a = (life & 0b111111) | ((pillz & 0b11111) << 6) | (name << 11);
+    this.a = (life & 0b111111) | ((pillz & 0b11111) << 6) | (name << 11) |
+      ((life & 0b111111) << 16) | ((pillz & 0b11111) << 22);
+  }
+
+  /**
+   * Life, pillz, won and wonPrevious are one packed int, so a whole player saves and
+   * restores as a single number. That is what lets `Game.make`/`unmake` walk a move back
+   * instead of cloning the game to explore it.
+   */
+  snapshot(): number {
+    return this.a;
+  }
+  restore(a: number) {
+    this.a = a;
+  }
+
+  /**
+   * All the state is one packed int, so this is a two-field copy. Object.create rather than
+   * the generic `clone()` helper in utils, which reaches the same result through
+   * `Object.setPrototypeOf` on a spread - about 1600x dearer, and this runs twice per node.
+   */
+  clone(): Player {
+    const p: Player = Object.create(Player.prototype);
+    p.a = this.a;
+    return p;
   }
 
   get name() {
@@ -30,6 +54,15 @@ export default class Player {
     if (n < 0) {
       throw new RangeError("pillz must be a non-negative integer: " + n);
     } else this.a = (this.a & ~(0b11111 << 6)) | ((n & 0b11111) << 6);
+  }
+
+  /** Match-start totals, retained when current resources change for Per ... Lost effects. */
+  get baseLife() {
+    return (this.a >> 16) & 0b111111;
+  }
+
+  get basePillz() {
+    return (this.a >> 22) & 0b11111;
   }
 
   get won() {

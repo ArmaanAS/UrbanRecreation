@@ -1,7 +1,7 @@
 import Hand, { HandGenerator } from "./Hand.ts";
 import "colors";
-import { AbilityString, CardJSON, HandOf } from "./types/CardTypes.ts";
-import { clone } from "../utils/Utils.ts";
+import { AbilityString, type CardJSON, type Clan, type HandOf } from "./types/CardTypes.ts";
+import type Card from "./Card.ts";
 import Player from "./Player.ts";
 import GameRenderer from "../utils/GameRenderer.ts";
 import Events from "./battle/Events.ts";
@@ -22,6 +22,73 @@ export enum Winner {
 
 export type CardIndex = 0 | 1 | 2 | 3 | number;
 export type Selection = [CardIndex, number, boolean];
+
+/**
+ * Everything one `Game.make()` can change, so it can be walked back by `Game.unmake()`.
+ *
+ * Search allocates one of these per depth and reuses it, so exploring a move costs no
+ * allocation at all - which is the point. Cloning the game per node was ~23 objects a time
+ * and left GC at 27% of the search; this is a dozen integer writes.
+ */
+export class Undo {
+  id = 0;
+  winner = Winner.PLAYING;
+  i1: Selection | undefined = undefined;
+  i2: Selection | undefined = undefined;
+  /** True when this move resolved a round, so a battle has to be undone as well. */
+  battled = false;
+  hand: Hand | undefined = undefined;
+  handIndex = 0;
+
+  p1a = 0;
+  p2a = 0;
+  r1a = 0;
+  r2a = 0;
+  r1clan: Clan | undefined = undefined;
+  r2clan: Clan | undefined = undefined;
+
+  c1i = 0;
+  c2i = 0;
+  c1: Card | undefined = undefined;
+  c2: Card | undefined = undefined;
+
+  /** Length of each `Events.repeat[t]` before the battle, per side. */
+  rep1: number[] = new Array(10).fill(0);
+  rep2: number[] = new Array(10).fill(0);
+  /** Latched permanents already in `repeat`, whose flags a battle can flip. */
+  perms: Ability[] = [];
+  permWon: (boolean | undefined)[] = [];
+  permDelayed: (boolean | undefined)[] = [];
+  permCount = 0;
+
+  captureRepeat(events: Events, lens: number[]) {
+    for (let t = 0; t < 10; t++) {
+      const arr = events.repeat[t];
+      const n = arr.length;
+      lens[t] = n;
+      for (let k = 0; k < n; k++) {
+        const a = arr[k];
+        this.perms[this.permCount] = a;
+        this.permWon[this.permCount] = a.won;
+        this.permDelayed[this.permCount] = a.delayed;
+        this.permCount++;
+      }
+    }
+  }
+
+  /**
+   * Permanents merged during the battle are pushed onto the tail of `repeat`, and the only
+   * ones `removeGlobal` can take out are those same ones (an already-latched ability has
+   * `won === true` and never reaches that branch), so the saved prefix is intact and
+   * truncating restores it.
+   */
+  restoreRepeat(events: Events, lens: number[]) {
+    for (let t = 0; t < 10; t++) {
+      const arr = events.repeat[t];
+      if (arr.length !== lens[t]) arr.length = lens[t];
+    }
+  }
+}
 
 export default class Game {
   id: number;
@@ -99,39 +166,122 @@ export default class Game {
     if (draw) this.draw();
   }
 
+  /**
+   * Once per search node, so the shape of this matters more than anything else here.
+   *
+   * It used to build a literal and then `Object.setPrototypeOf` it onto Game.prototype,
+   * which drags a finished object onto a new map through the runtime - about 1600x the cost
+   * of giving it the right prototype from birth (tests/CardAccess.bench.ts). A V8 profile of
+   * `deno task time` put `ObjectSetPrototypeOf` at 29% of the entire search, over half of it
+   * from here. Fields are assigned in declaration order so every clone shares one map.
+   */
   clone(): Game {
     const h1 = this.h1.clone();
     const h2 = this.h2.clone();
 
-    const p1 = clone(this.p1);
-    const p2 = clone(this.p2);
-    // const events1 = this.events1.clone();
-    // const events2 = this.events2.clone();
+    // Events are only mutated while a round is resolving, so between rounds the parent's
+    // can be shared; a clone taken mid-round gets its own.
     let events1 = this.events1;
     let events2 = this.events2;
-    //   p1 = this.p1,
-    //   p2 = this.p2;
     if (this.id % 2 === 1) {
-      // p1 = clone(p1);
-      // p2 = clone(p2);
       events1 = events1.clone();
       events2 = events2.clone();
     }
 
-    return Object.setPrototypeOf({
-      id: this.id,
-      winner: this.winner,
-      p1,
-      p2,
-      h1,
-      h2,
-      i1: this.i1,
-      i2: this.i2,
-      events1,
-      events2,
-      r1: this.r1.clone(h1, h2),
-      r2: this.r2.clone(h2, h1),
-    }, Game.prototype);
+    const g: Game = Object.create(Game.prototype);
+    g.id = this.id;
+    g.p1 = this.p1.clone();
+    g.p2 = this.p2.clone();
+    g.winner = this.winner;
+    g.h1 = h1;
+    g.h2 = h2;
+    g.i1 = this.i1;
+    g.i2 = this.i2;
+    g.events1 = events1;
+    g.events2 = events2;
+    g.r1 = this.r1.clone(h1, h2);
+    g.r2 = this.r2.clone(h2, h1);
+    return g;
+  }
+
+  /**
+   * Apply a move, recording into `u` everything needed to walk it back.
+   *
+   * The move itself is delegated to `select()` so make/unmake can never drift from the
+   * engine's own rules: everything here is capture before and restore after. What that
+   * costs is a handful of ints, because the mutable state is already packed - a Player and
+   * a PlayerRound are one int each, and the two cards a battle touches are *replaced* in
+   * the hand by `CachedCardBattle.play` rather than edited, so undoing them is putting the
+   * old references back.
+   *
+   * Returns false, having changed nothing, if the card was already played.
+   */
+  make(index: CardIndex, pillz: number, fury: boolean, u: Undo): boolean {
+    const hand = this.turn === Turn.PLAYER_1 ? this.h1 : this.h2;
+    if (hand[index].played) return false;
+
+    u.id = this.id;
+    u.winner = this.winner;
+    u.i1 = this.i1;
+    u.i2 = this.i2;
+    u.hand = hand;
+    u.handIndex = index;
+    u.permCount = 0;
+
+    const willBattle = this.firstHasSelected;
+    u.battled = willBattle;
+    if (willBattle) {
+      u.p1a = this.p1.snapshot();
+      u.p2a = this.p2.snapshot();
+      u.r1a = this.r1.snapshot();
+      u.r2a = this.r2.snapshot();
+      u.r1clan = this.r1.lastClan;
+      u.r2clan = this.r2.lastClan;
+      // The slots CachedCardBattle.play is about to overwrite with freshly compiled cards.
+      u.c1i = this.turn === Turn.PLAYER_1 ? index : this.i1![0];
+      u.c2i = this.turn === Turn.PLAYER_2 ? index : this.i2![0];
+      u.c1 = this.h1[u.c1i];
+      u.c2 = this.h2[u.c2i];
+      // `events` is emptied by every execute and all ten times fire per battle, so only
+      // `repeat` - the latched permanents - survives a round and needs saving.
+      u.captureRepeat(this.events1, u.rep1);
+      u.captureRepeat(this.events2, u.rep2);
+    }
+
+    this.select(index, pillz, fury, false);
+    return true;
+  }
+
+  /** Reverse the `make` recorded in `u`. */
+  unmake(u: Undo) {
+    if (u.battled) {
+      u.restoreRepeat(this.events1, u.rep1);
+      u.restoreRepeat(this.events2, u.rep2);
+      for (let k = 0; k < u.permCount; k++) {
+        const a = u.perms[k];
+        a.won = u.permWon[k];
+        a.delayed = u.permDelayed[k];
+      }
+      this.h1[u.c1i] = u.c1!;
+      this.h2[u.c2i] = u.c2!;
+      // Only the card *this* make marked is unmarked; the first mover's stays played until
+      // its own make is walked back.
+      u.hand![u.handIndex].played = false;
+
+      this.p1.restore(u.p1a);
+      this.p2.restore(u.p2a);
+      this.r1.restore(u.r1a);
+      this.r2.restore(u.r2a);
+      this.r1.lastClan = u.r1clan;
+      this.r2.lastClan = u.r2clan;
+    } else {
+      u.hand![u.handIndex].played = false;
+    }
+
+    this.i1 = u.i1;
+    this.i2 = u.i2;
+    this.winner = u.winner;
+    this.id = u.id;
   }
 
   static from(o: Game) {
@@ -328,8 +478,15 @@ export default class Game {
 
       this.nextRound();
 
+      // Both players can hit 0 in the same round - the round loser takes card damage while
+      // the winner pays a Backlash / poison cost - and that has to be recorded as a result
+      // like any other. Leaving `winner` on PLAYING here let the solver treat a finished
+      // game as live: it kept expanding, `id` walked off the end of this half of
+      // `baseGames` into the other one (resetting `round` to 1), and the leaves it built
+      // had neither children nor a result, so `Node.rating()` returned its Infinity
+      // sentinel and every MAX ancestor inherited it.
       if (this.p1.life <= 0 && this.p2.life <= 0) {
-        return "Tie";
+        this.winner = Winner.TIE;
       } else if (this.p1.life <= 0) {
         this.winner = Winner.PLAYER_2;
       } else if (this.p2.life <= 0) {
