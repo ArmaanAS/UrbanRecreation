@@ -1,0 +1,495 @@
+//! The current, replay-grounded engine.
+//!
+//! This module intentionally lives alongside the frozen historical implementation. The
+//! first vertical slice implements only the effect-free base rules; its names make that
+//! limitation explicit so it cannot be mistaken for full ability or bonus support.
+
+use crate::catalog::CardKey;
+use std::error::Error;
+use std::fmt;
+
+pub const HAND_SIZE: usize = 4;
+pub const MAX_ROUNDS: u8 = 4;
+pub const FURY_COST: u16 = 3;
+pub const FURY_DAMAGE: u16 = 2;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum PlayerId {
+    P1,
+    P2,
+}
+
+impl PlayerId {
+    pub const ALL: [Self; 2] = [Self::P1, Self::P2];
+
+    pub const fn index(self) -> usize {
+        match self {
+            Self::P1 => 0,
+            Self::P2 => 1,
+        }
+    }
+
+    pub const fn other(self) -> Self {
+        match self {
+            Self::P1 => Self::P2,
+            Self::P2 => Self::P1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HandSlot(u8);
+
+impl HandSlot {
+    pub const ALL: [Self; HAND_SIZE] = [Self(0), Self(1), Self(2), Self(3)];
+
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl TryFrom<u8> for HandSlot {
+    type Error = InvalidHandSlot;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if value < HAND_SIZE as u8 {
+            Ok(Self(value))
+        } else {
+            Err(InvalidHandSlot { hand_index: value })
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InvalidHandSlot {
+    pub hand_index: u8,
+}
+
+impl fmt::Display for InvalidHandSlot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "hand index {} is outside 0..{}",
+            self.hand_index,
+            HAND_SIZE - 1
+        )
+    }
+}
+
+impl Error for InvalidHandSlot {}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ByPlayer<T>(pub [T; 2]);
+
+impl<T> ByPlayer<T> {
+    pub const fn new(p1: T, p2: T) -> Self {
+        Self([p1, p2])
+    }
+
+    pub fn get(&self, player: PlayerId) -> &T {
+        &self.0[player.index()]
+    }
+
+    pub fn get_mut(&mut self, player: PlayerId) -> &mut T {
+        &mut self.0[player.index()]
+    }
+
+    pub fn map<U>(self, mut map: impl FnMut(T) -> U) -> ByPlayer<U> {
+        let [p1, p2] = self.0;
+        ByPlayer::new(map(p1), map(p2))
+    }
+}
+
+impl<T> std::ops::Index<PlayerId> for ByPlayer<T> {
+    type Output = T;
+
+    fn index(&self, player: PlayerId) -> &Self::Output {
+        self.get(player)
+    }
+}
+
+impl<T> std::ops::IndexMut<PlayerId> for ByPlayer<T> {
+    fn index_mut(&mut self, player: PlayerId) -> &mut Self::Output {
+        self.get_mut(player)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BaseRulesCardSpec {
+    pub key: CardKey,
+    pub clan_id: u32,
+    pub power: u16,
+    pub damage: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BaseRulesPlayerSpec {
+    pub initial_life: u16,
+    pub initial_pillz: u16,
+    pub hand: [BaseRulesCardSpec; HAND_SIZE],
+}
+
+/// Immutable inputs shared by every branch of a base-rules search.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct BaseRulesMatchSpec {
+    pub battle_rule_id: u32,
+    pub night: bool,
+    pub players: ByPlayer<BaseRulesPlayerSpec>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BaseRulesPlayerState {
+    pub life: u16,
+    pub pillz: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MatchStatus {
+    Playing,
+    Won(PlayerId),
+    Draw,
+}
+
+/// All mutable state. Equality and hashing are intentionally structural for undo and solver
+/// checks. A future transposition key must pair this with externally known turn context, such
+/// as the next explicit first mover; that information is not derivable from round parity.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct BaseRulesPosition {
+    pub players: ByPlayer<BaseRulesPlayerState>,
+    pub played: ByPlayer<[bool; HAND_SIZE]>,
+    pub rounds_played: u8,
+    pub status: MatchStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BaseRulesSelection {
+    pub hand_index: u8,
+    /// Paid pillz only. The free attack pill is implicit.
+    pub pillz: u16,
+    pub fury: bool,
+}
+
+impl BaseRulesSelection {
+    pub const fn new(hand_index: u8, pillz: u16, fury: bool) -> Self {
+        Self {
+            hand_index,
+            pillz,
+            fury,
+        }
+    }
+}
+
+/// One atomic round input. Selections are keyed by player, independent of submission order.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BaseRulesRoundInput {
+    pub first_mover: PlayerId,
+    pub selections: ByPlayer<BaseRulesSelection>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BaseRulesCardResult {
+    pub key: CardKey,
+    pub hand_slot: HandSlot,
+    pub power: u16,
+    pub damage: u16,
+    pub attack: u32,
+    pub won: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BaseRulesRoundReport {
+    pub round: u8,
+    pub first_mover: PlayerId,
+    pub selections: ByPlayer<BaseRulesSelection>,
+    pub cards: ByPlayer<BaseRulesCardResult>,
+    pub players: ByPlayer<BaseRulesPlayerState>,
+    pub status: MatchStatus,
+}
+
+/// Snapshot undo is simple and exact; no field is reconstructed from the report.
+///
+/// An undo token belongs to the game and branch that produced it. Consume tokens on that
+/// game in reverse `make` order. Using a token with another game or after a sibling move is
+/// outside this API's contract.
+#[derive(Debug, Eq, PartialEq)]
+pub struct BaseRulesUndo {
+    before: BaseRulesPosition,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BaseRulesError {
+    MatchFinished {
+        status: MatchStatus,
+    },
+    RoundLimitReached {
+        rounds_played: u8,
+    },
+    InvalidHandSlot {
+        player: PlayerId,
+        hand_index: u8,
+    },
+    CardAlreadyPlayed {
+        player: PlayerId,
+        hand_slot: HandSlot,
+    },
+    CostOverflow {
+        player: PlayerId,
+    },
+    InsufficientPillz {
+        player: PlayerId,
+        available: u16,
+        required: u16,
+    },
+    AttackOverflow {
+        player: PlayerId,
+    },
+    DamageOverflow {
+        player: PlayerId,
+    },
+}
+
+impl fmt::Display for BaseRulesError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MatchFinished { status } => write!(formatter, "match is already {status:?}"),
+            Self::RoundLimitReached { rounds_played } => {
+                write!(
+                    formatter,
+                    "round limit reached after {rounds_played} rounds"
+                )
+            }
+            Self::InvalidHandSlot { player, hand_index } => {
+                write!(
+                    formatter,
+                    "{player:?} hand index {hand_index} is outside 0..3"
+                )
+            }
+            Self::CardAlreadyPlayed { player, hand_slot } => write!(
+                formatter,
+                "{player:?} already played hand slot {}",
+                hand_slot.get()
+            ),
+            Self::CostOverflow { player } => {
+                write!(formatter, "{player:?} selection cost overflow")
+            }
+            Self::InsufficientPillz {
+                player,
+                available,
+                required,
+            } => write!(
+                formatter,
+                "{player:?} has {available} pillz but selection costs {required}"
+            ),
+            Self::AttackOverflow { player } => write!(formatter, "{player:?} attack overflow"),
+            Self::DamageOverflow { player } => write!(formatter, "{player:?} damage overflow"),
+        }
+    }
+}
+
+impl Error for BaseRulesError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BaseRulesGame {
+    spec: BaseRulesMatchSpec,
+    position: BaseRulesPosition,
+}
+
+#[derive(Clone, Copy)]
+struct PreparedSelection {
+    slot: HandSlot,
+    cost: u16,
+    card: BaseRulesCardSpec,
+    result: BaseRulesCardResult,
+}
+
+impl BaseRulesGame {
+    pub fn new(spec: BaseRulesMatchSpec) -> Self {
+        let players = ByPlayer::new(
+            BaseRulesPlayerState {
+                life: spec.players[PlayerId::P1].initial_life,
+                pillz: spec.players[PlayerId::P1].initial_pillz,
+            },
+            BaseRulesPlayerState {
+                life: spec.players[PlayerId::P2].initial_life,
+                pillz: spec.players[PlayerId::P2].initial_pillz,
+            },
+        );
+        let status = initial_status(&players);
+        Self {
+            spec,
+            position: BaseRulesPosition {
+                players,
+                played: ByPlayer::new([false; HAND_SIZE], [false; HAND_SIZE]),
+                rounds_played: 0,
+                status,
+            },
+        }
+    }
+
+    pub fn spec(&self) -> &BaseRulesMatchSpec {
+        &self.spec
+    }
+
+    pub fn position(&self) -> &BaseRulesPosition {
+        &self.position
+    }
+
+    pub fn make(
+        &mut self,
+        input: BaseRulesRoundInput,
+    ) -> Result<(BaseRulesRoundReport, BaseRulesUndo), BaseRulesError> {
+        let prepared = self.validate(input)?;
+        let undo = BaseRulesUndo {
+            before: self.position.clone(),
+        };
+        let round = self.position.rounds_played;
+
+        for player in PlayerId::ALL {
+            let selected = prepared[player];
+            self.position.players[player].pillz -= selected.cost;
+            self.position.played[player][selected.slot.index()] = true;
+        }
+
+        let winner = round_winner(input.first_mover, &prepared);
+        let loser = winner.other();
+        self.position.players[loser].life = self.position.players[loser]
+            .life
+            .saturating_sub(prepared[winner].result.damage);
+        self.position.rounds_played += 1;
+        self.position.status = status_after_round(&self.position);
+
+        let mut results = prepared.map(|selection| selection.result);
+        results[winner].won = true;
+        let report = BaseRulesRoundReport {
+            round,
+            first_mover: input.first_mover,
+            selections: input.selections,
+            cards: results,
+            players: self.position.players,
+            status: self.position.status,
+        };
+        Ok((report, undo))
+    }
+
+    pub fn unmake(&mut self, undo: BaseRulesUndo) {
+        self.position = undo.before;
+    }
+
+    fn validate(
+        &self,
+        input: BaseRulesRoundInput,
+    ) -> Result<ByPlayer<PreparedSelection>, BaseRulesError> {
+        if self.position.rounds_played >= MAX_ROUNDS {
+            return Err(BaseRulesError::RoundLimitReached {
+                rounds_played: self.position.rounds_played,
+            });
+        }
+        if self.position.status != MatchStatus::Playing {
+            return Err(BaseRulesError::MatchFinished {
+                status: self.position.status,
+            });
+        }
+
+        let prepare = |player: PlayerId| -> Result<PreparedSelection, BaseRulesError> {
+            let selection = input.selections[player];
+            let slot = HandSlot::try_from(selection.hand_index).map_err(|_| {
+                BaseRulesError::InvalidHandSlot {
+                    player,
+                    hand_index: selection.hand_index,
+                }
+            })?;
+            if self.position.played[player][slot.index()] {
+                return Err(BaseRulesError::CardAlreadyPlayed {
+                    player,
+                    hand_slot: slot,
+                });
+            }
+            let fury_cost = if selection.fury { FURY_COST } else { 0 };
+            let cost = selection
+                .pillz
+                .checked_add(fury_cost)
+                .ok_or(BaseRulesError::CostOverflow { player })?;
+            let available = self.position.players[player].pillz;
+            if cost > available {
+                return Err(BaseRulesError::InsufficientPillz {
+                    player,
+                    available,
+                    required: cost,
+                });
+            }
+            let card = self.spec.players[player].hand[slot.index()];
+            let attack = u32::from(card.power)
+                .checked_mul(u32::from(selection.pillz) + 1)
+                .ok_or(BaseRulesError::AttackOverflow { player })?;
+            let fury_damage = if selection.fury { FURY_DAMAGE } else { 0 };
+            let damage = card
+                .damage
+                .checked_add(fury_damage)
+                .ok_or(BaseRulesError::DamageOverflow { player })?;
+            Ok(PreparedSelection {
+                slot,
+                cost,
+                card,
+                result: BaseRulesCardResult {
+                    key: card.key,
+                    hand_slot: slot,
+                    power: card.power,
+                    damage,
+                    attack,
+                    won: false,
+                },
+            })
+        };
+
+        Ok(ByPlayer::new(
+            prepare(PlayerId::P1)?,
+            prepare(PlayerId::P2)?,
+        ))
+    }
+}
+
+fn round_winner(first_mover: PlayerId, prepared: &ByPlayer<PreparedSelection>) -> PlayerId {
+    let p1 = prepared[PlayerId::P1];
+    let p2 = prepared[PlayerId::P2];
+    match p1.result.attack.cmp(&p2.result.attack) {
+        std::cmp::Ordering::Greater => PlayerId::P1,
+        std::cmp::Ordering::Less => PlayerId::P2,
+        std::cmp::Ordering::Equal => match p1.card.key.level.cmp(&p2.card.key.level) {
+            std::cmp::Ordering::Less => PlayerId::P1,
+            std::cmp::Ordering::Greater => PlayerId::P2,
+            std::cmp::Ordering::Equal => first_mover,
+        },
+    }
+}
+
+fn status_after_round(position: &BaseRulesPosition) -> MatchStatus {
+    let p1 = position.players[PlayerId::P1].life;
+    let p2 = position.players[PlayerId::P2].life;
+    if p1 == 0 || p2 == 0 || position.rounds_played == MAX_ROUNDS {
+        match p1.cmp(&p2) {
+            std::cmp::Ordering::Greater => MatchStatus::Won(PlayerId::P1),
+            std::cmp::Ordering::Less => MatchStatus::Won(PlayerId::P2),
+            std::cmp::Ordering::Equal => MatchStatus::Draw,
+        }
+    } else {
+        MatchStatus::Playing
+    }
+}
+
+fn initial_status(players: &ByPlayer<BaseRulesPlayerState>) -> MatchStatus {
+    let p1 = players[PlayerId::P1].life;
+    let p2 = players[PlayerId::P2].life;
+    if p1 != 0 && p2 != 0 {
+        MatchStatus::Playing
+    } else {
+        match p1.cmp(&p2) {
+            std::cmp::Ordering::Greater => MatchStatus::Won(PlayerId::P1),
+            std::cmp::Ordering::Less => MatchStatus::Won(PlayerId::P2),
+            std::cmp::Ordering::Equal => MatchStatus::Draw,
+        }
+    }
+}

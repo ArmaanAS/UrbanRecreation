@@ -162,7 +162,7 @@ pub struct ExpectedCardResult {
     pub power: u16,
     /// The transient damage reported at resolution, before later snapshots revert it.
     pub damage: u16,
-    pub attack: u16,
+    pub attack: u32,
     pub won: bool,
 }
 

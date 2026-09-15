@@ -227,6 +227,7 @@ mod tests {
     use super::{load_corpus, CorpusErrorKind};
     use crate::catalog::CardCatalog;
     use crate::replay::adapter::ReplaySkipReason;
+    use crate::replay::execute::BaseRulesReplay;
     use crate::replay::model::{ReplayCaseV1, SourceStatus, REPLAY_SCHEMA_VERSION};
     use std::collections::BTreeSet;
     use std::fs;
@@ -334,7 +335,7 @@ mod tests {
             })
             .count();
 
-        assert!(file_count >= 326);
+        assert!(file_count >= 328);
         assert_eq!(corpus.len(), file_count);
         assert!(
             corpus.errors.is_empty(),
@@ -342,7 +343,7 @@ mod tests {
             corpus.errors
         );
         assert_eq!(corpus.skipped.len(), 6);
-        assert_eq!(corpus.ready.len(), file_count - 6);
+        assert!(corpus.ready.len() >= 322);
 
         let skipped_ids: Vec<_> = corpus
             .skipped
@@ -378,11 +379,17 @@ mod tests {
                 .iter()
                 .map(|replay| replay.rounds.len())
                 .sum::<usize>()
-                >= 1_095
+                >= 1_102
         );
 
         let catalog = CardCatalog::load(catalog_path).unwrap();
         for replay in &corpus.ready {
+            BaseRulesReplay::new(replay.clone(), &catalog).unwrap_or_else(|error| {
+                panic!(
+                    "ready battle {} failed current-engine replay validation: {error}",
+                    replay.metadata.battle_id
+                )
+            });
             assert_eq!(replay.schema_version, REPLAY_SCHEMA_VERSION);
             let mut played = BTreeSet::new();
             for player in &replay.players {

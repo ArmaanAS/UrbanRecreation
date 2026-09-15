@@ -726,7 +726,7 @@ fn normalize_result(
     Ok(ExpectedCardResult {
         power: to_u16(battle_id, &format!("{field}.power"), result.power)?,
         damage: to_u16(battle_id, &format!("{field}.damage"), result.damage)?,
-        attack: to_u16(battle_id, &format!("{field}.attack"), result.attack)?,
+        attack: to_u32(battle_id, &format!("{field}.attack"), result.attack)?,
         won: result.won,
     })
 }
@@ -762,7 +762,7 @@ fn normalize_testcase_result(
     Ok(ExpectedCardResult {
         power: to_u16(battle_id, &format!("{field}.power"), result.power)?,
         damage: to_u16(battle_id, &format!("{field}.damage"), result.damage)?,
-        attack: to_u16(battle_id, &format!("{field}.attack"), result.attack)?,
+        attack: to_u32(battle_id, &format!("{field}.attack"), result.attack)?,
         won: result.won,
     })
 }
@@ -824,6 +824,16 @@ fn to_u16(battle_id: u64, field: &str, value: i64) -> Result<u16, AdapterError> 
             battle_id,
             field,
             format!("{value} is outside the range 0..={}", u16::MAX),
+        )
+    })
+}
+
+fn to_u32(battle_id: u64, field: &str, value: i64) -> Result<u32, AdapterError> {
+    u32::try_from(value).map_err(|_| {
+        invalid(
+            battle_id,
+            field,
+            format!("{value} is outside the range 0..={}", u32::MAX),
         )
     })
 }
@@ -961,6 +971,40 @@ mod tests {
         let player_one = replay.rounds[0].expected_card_results[0].unwrap();
         assert_eq!(player_one.damage, 6);
         assert_ne!(player_one.damage, 3);
+    }
+
+    #[test]
+    fn preserves_attack_beyond_u16_with_checked_u32_conversion() {
+        let mut source = capture(866431);
+        source.rounds[0].resolution[0].as_mut().unwrap().attack = 82_000;
+        source.testcase.as_mut().unwrap().moves[0]
+            .r1
+            .as_mut()
+            .unwrap()
+            .attack = 82_000;
+
+        let classification = adapt_capture(source, &catalog()).unwrap();
+        let ReplayClassification::Ready(replay) = classification else {
+            panic!("expected ready replay");
+        };
+        assert_eq!(
+            replay.rounds[0].expected_card_results[0].unwrap().attack,
+            82_000
+        );
+    }
+
+    #[test]
+    fn rejects_attack_beyond_u32() {
+        let mut source = capture(866431);
+        source.rounds[0].resolution[0].as_mut().unwrap().attack = i64::from(u32::MAX) + 1;
+
+        let error = adapt_capture(source, &catalog()).unwrap_err();
+
+        assert!(matches!(
+            error.kind,
+            AdapterErrorKind::InvalidField { field, .. }
+                if field == "rounds[0].resolution[0].attack"
+        ));
     }
 
     #[test]

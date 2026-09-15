@@ -1,6 +1,7 @@
 pub mod adapter;
 pub mod capture;
 pub mod corpus;
+pub mod execute;
 pub mod model;
 
 pub use adapter::{
@@ -9,4 +10,7 @@ pub use adapter::{
 };
 pub use capture::CapturedGame;
 pub use corpus::{load_corpus, CorpusEntryError, CorpusErrorKind, CorpusLoadError, ReplayCorpus};
+pub use execute::{
+    BaseRulesReplay, BaseRulesReplayError, BaseRulesReplayReport, ReplayValidationError,
+};
 pub use model::*;

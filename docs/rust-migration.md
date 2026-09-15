@@ -85,6 +85,19 @@ The current captures fit eight-bit combat values, but that is not a durable type
 Replay and new engine boundaries should use wider integer types so future modifiers and
 solver-generated states cannot silently overflow.
 
+The first current-engine slice now lives in `rust/src/engine/`, alongside rather than inside
+the frozen historical engine. `BaseRulesMatchSpec` is immutable match context (including
+numeric clan IDs, night, and battle-rule identity), while `BaseRulesPosition` is the small,
+structurally comparable mutable state. `BaseRulesGame::make` validates an entire round before
+mutation and returns an opaque snapshot undo for exact `unmake`.
+
+`BaseRulesReplay` revalidates the public replay model, binds cards to the canonical catalog,
+and executes capture selections without consulting expected outputs. Its execution APIs and
+reports are explicitly named effects-disabled/base-rules: they currently establish only
+attack, Fury, tie, resource, life, and status plumbing. The fixed server-backed boundary is
+20 uninterrupted rounds across 18 captures, including complete two-round battle `1065231`;
+it is not a claim that printed abilities or bonuses are implemented.
+
 ### 4. Port current solver semantics
 
 Do not revive the old perfect-information recommendation model as the live advisor. Port
