@@ -776,20 +776,3 @@ fn shift_false_range(n: u8, round: u8) -> Iter<'static, (u8, bool)> {
         SPLIT_SHIFT_RANGES[n as usize].iter()
     }
 }
-
-#[test]
-fn test() {
-    for i in 0..N {
-        println!("{:?}", SPLIT_RANGES[i as usize]);
-    }
-}
-
-#[test]
-fn f() {
-    println!("Test -> {}", SelectionResult::Player(Selection::default()));
-    println!("Test -> {}", SelectionResult::Draw(Selection::default()));
-    println!(
-        "Test -> {}",
-        SelectionResult::Opponent(Selection::default())
-    );
-}

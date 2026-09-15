@@ -4,10 +4,8 @@ use colored::Colorize;
 use lazy_static::lazy_static;
 
 use crate::{
-    card::Hand,
     game::{Game, GameStatus, Selection},
     output,
-    solver::Solver,
 };
 
 /// Tree of results data structures
@@ -377,51 +375,6 @@ impl Solver2 {
         // (best_moves, best_score, (best_win_rate / 2.0 + 1.0) / 2.0)
         (best_moves, best_score, best_win_rate, battle_count)
     }
-}
-
-#[test]
-fn test_solver() {
-    let h1 = Hand::from_names("Genmaicha", "Orka", "Sando", "Deborah");
-    let h2 = Hand::from_names("Nathan", "El Kuzco", "Noon Steevens", "Strygia");
-
-    let mut game = Game::new(h1, h2);
-    game.flip = 0;
-    // game.flip = 1;
-
-    game.select(1, 3, false); // Orka
-    game.select(3, 0, false); // Strygia
-                              // game.select(3, 0, false); // Strygia
-                              // game.select(1, 3, false); // Orka
-
-    game.select(0, 4, false); // Nathan
-    game.select(1, 4, false); // El Kuzco
-                              // game.select(0, 2, false); // Genmaicha
-
-    // game.select(2, 0, false); // Sando
-    // game.select(2, 3, false); // Noon Steevens
-
-    // game.select(1, 5, false); // El Kuzco
-
-    // let tree = Solver2::fill_tree_abab(&game);
-
-    // let best_moves =
-    // ResultsTree::get_best_moves(&tree);
-    // println!("{:?}", best_moves);
-
-    // let best =
-    Solver2::solve(&game);
-    // println!("{}", best);
-
-    let best = Solver::solve(&game);
-    println!("{}", best);
-
-    // ResultsTree::Map(tree).print();
-
-    // let selection = best.selection();
-    // game.select(selection.index, selection.pillz, selection.fury);
-
-    // let best = Solver::solve(&game);
-    // println!("{}", best);
 }
 
 static N: u8 = 32;

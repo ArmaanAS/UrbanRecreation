@@ -4,6 +4,28 @@ This is a Rust port of the [UrbanRecreation TypeScript engine](https://github.co
 
 The Rust port does _not_ include the TypeScript ability compiler. It currently relies on the precompiled card and ability data checked into `assets/`.
 
+## Tests and historical baseline
+
+From this directory, `cargo test --locked` runs the library foundation tests.
+`cargo test --locked --all-features --all-targets` also builds and tests the legacy advisor target.
+The asset test starts a child process in an empty temporary directory to verify that
+card and ability loading does not depend on the caller's working directory.
+
+The imported 10,000-game corpus is an archaeological record of the older TypeScript
+engine, not server ground truth. Its aggregate diagnostic is ignored by default:
+
+```sh
+cargo test --release --locked --lib historical::tests::historical_release_baseline -- --ignored --exact --test-threads=1
+```
+
+This pins the imported Rust engine's release behavior: 9,061 games pass, 939 fail,
+920 have resource mismatches, and 38 panic (these categories overlap). It continues
+after mismatches and catches each game's panic. The fixture pins all failing case
+indexes and a digest of 35,957 resolved rounds. Release mode matters because legacy
+unsigned arithmetic behaves differently with debug overflow checks. The baseline
+does not claim game-rule parity or validate solver decisions; future engine fixes
+must review deliberate baseline changes against captured real games.
+
 ## Basic Usage
 
 Define 2 hands of 4 cards, either from their names or card ids:
