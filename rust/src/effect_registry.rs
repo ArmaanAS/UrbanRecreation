@@ -1005,7 +1005,7 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
                     stat,
                     operation,
                     value: input.value,
-                    minimum: (input.value_min != 0).then_some(input.value_min),
+                    minimum: (operation == StatOperationV1::Decrease).then_some(input.value_min),
                     maximum: (input.value_max != 0).then_some(input.value_max),
                     multiplier: if input.is_support {
                         MagnitudeMultiplierV1::Support
@@ -1546,6 +1546,15 @@ mod tests {
             Some(SupportedEffectV1::ModifyCombatStat {
                 stat: CombatStatV1::Power,
                 maximum: Some(8),
+                ..
+            })
+        ));
+        assert!(matches!(
+            registry.get(2535).unwrap().compiled().supported(),
+            Some(SupportedEffectV1::ModifyCombatStat {
+                operation: StatOperationV1::Decrease,
+                minimum: Some(0),
+                multiplier: MagnitudeMultiplierV1::Support,
                 ..
             })
         ));
