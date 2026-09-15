@@ -106,6 +106,25 @@ attack, Fury, tie, resource, life, and status plumbing. The fixed server-backed 
 20 uninterrupted rounds across 18 captures, including complete two-round battle `1065231`;
 it is not a claim that printed abilities or bonuses are implemented.
 
+The next vertical slice is deliberately named `ClanBonusDiagnostic`, not a full-effects
+engine. Its constructor requires the explicit policy that disables ordinary abilities and
+out-of-slice bonuses. Every captured ability and bonus remains visible as Execute, Disabled,
+or Absent in preparation metadata and selected-round reports. Exact registry conflicts are
+fatal, while unsupported variants of the Stop Bonus/stat-cancellation controls promised by
+the projection fail atomically only if their card is selected.
+
+This diagnostic trusts the capture's active `source_bonus`: null is inactive, while a
+present exact id/description can already reflect Oculus infiltration, Day/Night, or an
+Oblivion copy. Support is replay-specific source-bonus context: the count of distinct card
+ids in the immutable whole draw sharing that active source-bonus id, including played cards.
+It is not inferred clan membership and must not be reused as the future catalog-only solver
+constructor. The fixed gate preserves all 20 base prefixes and adds 20 more, for 40 exact
+server-backed rounds; `876712` is the one newly complete capture. Night bonus id `1442`
+remains explicitly Unsupported and deferred.
+Several prefixes are exact because paired omitted effects are both deliberately Disabled;
+the cancellation, directional-clamp, and control-cycle edge semantics are pinned primarily
+by focused synthetic tests rather than independently observable outcomes throughout this gate.
+
 ### 4. Port current solver semantics
 
 Do not revive the old perfect-information recommendation model as the live advisor. Port
