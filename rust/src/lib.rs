@@ -1,6 +1,7 @@
 pub mod ability;
 pub mod battle;
 pub mod card;
+pub mod catalog;
 pub mod game;
 pub mod modifiers;
 #[cfg(feature = "legacy-advisor")]
