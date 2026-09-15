@@ -83,6 +83,26 @@ Deno.test("a completed capture carries its result into the holding screen", asyn
   );
 });
 
+Deno.test("live abilities missing from static card data suppress unsafe advice", async () => {
+  const captured = JSON.parse(
+    await Deno.readTextFile("captures/games/866431.json"),
+  ) as Parameters<typeof buildPosition>[0];
+  const changed = structuredClone(captured);
+  const card = changed.players.flatMap((player) => player.hand).find((
+    candidate,
+  ) => candidate.name === "Leonaparte")!;
+  // Leonaparte has no ability in the loaded data. This models an EFC semi-evo changing
+  // before the periodic character dump, as happened to Quetzal Cr in battle 1131463.
+  card.ability = { id: -1, description: "+1 Damage" };
+
+  const built = buildPosition(changed);
+
+  assertEquals("game" in built, false);
+  if ("game" in built) return;
+  assertEquals(built.settled, false);
+  assertEquals(built.why.includes("advice withheld"), true);
+});
+
 Deno.test("a result ends the advisor even when a forfeited battle still says playing", async () => {
   const captured = JSON.parse(
     await Deno.readTextFile("captures/games/866431.json"),

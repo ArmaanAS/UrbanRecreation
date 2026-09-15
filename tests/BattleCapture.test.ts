@@ -18,7 +18,7 @@ Deno.test("restart metadata repairs identity without erasing the known room", ()
   assertEquals(mergeCaptureMeta(entries), { myId: 19309601, room });
 });
 
-Deno.test("remote card hover frames become deduplicated absolute hand events", () => {
+Deno.test("remote hover and pillz-chooser frames become absolute hand events", () => {
   const state = newCaptureState();
   state.lastBattleId = 42;
   state.battleActive = true;
@@ -62,6 +62,27 @@ Deno.test("remote card hover frames become deduplicated absolute hand events", (
     [],
     "only the eight battle-card slots are valid",
   );
+  assertEquals(frame(8, 7, "4"), [{
+    battleId: 42,
+    entry: { kind: "selecting", t: 8, side: 0, index: 3, active: true },
+  }]);
+  assertEquals(frame(9, 7, "4"), [], "duplicate chooser-open is suppressed");
+  assertEquals(frame(10, 7, "6"), [
+    {
+      battleId: 42,
+      entry: { kind: "selecting", t: 10, side: 0, index: 3, active: false },
+    },
+    {
+      battleId: 42,
+      entry: { kind: "selecting", t: 10, side: 1, index: 1, active: true },
+    },
+  ]);
+  assertEquals(frame(11, 8, "4"), [], "a stale chooser-close is ignored");
+  assertEquals(frame(12, 8, "6"), [{
+    battleId: 42,
+    entry: { kind: "selecting", t: 12, side: 1, index: 1, active: false },
+  }]);
+  assertEquals(frame(13, 8, "6"), [], "duplicate chooser-close is suppressed");
 });
 
 Deno.test("a result finishes a forfeited battle without a done snapshot", async () => {

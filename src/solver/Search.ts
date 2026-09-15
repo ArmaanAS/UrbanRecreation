@@ -55,6 +55,10 @@ export interface Candidate extends Move {
   key: string;
   /** Values in P1's frame, one per opponent hypothesis folded in so far. */
   values: number[];
+  /** SECOND-mode index into `Search.opponentMoves` for each corresponding value. */
+  sampleIndexes: number[];
+  /** SECOND-mode bit flags: 1 = we KO now, 2 = we are KO'd now. */
+  sampleFlags: number[];
   /** Statistical weight of each value; round-one replies use the captured opening prior. */
   weights: number[];
   /** Mean of `values`, in P1's frame. NaN until the first unit lands. */
@@ -182,6 +186,8 @@ export default class Search {
   readonly openingEstimate: boolean;
   /** The card the opponent has already committed, in SECOND mode. */
   readonly oppIndex?: number;
+  /** The exact hidden opponent wagers represented by each candidate's samples. */
+  readonly opponentMoves: Move[];
   readonly candidates: Candidate[];
   /**
    * Opponent hypotheses per candidate - constant, since neither side's options depend on
@@ -247,7 +253,25 @@ export default class Search {
       this.us = this.root.turn === Turn.PLAYER_1
         ? Turn.PLAYER_2
         : Turn.PLAYER_1;
-      this.outer = [...legalMoves(this.root, [this.oppIndex])];
+      const hiddenMoves = [...legalMoves(this.root, [this.oppIndex])];
+      const hiddenPillz = this.root.playingPlayer.pillz;
+      // The conditional read panel defaults to plain all-in, with zero and Fury all-in as
+      // the two most useful alternatives. Settle those hypotheses first so clicking either
+      // extreme produces advice early without doing any work twice.
+      const priority = (move: Move) =>
+        !move.fury && move.pillz === hiddenPillz
+          ? 0
+          : !move.fury && move.pillz === 0
+          ? 1
+          : move.fury && moveCost(move) === hiddenPillz
+          ? 2
+          : 3;
+      this.outer = hiddenMoves
+        .map((move, order) => ({ move, order }))
+        .sort((a, b) =>
+          priority(a.move) - priority(b.move) || a.order - b.order
+        )
+        .map(({ move }) => move);
       this.inner = this.repliesTo(this.outer[0]);
     } else if (blindSecond) {
       // The opponent is still choosing. Treat every one of their cards and hidden bets as
@@ -271,10 +295,15 @@ export default class Search {
     }
 
     const keys = this.mode === SearchMode.FIRST ? this.outer : this.inner;
+    this.opponentMoves = this.mode === SearchMode.FIRST
+      ? this.inner
+      : this.outer;
     this.candidates = keys.map((m) => ({
       ...m,
       key: moveKey(m),
       values: [],
+      sampleIndexes: [],
+      sampleFlags: [],
       weights: [],
       average: NaN,
       minimax: NaN,
@@ -368,6 +397,12 @@ export default class Search {
       ? this.candidates[this.oi]
       : this.candidates[this.ii];
     candidate.values.push(value);
+    // Only SECOND mode can display a useful exact-wager panel: the opponent's card is
+    // known there. Avoid doubling sample bookkeeping for first-mover and blind searches.
+    if (this.mode === SearchMode.SECOND) {
+      candidate.sampleIndexes.push(this.oi);
+      candidate.sampleFlags.push((koNow ? 1 : 0) | (koedNow ? 2 : 0));
+    }
     candidate.weights.push(
       this.openingEstimate
         ? openingReplyWeight(
@@ -457,6 +492,25 @@ export default class Search {
       }
     }
     return extreme;
+  }
+
+  /** The computed line for `candidate` under one exact hidden opponent wager. */
+  outcome(
+    candidate: Candidate,
+    opponent: Pick<Move, "pillz" | "fury">,
+  ): { value: number; ko: boolean; koed: boolean } | undefined {
+    const sampleIndex = this.opponentMoves.findIndex((move) =>
+      move.pillz === opponent.pillz && move.fury === opponent.fury
+    );
+    if (sampleIndex < 0) return undefined;
+    const valueIndex = candidate.sampleIndexes.indexOf(sampleIndex);
+    if (valueIndex < 0) return undefined;
+    const flags = candidate.sampleFlags[valueIndex] ?? 0;
+    return {
+      value: candidate.values[valueIndex],
+      ko: (flags & 1) !== 0,
+      koed: (flags & 2) !== 0,
+    };
   }
 
   /**

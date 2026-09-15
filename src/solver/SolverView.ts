@@ -25,7 +25,12 @@ import Game from "../game/Game.ts";
 import type Card from "../game/Card.ts";
 import { Turn } from "../game/types/Types.ts";
 import GameRenderer from "../utils/GameRenderer.ts";
-import Search, { type Candidate, SearchMode, shownPercent } from "./Search.ts";
+import Search, {
+  type Candidate,
+  moveCost,
+  SearchMode,
+  shownPercent,
+} from "./Search.ts";
 
 const ESC = "\x1b[";
 export const ALT_SCREEN_ON = `${ESC}?1049h${ESC}?25l`;
@@ -155,6 +160,161 @@ export function displaySafeRanked(search: Search): Candidate[] {
   );
 }
 
+export interface OpponentReadResult {
+  candidate: Candidate;
+  value: number;
+  ko: boolean;
+  koed: boolean;
+}
+
+/** Best responses under one explicit hypothesis about the opponent's hidden wager. */
+export function opponentReadRanked(
+  search: Search,
+  pillz: number,
+  fury: boolean,
+): OpponentReadResult[] {
+  const results: OpponentReadResult[] = [];
+  for (const candidate of search.candidates) {
+    const outcome = search.outcome(candidate, { pillz, fury });
+    if (outcome !== undefined) results.push({ candidate, ...outcome });
+  }
+  return results.sort((a, b) => {
+    const av = search.percent(a.value), bv = search.percent(b.value);
+    if (av !== bv) return bv - av;
+    if (a.ko !== b.ko) return a.ko ? -1 : 1;
+    if (a.koed !== b.koed) return a.koed ? 1 : -1;
+    const cost = moveCost(a.candidate) - moveCost(b.candidate);
+    if (cost !== 0) return cost;
+    return a.candidate.index - b.candidate.index;
+  });
+}
+
+interface RelativeReadTarget {
+  key: string;
+  column: number;
+  endColumn: number;
+  row: number;
+}
+
+function opponentReadPanel(
+  search: Search,
+  ourHand: Game["h1"],
+  opponentName: string,
+  ourPillz: number,
+  theirPillz: number,
+  cols: number,
+  state?: OpponentReadState,
+): { lines: string[]; targets: RelativeReadTarget[] } {
+  const moves = search.opponentMoves;
+  const plainMoves = moves.filter((move) => !move.fury).sort((a, b) =>
+    a.pillz - b.pillz
+  );
+  const furyMoves = moves.filter((move) => move.fury).sort((a, b) =>
+    a.pillz - b.pillz
+  );
+  const available = [...plainMoves, ...furyMoves];
+  const selected =
+    available.find((move) =>
+      opponentReadKey(move.pillz, move.fury) === state?.selected
+    ) ?? moves[0];
+  const selectedKey = opponentReadKey(selected.pillz, selected.fury);
+  const targets: RelativeReadTarget[] = [];
+
+  const button = (pillz: number, fury: boolean) => {
+    const key = opponentReadKey(pillz, fury);
+    const allIn = pillz + (fury ? 3 : 0) === theirPillz;
+    const number = pillz === 0
+      ? label("0")
+      : fg(allIn ? MAGENTA : BLUE, String(pillz));
+    const content = fury ? `${number}${fg(RED, "+F")}` : number;
+    const rendered = `[${content}]`;
+    if (key === selectedKey) return bold(fg(CYAN, rendered));
+    return key === state?.hovered ? `${ESC}7m${rendered}${ESC}27m` : rendered;
+  };
+
+  const selector = (
+    title: string,
+    row: number,
+    options: typeof moves,
+  ) => {
+    let line = `  ${padEnd(label(title), 7)}`;
+    if (options.length === 0) return line + dim("unavailable");
+    for (const move of options) {
+      const rendered = button(move.pillz, move.fury);
+      line += " ";
+      const column = width(line) + 1;
+      line += rendered;
+      const endColumn = width(line);
+      if (column <= cols) {
+        targets.push({
+          key: opponentReadKey(move.pillz, move.fury),
+          column,
+          endColumn: Math.min(cols, endColumn),
+          row,
+        });
+      }
+    }
+    return line;
+  };
+
+  const lines = [
+    "",
+    "",
+    `  ${label("OPP READ")} ${dim("—")} ${bold(opponentName)}  ${
+      dim("hypothetical")
+    }`,
+    selector("Plain", 3, plainMoves),
+    selector("Fury", 4, furyMoves),
+    "",
+  ];
+  const assumed = pillzLabel(
+    selected.pillz,
+    betPillzColour(selected.pillz, selected.fury, theirPillz),
+  ) + (selected.fury ? fg(RED, " + Fury") : "");
+  const results = opponentReadRanked(
+    search,
+    selected.pillz,
+    selected.fury,
+  );
+  const nameW = Math.max(30, Math.min(52, cols - 25));
+  lines.push(
+    padEnd(`  ${label("Best replies if OPP used")} ${assumed}`, nameW) +
+      padStart(label(search.openingEstimate ? "Score" : "Result"), 9) +
+      padStart(label("Now"), 7) +
+      padStart(dim(`${results.length}/${search.candidates.length}`), 8),
+  );
+  const rows = results.slice(0, 3).map((result, index) => {
+    const score = search.percent(result.value);
+    const resultText = search.openingEstimate
+      ? fg(heat(score), pct(score))
+      : score > 50
+      ? fg(GREEN, "Win")
+      : score < 50
+      ? fg(RED, "Lose")
+      : fg(YELLOW, "Draw");
+    const now = result.ko
+      ? bold(fg(B_GREEN, "KO"))
+      : result.koed
+      ? bold(fg(B_RED, "KO'd"))
+      : dim("-");
+    return padEnd(
+      clip(
+        ` ${dim(`${index + 1}.`)} ${
+          moveLabel(ourHand, result.candidate, nameW - 20, ourPillz)
+        }`,
+        nameW,
+      ),
+      nameW,
+    ) + padStart(resultText, 9) + padStart(now, 7);
+  });
+  if (rows.length === 0) {
+    rows.push(`  ${dim("calculating this assumption…")}`);
+  }
+  while (rows.length < 3) rows.push("");
+  lines.push(...rows);
+  return { lines, targets };
+}
+
 function recommendationHeading(
   cols: number,
   title: string,
@@ -204,6 +364,8 @@ export interface ViewExtras {
   autoQueue?: boolean;
   /** The pointer is currently over the auto-queue control. */
   autoQueueHover?: boolean;
+  /** Interactive hypothesis used when answering an opponent's committed card. */
+  opponentRead?: OpponentReadState;
   /** Live state after the displayed search has ceased to be the current decision. */
   phase?: ViewPhase;
   /** Direct board override, primarily for deterministic visual previews. */
@@ -211,6 +373,36 @@ export interface ViewExtras {
   top?: number;
   /** Override the detected terminal size; for tests. */
   size?: { columns: number; rows: number };
+}
+
+export interface OpponentReadTarget {
+  key: string;
+  /** One-based terminal coordinates, inclusive. */
+  column: number;
+  endColumn: number;
+  row: number;
+}
+
+export interface OpponentReadState {
+  /** `${pillz} ${fury}`; undefined defaults to the opponent's plain all-in. */
+  selected?: string;
+  hovered?: string;
+  /** Rebuilt by render for the live mouse handler. */
+  targets?: OpponentReadTarget[];
+}
+
+export const opponentReadKey = (pillz: number, fury: boolean) =>
+  `${pillz} ${fury}`;
+
+export function opponentReadClick(
+  targets: readonly OpponentReadTarget[],
+  column: number,
+  row: number,
+): string | undefined {
+  return targets.find((target) =>
+    target.row === row && column >= target.column &&
+    column <= target.endColumn
+  )?.key;
 }
 
 export interface ViewPhase {
@@ -256,6 +448,9 @@ export interface ViewBoard {
   /** Transient remote mouse position; cyan/double, never treated as a committed play. */
   hoveredYou?: number;
   hoveredThem?: number;
+  /** Card whose pillz chooser is open; magenta/double until submitted or cancelled. */
+  choosingYou?: number;
+  choosingThem?: number;
   /** Resources immediately before the most recently resolved round. */
   beforeLastRound?: {
     you: { life: number; pillz: number };
@@ -386,6 +581,9 @@ export function render(
   extras: ViewExtras = {},
 ): string {
   const { columns: cols, rows } = extras.size ?? consoleSize();
+  if (extras.opponentRead?.targets !== undefined) {
+    extras.opponentRead.targets.length = 0;
+  }
   const us = search.us === Turn.PLAYER_1 ? game.p1 : game.p2;
   const them = search.us === Turn.PLAYER_1 ? game.p2 : game.p1;
   const ourHand = search.us === Turn.PLAYER_1 ? game.h1 : game.h2;
@@ -661,6 +859,18 @@ export function render(
       );
     }
   }
+  const readPanel = search.mode === SearchMode.SECOND
+    ? opponentReadPanel(
+      search,
+      ourHand,
+      oppCard?.name ?? "opponent card",
+      us.pillz,
+      them.pillz,
+      cols,
+      extras.opponentRead,
+    )
+    : undefined;
+  const decisionPanel = readPanel?.lines ?? matrix;
   // ---- what was played, and the status line ---------------------------------------------
   const playedFooter: string[] = [];
   const played: {
@@ -740,16 +950,28 @@ export function render(
     cards.length -
     statusFooter.length;
   const shown: string[] = [];
-  // The matrix is decision support, while Played is retrospective context. Draw the grid
-  // immediately below the recommendation blocks and only append the fixed-height log when
-  // the *complete* grid and log both fit. On ordinary-height terminals Played therefore
-  // disappears first, rather than separating the ranking from its visual breakdown.
-  const matrixMinimum = 4; // two-line gap, heading, and at least one card/fury row
-  if (room >= matrixMinimum) {
-    shown.push(...matrix.slice(0, room));
+  // The conditional read panel replaces the aggregate grid after the opponent commits a
+  // card. It needs enough room to include at least one actual response; a clipped set of
+  // buttons with no answer underneath would look interactive while being useless.
+  const panelMinimum = readPanel === undefined ? 4 : 8;
+  if (room >= panelMinimum) {
+    shown.push(...decisionPanel.slice(0, room));
+  }
+  if (readPanel !== undefined && extras.opponentRead?.targets !== undefined) {
+    const rowOffset = cards.length + head.length + table.length +
+      safeTable.length;
+    for (const target of readPanel.targets) {
+      if (target.row >= shown.length) continue;
+      extras.opponentRead.targets.push({
+        ...target,
+        row: rowOffset + target.row + 1,
+      });
+    }
   }
   const logRoom = room - shown.length;
-  if (shown.length === matrix.length && logRoom >= playedFooter.length) {
+  if (
+    shown.length === decisionPanel.length && logRoom >= playedFooter.length
+  ) {
     shown.push(...playedFooter);
   }
   const filler = new Array(Math.max(0, room - shown.length)).fill("");
@@ -932,6 +1154,7 @@ function battleBoard(
     board.selectedThem,
     false,
     board.hoveredThem,
+    board.choosingThem,
   ));
   const ourHand = centre(GameRenderer.handLines(
     board.you,
@@ -939,6 +1162,7 @@ function battleBoard(
     board.selectedYou,
     false,
     board.hoveredYou,
+    board.choosingYou,
   ));
   const battle = board.battle;
   let theirColour: number | undefined;

@@ -67,7 +67,24 @@ export default class Events {
   }
 
   removeGlobal(event: EventTime, ability: Ability) {
-    this.repeat[event].splice(this.repeat[event].indexOf(ability), 1);
+    const index = this.repeat[event].indexOf(ability);
+    if (index >= 0) this.repeat[event].splice(index, 1);
+  }
+
+  /**
+   * Apply one bucket of permanent effects without skipping the entry shifted into place
+   * when an effect fails to latch and removes itself. A `for...of` iterator advances its
+   * index after that splice, so two same-time effects could leave the second one unlatched
+   * in `repeat` (battle 1145959: copied Dope followed by Pere Barali's Heal).
+   */
+  private executeRepeat(event: EventTime, data: BattleData) {
+    const repeat = this.repeat[event];
+    let i = 0;
+    while (i < repeat.length) {
+      const ability = repeat[i];
+      ability.apply(data);
+      if (repeat[i] === ability) i++;
+    }
   }
 
   /**
@@ -169,8 +186,8 @@ export default class Events {
     secondEvents.length = 0;
 
     // No repeated PRE4 effects are currently known, but preserve execute()'s semantics.
-    for (const ability of first.repeat[event]) ability.apply(firstData);
-    for (const ability of second.repeat[event]) ability.apply(secondData);
+    first.executeRepeat(event, firstData);
+    second.executeRepeat(event, secondData);
   }
 
   execute(event: EventTime, data: BattleData) {
@@ -192,9 +209,7 @@ export default class Events {
     }
     this.events[event].length = 0;
 
-    for (const ability of this.repeat[event]) {
-      ability.apply(data);
-    }
+    this.executeRepeat(event, data);
   }
 
   // executeStart(data: BattleData) {

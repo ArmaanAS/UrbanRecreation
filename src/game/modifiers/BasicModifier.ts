@@ -62,6 +62,8 @@ export default class BasicModifier extends Modifier {
   min = -Infinity;
   max = Infinity;
   always = false;
+  /** Reanimate may apply at zero life; ordinary post-KO resource gains may not. */
+  revive = false;
   // constructor(change: number, minmax?: number) {
   // constructor(change: number) {
   //   super();
@@ -171,7 +173,7 @@ export default class BasicModifier extends Modifier {
     // behaviour seen in captured games (Kubra "Defeat: +1 Pillz And Life" at 0 life).
     if (
       (this.type === Type.LIFE || this.type === Type.PILLZ) && !this.opp &&
-      data.player.life <= 0
+      data.player.life <= 0 && !this.revive
     ) {
       return false;
     }
@@ -218,7 +220,8 @@ export default class BasicModifier extends Modifier {
           return !data.card.attack.blocked;
         case Type.LIFE:
           if (DEBUG) console.log("Player life:", data.player.life);
-          return !data.card.life.blocked && data.player.life > 0;
+          return !data.card.life.blocked &&
+            (data.player.life > 0 || this.revive);
         case Type.PILLZ:
           return !data.card.pillz.blocked;
         case Type.TUNEOUT:

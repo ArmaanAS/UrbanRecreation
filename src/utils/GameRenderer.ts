@@ -96,6 +96,7 @@ export default class GameRenderer {
     selected?: number,
     outerBorder = true,
     hovered?: number,
+    choosing?: number,
   ) {
     const board = new Canvas(128, 17);
     board.col = col;
@@ -103,11 +104,12 @@ export default class GameRenderer {
     hand.forEach((c, i) => {
       const isSelected = i === selected;
       const isHovered = i === hovered;
+      const isChoosing = i === choosing;
       board.draw(
         3 + i * 32,
         0,
-        GameRenderer.drawCard(c, isSelected, isHovered),
-        isSelected || isHovered ? "double" : "single",
+        GameRenderer.drawCard(c, isSelected, isHovered, isChoosing),
+        isSelected || isHovered || isChoosing ? "double" : "single",
       );
     });
     return outerBorder
@@ -238,7 +240,12 @@ export default class GameRenderer {
     );
   }
 
-  static drawCard(card: Card, selected = false, hovered = false) {
+  static drawCard(
+    card: Card,
+    selected = false,
+    hovered = false,
+    choosing = false,
+  ) {
     const width = 24;
     const canvas = new Canvas(width, 15);
 
@@ -248,6 +255,8 @@ export default class GameRenderer {
       canvas.col = "red";
     } else if (selected || card.played) {
       canvas.col = "yellow";
+    } else if (choosing) {
+      canvas.col = "magenta";
     } else if (hovered) {
       canvas.col = "cyan";
     }

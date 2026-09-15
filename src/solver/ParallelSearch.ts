@@ -6,6 +6,8 @@ interface ProgressMessage {
   type: "progress";
   done: boolean;
   values: number[][];
+  sampleIndexes: number[][];
+  sampleFlags: number[][];
   weights: number[][];
   kos: number[];
   koed: number[];
@@ -121,6 +123,8 @@ export default class ParallelSearch extends Search {
       ) continue;
       const candidate = this.candidates[i];
       candidate.values.push(...values);
+      candidate.sampleIndexes.push(...message.sampleIndexes[i]);
+      candidate.sampleFlags.push(...message.sampleFlags[i]);
       candidate.weights.push(...message.weights[i]);
       candidate.done += values.length;
       candidate.kos += message.kos[i];
@@ -189,6 +193,8 @@ export default class ParallelSearch extends Search {
     // or those units would be counted twice.
     for (const candidate of this.candidates) {
       candidate.values.length = 0;
+      candidate.sampleIndexes.length = 0;
+      candidate.sampleFlags.length = 0;
       candidate.weights.length = 0;
       candidate.average = NaN;
       candidate.minimax = NaN;

@@ -5,7 +5,6 @@ import BasicModifier from "./modifiers/BasicModifier.ts";
 import { type Clan, type ClanId, ClanIdMap } from "@/game/types/CardTypes.ts";
 import { DEBUG } from "../utils/Debug.ts";
 export enum ConditionType {
-
   UNDEFINED = 0,
   COURAGE = 1,
   DEFEAT = 2,
@@ -87,8 +86,12 @@ export default class Condition {
       case ConditionType.BACKLASH:
         return data.player.won === true;
       case ConditionType.REANIMATE:
+        if (data.player.won !== false) return false;
+        // Reanimate is a Defeat life gain, not a lethal-only trigger. If the incoming
+        // damage was lethal it starts from zero rather than a negative life total, which
+        // is how the ability can prevent the KO.
         if (data.player.life < 0) data.player.life = 0;
-        return data.player.won === false && data.player.life <= 0;
+        return true;
 
       case ConditionType.STOP:
         if (this.stop == "Ability") {
@@ -194,6 +197,7 @@ export default class Condition {
         for (const mod of ability.mods) {
           if (mod instanceof BasicModifier) {
             mod.win = false;
+            mod.revive = true;
           }
         }
         break;

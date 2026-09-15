@@ -2,6 +2,7 @@ import "colors";
 import { HandGenerator } from "@/game/Hand.ts";
 import Player from "@/game/Player.ts";
 import Game from "@/game/Game.ts";
+import EventTime from "@/game/types/EventTime.ts";
 import { Turn } from "@/game/types/Types.ts";
 import deepValue from "@/solver/Deep.ts";
 import policyValue from "@/solver/Policy.ts";
@@ -70,6 +71,80 @@ function stoppedRescuePosition() {
   return game;
 }
 
+/** Round two of captured battle 1130654, after P2 reveals Lobo. */
+function reanimatePosition() {
+  const game = new Game(
+    new Player(14, 12, 0),
+    new Player(14, 12, 1),
+    HandGenerator.handOf(
+      ["Lumia Cr", "Miyo", "Mou", "Nebula"],
+      [4, 3, 3, 3],
+    ),
+    HandGenerator.handOf(
+      ["Bernardite", "Dashiell", "Donald", "Lobo"],
+      [3, 4, 3, 3],
+    ),
+    Turn.PLAYER_1,
+    false,
+    false,
+  );
+  game.select(2, 7, false, false); // Mou
+  game.select(1, 6, false, false); // Dashiell
+  game.select(3, 0, false, false); // Lobo revealed; its pillz remain hidden
+  return game;
+}
+
+/** Round four of captured battle 1131463, after P2 reveals the live EFC semi-evo. */
+function efcSemiEvoPosition() {
+  const game = new Game(
+    new Player(14, 12, 0),
+    new Player(14, 12, 1),
+    HandGenerator.handOf(
+      ["Morgane", "Segar", "Smokey Cr", "Taljion"],
+      [3, 3, 3, 3],
+    ),
+    HandGenerator.handOf(
+      ["Quetzal Cr", "Kusm", "Fomalhaut Ld", "Toris"],
+      [3, 2, 3, 3],
+    ),
+    Turn.PLAYER_1,
+    false,
+    false,
+  );
+  game.select(2, 2, false, false); // Smokey Cr
+  game.select(1, 3, false, false); // Kusm
+  game.select(3, 7, false, false); // Toris
+  game.select(0, 6, false, false); // Morgane
+  game.select(3, 1, true, false); // Taljion
+  game.select(2, 0, false, false); // Fomalhaut Ld
+  game.select(0, 0, false, false); // Quetzal Cr revealed; pillz hidden
+  return game;
+}
+
+/** Round three of captured battle 1145959 after Pere Barali beat Segar. */
+function adjacentPermanentPosition() {
+  const game = new Game(
+    new Player(14, 12, 0),
+    new Player(14, 12, 1),
+    HandGenerator.handOf(
+      ["Goldie", "Scubb", "Segar", "Smokey Cr"],
+      [3, 4, 3, 3],
+    ),
+    HandGenerator.handOf(
+      ["Ashara", "Gibus", "Pere Barali", "Wez Cr"],
+      [3, 3, 2, 2],
+    ),
+    Turn.PLAYER_1,
+    false,
+    true,
+  );
+  game.select(1, 9, false, false); // Scubb
+  game.select(1, 0, false, false); // Gibus
+  game.select(2, 12, false, false); // Pere Barali
+  game.select(2, 7, false, false); // Segar
+  return game;
+}
+
 Deno.test("battle 1065812 no longer reports an impossible 100%", () => {
   const search = new Search(reportedPosition());
   while (search.step()) { /* finish every opponent reply */ }
@@ -94,6 +169,53 @@ Deno.test("battle 1090338 accounts for Burdock stopping the Rescue bonus", () =>
 
   assertEquals(search.shownPercent(spideeFive.average), 89);
   assertEquals(search.shownPercent(spideeFive.minimax), 0);
+});
+
+Deno.test("battle 1130654 accounts for Lobo's Reanimate", () => {
+  const search = new Search(reanimatePosition());
+  while (search.step()) { /* finish every hidden Lobo bet */ }
+
+  const miyoOne = search.candidates.find((candidate) =>
+    candidate.index === 1 && candidate.pillz === 1 && !candidate.fury
+  );
+  if (!miyoOne) throw new Error("Miyo with one pill was not searched");
+
+  assertEquals(search.shownPercent(miyoOne.average), 86);
+});
+
+Deno.test("battle 1131463 uses Quetzal Cr's live EFC semi-evo", () => {
+  const search = new Search(efcSemiEvoPosition());
+  while (search.step()) { /* finish every hidden Quetzal Cr bet */ }
+
+  const segarAllIn = search.candidates.find((candidate) =>
+    candidate.index === 1 && candidate.pillz === 3 && !candidate.fury
+  );
+  if (!segarAllIn) throw new Error("Segar with three pillz was not searched");
+
+  assertEquals(search.shownPercent(segarAllIn.average) < 100, true);
+  assertEquals(
+    (search.outcome(segarAllIn, { pillz: 2, fury: false })?.value ?? 0) < 0,
+    true,
+  );
+});
+
+Deno.test("battle 1145959 processes a permanent after a failed adjacent latch", () => {
+  const game = adjacentPermanentPosition();
+  const heals = game.events2.repeat[EventTime.END];
+
+  // Pere's stopped Copy: Opp. Ability adds a Dope before its own Heal. Removing that Dope
+  // must not make iteration skip the Heal shifted into its array slot.
+  assertEquals(heals.map((a) => a.ability), ["1 Heal Max 18"]);
+  assertEquals(heals[0].won, true);
+  assertEquals(heals[0].delayed, false);
+
+  const before = JSON.stringify(game);
+  policyValue(game, Turn.PLAYER_1);
+  assertEquals(
+    JSON.stringify(game),
+    before,
+    "policy search must fully unmake its moves",
+  );
 });
 
 Deno.test("a continuation cannot choose its reply after seeing hidden pillz", () => {
