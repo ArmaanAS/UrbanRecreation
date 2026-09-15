@@ -10,16 +10,7 @@ use crate::{
     utils::StackVec4,
 };
 
-pub static mut PRINT: u8 = 0;
-macro_rules! println {
-    ($($rest:tt)*) => {
-        unsafe {
-            if PRINT == 0 {
-                std::println!($($rest)*)
-            }
-        }
-    }
-}
+use crate::output::println;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Events {

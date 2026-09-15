@@ -7,16 +7,7 @@ use crate::{
     types::Clan,
 };
 
-pub static mut PRINT: u8 = 0;
-macro_rules! println {
-    ($($rest:tt)*) => {
-        unsafe {
-            if PRINT == 0 {
-                std::println!($($rest)*)
-            }
-        }
-    }
-}
+use crate::output::println;
 
 #[derive(Debug, Clone, Copy, Deserialize_repr, PartialEq)]
 #[repr(usize)]

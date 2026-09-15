@@ -1,9 +1,4 @@
-use std::{
-    cell::RefCell,
-    fmt::Display,
-    hash::Hash,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::{cell::RefCell, fmt::Display, hash::Hash};
 
 use colored::{ColoredString, Colorize};
 use serde::Deserialize;
@@ -16,18 +11,7 @@ use crate::{
     types::Clan,
 };
 
-pub static mut PRINT: u8 = 0;
-macro_rules! println {
-    ($($rest:tt)*) => {
-        unsafe {
-            if PRINT == 0 {
-                std::println!($($rest)*)
-            }
-        }
-    }
-}
-
-pub static mut BATTLE_COUNT: AtomicU32 = AtomicU32::new(0);
+use crate::output::println;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RoundWin {
@@ -308,10 +292,8 @@ impl Game {
     }
 
     pub fn print_status(&self) {
-        unsafe {
-            if PRINT != 0 {
-                return;
-            }
+        if !crate::output::enabled() {
+            return;
         }
 
         match self.status() {
@@ -413,10 +395,8 @@ impl Game {
     }
 
     fn print_battle(&self, attack1: u8, attack2: u8) {
-        unsafe {
-            if PRINT != 0 {
-                return;
-            }
+        if !crate::output::enabled() {
+            return;
         }
 
         match (self.s1, self.s2) {
@@ -649,11 +629,6 @@ impl Game {
         }
 
         self.round += 1;
-
-        // unsafe {
-        //     // *BATTLE_COUNT.get_mut() += 1;
-        //     BATTLE_COUNT.fetch_add(1, Ordering::Relaxed);
-        // }
     }
 
     pub fn can_select(&self, index: usize, pillz: u8, fury: bool) -> bool {

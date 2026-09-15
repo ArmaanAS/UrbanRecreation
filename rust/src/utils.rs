@@ -4,7 +4,6 @@ use serde::{
     de::{SeqAccess, Visitor},
     Deserialize, Deserializer,
 };
-use tinyvec::Array;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StackVec4<A> {
@@ -23,22 +22,10 @@ impl<A> Default for StackVec4<A> {
 
 impl<A> StackVec4<A> {
     #[inline(always)]
-    pub fn push_(&mut self, val: A) {
-        unsafe {
-            *self.data.get_unchecked_mut(self.len) = Some(val);
-        }
-        self.len += 1;
-    }
-    #[inline(always)]
     pub fn push(&mut self, val: A) {
         assert!(self.len < 4);
 
         self.data[self.len] = Some(val);
-        self.len += 1;
-    }
-    #[inline(always)]
-    pub fn push_1_safe(&mut self, val: A) {
-        self.data[self.len & 3] = Some(val);
         self.len += 1;
     }
     #[inline(always)]

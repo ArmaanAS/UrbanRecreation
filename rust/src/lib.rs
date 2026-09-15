@@ -4,6 +4,7 @@ pub mod card;
 pub mod catalog;
 pub mod game;
 pub mod modifiers;
+mod output;
 #[cfg(feature = "legacy-advisor")]
 pub mod server;
 pub mod solver;

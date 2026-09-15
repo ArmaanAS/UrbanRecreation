@@ -1,34 +1,14 @@
-use core::sync::atomic::Ordering;
 use std::{collections::HashMap, slice::Iter, time::Instant};
 
 use colored::Colorize;
 use lazy_static::lazy_static;
 
 use crate::{
-    ability, battle,
     card::Hand,
-    game::{self, Game, GameStatus, Selection, BATTLE_COUNT},
-    modifiers,
+    game::{Game, GameStatus, Selection},
+    output,
     solver::Solver,
 };
-
-pub fn disable_print() {
-    unsafe {
-        ability::PRINT += 1;
-        game::PRINT += 1;
-        modifiers::PRINT += 1;
-        battle::PRINT += 1;
-    }
-}
-
-pub fn enable_print() {
-    unsafe {
-        ability::PRINT -= 1;
-        game::PRINT -= 1;
-        modifiers::PRINT -= 1;
-        battle::PRINT -= 1;
-    }
-}
 
 /// Tree of results data structures
 #[derive(Debug)]
@@ -175,22 +155,8 @@ pub struct Solver2;
 
 impl Solver2 {
     pub fn fill_tree_abab(game: &Game) -> HashMap<Selection, ResultsTree> {
-        let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
-        let now = Instant::now();
-
-        disable_print();
+        let _output_guard = output::mute();
         let tree = Solver2::_fill_tree_abab(game);
-        enable_print();
-
-        let battles = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
-        let elapsed = now.elapsed();
-        println!(
-            "{} {} /{:.1?}secs ({:.0?}k/s)",
-            " Battle Count ".white().on_bright_purple(),
-            battles,
-            elapsed.as_secs_f32(),
-            battles as f32 / elapsed.as_secs_f32() / 1000f32
-        );
 
         tree
     }
@@ -263,14 +229,13 @@ impl Solver2 {
     }
 
     pub fn solve(game: &Game) -> Selection {
-        // let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
         let now = Instant::now();
 
-        disable_print();
-        let (best_moves, best_score, win_rate, battles) = Solver2::_solve(game, 0);
-        enable_print();
+        let (best_moves, best_score, win_rate, battles) = {
+            let _output_guard = output::mute();
+            Solver2::_solve(game, 0)
+        };
 
-        // let battles = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
         let elapsed = now.elapsed();
         println!(
             "{} {} /{:.1?}secs ({:.0?}k/s)",

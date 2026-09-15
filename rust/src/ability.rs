@@ -17,16 +17,7 @@ use crate::{
     types::Clan,
 };
 
-pub static mut PRINT: u8 = 0;
-macro_rules! println {
-    ($($rest:tt)*) => {
-        unsafe {
-            if PRINT == 0 {
-                std::println!($($rest)*)
-            }
-        }
-    }
-}
+use crate::output::println;
 
 lazy_static! {
     // pub static ref ABILITIES: HashMap<u32, Cow<'static, Ability>, BuildNoHashHasher<u32>> = {

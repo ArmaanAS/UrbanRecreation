@@ -1,9 +1,7 @@
-use core::sync::atomic::Ordering;
 use std::{
     fmt::Display,
     io::{stdout, Write},
     slice::Iter,
-    time::Instant,
 };
 
 use colored::{Color, Colorize};
@@ -11,9 +9,8 @@ use lazy_static::lazy_static;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
-    ability, battle,
-    game::{self, Game, GameStatus, PlayerType, Selection, BATTLE_COUNT},
-    modifiers,
+    game::{Game, GameStatus, PlayerType, Selection},
+    output,
 };
 
 pub struct Solver {}
@@ -52,29 +49,9 @@ impl Display for SelectionResult {
     }
 }
 
-pub fn disable_print() {
-    unsafe {
-        ability::PRINT += 1;
-        game::PRINT += 1;
-        modifiers::PRINT += 1;
-        battle::PRINT += 1;
-    }
-}
-
-pub fn enable_print() {
-    unsafe {
-        ability::PRINT -= 1;
-        game::PRINT -= 1;
-        modifiers::PRINT -= 1;
-        battle::PRINT -= 1;
-    }
-}
-
 impl Solver {
     pub fn middle(game: &Game) {
-        let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
-        disable_print();
-        let now = Instant::now();
+        let _output_guard = output::mute();
         if game.s1.is_some() || game.s2.is_some() {
             if game.round == 0 {
                 Solver::middle_second_par(game);
@@ -86,16 +63,6 @@ impl Solver {
         } else {
             Solver::middle_first(game);
         }
-        enable_print();
-        let battles: u32 = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
-        let elapsed = now.elapsed();
-        println!(
-            "{} {} /{:.1?}secs  ({:.0?}k/s)",
-            " Battle Count ".white().on_bright_purple(),
-            battles,
-            elapsed.as_secs_f32(),
-            battles as f32 / elapsed.as_secs_f32() / 1000f32
-        );
     }
 
     fn print_count(pillz: u8, fury: bool, wins: u8, draws: u8, losses: u8) {
@@ -445,26 +412,12 @@ impl Solver {
     }
 
     pub fn solve(game: &Game) -> SelectionResult {
-        let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
-        let now = Instant::now();
-
-        disable_print();
+        let _output_guard = output::mute();
         let best = if game.s1.is_none() != game.s2.is_none() {
             Solver::solve_second(&game)
         } else {
             Solver::solve_first(&game)
         };
-        enable_print();
-
-        let battles = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
-        let elapsed = now.elapsed();
-        println!(
-            "{} {} /{:.1?}secs ({:.0?}k/s)",
-            " Battle Count ".white().on_bright_purple(),
-            battles,
-            elapsed.as_secs_f32(),
-            battles as f32 / elapsed.as_secs_f32() / 1000f32
-        );
         // handler.join().unwrap();
         best
     }
