@@ -10,7 +10,10 @@
     "bench": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 --inspect-brk ./tests/IterTree.bench.ts",
     "advise": "deno run --allow-read --allow-net=localhost:8787,127.0.0.1:8787 --allow-run=deno --allow-env=FORCE_COLOR --allow-sys=osRelease --v8-flags=--max-old-space-size=12000 ./src/solver/Advisor.ts",
     "time-search": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --v8-flags=--max-old-space-size=12000 ./tests/Search.bench.ts",
-    "time": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 ./tests/IterTree.bench.ts"
+    "time": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 ./tests/IterTree.bench.ts",
+    "rust:check": "cargo check --manifest-path rust/Cargo.toml --locked --all-features",
+    "rust:test": "cargo test --manifest-path rust/Cargo.toml --locked",
+    "rust:legacy": "cargo run --manifest-path rust/Cargo.toml --locked --features legacy-advisor --bin urban-recreation-legacy"
   },
   "imports": {
     "@std/streams": "jsr:@std/streams@1",

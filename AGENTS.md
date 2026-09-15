@@ -14,6 +14,7 @@ Written by hand by the repo owner (armaanas); AI assistance started September 20
 | `data/` | `data.json` = the card list the engine loads, **one row per card per level** (power, damage and ability differ by level), built by `deno task cards` from `site_characters.jsonl` (gitignored 40 MB dump of the site's own card DB, refreshed via `__ur.dumpCharacters()` in the browser). `site_clans.json` (from `__ur.dumpClans()`) supplies clan names/bonuses; otherwise they come from the legacy `cards.json`. `cards.json` / `data.maxlevel.json` = older OAuth-API dumps (Dec 2024, max level only, stale); `compiled.json` = ability inventory from `deno task compile`. |
 | `scripts/` | Card data (`BuildCardData.ts` is the live path; `RequestCards.ts` / `RequestAllCardLevels.ts` / `UR_API.ts` are the OAuth-API path, needs API_KEY/API_SECRET in `.env` plus a browser auth step), ability compiler (`CompileAbilities.js`), battle capture (`BattleCapture.ts`, `ExtractBattle.ts`). |
 | `tests/` | `deno test -A`. Per-ability tests in `tests/ability/`, replay of captured games in `tests/replay/`, Rust cross-check testcases in `tests/rust/`. |
+| `rust/` | Imported Rust implementation and candidate high-performance backend. It builds as a library by default; the historical HTTP advisor is behind the `legacy-advisor` feature. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
 | `ur-logger.user.js` + `log_server.ts` | Tampermonkey userscript mirroring site traffic to a local server that writes `ur_log.jsonl` (raw, **contains tokens, gitignored**) and secret-free per-battle files in `captures/battles/`. Binary response bodies (WebGL asset bundles, images, wasm) are dropped on both sides: `res.text()` decodes them as lossy UTF-8, so they are unrecoverable garbage, and unfiltered they were 65% of the first real log. `scripts/PruneLog.ts` retro-fixes older logs. |
 | `captures/` | `battles/<id>.jsonl` raw battle capture in a compact lossless form (static block once + one dynamic line per `battles.status` poll, ~20 KB/battle instead of ~450 KB; `expandStatus()` in `scripts/BattleCapture.ts` rebuilds the original server objects); `abilities.json` shared ability/bonus dictionary (id → description + structured `abilityData`); `games/<id>.json` clean game records with decks, moves, per-round resolution, life/pillz, and an engine `testcase`. All safe to commit. |
 
@@ -31,6 +32,8 @@ deno task bench / deno task time # iterTree benchmark (the breadth-first referen
 deno task time-search            # Search benchmark - the depth-first path the advisor uses
 deno task advise                 # live view; starts its capture server automatically
 deno task advise --replay 866431 --budget 10   # grade your moves in a captured battle
+deno task rust:check             # Rust library + optional historical advisor compile check
+deno task rust:test              # Rust foundation, catalog and replay-contract tests
 UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (off by default)
 ```
 
@@ -80,6 +83,20 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    include it), and build a "what do players play" dataset from captured moves and timings.
 4. Engine bugs are addressed only when a replay exposes them; two legacy tests
    (`Game_2 Protection` — empty card names, `Oculus Infiltrated`) fail and predate this work.
+
+## Rust revival
+
+- The TypeScript engine, captures and current advisor remain the operational reference.
+  Rust is a candidate backend, not a second source of game rules.
+- Follow `docs/rust-migration.md`: canonical `(card id, level)` data and the versioned replay
+  adapter come before engine parity; engine parity comes before porting current solver policy.
+- Keep structural cleanup separate from behavior changes. The ignored 10,000-case Rust
+  diagnostic preserves historical behavior, while `captures/games/` is the server-backed
+  correctness oracle.
+- Do not revive the historical perfect-information advisor as the live recommendation
+  model. The current hidden-information `Search`/`Policy` behavior must be ported explicitly.
+- Initial integration should use a versioned JSON-lines worker owned by the TypeScript
+  advisor. Reconsider in-process FFI only after correctness and protocol stability.
 
 ## Solver notes (reviewed Sept 2026)
 

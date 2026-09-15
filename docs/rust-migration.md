@@ -1,0 +1,134 @@
+# Rust migration and parity plan
+
+## Decision
+
+The TypeScript and Rust implementations live in one repository. The Rust history was
+imported without squashing under `rust/`, so its earlier development remains inspectable.
+
+This is a shared-source monorepo, not two engines that must be edited in lockstep. New game
+rules are established from captured server results and implemented in the TypeScript
+reference first. Rust then consumes the same data and replay contract and is checked
+independently against the same server results.
+
+## Sources of truth
+
+| Concern | Source of truth | Notes |
+| --- | --- | --- |
+| Card identity and level stats | `data/data.json` | One row per `(card id, level)`; do not use names as identity. |
+| Observed game behavior | `captures/games/*.json` | Server power, damage, attack, winner, life, and pillz are the parity oracle. |
+| Capture normalization | `scripts/ExtractBattle.ts` and the Rust replay adapter | Both must preserve side identity and the first-mover convention. |
+| Working engine and advisor | TypeScript | Keep this stable while Rust is revived. |
+| Candidate engine and solver backend | `rust/` | Must pass replay parity before advisor integration. |
+| Old Rust assets and 10,000-case corpus | Historical baseline only | Useful for detecting accidental behavior changes, not evidence of current game correctness. |
+
+The 53 TypeScript replay mismatches are known gaps in the reference, not expected Rust
+answers. When TypeScript and a capture disagree, the capture wins after the evidence has
+been checked.
+
+## Non-negotiable gates
+
+1. A structural Rust change must leave the archived historical semantic digest unchanged,
+   unless the commit explicitly and intentionally changes game behavior.
+2. Every Rust rule change must be tested against server-backed replay data. Prefer at least
+   two independent captures for a newly inferred rule.
+3. Rust replay failures must report the battle, round, cards, moves, and the exact field
+   difference; aggregate pass counts alone are not enough.
+4. The TypeScript replay baseline must be rerun after shared data or capture-contract
+   changes.
+5. Solver comparisons are valid only when both implementations use the same information
+   model, legal moves, evaluator, and tie-breaking policy.
+
+## Migration stages
+
+### 1. Preserve and establish the library boundary
+
+- Archive both pre-migration histories and non-ignored working trees.
+- Import Rust under `rust/` with history.
+- Make the Rust crate a normal library by default.
+- Keep the old HTTP advisor behind the `legacy-advisor` feature.
+- Remove unsafe diagnostic globals and scratch benchmarks without rule changes.
+- Replace print-only tests with behavior tests and an ignored historical regression gate.
+
+### 2. Share canonical inputs
+
+- Index cards by `(id, level)` from `data/data.json`.
+- Parse every `captures/games/*.json` file into a versioned Rust replay model.
+- Normalize captured sides into engine-player order while retaining source-side identity.
+- Validate the adapter against the embedded TypeScript testcase, without running either
+  engine.
+
+This stage proves that Rust can consume the live project's inputs. It does not claim engine
+parity.
+
+### 3. Reach engine parity vertically
+
+- Introduce replay execution without coupling the adapter to the historical `Game` type.
+- Start with legal selection, turn order, base attack, round winner, damage, resources, and
+  game status.
+- Add clan bonuses, conditions, cancels/protection, post-round effects, and permanent
+  effects in evidence-backed slices.
+- Report Rust-vs-server and TypeScript-vs-server results separately.
+- Only remove historical Rust data structures when their replacement is covered by the
+  replay suite.
+
+The target is exact agreement for every replay-ready capture: per-round power, damage,
+attack, winner, life, and pillz. Incomplete and Dojo captures remain classified rather than
+silently discarded.
+
+In the 328-capture corpus at import time, only 58 of 1,102 asserted rounds reduce to base
+power, damage, attack, cost, and tie rules when effects are disabled. Only 20 of those are
+reachable as uninterrupted prefixes, and battle `1065231` is the sole meaningful complete
+capture in that subset. Use those fixtures to prove replay plumbing, not ability support:
+some printed effects cancel each other and happen to leave a base-stat result.
+
+The current captures fit eight-bit combat values, but that is not a durable type contract.
+Replay and new engine boundaries should use wider integer types so future modifiers and
+solver-generated states cannot silently overflow.
+
+### 4. Port current solver semantics
+
+Do not revive the old perfect-information recommendation model as the live advisor. Port
+the current TypeScript behavior deliberately:
+
+- allocation-free make/unmake search;
+- depth-2 work units and cancellation;
+- the conservative information-aware policy for hidden pillz and Fury;
+- opening heuristic and captured-move weighting;
+- blind-second handling;
+- visible-percent, knockout, safety, then cost ranking.
+
+Keep the old Rust solver available as a historical reference until equivalence tests cover
+the intended replacement.
+
+### 5. Integrate Rust behind a process boundary
+
+Use a versioned JSON-lines worker protocol initially. The TypeScript advisor remains the
+owner of capture state, policy selection, cancellation, and terminal rendering. A worker
+process gives clean crash isolation and makes A/B comparison straightforward. In-process
+FFI is only worth considering after the protocol and engine are stable.
+
+## Performance measurement
+
+Measure engine and solver performance separately:
+
+- Engine: replay identical normalized rounds and report time per resolved round.
+- Search: solve identical positions with identical semantics and report nodes, elapsed
+  time, peak memory, and result checksum.
+- Build Rust with `--release`; warm both runtimes; use multiple alternating samples; keep
+  debug output disabled; record machine and commit hashes.
+
+A faster answer from a different policy or a smaller tree is not an implementation speedup.
+Correctness and semantic equivalence are gates before headline comparisons.
+
+## Working commands
+
+```bash
+# TypeScript reference
+deno test -A --no-check tests/replay/
+deno test -A --no-check
+
+# Rust foundation
+cargo fmt --manifest-path rust/Cargo.toml -- --check
+cargo check --manifest-path rust/Cargo.toml --locked --all-features
+cargo test --manifest-path rust/Cargo.toml --locked
+```
