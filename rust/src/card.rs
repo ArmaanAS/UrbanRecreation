@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
 };
 
-use chrono::{Datelike, NaiveDateTime};
+use chrono::{DateTime, Datelike};
 use colored::{Color, Colorize};
 use lazy_static::lazy_static;
 use rand::{seq::SliceRandom, thread_rng};
@@ -224,7 +224,9 @@ lazy_static! {
 
 impl CardData {
     pub fn year(&self) -> u32 {
-        NaiveDateTime::from_timestamp(self.release_date as i64, 0)
+        DateTime::from_timestamp(self.release_date as i64, 0)
+            .expect("u32 release timestamps are valid UTC datetimes")
+            .naive_utc()
             .date()
             .year() as u32
     }
@@ -689,7 +691,7 @@ impl Hand {
             oculus_clan,
         }
     }
-    pub fn to_handcell(&mut self) -> HandCell {
+    pub fn to_handcell(&mut self) -> HandCell<'_> {
         let [a, b, c, d] = &mut self.cards;
         HandCell {
             cards: [

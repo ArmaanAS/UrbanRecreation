@@ -117,36 +117,6 @@ impl ResultsTree {
             }
         }
     }
-
-    fn get_best_moves(map: &HashMap<Selection, ResultsTree>) -> (Vec<Selection>, i8, f32) {
-        let mut best_moves = Vec::new();
-        let mut best_score = 0;
-        let mut best_win_rate = 0f32;
-        for (selection, tree) in map.iter() {
-            let (score, win_rate) = tree.get_score();
-            if score > best_score || (score == best_score && win_rate > best_win_rate) {
-                best_score = score;
-                best_win_rate = win_rate;
-                best_moves.clear();
-                best_moves.push(*selection);
-            } else if score == best_score && win_rate == best_win_rate {
-                best_moves.push(*selection);
-            }
-        }
-        let win_percentage = (best_win_rate / 2.0 + 1.0) / 2.0 * 100.0;
-        print!("({})", format!("{:.1?}%", win_percentage).green());
-        if best_moves.len() == 1 {
-            print!(" {}", best_moves[0]);
-        } else {
-            println!(" {{");
-            for selection in best_moves.iter() {
-                println!("  {}", selection);
-            }
-            print!("}}");
-        }
-        println!();
-        (best_moves, best_score, (best_win_rate / 2.0 + 1.0) / 2.0)
-    }
 }
 
 pub struct Solver2;

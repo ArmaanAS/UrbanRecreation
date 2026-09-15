@@ -6,7 +6,6 @@ use actix_web::{
     web::{Data, Json},
     App, HttpResponse, HttpServer, Responder,
 };
-use lazy_static::lazy_static;
 use serde::Deserialize;
 
 use crate::{
@@ -49,7 +48,10 @@ enum Input {
     //     cancel: bool,
     // },
     CancelSelection {
-        cancel: bool,
+        // The legacy advisor sends this discriminator even though receiving this
+        // variant is itself sufficient to identify a cancelled selection.
+        #[serde(rename = "cancel")]
+        _cancel: bool,
         selection: Selection,
     },
 }
@@ -128,7 +130,7 @@ async fn input(data: Json<Input>, game: Data<Arc<Mutex<Option<Game>>>>) -> impl 
             }
         }
         Input::CancelSelection {
-            cancel: _,
+            _cancel: _,
             selection: Selection { index, pillz, fury },
         } => {
             if let Some(game) = game.lock().unwrap().as_mut() {
