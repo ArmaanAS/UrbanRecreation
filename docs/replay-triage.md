@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 327 captured battles
-(321 replayable, 6 incomplete/Dojo ignored): 268 replay exactly and 53 mismatch. Each entry
+Status from `deno test -A --no-check tests/replay/` against 328 captured battles
+(322 replay-ready, 6 incomplete/Dojo ignored): 269 replay exactly and 53 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -30,6 +30,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-14 | 92 | 12 | +1 capture; live advisor now resynchronises resources after engine drift |
 | 2026-09-14 | 267 | 53 | +220 extracted captures; fresh replay baseline, new mismatches awaiting triage |
 | 2026-09-15 | 268 | 53 | +1 capture; Reanimate applies after every defeat and can prevent KO |
+| 2026-09-15 | 269 | 53 | +1 capture; refreshed stable replay baseline |
 
 ## Fixed
 
