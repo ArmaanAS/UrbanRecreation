@@ -2,6 +2,7 @@ pub mod ability;
 pub mod battle;
 pub mod card;
 pub mod catalog;
+pub mod effect_registry;
 pub mod engine;
 pub mod game;
 #[cfg(test)]

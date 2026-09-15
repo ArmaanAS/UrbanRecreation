@@ -15,6 +15,7 @@ independently against the same server results.
 | Concern | Source of truth | Notes |
 | --- | --- | --- |
 | Card identity and level stats | `data/data.json` | One row per `(card id, level)`; do not use names as identity. |
+| Effect definitions | `captures/abilities.json` | Versioned Rust compilation preserves the structured record and fails closed on unsupported semantics. |
 | Observed game behavior | `captures/games/*.json` | Server power, damage, attack, winner, life, and pillz are the parity oracle. |
 | Capture normalization | `scripts/ExtractBattle.ts` and the Rust replay adapter | Both must preserve side identity and the first-mover convention. |
 | Working engine and advisor | TypeScript | Keep this stable while Rust is revived. |
@@ -59,6 +60,13 @@ been checked.
 
 This stage proves that Rust can consume the live project's inputs. It does not claim engine
 parity.
+
+`EffectRegistryV1` is the effect-dictionary boundary. It validates every known structured
+field and enum, detects key/id and description conflicts, and resolves captures strictly by
+both id and description. Its string-free compiled values cover only reviewed unconditional
+combat-stat modifiers, Support scaling, Stop Bonus, and combat-stat cancellation. All other
+well-formed definitions—including textual Team/Day/Night context not represented by
+`abilityData`—remain explicit `Unsupported`; classified does not mean executed or parity-tested.
 
 ### 3. Reach engine parity vertically
 

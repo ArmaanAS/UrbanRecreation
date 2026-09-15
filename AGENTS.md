@@ -93,6 +93,10 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 - The current `rust/src/engine/` slice deliberately disables abilities and bonuses. Its fixed
   server-backed gate is 20 uninterrupted base-rule rounds across 18 captures, including the
   complete two-round battle 1065231. That proves replay and combat plumbing, not effect parity.
+- `rust/src/effect_registry.rs` strictly parses and classifies `captures/abilities.json`.
+  Supported compiler output is a string-free future execution plan; no effect is implemented
+  until an engine slice executes it and replay evidence establishes its behavior. Never treat
+  `Unsupported` as a no-op or infer Team/Day/Night semantics from otherwise identical data.
 - Keep structural cleanup separate from behavior changes. The ignored 10,000-case Rust
   diagnostic preserves historical behavior, while `captures/games/` is the server-backed
   correctness oracle.
