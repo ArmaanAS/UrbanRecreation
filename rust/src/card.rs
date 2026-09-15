@@ -6,7 +6,7 @@ use std::{
     convert::TryInto,
     fs::File,
     ops::{Index, IndexMut},
-    path::Path,
+    path::PathBuf,
 };
 
 use chrono::{Datelike, NaiveDateTime};
@@ -132,8 +132,10 @@ impl Default for CardStat {
 
 lazy_static! {
     static ref CARDS: Vec<BaseCard> = {
-        let data_file =
-            File::open(Path::new("./assets/data.json")).expect("file should open read only");
+        let data_file = File::open(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/data.json"),
+        )
+        .expect("file should open read only");
         let mut cards: Vec<CardData> =
             from_reader(data_file).expect("Error while reading JSON file");
 

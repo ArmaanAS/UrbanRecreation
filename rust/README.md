@@ -1,14 +1,16 @@
-# UrbanRecreation - Rust
+# UrbanRecreation — Rust
 
-This is a port of the game Urban Rivals written in Rust, based on another implementation built in TypeScript, <a href="https://github.com/ArmaanAS/UrbanRecreation">UrbanRecreation</a>. 
+This is a Rust port of the [UrbanRecreation TypeScript engine](https://github.com/ArmaanAS/UrbanRecreation). It is now exposed as a library so the engine and solvers can be tested and embedded without starting the original web server and command-line advisor.
 
-This does _not_ include a compiler which transforms ability strings to data. This relies on pre-compiled abilities and cards data from the TypeScript version.
+The Rust port does _not_ include the TypeScript ability compiler. It currently relies on the precompiled card and ability data checked into `assets/`.
 
 ## Basic Usage
 
 Define 2 hands of 4 cards, either from their names or card ids:
 
 ```Rust
+use urban_recreation_rust::{card::Hand, game::Game};
+
 let h1 = Hand::from_names("Anagone", "Doela", "Elios", "Galahad");
 let h2 = Hand::from_names("Murray", "Petra", "Buck", "Keile");
 ```
@@ -32,15 +34,19 @@ The game will print out to the console, the cards, player info and round info.
 
 <img src="assets/Demo.png" alt="Terminal output" />
 
-### Command Line Args
+## Legacy advisor
+
+The original Actix server and interactive command-line advisor are retained as the opt-in `legacy-advisor` feature. They are not built with the library by default.
+
+### Command-line arguments
 
 You can specify the names of the cards you want to play, first 4 names are your cards, next 4 names are the opponents card.
 
-`cargo run -- Anagone Doela Elios Galahad Murray Petra Buck Keile`
+`cargo run --features legacy-advisor --bin urban-recreation-legacy -- Anagone Doela Elios Galahad Murray Petra Buck Keile`
 
 If you want the Opponent to play first, pass any argument after the names:
 
-`cargo run -- Anagone Doela Elios Galahad Murray Petra Buck Keile 1`
+`cargo run --features legacy-advisor --bin urban-recreation-legacy -- Anagone Doela Elios Galahad Murray Petra Buck Keile 1`
 
 ### Console input
 

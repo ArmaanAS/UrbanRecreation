@@ -6,27 +6,14 @@ use std::{
 };
 
 use actix_web::web::Data;
-use game::Selection;
 use rayon::ThreadPoolBuilder;
-use solver_2::Solver2;
-
-use crate::{
+use urban_recreation_rust::{
     card::Hand,
-    game::{Game, GameStatus, PlayerType},
+    game::{Game, GameStatus, PlayerType, Selection},
+    server,
     solver::{SelectionResult, Solver},
+    solver_2::Solver2,
 };
-
-mod ability;
-mod battle;
-mod card;
-mod game;
-mod modifiers;
-mod server;
-mod solver;
-mod solver_2;
-mod testcases;
-mod types;
-pub mod utils;
 
 #[allow(unreachable_code)]
 #[actix_web::main]
@@ -195,7 +182,7 @@ async fn main() -> Result<()> {
 mod test1 {
     use regex::{Captures, Regex};
 
-    use crate::{ability::ABILITIES, card::CARD_IDS, types::Clan};
+    use urban_recreation_rust::{ability::ABILITIES, card::CARD_IDS, types::Clan};
 
     #[test]
     fn test() {
