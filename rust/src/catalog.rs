@@ -4,7 +4,7 @@
 //! type. It is the data boundary that future replay and parity work can build on without
 //! changing existing game rules.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -13,7 +13,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 /// The stable identity of one playable card level.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct CardKey {
     pub id: u32,
     pub level: u8,

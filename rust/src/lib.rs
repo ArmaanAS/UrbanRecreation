@@ -7,6 +7,7 @@ pub mod game;
 mod historical;
 pub mod modifiers;
 mod output;
+pub mod replay;
 #[cfg(feature = "legacy-advisor")]
 pub mod server;
 pub mod solver;
