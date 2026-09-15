@@ -301,6 +301,21 @@ fn fury_damage_overflow_is_atomic() {
 }
 
 #[test]
+fn p1_preparation_error_precedes_an_invalid_p2_selection() {
+    let maximum_damage = spec((12, 3), (12, 0), [(2, 8, u16::MAX); 4], [(3, 1, 1); 4]);
+    let mut game = BaseRulesGame::new(maximum_damage);
+    let before = game.position().clone();
+
+    assert!(matches!(
+        game.make(input(PlayerId::P1, (0, 0, true), (4, 0, false))),
+        Err(BaseRulesError::DamageOverflow {
+            player: PlayerId::P1
+        })
+    ));
+    assert_eq!(game.position(), &before);
+}
+
+#[test]
 fn make_unmake_restores_exact_prefix_hash_and_isolates_siblings_and_games() {
     let mut game = BaseRulesGame::new(plain_spec());
     let initial = game.position().clone();

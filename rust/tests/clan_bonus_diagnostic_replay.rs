@@ -74,6 +74,47 @@ fn registry() -> EffectRegistryV1 {
     EffectRegistryV1::load(root_path("captures/abilities.json")).unwrap()
 }
 
+fn stop_modifier_entry(id: u32, description: &str, attribute: &str) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "unlockLevel": 0,
+        "description": description,
+        "longDescription": description,
+        "abilityData": {
+            "value": 0,
+            "valueMin": 0,
+            "valueMax": 0,
+            "valueCondition": 0,
+            "positionRequirement": "both",
+            "previousRoundRequirement": "any",
+            "currentRoundRequirement": "any",
+            "indexRequirement": "any",
+            "clanRequirement": "",
+            "oppClanRequirement": "",
+            "previousClanRequirement": "",
+            "betPillzLink": "no",
+            "sideAffected": "opponent",
+            "attributeAffected": attribute,
+            "attributeAction": "stop_modif",
+            "specialAction": "none",
+            "isInverted": false,
+            "isSupport": false,
+            "isAntiSupport": false,
+            "isOverdrive": false,
+            "isDivide": false,
+            "isLifeLinked": false,
+            "isPillzLinked": false,
+            "isLostLifeLinked": false,
+            "isLostPillzLinked": false,
+            "isOppStarsLinked": false,
+            "isClanmatesCountLinked": false,
+            "isAntiClanmatesCountLinked": false,
+            "isPermanent": false,
+            "isImmediatePermanent": false
+        }
+    })
+}
+
 fn replay(id: u64, catalog: &CardCatalog) -> ReplayCaseV1 {
     let capture = CapturedGame::from_reader(
         File::open(root_path(&format!("captures/games/{id}.json"))).unwrap(),
@@ -165,10 +206,6 @@ fn fixed_gate_preserves_20_base_rounds_and_adds_20_more() {
     assert_eq!(dispositions.execute, 69);
     assert_eq!(dispositions.disabled, 89);
     assert_eq!(dispositions.absent, 2);
-    eprintln!(
-        "40-round selected dispositions: execute={}, disabled={}, absent={}",
-        dispositions.execute, dispositions.disabled, dispositions.absent
-    );
 }
 
 #[test]
@@ -362,6 +399,110 @@ fn unsupported_control_is_visible_when_unplayed_and_rejected_only_when_selected(
     assert!(error
         .to_string()
         .contains("unsupported Ability control 287"));
+}
+
+#[test]
+fn power_and_attack_stop_modifier_is_a_promised_control_but_life_and_pillz_is_not() {
+    const POWER_AND_ATTACK_ID: u32 = 900_001;
+    const LIFE_AND_PILLZ_ID: u32 = 900_002;
+    const POWER_AND_ATTACK: &str = "Cancel Opp. Power And Attack Modif.";
+    const LIFE_AND_PILLZ: &str = "Cancel Opp. Life And Pillz Modif.";
+
+    let mut entries = serde_json::Map::new();
+    entries.insert(
+        POWER_AND_ATTACK_ID.to_string(),
+        stop_modifier_entry(POWER_AND_ATTACK_ID, POWER_AND_ATTACK, "pwr&atk"),
+    );
+    entries.insert(
+        LIFE_AND_PILLZ_ID.to_string(),
+        stop_modifier_entry(LIFE_AND_PILLZ_ID, LIFE_AND_PILLZ, "life&pillz"),
+    );
+    let bytes = serde_json::to_vec(&serde_json::Value::Object(entries)).unwrap();
+    let registry = EffectRegistryV1::from_reader(bytes.as_slice()).unwrap();
+    let catalog = catalog();
+    let mut source = replay(874887, &catalog);
+    for player in &mut source.players {
+        for card in &mut player.hand {
+            card.source_ability = None;
+            card.source_bonus = None;
+        }
+    }
+    let selected_slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    let other_slot = (selected_slot + 1) % 4;
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: POWER_AND_ATTACK_ID,
+        description: POWER_AND_ATTACK.to_owned(),
+    });
+    source.players[0].hand[other_slot].source_ability = Some(SourceModifier {
+        id: LIFE_AND_PILLZ_ID,
+        description: LIFE_AND_PILLZ.to_owned(),
+    });
+
+    let prepared =
+        ClanBonusDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        DiagnosticProjectionDispositionV1::Disabled {
+            reason: DiagnosticDisabledReasonV1::UnsupportedPromisedControl { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][other_slot].ability,
+        DiagnosticProjectionDispositionV1::Disabled {
+            reason: DiagnosticDisabledReasonV1::OrdinaryAbility { .. },
+            ..
+        }
+    ));
+
+    let error = prepared
+        .execute_clan_bonus_diagnostic_v1_prefix(1)
+        .unwrap_err();
+    let ClanBonusDiagnosticReplayErrorV1::Engine {
+        selected, source, ..
+    } = error
+    else {
+        panic!("expected selected promised-control rejection")
+    };
+    assert!(matches!(
+        selected[PlayerId::P1].ability,
+        DiagnosticProjectionDispositionV1::Disabled {
+            reason: DiagnosticDisabledReasonV1::UnsupportedPromisedControl { .. },
+            ..
+        }
+    ));
+    assert!(source
+        .to_string()
+        .contains("unsupported Ability control 900001"));
+}
+
+#[test]
+fn diagnostic_mismatch_retains_selected_dispositions() {
+    let catalog = catalog();
+    let registry = registry();
+    let mut source = replay(874887, &catalog);
+    source.rounds[0].expected_card_results[0]
+        .as_mut()
+        .unwrap()
+        .power += 1;
+    let error = ClanBonusDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION)
+        .unwrap()
+        .execute_clan_bonus_diagnostic_v1_prefix(1)
+        .unwrap_err();
+    let ClanBonusDiagnosticReplayErrorV1::Mismatch { selected, .. } = error else {
+        panic!("expected projected server-field mismatch")
+    };
+    assert!(matches!(
+        selected[PlayerId::P1].ability,
+        DiagnosticProjectionDispositionV1::Disabled { .. }
+    ));
 }
 
 #[test]

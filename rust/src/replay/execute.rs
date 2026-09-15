@@ -298,10 +298,12 @@ pub enum ClanBonusDiagnosticReplayErrorV1 {
     },
     Engine {
         context: BaseRulesReplayRoundContext,
+        selected: ByPlayer<ClanBonusDiagnosticSelectedCardReportV1>,
         source: ClanBonusDiagnosticError,
     },
     Mismatch {
         context: BaseRulesReplayRoundContext,
+        selected: ByPlayer<ClanBonusDiagnosticSelectedCardReportV1>,
         field: String,
         expected: String,
         actual: String,
@@ -320,17 +322,25 @@ impl fmt::Display for ClanBonusDiagnosticReplayErrorV1 {
                 formatter,
                 "{model} battle {battle_id}: requested {requested} rounds, only {available} available"
             ),
-            Self::Engine { context, source } => {
-                write!(formatter, "{model} engine error at {context}: {source}")
+            Self::Engine {
+                context,
+                selected,
+                source,
+            } => {
+                write!(
+                    formatter,
+                    "{model} engine error at {context}: {source}; selected={selected:?}"
+                )
             }
             Self::Mismatch {
                 context,
+                selected,
                 field,
                 expected,
                 actual,
             } => write!(
                 formatter,
-                "{model} mismatch at {context}: {field}: expected {expected}, actual {actual}"
+                "{model} mismatch at {context}: {field}: expected {expected}, actual {actual}; selected={selected:?}"
             ),
         }
     }
@@ -502,10 +512,14 @@ impl ClanBonusDiagnosticReplayV1 {
         for replay_round in &self.replay().rounds[..rounds] {
             let (input, context) = round_input(self.battle_id(), replay_round);
             let selected = self.selected_report(input);
-            let (report, _) = game
-                .make(input)
-                .map_err(|source| ClanBonusDiagnosticReplayErrorV1::Engine { context, source })?;
-            assert_diagnostic_round(replay_round, &report, context)?;
+            let (report, _) =
+                game.make(input)
+                    .map_err(|source| ClanBonusDiagnosticReplayErrorV1::Engine {
+                        context,
+                        selected: selected.clone(),
+                        source,
+                    })?;
+            assert_diagnostic_round(replay_round, &report, context, &selected)?;
             reports.push(ClanBonusDiagnosticRoundReportV1 {
                 model: DiagnosticReplayModelV1::ClanBonusDiagnosticV1,
                 round: report,
@@ -721,6 +735,7 @@ fn attempts_promised_control(input: &crate::effect_registry::StructuredEffectV1)
                 AttributeAffectedV1::Attack
                     | AttributeAffectedV1::Damage
                     | AttributeAffectedV1::Power
+                    | AttributeAffectedV1::PowerAndAttack
                     | AttributeAffectedV1::PowerAndDamage
             ))
 }
@@ -1047,17 +1062,20 @@ fn assert_diagnostic_round(
     expected: &ReplayRound,
     actual: &BaseRulesRoundReport,
     context: BaseRulesReplayRoundContext,
+    selected: &ByPlayer<ClanBonusDiagnosticSelectedCardReportV1>,
 ) -> Result<(), ClanBonusDiagnosticReplayErrorV1> {
     for player in PlayerId::ALL {
         let expected_player = expected.expected_player_states[player.index()];
         compare_diagnostic_field(
             context,
+            selected,
             format!("players.{player:?}.life"),
             expected_player.life,
             actual.players[player].life,
         )?;
         compare_diagnostic_field(
             context,
+            selected,
             format!("players.{player:?}.pillz"),
             expected_player.pillz,
             actual.players[player].pillz,
@@ -1066,24 +1084,28 @@ fn assert_diagnostic_round(
             let actual_card = actual.cards[player];
             compare_diagnostic_field(
                 context,
+                selected,
                 format!("cards.{player:?}.power"),
                 expected_card.power,
                 actual_card.power,
             )?;
             compare_diagnostic_field(
                 context,
+                selected,
                 format!("cards.{player:?}.damage"),
                 expected_card.damage,
                 actual_card.damage,
             )?;
             compare_diagnostic_field(
                 context,
+                selected,
                 format!("cards.{player:?}.attack"),
                 expected_card.attack,
                 actual_card.attack,
             )?;
             compare_diagnostic_field(
                 context,
+                selected,
                 format!("cards.{player:?}.won"),
                 expected_card.won,
                 actual_card.won,
@@ -1095,6 +1117,7 @@ fn assert_diagnostic_round(
 
 fn compare_diagnostic_field<T: fmt::Debug + PartialEq>(
     context: BaseRulesReplayRoundContext,
+    selected: &ByPlayer<ClanBonusDiagnosticSelectedCardReportV1>,
     field: String,
     expected: T,
     actual: T,
@@ -1104,6 +1127,7 @@ fn compare_diagnostic_field<T: fmt::Debug + PartialEq>(
     } else {
         Err(ClanBonusDiagnosticReplayErrorV1::Mismatch {
             context,
+            selected: selected.clone(),
             field,
             expected: format!("{expected:?}"),
             actual: format!("{actual:?}"),

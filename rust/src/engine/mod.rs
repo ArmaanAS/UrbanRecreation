@@ -413,6 +413,13 @@ pub enum InvalidDiagnosticPlanReasonV1 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticPlanErrorV1 {
     CardMismatch(DiagnosticPlanMismatch),
+    InvalidSourceBonusContext {
+        player: PlayerId,
+        hand_slot: HandSlot,
+        source_id: Option<u32>,
+        expected: u16,
+        actual: u16,
+    },
     InvalidExecute {
         player: PlayerId,
         hand_slot: HandSlot,
@@ -426,6 +433,17 @@ impl fmt::Display for DiagnosticPlanErrorV1 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::CardMismatch(source) => source.fmt(formatter),
+            Self::InvalidSourceBonusContext {
+                player,
+                hand_slot,
+                source_id,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "invalid clan-bonus diagnostic source-bonus context for {player:?} slot {} source {source_id:?}: expected {expected} distinct character ids, got {actual}",
+                hand_slot.get()
+            ),
             Self::InvalidExecute {
                 player,
                 hand_slot,
@@ -445,7 +463,7 @@ impl Error for DiagnosticPlanErrorV1 {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::CardMismatch(source) => Some(source),
-            Self::InvalidExecute { .. } => None,
+            Self::InvalidSourceBonusContext { .. } | Self::InvalidExecute { .. } => None,
         }
     }
 }
@@ -580,8 +598,14 @@ impl BaseRulesGame {
         &mut self,
         input: BaseRulesRoundInput,
     ) -> Result<(BaseRulesRoundReport, BaseRulesUndo), BaseRulesError> {
-        let validated = self.validate(input)?;
-        let prepared = prepare_base_rules(validated)?;
+        // Preserve the historical base-rules error precedence: each player is fully
+        // validated and prepared before looking at the next player.
+        self.validate_round_state()?;
+        let p1 = self.validate_player(input, PlayerId::P1)?;
+        let p1 = prepare_base_rules_selection(PlayerId::P1, p1)?;
+        let p2 = self.validate_player(input, PlayerId::P2)?;
+        let p2 = prepare_base_rules_selection(PlayerId::P2, p2)?;
+        let prepared = ByPlayer::new(p1, p2);
         Ok(self.commit(input, prepared))
     }
 
@@ -630,6 +654,14 @@ impl BaseRulesGame {
         &self,
         input: BaseRulesRoundInput,
     ) -> Result<ByPlayer<ValidatedSelection>, BaseRulesError> {
+        self.validate_round_state()?;
+        Ok(ByPlayer::new(
+            self.validate_player(input, PlayerId::P1)?,
+            self.validate_player(input, PlayerId::P2)?,
+        ))
+    }
+
+    fn validate_round_state(&self) -> Result<(), BaseRulesError> {
         if self.position.rounds_played >= MAX_ROUNDS {
             return Err(BaseRulesError::RoundLimitReached {
                 rounds_played: self.position.rounds_played,
@@ -640,11 +672,7 @@ impl BaseRulesGame {
                 status: self.position.status,
             });
         }
-
-        Ok(ByPlayer::new(
-            self.validate_player(input, PlayerId::P1)?,
-            self.validate_player(input, PlayerId::P2)?,
-        ))
+        Ok(())
     }
 
     fn validate_player(
@@ -690,6 +718,8 @@ impl BaseRulesGame {
 
 impl ClanBonusDiagnostic {
     pub fn new(spec: ClanBonusDiagnosticMatchSpecV1) -> Result<Self, DiagnosticPlanErrorV1> {
+        // Validate identity independently of source context so a malformed plan always
+        // reports the fundamental card mismatch first.
         for player in PlayerId::ALL {
             for slot in HandSlot::ALL {
                 let expected = spec.base_rules.players[player].hand[slot.index()].key;
@@ -704,6 +734,11 @@ impl ClanBonusDiagnostic {
                         },
                     ));
                 }
+            }
+        }
+        for player in PlayerId::ALL {
+            for slot in HandSlot::ALL {
+                validate_source_bonus_context(player, slot, &spec.cards[player])?;
                 validate_diagnostic_source_plan(
                     player,
                     slot,
@@ -768,6 +803,49 @@ impl ClanBonusDiagnostic {
 
     pub fn unmake(&mut self, undo: ClanBonusDiagnosticUndoV1) {
         self.base_rules.unmake(undo.base_rules);
+    }
+}
+
+fn source_plan_id(plan: DiagnosticSourcePlanV1) -> Option<u32> {
+    match plan {
+        DiagnosticSourcePlanV1::Absent => None,
+        DiagnosticSourcePlanV1::Execute { source_id, .. }
+        | DiagnosticSourcePlanV1::Disabled { source_id }
+        | DiagnosticSourcePlanV1::RejectIfSelected { source_id } => Some(source_id),
+    }
+}
+
+fn validate_source_bonus_context(
+    player: PlayerId,
+    hand_slot: HandSlot,
+    cards: &[DiagnosticCardPlanV1; HAND_SIZE],
+) -> Result<(), DiagnosticPlanErrorV1> {
+    let source_id = source_plan_id(cards[hand_slot.index()].bonus);
+    let expected = if let Some(source_id) = source_id {
+        let mut ids = [0_u32; HAND_SIZE];
+        let mut count = 0_usize;
+        for card in cards {
+            if source_plan_id(card.bonus) == Some(source_id) && !ids[..count].contains(&card.key.id)
+            {
+                ids[count] = card.key.id;
+                count += 1;
+            }
+        }
+        count as u16
+    } else {
+        0
+    };
+    let actual = cards[hand_slot.index()].source_bonus_support_count;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(DiagnosticPlanErrorV1::InvalidSourceBonusContext {
+            player,
+            hand_slot,
+            source_id,
+            expected,
+            actual,
+        })
     }
 }
 
@@ -1308,15 +1386,6 @@ fn apply_u32_modifier(
             None => current.saturating_sub(amount),
         }),
     }
-}
-
-fn prepare_base_rules(
-    validated: ByPlayer<ValidatedSelection>,
-) -> Result<ByPlayer<PreparedSelection>, BaseRulesError> {
-    Ok(ByPlayer::new(
-        prepare_base_rules_selection(PlayerId::P1, validated[PlayerId::P1])?,
-        prepare_base_rules_selection(PlayerId::P2, validated[PlayerId::P2])?,
-    ))
 }
 
 fn prepare_base_rules_selection(

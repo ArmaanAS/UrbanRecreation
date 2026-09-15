@@ -506,6 +506,207 @@ fn invalid_execute_plans_are_rejected_instead_of_becoming_noops() {
 }
 
 #[test]
+fn source_bonus_context_counts_distinct_character_ids_exactly() {
+    let base = base_spec(6, 1);
+
+    let mut too_large = plans(&base);
+    too_large[PlayerId::P1][0].bonus = execute(
+        266,
+        modifier(
+            DiagnosticAffectedSideV1::Player,
+            DiagnosticCombatStatV1::Attack,
+            DiagnosticStatOperationV1::Increase,
+            3,
+            None,
+            None,
+            DiagnosticMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    too_large[PlayerId::P1][0].source_bonus_support_count = 5;
+    let error = ClanBonusDiagnostic::new(ClanBonusDiagnosticMatchSpecV1 {
+        base_rules: base.clone(),
+        cards: too_large,
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        DiagnosticPlanErrorV1::InvalidSourceBonusContext {
+            player: PlayerId::P1,
+            source_id: Some(266),
+            expected: 1,
+            actual: 5,
+            ..
+        }
+    ));
+
+    let mut inconsistent = plans(&base);
+    for slot in 0..4 {
+        inconsistent[PlayerId::P1][slot].bonus = DiagnosticSourcePlanV1::Disabled { source_id: 42 };
+        inconsistent[PlayerId::P1][slot].source_bonus_support_count = 4;
+    }
+    inconsistent[PlayerId::P1][1].source_bonus_support_count = 3;
+    let error = ClanBonusDiagnostic::new(ClanBonusDiagnosticMatchSpecV1 {
+        base_rules: base.clone(),
+        cards: inconsistent,
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        DiagnosticPlanErrorV1::InvalidSourceBonusContext {
+            player: PlayerId::P1,
+            source_id: Some(42),
+            expected: 4,
+            actual: 3,
+            ..
+        }
+    ));
+
+    let mut absent_nonzero = plans(&base);
+    absent_nonzero[PlayerId::P1][0].source_bonus_support_count = 1;
+    let error = ClanBonusDiagnostic::new(ClanBonusDiagnosticMatchSpecV1 {
+        base_rules: base.clone(),
+        cards: absent_nonzero,
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        DiagnosticPlanErrorV1::InvalidSourceBonusContext {
+            player: PlayerId::P1,
+            source_id: None,
+            expected: 0,
+            actual: 1,
+            ..
+        }
+    ));
+
+    let mut duplicate_base = base;
+    duplicate_base.players[PlayerId::P1].hand[1].key = CardKey::new(
+        duplicate_base.players[PlayerId::P1].hand[0].key.id,
+        duplicate_base.players[PlayerId::P1].hand[0].key.level + 1,
+    );
+    let mut duplicate_ids = plans(&duplicate_base);
+    for slot in 0..3 {
+        duplicate_ids[PlayerId::P1][slot].bonus =
+            DiagnosticSourcePlanV1::Disabled { source_id: 42 };
+        duplicate_ids[PlayerId::P1][slot].source_bonus_support_count = 2;
+    }
+    ClanBonusDiagnostic::new(ClanBonusDiagnosticMatchSpecV1 {
+        base_rules: duplicate_base.clone(),
+        cards: duplicate_ids.clone(),
+    })
+    .unwrap();
+    duplicate_ids[PlayerId::P1][0].source_bonus_support_count = 3;
+    let error = ClanBonusDiagnostic::new(ClanBonusDiagnosticMatchSpecV1 {
+        base_rules: duplicate_base,
+        cards: duplicate_ids,
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        DiagnosticPlanErrorV1::InvalidSourceBonusContext {
+            expected: 2,
+            actual: 3,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn opponent_origin_cancellation_preserves_the_cancellers_own_reduction() {
+    // Capture 1089974 round index 2 is the server observation: Dookor's cancellation
+    // suppresses Sue's -1 opponent Power and Damage, while Dookor's own opponent Power
+    // reduction still takes Sue from 6 to 4. Numeric abilities remain disabled by replay
+    // preparation, so this focused resolver test places both numeric effects in the
+    // diagnostic's executable bonus slots while preserving their opposing origins.
+    let mut base = base_spec(6, 4);
+    base.players[PlayerId::P2].hand[0].damage = 3;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1589,
+        DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: DiagnosticCombatStatV1::PowerAndDamage,
+        },
+    );
+    cards[PlayerId::P1][0].bonus = execute(
+        1578,
+        modifier(
+            DiagnosticAffectedSideV1::Opponent,
+            DiagnosticCombatStatV1::Power,
+            DiagnosticStatOperationV1::Decrease,
+            3,
+            Some(4),
+            None,
+            DiagnosticMagnitudeV1::Fixed,
+        ),
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].bonus = execute(
+        916,
+        modifier(
+            DiagnosticAffectedSideV1::Opponent,
+            DiagnosticCombatStatV1::PowerAndDamage,
+            DiagnosticStatOperationV1::Decrease,
+            1,
+            Some(3),
+            None,
+            DiagnosticMagnitudeV1::Fixed,
+        ),
+    );
+    cards[PlayerId::P2][0].source_bonus_support_count = 1;
+
+    let mut game = game(base, cards);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 6);
+    assert_eq!(report.cards[PlayerId::P1].damage, 4);
+    assert_eq!(report.cards[PlayerId::P2].power, 4);
+    assert_eq!(report.cards[PlayerId::P2].damage, 3);
+}
+
+#[test]
+fn mirrored_card_identity_and_slot_keep_player_specific_plans() {
+    let mut base = base_spec(6, 2);
+    base.players[PlayerId::P2].hand[0].key = base.players[PlayerId::P1].hand[0].key;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].bonus = execute(
+        43,
+        modifier(
+            DiagnosticAffectedSideV1::Player,
+            DiagnosticCombatStatV1::Power,
+            DiagnosticStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            DiagnosticMagnitudeV1::Fixed,
+        ),
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].bonus = execute(
+        37,
+        modifier(
+            DiagnosticAffectedSideV1::Player,
+            DiagnosticCombatStatV1::Attack,
+            DiagnosticStatOperationV1::Increase,
+            8,
+            None,
+            None,
+            DiagnosticMagnitudeV1::Fixed,
+        ),
+    );
+    cards[PlayerId::P2][0].source_bonus_support_count = 1;
+
+    let mut game = game(base, cards);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 8);
+    assert_eq!(report.cards[PlayerId::P1].attack, 8);
+    assert_eq!(report.cards[PlayerId::P2].power, 6);
+    assert_eq!(report.cards[PlayerId::P2].attack, 14);
+}
+
+#[test]
 fn make_unmake_isolates_siblings_and_simultaneous_games() {
     let base = base_spec(7, 2);
     let mut cards = plans(&base);
