@@ -310,6 +310,27 @@ fn dispositions_distinguish_absent_executed_and_disabled_sources() {
 }
 
 #[test]
+fn preparation_and_reports_retain_projection_and_registry_provenance() {
+    let catalog = catalog();
+    let registry = registry();
+    let prepared = diagnostic(874887, &catalog, &registry);
+    let provenance = prepared.preparation_provenance();
+    assert_eq!(provenance.projection, PROJECTION);
+    assert_eq!(
+        provenance.effect_registry_schema_version,
+        registry.schema_version()
+    );
+    assert_eq!(
+        provenance.effect_registry_source_fingerprint_fnv1a64,
+        registry.source_fingerprint_fnv1a64()
+    );
+
+    let report = prepared.execute_clan_bonus_diagnostic_v1_prefix(1).unwrap();
+    assert_eq!(report.provenance, provenance);
+    assert_eq!(report.rounds[0].provenance, provenance);
+}
+
+#[test]
 fn source_bonus_context_groups_oculus_by_exact_id_without_inferred_clans() {
     let catalog = catalog();
     let registry = registry();

@@ -177,7 +177,13 @@ fn self_power_and_attack_resolve_before_opponent_reductions() {
         ),
     );
     cards[PlayerId::P2][0].source_bonus_support_count = 1;
-    let mut game = game(base, cards);
+    let expected_spec = ClanBonusDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    };
+    let mut game = ClanBonusDiagnostic::new(expected_spec.clone()).unwrap();
+    assert_eq!(game.match_spec(), &expected_spec);
+    assert_eq!(game.base_rules_spec(), &expected_spec.base_rules);
     let (report, _) = game
         .make(input(PlayerId::P1, (0, 6, false), (0, 0, false)))
         .unwrap();

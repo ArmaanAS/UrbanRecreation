@@ -68,6 +68,10 @@ combat-stat modifiers, Support scaling, Stop Bonus, and combat-stat cancellation
 well-formed definitions—including textual Team/Day/Night context not represented by
 `abilityData`—remain explicit `Unsupported`; classified does not mean executed or parity-tested.
 
+The registry itself is replay-model neutral: replay preparation owns absent/present source
+mapping and calls strict id-and-description lookup rather than the registry importing capture
+types.
+
 ### 3. Reach engine parity vertically
 
 - Introduce replay execution without coupling the adapter to the historical `Game` type.
@@ -107,11 +111,16 @@ attack, Fury, tie, resource, life, and status plumbing. The fixed server-backed 
 it is not a claim that printed abilities or bonuses are implemented.
 
 The next vertical slice is deliberately named `ClanBonusDiagnostic`, not a full-effects
-engine. Its constructor requires the explicit policy that disables ordinary abilities and
-out-of-slice bonuses. Every captured ability and bonus remains visible as Execute, Disabled,
-or Absent in preparation metadata and selected-round reports. Exact registry conflicts are
-fatal, while unsupported variants of the Stop Bonus/stat-cancellation controls promised by
-the projection fail atomically only if their card is selected.
+engine. The replay-preparation constructor `ClanBonusDiagnosticReplayV1::new` requires the
+explicit policy that disables ordinary abilities and out-of-slice bonuses, then constructs
+the string-free `ClanBonusDiagnostic` plan. Every captured ability and bonus remains visible
+as Execute, Disabled, or Absent in preparation metadata, selected-round reports, and failure
+context. Execute means admitted by this projection, not guaranteed to apply: Stop Bonus or
+combat-stat cancellation may suppress an admitted effect. Exact registry conflicts are fatal,
+while unsupported variants of the Stop Bonus/stat-cancellation controls promised by the
+projection fail atomically only if their card is selected. Preparation and reports retain the
+policy, registry schema version, and the registry's non-cryptographic FNV-1a source-byte
+fingerprint so results identify the exact compilation boundary.
 
 This diagnostic trusts the capture's active `source_bonus`: null is inactive, while a
 present exact id/description can already reflect Oculus infiltration, Day/Night, or an
@@ -124,6 +133,18 @@ remains explicitly Unsupported and deferred.
 Several prefixes are exact because paired omitted effects are both deliberately Disabled;
 the cancellation, directional-clamp, and control-cycle edge semantics are pinned primarily
 by focused synthetic tests rather than independently observable outcomes throughout this gate.
+Capture `1089974` round index 2 independently establishes source ownership for cancellation:
+Dookor's cancel suppresses Sue's Power-and-Damage reduction while Dookor's own opponent-Power
+reduction still applies (Sue 6 to 4). The focused resolver test isolates that ordering without
+claiming that this projection executes ordinary numeric abilities.
+
+`ClanBonusDiagnostic::match_spec()` exposes the complete immutable compact plan, including
+every source disposition identity and Support count. A future transposition key must combine
+the diagnostic model, this full match identity, `position()`, and the caller's explicit next
+first mover, which is not derivable from round parity. The partial base-rules view is
+deliberately named `base_rules_spec()`. This remains replay-prepared diagnostics only: it
+neither infers active bonuses from catalog clans nor enables conditions, ordinary numeric
+abilities, post-round effects, permanents, protection, or out-of-slice bonuses.
 
 ### 4. Port current solver semantics
 

@@ -3,9 +3,9 @@
 //! Loading is deliberately separate from execution. The registry preserves the complete
 //! structured source record, compiles only evidence-backed shapes, and represents every
 //! other well-formed shape as [`CompiledEffectV1::Unsupported`]. It never turns an unknown
-//! effect into a successful no-op.
+//! effect into a successful no-op. The boundary is replay-model neutral: callers resolve
+//! their own source records through strict id-and-description lookup.
 
-use crate::replay::SourceModifier;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -403,12 +403,6 @@ impl<'a> DescriptionMatchV1<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum ResolvedCaptureModifierV1<'a> {
-    Absent,
-    Present(&'a EffectDefinitionV1),
-}
-
 #[derive(Clone, Debug)]
 pub struct EffectRegistryV1 {
     schema_version: u16,
@@ -541,19 +535,6 @@ impl EffectRegistryV1 {
             });
         }
         Ok(definition)
-    }
-
-    /// Preserves replay-boundary absence instead of conflating it with unsupported semantics.
-    pub fn resolve_capture_modifier(
-        &self,
-        modifier: Option<&SourceModifier>,
-    ) -> Result<ResolvedCaptureModifierV1<'_>, EffectLookupError> {
-        match modifier {
-            None => Ok(ResolvedCaptureModifierV1::Absent),
-            Some(modifier) => self
-                .lookup_capture(modifier.id, &modifier.description)
-                .map(ResolvedCaptureModifierV1::Present),
-        }
     }
 
     /// Exact-description fallback for catalog rows whose legacy numeric id differs.
@@ -1697,12 +1678,8 @@ mod tests {
     }
 
     #[test]
-    fn replay_absence_and_unsupported_effects_are_distinct() {
+    fn unsupported_effects_remain_explicit_at_the_registry_boundary() {
         let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
-        assert!(matches!(
-            registry.resolve_capture_modifier(None).unwrap(),
-            ResolvedCaptureModifierV1::Absent
-        ));
         assert!(matches!(
             registry.get(41).unwrap().compiled(),
             CompiledEffectV1::Unsupported(_)
