@@ -141,11 +141,12 @@ async fn main() -> Result<()> {
                 //     Solver::middle(&game);
                 // }
             } else {
-                // let game_clone = game.clone();
-                // thread::spawn(move || {
-                // Solver2::solve(&game_clone);
-                // });
-                Solver2::solve(&game);
+                let game_clone = game.clone();
+                thread::spawn(move || {
+                    Solver2::solve(&game_clone);
+                    println!("{} turn", game.get_turn_name());
+                });
+                // Solver2::solve(&game);
 
                 let best = Solver::solve(&game);
 

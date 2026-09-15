@@ -10,11 +10,11 @@ use crate::{
     utils::StackVec4,
 };
 
-pub static mut PRINT: bool = true;
+pub static mut PRINT: u8 = 0;
 macro_rules! println {
     ($($rest:tt)*) => {
         unsafe {
-            if PRINT {
+            if PRINT == 0 {
                 std::println!($($rest)*)
             }
         }

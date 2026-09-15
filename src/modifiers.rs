@@ -7,11 +7,11 @@ use crate::{
     types::Clan,
 };
 
-pub static mut PRINT: bool = true;
+pub static mut PRINT: u8 = 0;
 macro_rules! println {
     ($($rest:tt)*) => {
         unsafe {
-            if PRINT {
+            if PRINT == 0 {
                 std::println!($($rest)*)
             }
         }
@@ -44,6 +44,7 @@ pub enum Stat {
     Attack,
     Life,
     Pillz,
+    Tuneout,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize_repr, PartialEq)]
@@ -202,6 +203,7 @@ impl BasicModifier {
                         && data.player.borrow().life > 0
                 }
                 Stat::Pillz => !opp_card.pillz.is_protected() && !card.pillz.is_blocked(),
+                Stat::Tuneout => true,
             }
         } else {
             // println!("card = {:#?}", card);
@@ -211,6 +213,7 @@ impl BasicModifier {
                 Stat::Attack => !card.attack.attr.is_blocked(),
                 Stat::Life => !card.life.is_blocked() && data.player.borrow().life > 0,
                 Stat::Pillz => !card.pillz.is_blocked(),
+                Stat::Tuneout => true,
             }
         }
     }
@@ -249,6 +252,12 @@ impl BasicModifier {
                 Stat::Pillz => {
                     let val = self.modify(player.borrow().pillz, data);
                     player.borrow_mut().pillz = val;
+                }
+                Stat::Tuneout => {
+                    data.card.borrow_mut().power.value = 1;
+                    data.opp_card.borrow_mut().power.value = 1;
+                    data.card.borrow_mut().attack.value = 0;
+                    data.opp_card.borrow_mut().attack.value = 0;
                 }
             }
         } else {

@@ -16,11 +16,11 @@ use crate::{
     types::Clan,
 };
 
-pub static mut PRINT: bool = true;
+pub static mut PRINT: u8 = 0;
 macro_rules! println {
     ($($rest:tt)*) => {
         unsafe {
-            if PRINT {
+            if PRINT == 0 {
                 std::println!($($rest)*)
             }
         }
@@ -309,7 +309,7 @@ impl Game {
 
     pub fn print_status(&self) {
         unsafe {
-            if !PRINT {
+            if PRINT != 0 {
                 return;
             }
         }
@@ -414,7 +414,7 @@ impl Game {
 
     fn print_battle(&self, attack1: u8, attack2: u8) {
         unsafe {
-            if !PRINT {
+            if PRINT != 0 {
                 return;
             }
         }
@@ -477,7 +477,7 @@ impl Game {
         }
     }
 
-    fn battle(&mut self) {
+    fn battle(&mut self, print: bool) {
         let s1 = &mut self.s1.unwrap();
         let s2 = &mut self.s2.unwrap();
 
@@ -644,14 +644,16 @@ impl Game {
         card1.borrow_mut().played = true;
         card2.borrow_mut().played = true;
 
-        self.print_battle(attack1, attack2);
+        if print {
+            self.print_battle(attack1, attack2);
+        }
 
         self.round += 1;
 
-        unsafe {
-            // *BATTLE_COUNT.get_mut() += 1;
-            BATTLE_COUNT.fetch_add(1, Ordering::Relaxed);
-        }
+        // unsafe {
+        //     // *BATTLE_COUNT.get_mut() += 1;
+        //     BATTLE_COUNT.fetch_add(1, Ordering::Relaxed);
+        // }
     }
 
     pub fn can_select(&self, index: usize, pillz: u8, fury: bool) -> bool {
@@ -671,7 +673,7 @@ impl Game {
         if self.round % 2 == self.flip {
             if self.s1.is_some() {
                 self.s2 = s;
-                self.battle();
+                self.battle(true);
                 self.s1 = None;
                 self.s2 = None;
                 true
@@ -682,7 +684,7 @@ impl Game {
             }
         } else if self.s2.is_some() {
             self.s1 = s;
-            self.battle();
+            self.battle(true);
             self.s1 = None;
             self.s2 = None;
             true
@@ -696,7 +698,7 @@ impl Game {
     pub fn select_both(&mut self, s1: Selection, s2: Selection) {
         self.s1 = Some(s1);
         self.s2 = Some(s2);
-        self.battle();
+        self.battle(false);
         self.s1 = None;
         self.s2 = None;
     }

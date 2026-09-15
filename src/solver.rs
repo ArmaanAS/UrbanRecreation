@@ -52,19 +52,28 @@ impl Display for SelectionResult {
     }
 }
 
-pub fn toggle_print() {
+pub fn disable_print() {
     unsafe {
-        ability::PRINT = !ability::PRINT;
-        game::PRINT = !game::PRINT;
-        modifiers::PRINT = !modifiers::PRINT;
-        battle::PRINT = !battle::PRINT;
+        ability::PRINT += 1;
+        game::PRINT += 1;
+        modifiers::PRINT += 1;
+        battle::PRINT += 1;
+    }
+}
+
+pub fn enable_print() {
+    unsafe {
+        ability::PRINT -= 1;
+        game::PRINT -= 1;
+        modifiers::PRINT -= 1;
+        battle::PRINT -= 1;
     }
 }
 
 impl Solver {
     pub fn middle(game: &Game) {
         let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
-        toggle_print();
+        disable_print();
         let now = Instant::now();
         if game.s1.is_some() || game.s2.is_some() {
             if game.round == 0 {
@@ -77,7 +86,7 @@ impl Solver {
         } else {
             Solver::middle_first(game);
         }
-        toggle_print();
+        enable_print();
         let battles: u32 = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
         let elapsed = now.elapsed();
         println!(
@@ -439,13 +448,13 @@ impl Solver {
         let battle_count = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) };
         let now = Instant::now();
 
-        toggle_print();
+        disable_print();
         let best = if game.s1.is_none() != game.s2.is_none() {
             Solver::solve_second(&game)
         } else {
             Solver::solve_first(&game)
         };
-        toggle_print();
+        enable_print();
 
         let battles = unsafe { BATTLE_COUNT.load(Ordering::Relaxed) } - battle_count;
         let elapsed = now.elapsed();
