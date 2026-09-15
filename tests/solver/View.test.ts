@@ -17,6 +17,8 @@ import {
   displayRanked,
   displaySafeRanked,
   idle,
+  opponentReadClick,
+  opponentReadRanked,
   render,
   resultBanner,
   resultStylePreview,
@@ -57,6 +59,28 @@ function widest() {
     g.select(0, 0, false, false);
     const s = new Search(g);
     for (let i = 0; i < 4; i++) s.step();
+    return { g, s };
+  });
+}
+
+/** Round four with P1's last card committed and P2's wager still open. */
+function answering() {
+  return quiet(() => {
+    const g = new Game(
+      new Player(50, 12, 0),
+      new Player(50, 12, 1),
+      HandGenerator.handOf(["Nathan", "El Kuzco", "Noon Steevens", "Strygia"]),
+      HandGenerator.handOf(["Genmaicha", "Orka", "Sando", "Deborah"]),
+      Turn.PLAYER_2,
+      false,
+    );
+    for (let index = 0; index < 3; index++) {
+      g.select(index, 0, false, false);
+      g.select(index, 0, false, false);
+    }
+    g.select(3, 0, false, false); // Strygia; its real wager remains hidden
+    const s = new Search(g);
+    while (s.step()) { /* finish the small terminal-round search */ }
     return { g, s };
   });
 }
@@ -912,6 +936,7 @@ Deno.test("a large terminal uses the complete original hand UI and attack centre
         selectedYou: 0,
         selectedThem: 0,
         hoveredThem: 1,
+        choosingThem: 2,
         battle: {
           round: 1,
           them: {
@@ -935,17 +960,18 @@ Deno.test("a large terminal uses the complete original hand UI and attack centre
 
   assertEquals(
     (out.match(/╔/g) ?? []).length,
-    3,
-    "selected cards and the remote-hovered card have double borders",
+    4,
+    "selected, remote-hovered, and pillz-chooser cards have double borders",
   );
   assertEquals(
     (out.match(/╚/g) ?? []).length,
-    3,
-    "selected cards and the remote-hovered card have double borders",
+    4,
+    "selected, remote-hovered, and pillz-chooser cards have double borders",
   );
-  assertEquals((out.match(/┌/g) ?? []).length, 5);
-  assertEquals((out.match(/└/g) ?? []).length, 5);
+  assertEquals((out.match(/┌/g) ?? []).length, 4);
+  assertEquals((out.match(/└/g) ?? []).length, 4);
   assertEquals(raw.includes("\x1b[36m╔"), true, "remote hover uses cyan");
+  assertEquals(raw.includes("\x1b[35m╔"), true, "pillz chooser uses magenta");
   assertEquals((out.match(/╭/g) ?? []).length, 0);
   assertEquals((out.match(/╰/g) ?? []).length, 0);
   assertEquals((out.match(/Ability/g) ?? []).length >= 8, true);
@@ -1297,6 +1323,74 @@ Deno.test("matrix cells line up with their pillz headers", () => {
         cellCols,
         headerCols,
         `${columns} cols: cells do not sit under their headers\n  ${header}\n  ${row}`,
+      );
+    }
+  }
+});
+
+Deno.test("a committed opponent card replaces the grid with clickable exact-wager advice", () => {
+  const { g, s } = answering();
+  const read = {
+    selected: "0 false",
+    hovered: undefined as string | undefined,
+    targets: [] as {
+      key: string;
+      column: number;
+      endColumn: number;
+      row: number;
+    }[],
+  };
+  const raw = quiet(() =>
+    render(g, s, {
+      size: { columns: 134, rows: 100 },
+      top: 3,
+      opponentRead: read,
+    })
+  );
+  const out = strip(raw);
+
+  assertEquals(out.includes("OPP READ"), true);
+  assertEquals(out.includes("Strygia"), true);
+  assertEquals(out.includes("Best replies if OPP used 0 pillz"), true);
+  assertEquals(out.includes("Win % by pillz"), false);
+  assertEquals(read.targets.length > 0, true);
+
+  const allIn = read.targets.find((target) => target.key === "12 false")!;
+  assertEquals(
+    out.split("\n")[allIn.row - 1].slice(
+      allIn.column - 1,
+      allIn.endColumn,
+    ),
+    "[12]",
+  );
+  assertEquals(
+    opponentReadClick(read.targets, allIn.column, allIn.row),
+    "12 false",
+  );
+  read.hovered = "12 false";
+  const hovered = quiet(() =>
+    render(g, s, {
+      size: { columns: 134, rows: 100 },
+      top: 3,
+      opponentRead: read,
+    })
+  );
+  assertEquals(hovered.includes("\x1b[7m"), true);
+});
+
+Deno.test("exact-wager advice ranks only the selected opponent hypothesis", () => {
+  const { s } = answering();
+  assertEquals(
+    s.opponentMoves.slice(0, 3).map((move) => `${move.pillz} ${move.fury}`),
+    ["12 false", "0 false", "9 true"],
+  );
+  for (const [pillz, fury] of [[0, false], [12, false], [9, true]] as const) {
+    const ranked = opponentReadRanked(s, pillz, fury);
+    assertEquals(ranked.length, s.candidates.length);
+    for (let i = 1; i < ranked.length; i++) {
+      assertEquals(
+        s.percent(ranked[i - 1].value) >= s.percent(ranked[i].value),
+        true,
       );
     }
   }

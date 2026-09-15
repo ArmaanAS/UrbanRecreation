@@ -1,5 +1,8 @@
 import { BaseCard, BaseData, CardJSON, Clan } from "./types/CardTypes.ts";
 import _json from "@data/data.json" with { type: "json" };
+import _battleOverrides from "@data/battle_card_overrides.json" with {
+  type: "json",
+};
 
 export function getBaseKey(id: number, stars: number) {
   if (id < 0 || id > 0xffff) {
@@ -61,6 +64,44 @@ export const cardClans = {} as Record<Clan, CardJSON[]>;
 export const baseCards: Record<string, BaseCard> = {};
 
 const json = _json as CardJSON[];
+
+/**
+ * A battle can expose a newer live semi-evo definition before the site's character dump
+ * has been refreshed. Keep those few observed definitions separate from data.json so the
+ * next `deno task cards` cannot silently undo the fix. `from` makes an override self-
+ * retiring: once a refreshed dump already contains `to`, it is a no-op; an unexpected
+ * third definition is left untouched and reported instead of applying stale data.
+ */
+interface BattleCardOverride {
+  id: number;
+  name: string;
+  level: number;
+  from: Pick<CardJSON, "power" | "damage" | "ability">;
+  to: Pick<CardJSON, "power" | "damage" | "ability">;
+  sourceBattle: number;
+}
+
+const sameDefinition = (
+  card: Pick<CardJSON, "power" | "damage" | "ability">,
+  expected: Pick<CardJSON, "power" | "damage" | "ability">,
+) =>
+  card.power === expected.power && card.damage === expected.damage &&
+  card.ability === expected.ability;
+
+for (const override of _battleOverrides as BattleCardOverride[]) {
+  const card = json.find((candidate) =>
+    candidate.id === override.id && candidate.level === override.level
+  );
+  if (card === undefined || sameDefinition(card, override.to)) continue;
+  if (sameDefinition(card, override.from)) {
+    Object.assign(card, override.to);
+  } else {
+    console.warn(
+      `Ignored stale live override for ${override.name} level ${override.level} ` +
+        `(battle ${override.sourceBattle}); refresh or review battle_card_overrides.json`,
+    );
+  }
+}
 
 let maxLevelCards = 0;
 for (const j of json) {

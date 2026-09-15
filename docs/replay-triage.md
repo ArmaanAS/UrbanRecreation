@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 326 captured battles
-(320 replayable, 6 incomplete/Dojo ignored): 267 replay exactly and 53 mismatch. Each entry
+Status from `deno test -A --no-check tests/replay/` against 327 captured battles
+(321 replayable, 6 incomplete/Dojo ignored): 268 replay exactly and 53 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -29,6 +29,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-13 | 92 | 11 | +3 captures; Stop effects resolve by dependency; refreshed after pending fixes |
 | 2026-09-14 | 92 | 12 | +1 capture; live advisor now resynchronises resources after engine drift |
 | 2026-09-14 | 267 | 53 | +220 extracted captures; fresh replay baseline, new mismatches awaiting triage |
+| 2026-09-15 | 268 | 53 | +1 capture; Reanimate applies after every defeat and can prevent KO |
 
 ## Fixed
 
@@ -51,7 +52,18 @@ Fixed 877575, 878120.
 
 ### Post-KO gains
 A player at 0 life gains neither life nor pillz from Defeat / clan bonuses that round
-(`BasicModifier.canApply`). Fixed 876712, 877023.
+(`BasicModifier.canApply`). Reanimate is the explicit exception: its rules say that it can
+prevent a KO. Fixed 876712, 877023.
+
+### Reanimate is an immediate Defeat life gain
+Reanimate activates whenever its card loses, not only when the incoming damage would be
+lethal. In 1130654 round 1, Lobo's owner started on 7 Life and Miyo dealt 5; the server left
+them on 4, exactly `7 - 5 + 2`. The engine required Life to have reached zero, left them on
+2, and consequently advertised Miyo with one pill as a 100% win. With the rule corrected,
+the same fully searched recommendation is 86%. Reanimate is also allowed to lift its owner
+from zero and prevent KO, while a stopped Reanimate does nothing; 1080877 supplies the
+captured Stop Opp. Ability case. Tests in `tests/ability/Reanimate.test.ts` and
+`tests/solver/Policy.test.ts` pin all three behaviours plus the displayed percentage.
 
 ### Bonus before ability, reductions by descending Min
 `Ability.card()` compiles the clan bonus before the ability, and `Events.execute()` sorts the
@@ -235,6 +247,13 @@ first failing round and group them by ability keyword before changing the engine
   expectation is probably stale; verify with a captured Oculus game before changing it.
 
 ## Data notes
+- Battle 1131463 exposed a fifth source of card-definition differences: EFC had rebalanced
+  the level-3 semi-evo Quetzal Cr to 7/4 with Stop Opp. Bonus, while the 2026-09-10
+  character dump still said 2/6 with no ability. The exact server definition is held in
+  `data/battle_card_overrides.json` until the next dump catches up. The advisor also refuses
+  to solve any future card for which the battle supplies an ability while the loaded level
+  says No Ability; changed base stats are not included in `battles.status`, so guessing
+  would make a displayed 100% unsafe.
 - The card DB dump does not include the structured `abilityData`; only battle snapshots do.
   `captures/abilities.json` accumulates it for every ability seen in a battle.
 - A card's ability in a battle is **not** always the one the card DB lists for it. Comparing

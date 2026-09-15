@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1577,
+    "name": "Quetzal Cr",
+    "level": 3,
+    "from": {
+      "power": 2,
+      "damage": 6,
+      "ability": "No Ability"
+    },
+    "to": {
+      "power": 7,
+      "damage": 4,
+      "ability": "Stop Opp. Bonus"
+    },
+    "sourceBattle": 1131463
+  }
+]

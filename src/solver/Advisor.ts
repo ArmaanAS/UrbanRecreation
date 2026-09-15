@@ -44,6 +44,8 @@ import {
   idle,
   MOUSE_OFF,
   MOUSE_ON,
+  opponentReadClick,
+  type OpponentReadState,
   type PlayedMove,
   render,
   RESULT_STYLES,
@@ -62,6 +64,8 @@ const BATTLE_DIR = "captures/battles";
 const FRAME_MS = 250;
 /** Keep a brief card hover visible even when enter/leave frames arrive almost together. */
 const HOVER_HOLD_MS = 350;
+/** Keep the chooser outline through the short gap before a committed status arrives. */
+const CHOOSER_CLOSE_HOLD_MS = 500;
 /** Work for this long between redraws. One unit is ~30ms at round 2. */
 const SLICE_MS = 120;
 
@@ -205,6 +209,7 @@ function stopCaptureServer(child: Deno.ChildProcess | undefined) {
 function startControlInput(
   toggle: () => void,
   hover: (inside: boolean) => void,
+  read: (column: number, row: number, pressed: boolean) => void,
 ): () => void {
   if (!Deno.stdin.isTerminal()) return () => {};
   let active = true;
@@ -243,6 +248,11 @@ function startControlInput(
                 size,
               );
               hover(inside);
+              read(
+                Number(mouse[2]),
+                Number(mouse[3]),
+                mouse[1] === "0" && mouse[4] === "M",
+              );
               if (mouse[1] === "0" && mouse[4] === "M" && inside) toggle();
             }
             escape = "";
@@ -718,6 +728,34 @@ export function buildPosition(rec: Reconstructed): Built {
     false,
     tc.night ?? false,
   );
+
+  // The battle API sends the ability actually attached to each card. In particular, EFC
+  // can rebalance a semi-evo before our periodic character dump is refreshed. Searching a
+  // card that the engine thinks has no ability is unsafe: its unseen base stats can have
+  // changed too (battle 1131463 did both). Known versions are supplied through
+  // battle_card_overrides.json; fail closed on the next unknown one rather than showing a
+  // confident recommendation for a different card.
+  const capturedCards = [
+    ...rec.players[rec.firstPlayer].hand,
+    ...rec.players[(1 - rec.firstPlayer) as 0 | 1].hand,
+  ];
+  const engineCards = [...game.h1, ...game.h2];
+  const unknownLiveDefinition = capturedCards.find((captured, index) => {
+    const observed = captured.ability?.description?.trim();
+    return observed !== undefined && observed !== "" &&
+      !/^No Ability$/i.test(observed) &&
+      /^No Ability$/i.test(engineCards[index]?.abilityString ?? "No Ability");
+  });
+  if (unknownLiveDefinition !== undefined) {
+    return {
+      settled: false,
+      why:
+        `${unknownLiveDefinition.name} level ${unknownLiveDefinition.level} has ` +
+        `a live ability missing from the card data - advice withheld until the card ` +
+        `definition is refreshed`,
+    };
+  }
+
   for (const m of tc.moves) {
     game.select(m.s1[0], m.s1[1], m.s1[2], false);
     game.select(m.s2[0], m.s2[1], m.s2[2], false);
@@ -996,6 +1034,7 @@ async function drive(
   autoQueueHover?: () => boolean,
   setRepaint?: (paint: () => void) => void,
   connection?: () => ConnectionState,
+  opponentRead?: () => OpponentReadState,
 ) {
   let painted = 0;
   const deadline = opts.budget ? Date.now() + opts.budget * 1000 : Infinity;
@@ -1016,6 +1055,7 @@ async function drive(
         battleId: pos.battleId,
         autoQueue: autoQueue?.(),
         autoQueueHover: autoQueueHover?.(),
+        opponentRead: opponentRead?.(),
         board: pos.board,
         top: opts.top,
       }) + CLEAR_TO_END,
@@ -1226,6 +1266,13 @@ async function liveMode(opts: AdvisorOptions) {
     number,
     Map<number, ReturnType<typeof setTimeout>>
   >();
+  /** Absolute server-side card slot whose pillz chooser is open for each battle. */
+  const selecting = new Map<number, number>();
+  /** Delayed chooser-close timers, one per battle. */
+  const selectingLeaves = new Map<
+    number,
+    ReturnType<typeof setTimeout>
+  >();
   let feedState: FeedState = { connection: "starting" };
   let pos: Position | undefined;
   let pending: { rec: Reconstructed; battleId: number } | undefined;
@@ -1240,11 +1287,12 @@ async function liveMode(opts: AdvisorOptions) {
   const autoQueueUrl = controlUrl(opts.feed);
   let autoQueue = false;
   let autoQueueHover = false;
+  const opponentRead: OpponentReadState = { targets: [] };
   let controlError = "";
   /** The currently visible frame; controls can repaint it without waiting for the feed loop. */
   let repaint = () => {};
 
-  const applyHovers = (
+  const applyCardInteractions = (
     board: ViewBoard | undefined,
     battleId: number,
     mySide: number | null | undefined,
@@ -1252,23 +1300,32 @@ async function liveMode(opts: AdvisorOptions) {
     if (board === undefined || (mySide !== 0 && mySide !== 1)) return;
     board.hoveredYou = undefined;
     board.hoveredThem = undefined;
+    board.choosingYou = undefined;
+    board.choosingThem = undefined;
     for (const slot of hovers.get(battleId) ?? []) {
       const side = slot < 4 ? 0 : 1;
       const index = slot % 4;
       if (side === mySide) board.hoveredYou = index;
       else board.hoveredThem = index;
     }
+    const selectingSlot = selecting.get(battleId);
+    if (selectingSlot !== undefined) {
+      const side = selectingSlot < 4 ? 0 : 1;
+      const index = selectingSlot % 4;
+      if (side === mySide) board.choosingYou = index;
+      else board.choosingThem = index;
+    }
   };
 
-  const applyVisibleHovers = (
+  const applyVisibleCardInteractions = (
     battleId: number,
     mySide: number | null | undefined,
   ) => {
     if (pos?.battleId === battleId) {
-      applyHovers(pos.board, battleId, mySide);
+      applyCardInteractions(pos.board, battleId, mySide);
     }
     if (pending?.battleId === battleId) {
-      applyHovers(holding?.board, battleId, mySide);
+      applyCardInteractions(holding?.board, battleId, mySide);
     }
   };
 
@@ -1279,6 +1336,13 @@ async function liveMode(opts: AdvisorOptions) {
     hoverLeaves.delete(battleId);
     hoverEnteredAt.delete(battleId);
     hovers.delete(battleId);
+  };
+
+  const clearSelectingBattle = (battleId: number) => {
+    const timer = selectingLeaves.get(battleId);
+    if (timer !== undefined) clearTimeout(timer);
+    selectingLeaves.delete(battleId);
+    selecting.delete(battleId);
   };
 
   const updateHover = (
@@ -1323,7 +1387,7 @@ async function liveMode(opts: AdvisorOptions) {
       hoverLeaves.get(battleId)?.delete(slot);
       active.delete(slot);
       enteredAt.delete(slot);
-      applyVisibleHovers(battleId, mySide);
+      applyVisibleCardInteractions(battleId, mySide);
       repaint();
     };
     const remaining = holdLeave
@@ -1340,6 +1404,40 @@ async function liveMode(opts: AdvisorOptions) {
     }
     if (leaves.has(slot)) return;
     leaves.set(slot, setTimeout(remove, remaining));
+  };
+
+  const updateSelecting = (
+    battleId: number,
+    entry: Extract<CaptureEntry, { kind: "selecting" }>,
+    holdClose = false,
+    mySide?: number | null,
+  ) => {
+    const slot = entry.side * 4 + entry.index;
+    const pendingClose = selectingLeaves.get(battleId);
+
+    if (entry.active) {
+      if (pendingClose !== undefined) clearTimeout(pendingClose);
+      selectingLeaves.delete(battleId);
+      selecting.set(battleId, slot);
+      return;
+    }
+    if (selecting.get(battleId) !== slot) return;
+
+    const remove = () => {
+      selectingLeaves.delete(battleId);
+      if (selecting.get(battleId) === slot) selecting.delete(battleId);
+      applyVisibleCardInteractions(battleId, mySide);
+      repaint();
+    };
+    if (!holdClose) {
+      remove();
+      return;
+    }
+    if (pendingClose !== undefined) return;
+    selectingLeaves.set(
+      battleId,
+      setTimeout(remove, CHOOSER_CLOSE_HOLD_MS),
+    );
   };
   /** Wake the main loop as soon as the feed changes, with a timeout only as a safety net. */
   let revision = 0;
@@ -1375,6 +1473,19 @@ async function liveMode(opts: AdvisorOptions) {
     if (autoQueueHover === inside) return;
     autoQueueHover = inside;
     repaint();
+  }, (column, row, pressed) => {
+    const key = opponentReadClick(
+      opponentRead.targets ?? [],
+      column,
+      row,
+    );
+    let changed = opponentRead.hovered !== key;
+    opponentRead.hovered = key;
+    if (pressed && key !== undefined && opponentRead.selected !== key) {
+      opponentRead.selected = key;
+      changed = true;
+    }
+    if (changed) repaint();
   });
   const status = () =>
     [feedState.error, controlError].filter(Boolean).join(" · ");
@@ -1407,15 +1518,22 @@ async function liveMode(opts: AdvisorOptions) {
         battles.set(battleId, entries);
         for (const previous of entries) {
           if (previous.kind === "hover") updateHover(battleId, previous);
+          else if (previous.kind === "selecting") {
+            updateSelecting(battleId, previous);
+          }
         }
       }
       entries.push(entry);
-      if (entry.kind === "hover") {
+      if (entry.kind === "hover" || entry.kind === "selecting") {
         const mySide = pending?.battleId === battleId
           ? pending.rec.mySide
           : undefined;
-        updateHover(battleId, entry, true, mySide);
-        applyVisibleHovers(battleId, mySide);
+        if (entry.kind === "hover") {
+          updateHover(battleId, entry, true, mySide);
+        } else {
+          updateSelecting(battleId, entry, true, mySide);
+        }
+        applyVisibleCardInteractions(battleId, mySide);
         repaint();
         continue;
       }
@@ -1424,6 +1542,7 @@ async function liveMode(opts: AdvisorOptions) {
         (entry.kind === "status" && entry.battle?.status !== "playing")
       ) {
         clearHoverBattle(battleId);
+        clearSelectingBattle(battleId);
       }
       // `battles.result` usually arrives a fraction of a second after the first `done`
       // status—well before the site's result animation finishes. Reconstruct on it too so
@@ -1431,7 +1550,7 @@ async function liveMode(opts: AdvisorOptions) {
       if (entry.kind !== "status" && entry.kind !== "result") continue;
       try {
         pending = { rec: reconstruct(battleId, entries), battleId };
-        applyVisibleHovers(battleId, pending.rec.mySide);
+        applyVisibleCardInteractions(battleId, pending.rec.mySide);
         signal();
       } catch { /* too early to reconstruct */ }
     }
@@ -1461,7 +1580,7 @@ async function liveMode(opts: AdvisorOptions) {
         clearDecisionState();
       }
       const built = buildPosition(next!.rec);
-      applyHovers(
+      applyCardInteractions(
         isOurs(built) ? built.board : built.holding?.board,
         next!.battleId,
         next!.rec.mySide,
@@ -1515,6 +1634,9 @@ async function liveMode(opts: AdvisorOptions) {
           board: built.board,
           warning: built.warning,
         };
+        opponentRead.selected = undefined;
+        opponentRead.hovered = undefined;
+        opponentRead.targets!.length = 0;
         holding = undefined;
         diagnosis = "";
         lastPlayed = undefined;
@@ -1536,6 +1658,7 @@ async function liveMode(opts: AdvisorOptions) {
         () => autoQueueHover,
         (paint) => repaint = paint,
         () => feedState.connection,
+        () => opponentRead,
       );
       continue;
     }
@@ -1548,6 +1671,8 @@ async function liveMode(opts: AdvisorOptions) {
           lastPlayed = gradeMoveAt(pos, next.rec);
         }
         const over = key !== pos.key;
+        opponentRead.targets!.length = 0;
+        if (over) opponentRead.hovered = undefined;
         const phase = holding === undefined ? undefined : viewPhase(holding);
         const detail = phase?.headline === "battle over"
           ? (holding?.warning ?? pos.warning ?? "")
@@ -1563,6 +1688,7 @@ async function liveMode(opts: AdvisorOptions) {
             battleId: pos.battleId,
             autoQueue,
             autoQueueHover,
+            opponentRead: over ? undefined : opponentRead,
             phase,
             board: pos.board,
             played: lastPlayed,
@@ -1574,6 +1700,8 @@ async function liveMode(opts: AdvisorOptions) {
           }) + CLEAR_TO_END,
         );
       } else {
+        opponentRead.targets!.length = 0;
+        opponentRead.hovered = undefined;
         const phase = holding === undefined ? undefined : viewPhase(holding);
         const note = phase?.headline === "battle over"
           ? (holding?.warning ?? "")

@@ -10,6 +10,7 @@
 //                                                   fields only (life, pillz, per-card round
 //                                                   state). ~300 bytes instead of ~15 KB.
 //   { kind: "hover",  t, side, index, active }     — opponent mouse entered/left a card.
+//   { kind: "selecting", t, side, index, active }  — opponent opened/closed its pillz UI.
 //   { kind: "play",   t, request, response }
 //   { kind: "result", t, result, ranking? }
 // Ability / bonus definitions (id → description + abilityData) live in a single shared
@@ -37,6 +38,8 @@ export interface CaptureState {
   battleActive: boolean;
   /** Active absolute card slots, used to collapse duplicate WebSocket frames. */
   hoveredSlots: Set<number>;
+  /** Absolute card slot whose pillz chooser the remote player currently has open. */
+  selectingSlot?: number;
 }
 
 export interface AbilityDef {
@@ -167,6 +170,14 @@ export type CaptureEntry =
   | { kind: "status"; t: number; battle: any }
   /** A remote hover over an absolute server-side hand slot (not a committed selection). */
   | { kind: "hover"; t: number; side: 0 | 1; index: number; active: boolean }
+  /** A remote card whose pillz chooser is open; code 7 enters and code 8 leaves. */
+  | {
+    kind: "selecting";
+    t: number;
+    side: 0 | 1;
+    index: number;
+    active: boolean;
+  }
   | { kind: "play"; t: number; request: unknown; response: unknown }
   // deno-lint-ignore no-explicit-any
   | { kind: "result"; t: number; result: any; ranking?: unknown };
@@ -512,27 +523,66 @@ export function extractFromRecord(
   rec: RawRecord,
   state: CaptureState,
 ): CaptureEvent[] {
-  // The battle socket sends code 5 when the other player enters a card and code 6 when
-  // they leave it. Values 1..4 are player0's hand and 5..8 are player1's. Each frame is
-  // commonly delivered twice, so retain active state and only emit real transitions.
+  // The battle socket sends 5/6 for hover enter/leave and 7/8 for opening/closing the
+  // card's pillz chooser. Values 1..4 are player0's hand and 5..8 are player1's. Hover
+  // frames are commonly delivered twice, so retain active state and emit transitions only.
   if (rec.kind === "ws_in" && state.lastBattleId && state.battleActive) {
     try {
       const message = typeof rec.payload === "string"
         ? JSON.parse(rec.payload)
         : rec.payload;
-      const active = message?.code === 5
+      const code = message?.code;
+      const kind = code === 5 || code === 6
+        ? "hover"
+        : code === 7 || code === 8
+        ? "selecting"
+        : undefined;
+      const active = code === 5 || code === 7
         ? true
-        : message?.code === 6
+        : code === 6 || code === 8
         ? false
         : undefined;
       const value = Number(message?.values?.[0]);
       if (
-        active === undefined || !Number.isInteger(value) || value < 1 ||
+        kind === undefined || active === undefined ||
+        !Number.isInteger(value) || value < 1 ||
         value > 8
       ) {
         return [];
       }
       const slot = value - 1;
+      if (kind === "selecting") {
+        if (active && state.selectingSlot === slot) return [];
+        if (!active && state.selectingSlot !== slot) return [];
+
+        const events: CaptureEvent[] = [];
+        if (active && state.selectingSlot !== undefined) {
+          const previous = state.selectingSlot;
+          events.push({
+            battleId: state.lastBattleId,
+            entry: {
+              kind: "selecting",
+              t: rec.t,
+              side: previous < 4 ? 0 : 1,
+              index: previous % 4,
+              active: false,
+            },
+          });
+        }
+        state.selectingSlot = active ? slot : undefined;
+        events.push({
+          battleId: state.lastBattleId,
+          entry: {
+            kind: "selecting",
+            t: rec.t,
+            side: slot < 4 ? 0 : 1,
+            index: slot % 4,
+            active,
+          },
+        });
+        return events;
+      }
+
       if (
         active && state.hoveredSlots.size === 1 && state.hoveredSlots.has(slot)
       ) {
@@ -602,13 +652,17 @@ export function extractFromRecord(
         state.lastBattleId = battle.id;
         state.lastStatic = undefined;
         state.hoveredSlots.clear();
+        state.selectingSlot = undefined;
         events.push({
           battleId: battle.id,
           entry: { kind: "meta", t, myId: state.myId, room: state.room },
         });
       }
       state.battleActive = battle.status === "playing";
-      if (!state.battleActive) state.hoveredSlots.clear();
+      if (!state.battleActive) {
+        state.hoveredSlots.clear();
+        state.selectingSlot = undefined;
+      }
       const { s, d } = splitStatus(battle, state);
       const sj = JSON.stringify(s);
       if (sj !== state.lastStatic) {
@@ -633,6 +687,7 @@ export function extractFromRecord(
       if (!state.lastBattleId || !data?.battle) return [];
       state.battleActive = false;
       state.hoveredSlots.clear();
+      state.selectingSlot = undefined;
       const ranking = Array.isArray(data.ranking)
         ? data.ranking.map((r: { player?: Record<string, unknown> }) => ({
           ...r,

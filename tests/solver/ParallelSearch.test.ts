@@ -74,6 +74,29 @@ Deno.test("ParallelSearch merges worker slices into the single-thread answer", a
   parallel.cancel();
 });
 
+Deno.test("ParallelSearch preserves exact hidden-wager outcomes", async () => {
+  const game = finalRound();
+  game.select(3, 0, false, false); // P2 commits its final card; wager remains hidden
+  const serial = new Search(game);
+  quiet(() => {
+    while (serial.step());
+  });
+
+  const parallel = new ParallelSearch(game, 3, 10);
+  while (!parallel.done) await parallel.workFor(50);
+
+  for (const [i, candidate] of parallel.candidates.entries()) {
+    for (const opponent of serial.opponentMoves) {
+      assertEquals(
+        parallel.outcome(candidate, opponent),
+        serial.outcome(serial.candidates[i], opponent),
+        `${candidate.key} against ${opponent.pillz}/${opponent.fury}`,
+      );
+    }
+  }
+  parallel.cancel();
+});
+
 Deno.test("ParallelSearch merges blind-second estimates before a card is revealed", async () => {
   const game = finalRound();
   const serial = new Search(game, 1, 0, true);

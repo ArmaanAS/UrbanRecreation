@@ -43,6 +43,8 @@ async function run(message: StartMessage) {
       message.blindSecond,
     );
     const sentValues = search.candidates.map(() => 0);
+    const sentIndexes = search.candidates.map(() => 0);
+    const sentFlags = search.candidates.map(() => 0);
     const sentWeights = search.candidates.map(() => 0);
     const sentKos = search.candidates.map(() => 0);
     const sentKoed = search.candidates.map(() => 0);
@@ -55,6 +57,16 @@ async function run(message: StartMessage) {
           const values = candidate.values.slice(sentValues[i]);
           sentValues[i] = candidate.values.length;
           return values;
+        }),
+        sampleIndexes: search.candidates.map((candidate, i) => {
+          const indexes = candidate.sampleIndexes.slice(sentIndexes[i]);
+          sentIndexes[i] = candidate.sampleIndexes.length;
+          return indexes;
+        }),
+        sampleFlags: search.candidates.map((candidate, i) => {
+          const flags = candidate.sampleFlags.slice(sentFlags[i]);
+          sentFlags[i] = candidate.sampleFlags.length;
+          return flags;
         }),
         weights: search.candidates.map((candidate, i) => {
           const weights = candidate.weights.slice(sentWeights[i]);
