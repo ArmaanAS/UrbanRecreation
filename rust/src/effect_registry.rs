@@ -231,6 +231,7 @@ pub enum MagnitudeMultiplierV1 {
     Support,
     Growth,
     Degrowth,
+    OpponentStars,
 }
 
 /// Compact, string-free building blocks safe to copy into later round plans.
@@ -1145,6 +1146,7 @@ fn reviewed_stat_description(
         MagnitudeMultiplierV1::Support => "Support: ",
         MagnitudeMultiplierV1::Growth => "Growth: ",
         MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
+        MagnitudeMultiplierV1::OpponentStars => "Equalizer: ",
     };
     let expected = match (side, operation) {
         (AffectedSideV1::Player, StatOperationV1::Increase) => {

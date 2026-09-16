@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use urban_recreation_rust::catalog::{CardKey, EffectiveCardCatalog};
-use urban_recreation_rust::effect_registry::{EffectLookupError, EffectRegistryV1};
+use urban_recreation_rust::effect_registry::{
+    EffectLookupError, EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
+};
 use urban_recreation_rust::engine::{
     derive_catalog_hand, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
     CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1, CatalogCombatStatMatchV1,
@@ -301,6 +303,64 @@ fn strict_catalog_match_separates_same_text_clans_and_executes_support() {
     assert!(report.cards[PlayerId::P2].won);
     assert_eq!(report.players[PlayerId::P1].life, 11);
     assert_eq!(report.status, MatchStatus::Playing);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_executes_equalizer_from_the_selected_opponent_level() {
+    let catalog = catalog();
+    let registry = registry();
+    let hive = [
+        CardKey::new(1536, 5),
+        CardKey::new(1534, 1),
+        CardKey::new(1535, 1),
+        CardKey::new(1556, 1),
+    ];
+    let opponent = [
+        CardKey::new(123, 3),
+        CardKey::new(124, 1),
+        CardKey::new(138, 1),
+        CardKey::new(139, 1),
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(hive, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    for disposition in [
+        &prepared.preparation()[PlayerId::P1][0].ability,
+        &prepared.preparation()[PlayerId::P1][0].bonus,
+    ] {
+        assert!(matches!(
+            disposition,
+            CatalogCombatStatSourceDispositionV1::Execute {
+                effect: SupportedEffectV1::ModifyCombatStat {
+                    multiplier: MagnitudeMultiplierV1::OpponentStars,
+                    ..
+                },
+                predicate: urban_recreation_rust::engine::CombatStatPredicateV1::Always,
+                ..
+            }
+        ));
+    }
+
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 0, false),
+                BaseRulesSelection::new(0, 4, false),
+            ),
+        })
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 8);
+    assert_eq!(report.cards[PlayerId::P1].attack, 8);
+    assert_eq!(report.cards[PlayerId::P2].attack, 11);
     game.unmake(undo);
     assert_eq!(game.position(), &before);
 }

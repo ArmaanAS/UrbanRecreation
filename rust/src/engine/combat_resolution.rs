@@ -88,6 +88,10 @@ pub(super) fn prepare_combat_resolution(
     selected_plans: ByPlayer<ResolutionCardPlan>,
     rounds_played: u8,
 ) -> Result<ByPlayer<PreparedSelection>, CombatResolutionError> {
+    let opponent_stars = ByPlayer::new(
+        u16::from(validated[PlayerId::P2].card.key.level),
+        u16::from(validated[PlayerId::P1].card.key.level),
+    );
     let mut bonus_live = ByPlayer::new(
         selected_plans[PlayerId::P1].bonus.effect.is_some(),
         selected_plans[PlayerId::P2].bonus.effect.is_some(),
@@ -140,6 +144,7 @@ pub(super) fn prepare_combat_resolution(
                 selected_plans[origin].bonus,
                 cancellations[origin.other()],
                 rounds_played,
+                opponent_stars[origin],
                 &mut power,
                 &mut damage,
             )?;
@@ -151,6 +156,7 @@ pub(super) fn prepare_combat_resolution(
             selected_plans[origin].ability,
             cancellations[origin.other()],
             rounds_played,
+            opponent_stars[origin],
             &mut power,
             &mut damage,
         )?;
@@ -170,6 +176,7 @@ pub(super) fn prepare_combat_resolution(
             selected_plans[origin].ability,
             cancellations[origin.other()],
             rounds_played,
+            opponent_stars[origin],
             &mut power,
             &mut damage,
         )?;
@@ -208,6 +215,7 @@ pub(super) fn prepare_combat_resolution(
                 selected_plans[origin].bonus,
                 cancellations[origin.other()],
                 rounds_played,
+                opponent_stars[origin],
                 &mut attack,
             )?;
         }
@@ -218,6 +226,7 @@ pub(super) fn prepare_combat_resolution(
             selected_plans[origin].ability,
             cancellations[origin.other()],
             rounds_played,
+            opponent_stars[origin],
             &mut attack,
         )?;
     }
@@ -235,6 +244,7 @@ pub(super) fn prepare_combat_resolution(
             selected_plans[origin].ability,
             cancellations[origin.other()],
             rounds_played,
+            opponent_stars[origin],
             &mut attack,
         )?;
     }
@@ -282,6 +292,7 @@ fn apply_ordered_power_damage_reductions(
     ability: ResolutionSourcePlan,
     opponent_cancellation: CancellationMask,
     rounds_played: u8,
+    opponent_stars: u16,
     power: &mut ByPlayer<u16>,
     damage: &mut ByPlayer<u16>,
 ) -> Result<(), CombatResolutionError> {
@@ -295,6 +306,7 @@ fn apply_ordered_power_damage_reductions(
             ability,
             opponent_cancellation,
             rounds_played,
+            opponent_stars,
             power,
             damage,
         )?;
@@ -305,6 +317,7 @@ fn apply_ordered_power_damage_reductions(
             bonus,
             opponent_cancellation,
             rounds_played,
+            opponent_stars,
             power,
             damage,
         )
@@ -316,6 +329,7 @@ fn apply_ordered_power_damage_reductions(
             bonus,
             opponent_cancellation,
             rounds_played,
+            opponent_stars,
             power,
             damage,
         )?;
@@ -326,6 +340,7 @@ fn apply_ordered_power_damage_reductions(
             ability,
             opponent_cancellation,
             rounds_played,
+            opponent_stars,
             power,
             damage,
         )
@@ -338,6 +353,7 @@ fn apply_ordered_attack_reductions(
     ability: ResolutionSourcePlan,
     opponent_cancellation: CancellationMask,
     rounds_played: u8,
+    opponent_stars: u16,
     attack: &mut ByPlayer<u32>,
 ) -> Result<(), CombatResolutionError> {
     let bonus_min = attack_reduction_min(bonus.effect);
@@ -350,6 +366,7 @@ fn apply_ordered_attack_reductions(
             ability,
             opponent_cancellation,
             rounds_played,
+            opponent_stars,
             attack,
         )?;
         apply_attack_effect(
@@ -359,6 +376,7 @@ fn apply_ordered_attack_reductions(
             bonus,
             opponent_cancellation,
             rounds_played,
+            opponent_stars,
             attack,
         )
     } else {
@@ -369,6 +387,7 @@ fn apply_ordered_attack_reductions(
             bonus,
             opponent_cancellation,
             rounds_played,
+            opponent_stars,
             attack,
         )?;
         apply_attack_effect(
@@ -378,6 +397,7 @@ fn apply_ordered_attack_reductions(
             ability,
             opponent_cancellation,
             rounds_played,
+            opponent_stars,
             attack,
         )
     }
@@ -420,6 +440,7 @@ fn apply_power_damage_effect(
     source: ResolutionSourcePlan,
     opponent_cancellation: CancellationMask,
     rounds_played: u8,
+    opponent_stars: u16,
     power: &mut ByPlayer<u16>,
     damage: &mut ByPlayer<u16>,
 ) -> Result<(), CombatResolutionError> {
@@ -460,6 +481,7 @@ fn apply_power_damage_effect(
         multiplier,
         source.support_count,
         rounds_played,
+        opponent_stars,
     )?;
     if affects_power && !opponent_cancellation.contains(DiagnosticCombatStatV1::Power) {
         power[target] = apply_u16_modifier(
@@ -494,6 +516,7 @@ fn apply_attack_effect(
     source: ResolutionSourcePlan,
     opponent_cancellation: CancellationMask,
     rounds_played: u8,
+    opponent_stars: u16,
     attack: &mut ByPlayer<u32>,
 ) -> Result<(), CombatResolutionError> {
     let Some(DiagnosticCombatEffectV1::ModifyCombatStat {
@@ -525,6 +548,7 @@ fn apply_attack_effect(
         multiplier,
         source.support_count,
         rounds_played,
+        opponent_stars,
     )?;
     attack[target] = apply_u32_modifier(
         origin,
@@ -543,6 +567,7 @@ fn effect_amount(
     multiplier: DiagnosticMagnitudeV1,
     support_count: u16,
     rounds_played: u8,
+    opponent_stars: u16,
 ) -> Result<u32, CombatResolutionError> {
     let multiplier = match multiplier {
         DiagnosticMagnitudeV1::Fixed => 1,
@@ -554,6 +579,7 @@ fn effect_amount(
                 stage: CombatResolutionArithmeticStage::EffectMagnitude,
             },
         )?),
+        DiagnosticMagnitudeV1::OpponentStars => u32::from(opponent_stars),
     };
     u32::from(value)
         .checked_mul(multiplier)

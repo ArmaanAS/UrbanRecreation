@@ -179,6 +179,16 @@ predicate remain fail-closed. Both abilities and bonuses are admitted because Do
 captured bonus id 1578 is genuinely Growth. The older clan-only diagnostic explicitly
 rejects these new shared resolver magnitudes at its public plan boundary.
 
+Equalizer is likewise a magnitude rather than a predicate. The admitted combat-stat subset
+multiplies its complete change by the selected opponent card's exact catalog level (its star
+count), then applies the usual bound once. Compilation requires an otherwise-neutral
+`isOppStarsLinked` structure and an exact `Equalizer: ` numeric body. Ability- and
+bonus-origin Equalizer share the same selected-opponent context; Equalizer life and pillz,
+nested conditions, and every other linked magnitude remain fail-closed. The catalog lookup
+and compilation happen once during match construction, while round resolution reads only the
+already-selected opponent `CardKey.level`. The older clan-only diagnostic rejects this new
+shared resolver magnitude at its public plan boundary.
+
 Resolution retains Bonus-then-Ability source compilation for own increases. Opponent
 Power/Damage reductions and opponent Attack reductions are independently stable-sorted by
 descending minimum, with Bonus before Ability on an equal minimum. This reproduces the
@@ -188,10 +198,11 @@ to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attac
 then precede the sorted opponent Attack reductions. Arithmetic observations outside an
 admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is seventeen sequential prefix rounds:
+The immutable server-backed gate is nineteen sequential prefix rounds:
 `875032/1`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/1`, and
 `874837/2`, plus `1011643/2`, `1011768/1`, `1011483/2`, `877812/2`, and
-`874642/1`. Its selected Execute/Disabled identity sets are pinned, while focused tests pin
+`874642/1`, `1059269/1`, and `1091585/1`. Its selected Execute/Disabled identity sets are
+pinned, while focused tests pin
 the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
 (Galahad Damage 2 to 5 on unequal slots) and active Symmetry (Anagone reduces Bella Ld Power
 7 to 4 on equal slots); `1011768` visibly proves inactive Asymmetry (Aneta remains Damage 3
@@ -208,8 +219,13 @@ Power reduction (Nidory reaches 10/5, then 7/5); and `877812` supplies a Degrowt
 observation consistent with a numerically clamped no-op when its target is already at the
 minimum. Capture `878056` separately pins cancellation suppressing active Degrowth. The gate
 contains observable active Courage and Reprisal cases; their inactive branches, the complete
-hand-slot predicate matrix, and all four round factors are also pinned synthetically. Replay
-provenance records compiler/policy semantic revision 4 for this scope.
+hand-slot predicate matrix, and all four round factors are also pinned synthetically.
+Capture `1059269` proves the Hive Equalizer bonus scales from Callie's three stars and clamps
+her Attack to 5 after Stop Bonus suppresses Rescue. Capture `1091585` exercises both Aegis
+Cr's Equalizer Power ability and the Hive Equalizer Attack bonus against three-star Nidory,
+in the same round as Growth and Degrowth. Focused tests cover opponent levels one through
+five and exact make/unmake restoration. Replay provenance records compiler/policy semantic
+revision 5 for this scope.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
@@ -224,7 +240,8 @@ specification, the model, `position()`, and the explicit next first mover.
 
 The combat-stat plan now validates Support context by effective clan rather than captured
 bonus id: it counts distinct character ids in the immutable draw that share the source
-card's effective clan. Compiler/policy revision 4 records this semantic boundary.
+card's effective clan. Compiler/policy revision 5 records this semantic boundary together
+with the exact Equalizer multiplier.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -246,7 +263,7 @@ variant has no catalog numeric id unless the catalog explicitly supplies one; it
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 4, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 5, and catalog-context
 policy revision 1.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots

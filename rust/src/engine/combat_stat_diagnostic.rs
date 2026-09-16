@@ -52,6 +52,7 @@ pub enum CombatStatMagnitudeV1 {
     SourceBonusSupport,
     Growth,
     Degrowth,
+    OpponentStars,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -464,7 +465,9 @@ fn validate_combat_stat_source_plan(
     };
     if matches!(
         multiplier,
-        CombatStatMagnitudeV1::Growth | CombatStatMagnitudeV1::Degrowth
+        CombatStatMagnitudeV1::Growth
+            | CombatStatMagnitudeV1::Degrowth
+            | CombatStatMagnitudeV1::OpponentStars
     ) && predicate != CombatStatPredicateV1::Always
     {
         return Err(invalid_combat_stat_execute(
@@ -711,6 +714,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> DiagnosticCombatEffectV1 {
                 }
                 CombatStatMagnitudeV1::Growth => DiagnosticMagnitudeV1::Growth,
                 CombatStatMagnitudeV1::Degrowth => DiagnosticMagnitudeV1::Degrowth,
+                CombatStatMagnitudeV1::OpponentStars => DiagnosticMagnitudeV1::OpponentStars,
             },
         },
         CombatStatEffectV1::StopOpponentBonus => DiagnosticCombatEffectV1::StopOpponentBonus,

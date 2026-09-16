@@ -28,6 +28,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1011483, 2),
     (877812, 2),
     (874642, 1),
+    (1059269, 1),
+    (1091585, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -104,6 +106,17 @@ fn round_scaled_numeric_entry(
     entry
 }
 
+fn equalizer_numeric_entry(
+    id: u32,
+    description: &str,
+    value: u16,
+    minimum: u16,
+) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "both", value, minimum);
+    entry["abilityData"]["isOppStarsLinked"] = serde_json::json!(true);
+    entry
+}
+
 fn one_entry_registry(entry: serde_json::Value) -> EffectRegistryV1 {
     let id = entry["id"].as_u64().unwrap().to_string();
     let mut entries = serde_json::Map::new();
@@ -142,7 +155,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_seventeen_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_nineteen_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -173,13 +186,13 @@ fn fixed_server_backed_gate_is_exactly_seventeen_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 17);
+    assert_eq!(rounds, 19);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 37, 39, 40, 42, 56, 93, 156, 266, 612, 741, 871, 916, 980, 1163, 1241, 1372, 1536,
-            1578, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2881, 3865, 3897, 4216, 4718, 5026,
-            5273, 5763,
+            6, 37, 39, 40, 42, 56, 93, 156, 266, 612, 741, 871, 916, 980, 1163, 1241, 1338, 1342,
+            1372, 1536, 1578, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2881, 3865, 3897, 4216,
+            4718, 4757, 5026, 5273, 5763,
         ])
     );
     assert_eq!(disabled_ids, BTreeSet::from([274, 577, 1852, 4458, 4459]));
@@ -240,7 +253,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 4);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 5);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -796,6 +809,169 @@ fn round_scaled_grammar_is_exact_and_nested_contexts_fail_closed() {
 }
 
 #[test]
+fn equalizer_grammar_is_exact_and_nested_contexts_fail_closed() {
+    let catalog = catalog();
+    const EFFECT_ID: u32 = 900_104;
+    let cases = [
+        (
+            "Equalizer: -2 Opp Power, Min 3",
+            true,
+            "both",
+            "any",
+            false,
+            Some(MagnitudeMultiplierV1::OpponentStars),
+        ),
+        (
+            "Equalizer: Power +2",
+            true,
+            "both",
+            "any",
+            false,
+            Some(MagnitudeMultiplierV1::OpponentStars),
+        ),
+        (
+            "Equalizer: -1 Opp Power, Min 3",
+            true,
+            "both",
+            "any",
+            false,
+            None,
+        ),
+        (
+            "Equalizer: -2 Opp Power, Min 3",
+            false,
+            "both",
+            "any",
+            false,
+            None,
+        ),
+        (
+            "Equalizer:-2 Opp Power, Min 3",
+            true,
+            "both",
+            "any",
+            false,
+            None,
+        ),
+        (
+            "Equalizer: -2 Opp Power, Min 3",
+            true,
+            "attacker",
+            "any",
+            false,
+            None,
+        ),
+        (
+            "Equalizer: -2 Opp Power, Min 3",
+            true,
+            "both",
+            "win",
+            false,
+            None,
+        ),
+        (
+            "Equalizer: -2 Opp Power, Min 3",
+            true,
+            "both",
+            "any",
+            true,
+            None,
+        ),
+    ];
+    for (description, linked, position, current, growth, admitted) in cases {
+        for bonus in [false, true] {
+            let mut entry = equalizer_numeric_entry(EFFECT_ID, description, 2, 3);
+            entry["abilityData"]["isOppStarsLinked"] = serde_json::json!(linked);
+            entry["abilityData"]["positionRequirement"] = serde_json::json!(position);
+            entry["abilityData"]["currentRoundRequirement"] = serde_json::json!(current);
+            entry["abilityData"]["isOverdrive"] = serde_json::json!(growth);
+            if description == "Equalizer: Power +2" {
+                entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+                entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+                entry["abilityData"]["valueMin"] = serde_json::json!(0);
+            }
+            let registry = one_entry_registry(entry);
+            let mut source = replay(875032, &catalog);
+            clear_sources(&mut source);
+            let selected_slot = usize::from(
+                source.rounds[0]
+                    .plays
+                    .iter()
+                    .find(|play| play.engine_player == EnginePlayer::P1)
+                    .unwrap()
+                    .hand_index,
+            );
+            let modifier = Some(SourceModifier {
+                id: EFFECT_ID,
+                description: description.to_owned(),
+            });
+            if bonus {
+                source.players[0].hand[selected_slot].source_bonus = modifier;
+            } else {
+                source.players[0].hand[selected_slot].source_ability = modifier;
+            }
+            let prepared =
+                CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+            let disposition = if bonus {
+                &prepared.preparation()[PlayerId::P1][selected_slot].bonus
+            } else {
+                &prepared.preparation()[PlayerId::P1][selected_slot].ability
+            };
+            assert_eq!(
+                match disposition {
+                    CombatStatProjectionDispositionV1::Execute {
+                        effect:
+                            SupportedEffectV1::ModifyCombatStat {
+                                multiplier: actual, ..
+                            },
+                        predicate: CombatStatPredicateV1::Always,
+                        ..
+                    } => Some(*actual),
+                    CombatStatProjectionDispositionV1::Absent
+                    | CombatStatProjectionDispositionV1::Execute { .. }
+                    | CombatStatProjectionDispositionV1::Disabled { .. } => None,
+                },
+                admitted,
+                "source={} {description}",
+                if bonus { "bonus" } else { "ability" }
+            );
+            if admitted.is_none() {
+                assert!(matches!(
+                    prepared.execute_combat_stat_diagnostic_v1_prefix(1),
+                    Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
+                ));
+            }
+        }
+    }
+
+    let mut life = equalizer_numeric_entry(EFFECT_ID, "Equalizer: +2 Life", 2, 0);
+    life["abilityData"]["sideAffected"] = serde_json::json!("player");
+    life["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    life["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    let registry = one_entry_registry(life);
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let selected_slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: EFFECT_ID,
+        description: "Equalizer: +2 Life".to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        CombatStatProjectionDispositionV1::Disabled { .. }
+    ));
+}
+
+#[test]
 fn server_replays_pin_growth_degrowth_clamping_and_cancellation() {
     let catalog = catalog();
     let registry = registry();
@@ -862,6 +1038,62 @@ fn server_replays_pin_growth_degrowth_clamping_and_cancellation() {
         }
     ));
     assert_eq!(cancelled.rounds[0].round.cards[PlayerId::P2].damage, 4);
+}
+
+#[test]
+fn server_replays_pin_equalizer_to_the_selected_opponent_level() {
+    let catalog = catalog();
+    let registry = registry();
+
+    let stopped_support = diagnostic(1059269, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    assert!(matches!(
+        stopped_support.rounds[0].selected[PlayerId::P1].bonus,
+        CombatStatProjectionDispositionV1::Execute {
+            effect: SupportedEffectV1::ModifyCombatStat {
+                multiplier: MagnitudeMultiplierV1::OpponentStars,
+                ..
+            },
+            ..
+        }
+    ));
+    assert_eq!(
+        stopped_support.rounds[0].round.cards[PlayerId::P1].attack,
+        7
+    );
+    assert_eq!(
+        stopped_support.rounds[0].round.cards[PlayerId::P2].attack,
+        5
+    );
+
+    let both_sources = diagnostic(1091585, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    assert!(matches!(
+        both_sources.rounds[0].selected[PlayerId::P2].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            effect: SupportedEffectV1::ModifyCombatStat {
+                multiplier: MagnitudeMultiplierV1::OpponentStars,
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        both_sources.rounds[0].selected[PlayerId::P2].bonus,
+        CombatStatProjectionDispositionV1::Execute {
+            effect: SupportedEffectV1::ModifyCombatStat {
+                multiplier: MagnitudeMultiplierV1::OpponentStars,
+                ..
+            },
+            ..
+        }
+    ));
+    assert_eq!(both_sources.rounds[0].round.cards[PlayerId::P1].power, 10);
+    assert_eq!(both_sources.rounds[0].round.cards[PlayerId::P1].attack, 51);
+    assert_eq!(both_sources.rounds[0].round.cards[PlayerId::P2].power, 7);
+    assert_eq!(both_sources.rounds[0].round.cards[PlayerId::P2].attack, 56);
 }
 
 #[test]

@@ -488,6 +488,94 @@ fn cancellation_suppresses_opponent_sources_but_not_base_stats_or_fury() {
 }
 
 #[test]
+fn equalizer_uses_the_selected_opponent_level_for_ability_and_bonus() {
+    for opponent_stars in 1_u8..=5 {
+        let mut base = base_spec(6, 3);
+        base.players[PlayerId::P2].hand[0].key = CardKey::new(200, opponent_stars);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(
+            1342,
+            CombatStatPredicateV1::Always,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Power,
+                CombatStatOperationV1::Increase,
+                1,
+                None,
+                None,
+                CombatStatMagnitudeV1::OpponentStars,
+            ),
+        );
+        cards[PlayerId::P1][0].bonus = execute(
+            1338,
+            CombatStatPredicateV1::Always,
+            modifier(
+                CombatStatAffectedSideV1::Opponent,
+                CombatStatAttributeV1::Attack,
+                CombatStatOperationV1::Decrease,
+                3,
+                Some(5),
+                None,
+                CombatStatMagnitudeV1::OpponentStars,
+            ),
+        );
+        cards[PlayerId::P1][0].source_bonus_support_count = 1;
+
+        let mut equalizer = game(base, cards);
+        let initial = equalizer.position().clone();
+        let (report, undo) = equalizer
+            .make(input(PlayerId::P1, (0, 0, false), (0, 2, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].power,
+            6 + u16::from(opponent_stars)
+        );
+        assert_eq!(
+            report.cards[PlayerId::P2].attack,
+            (18_u32 - 3 * u32::from(opponent_stars)).max(5)
+        );
+        equalizer.unmake(undo);
+        assert_eq!(equalizer.position(), &initial);
+    }
+}
+
+#[test]
+fn equalizer_recomputes_for_sibling_opponent_selections() {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P2].hand[0].key = CardKey::new(200, 1);
+    base.players[PlayerId::P2].hand[1].key = CardKey::new(201, 5);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1342,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            1,
+            None,
+            None,
+            CombatStatMagnitudeV1::OpponentStars,
+        ),
+    );
+
+    let mut equalizer = game(base, cards);
+    let initial = equalizer.position().clone();
+    for (opponent_slot, expected_power) in [(0, 7), (1, 11)] {
+        let (report, undo) = equalizer
+            .make(input(
+                PlayerId::P1,
+                (0, 0, false),
+                (opponent_slot, 0, false),
+            ))
+            .unwrap();
+        assert_eq!(report.cards[PlayerId::P1].power, expected_power);
+        equalizer.unmake(undo);
+        assert_eq!(equalizer.position(), &initial);
+    }
+}
+
+#[test]
 fn source_bonus_context_groups_by_effective_clan_not_source_id() {
     let base = base_spec(6, 2);
     let mut cards = plans(&base);
@@ -680,6 +768,22 @@ fn impossible_execute_plans_fail_at_construction() {
                     None,
                     None,
                     CombatStatMagnitudeV1::Growth,
+                ),
+            ),
+            InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,
+        ),
+        (
+            execute(
+                6,
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+                modifier(
+                    CombatStatAffectedSideV1::Player,
+                    CombatStatAttributeV1::Power,
+                    CombatStatOperationV1::Increase,
+                    1,
+                    None,
+                    None,
+                    CombatStatMagnitudeV1::OpponentStars,
                 ),
             ),
             InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,

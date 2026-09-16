@@ -536,6 +536,33 @@ fn invalid_execute_plans_are_rejected_instead_of_becoming_noops() {
             ..
         }
     ));
+
+    let mut cards = plans(&base_spec(6, 1));
+    cards[PlayerId::P1][0].bonus = execute(
+        9,
+        modifier(
+            DiagnosticAffectedSideV1::Player,
+            DiagnosticCombatStatV1::Power,
+            DiagnosticStatOperationV1::Increase,
+            1,
+            None,
+            None,
+            DiagnosticMagnitudeV1::OpponentStars,
+        ),
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    let error = ClanBonusDiagnostic::new(ClanBonusDiagnosticMatchSpecV1 {
+        base_rules: base_spec(6, 1),
+        cards,
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        DiagnosticPlanErrorV1::InvalidExecute {
+            reason: InvalidDiagnosticPlanReasonV1::OpponentStarsMagnitude,
+            ..
+        }
+    ));
 }
 
 #[test]

@@ -51,6 +51,7 @@ pub enum DiagnosticMagnitudeV1 {
     SourceBonusSupport,
     Growth,
     Degrowth,
+    OpponentStars,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -132,6 +133,7 @@ pub enum InvalidDiagnosticPlanReasonV1 {
     AbilityCombatModifier,
     IncompatibleBounds,
     InvalidModifierDirection,
+    OpponentStarsMagnitude,
     RoundScaledMagnitude,
     ZeroMagnitude,
 }
@@ -428,6 +430,15 @@ fn validate_diagnostic_source_plan(
             source,
             source_id,
             InvalidDiagnosticPlanReasonV1::AbilityCombatModifier,
+        ));
+    }
+    if multiplier == DiagnosticMagnitudeV1::OpponentStars {
+        return Err(invalid_diagnostic_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidDiagnosticPlanReasonV1::OpponentStarsMagnitude,
         ));
     }
     if matches!(

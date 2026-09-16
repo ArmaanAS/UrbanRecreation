@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 4;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 5;
 
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
@@ -23,6 +23,9 @@ pub(crate) fn classify_combat_stat_effect(
     // Model-specific conditions take precedence over the registry's model-neutral output.
     // Keep the unconditional guard below as well, so a future registry compiler expansion
     // cannot silently erase a condition by returning Supported first.
+    if let Some(classified) = classify_equalizer_numeric(definition) {
+        return Some(classified);
+    }
     if let Some(classified) = classify_round_scaled_numeric(definition) {
         return Some(classified);
     }
@@ -129,6 +132,18 @@ fn classify_round_scaled_numeric(
         .then_some((effect, CombatStatPredicateV1::Always))
 }
 
+fn classify_equalizer_numeric(
+    definition: &EffectDefinitionV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    if !input.is_opponent_stars_linked || !neutral_except_equalizer(input) {
+        return None;
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::OpponentStars)?;
+    equalizer_description_matches(definition.description(), effect)
+        .then_some((effect, CombatStatPredicateV1::Always))
+}
+
 fn numeric_effect(
     input: &StructuredEffectV1,
     multiplier: MagnitudeMultiplierV1,
@@ -187,6 +202,32 @@ fn neutral_except_round_scaled_magnitude(input: &StructuredEffectV1) -> bool {
         && !input.is_lost_life_linked
         && !input.is_lost_pillz_linked
         && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+fn neutral_except_equalizer(input: &StructuredEffectV1) -> bool {
+    input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && input.is_opponent_stars_linked
         && !input.is_clanmates_count_linked
         && !input.is_anti_clanmates_count_linked
         && !input.is_permanent
@@ -288,12 +329,22 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Growth => "Growth: ",
         MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
-        MagnitudeMultiplierV1::Fixed | MagnitudeMultiplierV1::Support => return false,
+        MagnitudeMultiplierV1::Fixed
+        | MagnitudeMultiplierV1::Support
+        | MagnitudeMultiplierV1::OpponentStars => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
         effect,
         multiplier,
+    )
+}
+
+fn equalizer_description_matches(description: &str, effect: SupportedEffectV1) -> bool {
+    numeric_description_body_matches(
+        description.strip_prefix("Equalizer: ").unwrap_or(""),
+        effect,
+        MagnitudeMultiplierV1::OpponentStars,
     )
 }
 
@@ -388,6 +439,7 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 MagnitudeMultiplierV1::Support => CombatStatMagnitudeV1::SourceBonusSupport,
                 MagnitudeMultiplierV1::Growth => CombatStatMagnitudeV1::Growth,
                 MagnitudeMultiplierV1::Degrowth => CombatStatMagnitudeV1::Degrowth,
+                MagnitudeMultiplierV1::OpponentStars => CombatStatMagnitudeV1::OpponentStars,
             },
         }),
         SupportedEffectV1::StopOpponentBonus => Some(CombatStatEffectV1::StopOpponentBonus),
