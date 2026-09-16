@@ -204,12 +204,13 @@ to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attac
 then precede the sorted opponent Attack reductions. Arithmetic observations outside an
 admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is thirty-eight sequential prefix rounds:
+The immutable server-backed gate is forty-two sequential prefix rounds:
 `875032/2`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/2`, and
 `874837/2`, plus `1011643/2`, `1011768/1`, `1011483/2`, `877812/2`, and
 `874642/1`, `1059269/1`, and `1091585/1`, plus `868094/1`, `875230/1`, and
 `877950/1`, plus `945585/2`, `1023396/2`, `874962/2`, and `946400/1`, plus
-`1058366/3` and `1061897/4`. Its selected Execute/Disabled identity sets are pinned, while
+`1058366/3` and `1061897/4`, plus `946288/1`, `1092660/1`, and `1093500/2`. Its selected
+Execute/Disabled identity sets are pinned, while
 focused tests pin
 the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
 (Galahad Damage 2 to 5 on unequal slots) and active Symmetry (Anagone reduces Bella Ld Power
@@ -243,7 +244,16 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 9 for this scope.
+Replay provenance records compiler/policy semantic revision 10 for this scope.
+
+The four revision-10 gate rounds exercise the exact same-text ability family without
+turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
+and level 1 (`1092660`, registry `5520`) receive one Pillz after losing; Bonnie's Stop Bonus
+also suppresses Agnes's Riots bonus in the latter round. `1093500` first executes a captured,
+dynamically copied `ability:1034`, then executes Pr Hide's printed `ability:1375` together
+with her Riots bonus. Capture `1092909` round 3 separately proves Pr Hide receives both gains
+after a KO; a focused make/unmake test pins the same +2 transition because the preceding
+Argos round remains outside this revision's gate.
 
 The carried-forward previous-round portion admits only the exact fixed numeric grammar: a structured
 `previousRoundRequirement` of `win` with `Confidence: ` or `Confidence : `, or `lose` with
@@ -286,19 +296,31 @@ Existing Stop Opp. Bonus liveness suppresses bonus-577 recovery (`945585`); Stop
 Ability, protection, and Pillz-cancellation interactions are still unsupported and
 fail-closed if selected.
 
-Semantic revision 9 adds one further exact post-round resource effect: Riots'
-`Victory Or Defeat : +1 Pillz`, registry definition `1034` as a bonus only. Its structured
+Semantic revision 9 introduced one further exact post-round resource effect: Riots'
+`Victory Or Defeat : +1 Pillz`, registry definition `1034` as a bonus. Revision 10 extends
+that already-typed effect to the audited source/identity pairs `ability:1034` and printed
+abilities `1375`, `4111`, `5085`, and `5520`. Its structured
 shape must be otherwise neutral and unconditional, target the owning player's Pillz, use a
 fixed increase of one, and carry no special action, bounds, links, flags, permanence,
-Support, or multiplier. Same-text registry ids `1375`, `4111`, `5085`, and `5520` are
-ability definitions and remain Disabled; selecting one still fails closed. This is not
-general Victory-or-Defeat, Pillz-increase, or same-text ability parity.
+Support, or multiplier. Every other identity, source-kind pairing, description, or shape
+remains Disabled and rejects if selected. This is not general Victory-or-Defeat,
+Pillz-increase, Copy, or same-text ability parity.
+
+The evidence is intentionally recorded with its limits. Pr Hide `1375`, Bonnie Ld `5085`,
+and Bonnie Ld `5520` each have multiple selected observations; the copied replay identity
+`ability:1034` has four. Alba `4111` has one selected observation, but its exact registry id,
+description, and complete structured payload are identical to the observed family. Direct
+post-KO ability evidence currently comes from Pr Hide; applying the same post-KO semantics to
+the other exact identities is a bounded inference from that shared payload, not a claim about
+unlisted same-text cards such as Atess.
 
 The effect adds exactly one Pillz after move costs and damage resolution for either outcome,
-including when its owner is KO'd, and normal Stop Bonus liveness suppresses it. Post-round
-execution therefore visits both selected owners for this typed plan, while recovery remains
-loser-only. Checked addition reports a distinct `PillzIncreaseOverflow` and aborts before
-commit, and the opaque undo restores the exact pre-round position and hash.
+including when its owner is KO'd. Bonus executes before ability when a card owns both,
+matching the TypeScript phase-registration order; normal Stop Bonus liveness suppresses only
+the bonus. Post-round execution therefore visits both
+selected owners for this typed plan, while recovery remains loser-only. Checked addition
+reports a distinct `PillzIncreaseOverflow` and aborts before commit, and the opaque undo
+restores the exact pre-round position and hash.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
@@ -307,9 +329,10 @@ retained as visible Disabled metadata but reject atomically if selected. The 33 
 ordinary Support combat-stat definitions are admitted only for an otherwise-neutral,
 unconditional basic Attack, Power, or Damage shape. Conditional, nested, life, pillz,
 Power-and-Damage, post-round, and permanent Support effects remain fail-closed; capped
-increases also remain deferred for lack of clean evidence. Same-text Victory-or-Defeat
-abilities remain rejected when selected; the Riots exception does not widen the generic
-resource-effect boundary. Provenance records the model,
+increases also remain deferred for lack of clean evidence. Only the five exact audited
+Victory-or-Defeat ability identities are admitted; all other same-text sources remain
+rejected when selected, so this family does not widen the generic resource-effect boundary.
+Provenance records the model,
 explicit projection policy,
 registry schema and non-cryptographic source fingerprint, plus a combined model-specific
 compiler/policy semantic revision. A transposition identity must include that full match
@@ -319,10 +342,10 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 9 records this semantic boundary together with the exact
+context. Compiler/policy revision 10 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
-Defeat-recovery post-round plan, and the identity-locked Riots bonus with its both-owner
-post-round execution semantics.
+Defeat-recovery post-round plan, and the identity-locked Victory-or-Defeat Pillz family with
+its both-owner post-round execution semantics.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -348,14 +371,17 @@ Catalog id `43` is not a registry id, and the same-text registry aliases (`577`,
 catalog id, registry id, description, and exact structured shape all agree or strict
 construction rejects the draw. The Riots bridge applies the same rule: active effective
 Riots clan `49`, catalog bonus id `47`, and the exact Victory-or-Defeat description resolve
-only to registry definition `1034`. Same-text registry ability aliases (`1375`, `4111`,
-`5085`, `5520`) remain distinct provenance and cannot enter through description matching.
+only to registry definition `1034`. Printed catalog abilities `1375`, `4111`, `5085`, and
+`5520` resolve only to their identically numbered registry definitions. A captured
+`ability:1034` is executable replay evidence for a concrete post-Copy result, but no printed
+catalog ability owns that id and strict construction never synthesizes it. Same-text aliases
+therefore remain distinct provenance and cannot enter through description matching.
 A selected night
 variant has no catalog numeric id unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 9, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 10, and catalog-context
 policy revision 1.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots

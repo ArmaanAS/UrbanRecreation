@@ -5,7 +5,9 @@ import BasicModifier from "./modifiers/BasicModifier.ts";
 import { type Clan, type ClanId, ClanIdMap } from "@/game/types/CardTypes.ts";
 import { DEBUG } from "../utils/Debug.ts";
 
-const RIOTS_VICTORY_OR_DEFEAT_PILLZ = "Victory Or Defeat : +1 Pillz";
+const VICTORY_OR_DEFEAT_ONE_PILLZ = "Victory Or Defeat : +1 Pillz";
+const PR_HIDE_ID = 1568;
+const PR_HIDE_LEVEL = 3;
 
 export enum ConditionType {
   UNDEFINED = 0,
@@ -192,13 +194,18 @@ export default class Condition {
         for (const mod of ability.mods) {
           if (mod instanceof BasicModifier) {
             mod.win = false;
-            // Riots' clan bonus is paid even after a lethal loss (1058366 r2 and
-            // 1078669 r2). Match its effective clan and exact printed bonus so another
-            // Victory-or-Defeat Pillz source cannot silently inherit the exception.
-            if (
-              ability.type === AbilityType.BONUS &&
+            // Riots' bonus is paid after a lethal loss in multiple captures. Pr Hide's
+            // printed ability does the same in 1092909 r3. Keep both exceptions locked to
+            // concrete printed card state: copied text must not inherit post-KO execution.
+            const exactRiotsBonus = ability.type === AbilityType.BONUS &&
               data.card.clan === "Riots" &&
-              data.card.bonusString === RIOTS_VICTORY_OR_DEFEAT_PILLZ &&
+              data.card.bonusString === VICTORY_OR_DEFEAT_ONE_PILLZ;
+            const exactPrHideAbility = ability.type === AbilityType.ABILITY &&
+              data.card.id === PR_HIDE_ID &&
+              data.card.stars === PR_HIDE_LEVEL &&
+              data.card.abilityString === VICTORY_OR_DEFEAT_ONE_PILLZ;
+            if (
+              (exactRiotsBonus || exactPrHideAbility) &&
               ability.ability === "+1 Pillz" && !mod.opp &&
               mod.type?.name === "PILLZ"
             ) {

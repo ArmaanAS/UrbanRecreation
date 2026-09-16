@@ -775,7 +775,7 @@ fn strict_catalog_match_bridges_only_active_vortex_bonus_and_stop_bonus_disables
 }
 
 #[test]
-fn strict_catalog_match_bridges_only_active_riots_bonus_47_to_registry_1034() {
+fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities() {
     let catalog = catalog();
     let registry = registry();
     let (_, rescue) = fully_supported_hands();
@@ -849,11 +849,52 @@ fn strict_catalog_match_bridges_only_active_riots_bonus_47_to_registry_1034() {
         inactive.preparation()[PlayerId::P1][0].bonus,
         CatalogCombatStatSourceDispositionV1::Absent
     ));
+    for (key, id) in [
+        (CardKey::new(1568, 3), 1375), // Pr Hide
+        (CardKey::new(2513, 4), 4111), // Alba
+        (CardKey::new(808, 2), 5085),  // Bonnie Ld
+        (CardKey::new(808, 1), 5520),  // Bonnie Ld
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap();
+        assert!(matches!(
+            prepared.preparation()[PlayerId::P1][0].ability,
+            CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                ref identity,
+                effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+            } if identity.catalog_id == Some(id) && identity.registry_definition_id == id
+        ));
+        assert!(matches!(
+            prepared.match_spec().cards[PlayerId::P1][0].ability,
+            CombatStatSourcePlanV1::Execute {
+                source_id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: urban_recreation_rust::engine::CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
+            } if source_id == id
+        ));
+    }
+
+    // Atess has the same printed text but none of her level-specific identities has an
+    // audited registry definition. Description equality must not inherit a known alias.
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(
                 [
-                    CardKey::new(2513, 4), // Alba: ability id 4111 shares the Riots text
+                    CardKey::new(2340, 4),
                     CardKey::new(123, 1),
                     CardKey::new(124, 1),
                     CardKey::new(138, 1),
@@ -869,7 +910,7 @@ fn strict_catalog_match_bridges_only_active_riots_bonus_47_to_registry_1034() {
             player: PlayerId::P1,
             hand_slot,
             source_kind: CombatStatEffectSourceV1::Ability,
-            catalog_id: Some(4111),
+            catalog_id: Some(3322),
             ref description,
             ..
         }) if hand_slot.get() == 0 && description == "Victory Or Defeat : +1 Pillz"
@@ -903,6 +944,38 @@ fn strict_catalog_match_bridges_only_active_riots_bonus_47_to_registry_1034() {
     assert_eq!(report.players[PlayerId::P1].pillz, 12);
     game.unmake(undo);
     assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_rejects_dynamic_copy_before_it_can_synthesize_vod_1034() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, p2) = fully_supported_hands();
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(1020, 3), // Saki: Copy: Opp. Bonus
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                p2,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(846),
+            ref description,
+            ..
+        }) if hand_slot.get() == 0 && description == "Copy: Opp. Bonus"
+    ));
 }
 
 #[test]

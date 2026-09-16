@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 9;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 10;
 
 /// Strictly recognize the three replay identities audited for the diagnostic's Defeat
 /// recovery effect. This intentionally does not broaden the registry compiler's generic
@@ -32,17 +32,32 @@ pub(crate) fn classify_defeat_recover_pillz(
         && defeat_recover_shape_matches(definition.structured_input())
 }
 
-/// Strictly recognize Riots' fixed end-of-round bonus. This is intentionally a separate
-/// admission path from ordinary Pillz modifiers and from Defeat recovery: it is live on
-/// both outcomes, but only while its bonus source is live.
-pub(crate) fn classify_riots_victory_or_defeat_pillz(
+/// Strictly recognize the audited Victory Or Defeat end-of-round Pillz sources. This is
+/// intentionally separate from ordinary Pillz modifiers and Defeat recovery. The same
+/// printed record appears in several unrelated sources, so identity and source kind are
+/// both part of the executable grammar.
+pub(crate) fn classify_victory_or_defeat_pillz(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> bool {
-    source_kind == CombatStatEffectSourceV1::Bonus
-        && definition.id() == 1034
+    victory_or_defeat_pillz_identity_matches(source_kind, definition.id())
         && definition.description() == "Victory Or Defeat : +1 Pillz"
-        && riots_victory_or_defeat_shape_matches(definition.structured_input())
+        && victory_or_defeat_pillz_shape_matches(definition.structured_input())
+}
+
+/// Shared identity gate for compiler output and caller-provided compact plans.
+pub(crate) fn victory_or_defeat_pillz_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    matches!(
+        (source_kind, definition_id),
+        (CombatStatEffectSourceV1::Bonus, 1034)
+            | (
+                CombatStatEffectSourceV1::Ability,
+                1034 | 1375 | 4111 | 5085 | 5520
+            )
+    )
 }
 
 pub(crate) fn classify_combat_stat_effect(
@@ -54,10 +69,10 @@ pub(crate) fn classify_combat_stat_effect(
     if classify_defeat_recover_pillz(definition, source_kind) {
         return None;
     }
-    // Riots' fixed end-of-round gain likewise has its own post-round execution channel.
+    // Victory Or Defeat Pillz likewise has its own post-round execution channel.
     // Keep it out of generic numeric classification in case the registry compiler later
     // broadens its Pillz support.
-    if classify_riots_victory_or_defeat_pillz(definition, source_kind) {
+    if classify_victory_or_defeat_pillz(definition, source_kind) {
         return None;
     }
     // Model-specific conditions take precedence over the registry's model-neutral output.
@@ -406,7 +421,7 @@ fn defeat_recover_shape_matches(input: &StructuredEffectV1) -> bool {
         && !input.is_immediate_permanent
 }
 
-fn riots_victory_or_defeat_shape_matches(input: &StructuredEffectV1) -> bool {
+fn victory_or_defeat_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
     input.value == 1
         && input.value_min == 0
         && input.value_max == 0
@@ -749,36 +764,40 @@ mod tests {
     }
 
     #[test]
-    fn riots_victory_or_defeat_admits_only_the_exact_bonus_identity_and_shape() {
+    fn victory_or_defeat_admits_only_the_exact_source_identity_and_shape() {
         let registry = registry();
-        let riots = registry
+        let bonus = registry
             .lookup_capture(1034, "Victory Or Defeat : +1 Pillz")
             .unwrap();
-        assert!(classify_riots_victory_or_defeat_pillz(
-            riots,
+        assert!(classify_victory_or_defeat_pillz(
+            bonus,
             CombatStatEffectSourceV1::Bonus,
         ));
-        assert!(!classify_riots_victory_or_defeat_pillz(
-            riots,
+        assert!(classify_victory_or_defeat_pillz(
+            bonus,
             CombatStatEffectSourceV1::Ability,
         ));
-        for (id, description, source_kind) in [
-            (
-                1035,
-                "Defeat: Recover 1 Pillz Out Of 2",
-                CombatStatEffectSourceV1::Bonus,
-            ),
-            (
-                4111,
-                "Victory Or Defeat : +1 Pillz",
-                CombatStatEffectSourceV1::Ability,
-            ),
-        ] {
-            assert!(!classify_riots_victory_or_defeat_pillz(
-                registry.lookup_capture(id, description).unwrap(),
-                source_kind,
-            ));
+        assert!(!classify_victory_or_defeat_pillz(
+            registry
+                .lookup_capture(1035, "Defeat: Recover 1 Pillz Out Of 2")
+                .unwrap(),
+            CombatStatEffectSourceV1::Bonus,
+        ));
+        for id in [1034, 1375, 4111, 5085, 5520] {
+            let definition = registry
+                .lookup_capture(id, "Victory Or Defeat : +1 Pillz")
+                .unwrap();
+            assert!(
+                classify_victory_or_defeat_pillz(definition, CombatStatEffectSourceV1::Ability),
+                "ability id={id}"
+            );
         }
+        assert!(!classify_victory_or_defeat_pillz(
+            registry
+                .lookup_capture(1375, "Victory Or Defeat : +1 Pillz")
+                .unwrap(),
+            CombatStatEffectSourceV1::Bonus,
+        ));
 
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
         let mut malformed: serde_json::Value =
@@ -787,7 +806,7 @@ mod tests {
         let malformed =
             EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
                 .unwrap();
-        assert!(!classify_riots_victory_or_defeat_pillz(
+        assert!(!classify_victory_or_defeat_pillz(
             malformed
                 .lookup_capture(1034, "Victory Or Defeat : +1 Pillz")
                 .unwrap(),

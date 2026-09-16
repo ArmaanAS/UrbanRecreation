@@ -5,9 +5,8 @@
 //! registry, and refuses a match if any legal card could reach an unsupported effect.
 
 use super::combat_stat_compiler::{
-    classify_combat_stat_effect, classify_defeat_recover_pillz,
-    classify_riots_victory_or_defeat_pillz, compact_effect,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_combat_stat_effect, classify_defeat_recover_pillz, classify_victory_or_defeat_pillz,
+    compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
@@ -33,8 +32,8 @@ const VORTEX_CATALOG_BONUS_ID: u32 = 43;
 const DEFEAT_RECOVER_DESCRIPTION: &str = "Defeat: Recover 2 Pillz Out Of 3";
 const RIOTS_CLAN_ID: u32 = 49;
 const RIOTS_CATALOG_BONUS_ID: u32 = 47;
-const RIOTS_VICTORY_OR_DEFEAT_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
-const RIOTS_REGISTRY_BONUS_ID: u32 = 1034;
+const VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
+const VICTORY_OR_DEFEAT_RIOTS_BONUS_REGISTRY_ID: u32 = 1034;
 pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -707,13 +706,13 @@ fn prepare_catalog_source(
             registry_definition_id,
         );
     }
-    if description == RIOTS_VICTORY_OR_DEFEAT_DESCRIPTION {
-        if let Some(registry_definition_id) = riots_victory_or_defeat_registry_definition_id(
+    if description == VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION {
+        if let Some(registry_definition_id) = victory_or_defeat_pillz_registry_definition_id(
             source_kind,
             effective_clan_id,
             catalog_id,
         ) {
-            return prepare_riots_victory_or_defeat_source(
+            return prepare_victory_or_defeat_pillz_source(
                 registry,
                 player,
                 hand_slot,
@@ -724,7 +723,7 @@ fn prepare_catalog_source(
             );
         }
         // The registry intentionally groups several same-text identities. Catalog execution
-        // must not inherit the Riots bridge from a description collision.
+        // must not inherit an executable identity from a description collision.
         let definition = registry
             .lookup_description(description)
             .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
@@ -893,20 +892,26 @@ fn prepare_defeat_recover_source(
     })
 }
 
-/// Catalog clan-bonus id 47 is not a capture registry id. It maps to exactly the reviewed
-/// Riots capture definition, only after effective-clan activation has selected the bonus.
-fn riots_victory_or_defeat_registry_definition_id(
+/// Catalog clan-bonus id 47 is not a capture registry id. It maps to the reviewed Riots
+/// definition only after effective-clan activation. Printed ability ids map only to their
+/// exact same registry definitions; notably, no catalog card can synthesize dynamic 1034.
+fn victory_or_defeat_pillz_registry_definition_id(
     source_kind: CombatStatEffectSourceV1,
     effective_clan_id: u32,
     catalog_id: Option<u32>,
 ) -> Option<u32> {
-    (source_kind == CombatStatEffectSourceV1::Bonus
-        && effective_clan_id == RIOTS_CLAN_ID
-        && catalog_id == Some(RIOTS_CATALOG_BONUS_ID))
-    .then_some(RIOTS_REGISTRY_BONUS_ID)
+    match (source_kind, catalog_id) {
+        (CombatStatEffectSourceV1::Bonus, Some(RIOTS_CATALOG_BONUS_ID))
+            if effective_clan_id == RIOTS_CLAN_ID =>
+        {
+            Some(VICTORY_OR_DEFEAT_RIOTS_BONUS_REGISTRY_ID)
+        }
+        (CombatStatEffectSourceV1::Ability, Some(id @ (1375 | 4111 | 5085 | 5520))) => Some(id),
+        _ => None,
+    }
 }
 
-fn prepare_riots_victory_or_defeat_source(
+fn prepare_victory_or_defeat_pillz_source(
     registry: &EffectRegistryV1,
     player: PlayerId,
     hand_slot: HandSlot,
@@ -925,7 +930,7 @@ fn prepare_riots_victory_or_defeat_source(
             description: description.to_owned(),
             source,
         })?;
-    if !classify_riots_victory_or_defeat_pillz(definition, source_kind) {
+    if !classify_victory_or_defeat_pillz(definition, source_kind) {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player,
             hand_slot,

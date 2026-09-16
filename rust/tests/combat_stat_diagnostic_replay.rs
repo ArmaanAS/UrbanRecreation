@@ -42,6 +42,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (946400, 1),
     (1058366, 3),
     (1061897, 4),
+    (946288, 1),
+    (1092660, 1),
+    (1093500, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -126,7 +129,7 @@ fn defeat_recover_entry(id: u32, description: &str) -> serde_json::Value {
     entry
 }
 
-fn riots_victory_or_defeat_entry(id: u32) -> serde_json::Value {
+fn victory_or_defeat_entry(id: u32) -> serde_json::Value {
     let mut entry = numeric_entry(id, "Victory Or Defeat : +1 Pillz", "both", 1, 0);
     entry["abilityData"]["sideAffected"] = serde_json::json!("player");
     entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
@@ -208,7 +211,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_thirty_eight_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_forty_two_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -244,14 +247,15 @@ fn fixed_server_backed_gate_is_exactly_thirty_eight_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 38);
+    assert_eq!(rounds, 42);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 37, 39, 40, 42, 56, 90, 93, 130, 156, 266, 412, 520, 577, 578, 585, 612, 741, 801,
-            871, 883, 916, 980, 1034, 1047, 1163, 1241, 1338, 1342, 1359, 1372, 1418, 1536, 1578,
-            1688, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2329, 2535, 2881, 3677, 3865, 3897,
-            4041, 4216, 4297, 4711, 4718, 4757, 5026, 5273, 5763, 5852,
+            6, 37, 39, 40, 42, 56, 90, 93, 130, 156, 266, 333, 412, 520, 577, 578, 585, 612, 741,
+            801, 871, 883, 916, 980, 1034, 1047, 1163, 1241, 1335, 1338, 1342, 1359, 1372, 1375,
+            1418, 1536, 1578, 1688, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2329, 2535, 2881,
+            3677, 3865, 3897, 4041, 4216, 4297, 4399, 4711, 4718, 4757, 5026, 5085, 5273, 5520,
+            5763, 5852,
         ])
     );
     assert_eq!(
@@ -315,7 +319,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 9);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 10);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -1002,20 +1006,22 @@ fn defeat_recover_grammar_is_exact_for_the_three_audited_source_id_pairs() {
 }
 
 #[test]
-fn riots_victory_or_defeat_is_exactly_the_bonus_1034_post_round_resource_effect() {
+fn victory_or_defeat_is_exactly_the_audited_post_round_resource_effect() {
     let catalog = catalog();
     const DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
     let cases = [
         (1034, false, true),
-        (1034, true, false),
-        (1375, true, false),
-        (4111, true, false),
-        (5085, true, false),
-        (5520, true, false),
+        (1034, true, true),
+        (1375, true, true),
+        (4111, true, true),
+        (5085, true, true),
+        (5520, true, true),
+        (1375, false, false),
+        (900_107, true, false),
     ];
 
     for (id, ability, admitted) in cases {
-        let registry = one_entry_registry(riots_victory_or_defeat_entry(id));
+        let registry = one_entry_registry(victory_or_defeat_entry(id));
         let mut source = replay(875032, &catalog);
         clear_sources(&mut source);
         let selected_slot = usize::from(
@@ -1090,7 +1096,7 @@ fn riots_victory_or_defeat_is_exactly_the_bonus_1034_post_round_resource_effect(
         }
     }
 
-    let mut malformed = riots_victory_or_defeat_entry(1034);
+    let mut malformed = victory_or_defeat_entry(1034);
     malformed["abilityData"]["valueMin"] = serde_json::json!(1);
     let registry = one_entry_registry(malformed);
     let mut source = replay(875032, &catalog);
@@ -1122,7 +1128,7 @@ fn riots_victory_or_defeat_is_exactly_the_bonus_1034_post_round_resource_effect(
     ));
 
     let registry = one_entry_registry({
-        let mut entry = riots_victory_or_defeat_entry(900_107);
+        let mut entry = victory_or_defeat_entry(900_107);
         entry["description"] = serde_json::json!("+1 Pillz");
         entry["longDescription"] = serde_json::json!("+1 Pillz");
         entry
@@ -1139,6 +1145,66 @@ fn riots_victory_or_defeat_is_exactly_the_bonus_1034_post_round_resource_effect(
         prepared.new_game().card_plans()[PlayerId::P1][0].bonus,
         CombatStatSourcePlanV1::Disabled { source_id: 900_107 }
     ));
+}
+
+#[test]
+fn server_replays_pin_static_and_dynamic_vod_pillz_arithmetic() {
+    let catalog = catalog();
+    let registry = registry();
+
+    let bonnie_l2 = diagnostic(946288, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    let round = &bonnie_l2.rounds[0];
+    assert!(matches!(
+        round.selected[PlayerId::P2].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, .. }
+            if identity.id == 5085
+    ));
+    assert!(!round.round.cards[PlayerId::P2].won);
+    // 12 initial - 2 paid + 1 VOD = 11.
+    assert_eq!(round.round.players[PlayerId::P2].pillz, 11);
+
+    let bonnie_l1 = diagnostic(1092660, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    let round = &bonnie_l1.rounds[0];
+    assert!(matches!(
+        round.selected[PlayerId::P2].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, .. }
+            if identity.id == 5520
+    ));
+    assert!(!round.round.cards[PlayerId::P2].won);
+    // 12 initial - 1 paid + 1 VOD = 12.
+    assert_eq!(round.round.players[PlayerId::P2].pillz, 12);
+
+    let copied_and_stacked = diagnostic(1093500, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    let copied = &copied_and_stacked.rounds[0];
+    assert!(matches!(
+        copied.selected[PlayerId::P2].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, .. }
+            if identity.id == 1034
+    ));
+    assert!(copied.round.cards[PlayerId::P2].won);
+    // Dynamically copied Ability:1034: 12 initial - 1 paid + 1 VOD = 12.
+    assert_eq!(copied.round.players[PlayerId::P2].pillz, 12);
+
+    let stacked = &copied_and_stacked.rounds[1];
+    assert!(matches!(
+        stacked.selected[PlayerId::P1].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, .. }
+            if identity.id == 1375
+    ));
+    assert!(matches!(
+        stacked.selected[PlayerId::P1].bonus,
+        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, .. }
+            if identity.id == 1034
+    ));
+    assert!(!stacked.round.cards[PlayerId::P1].won);
+    // 12 carried - 0 paid + Ability:1375 + Bonus:1034 = 14.
+    assert_eq!(stacked.round.players[PlayerId::P1].pillz, 14);
 }
 
 #[test]

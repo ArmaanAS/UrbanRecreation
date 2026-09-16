@@ -14,9 +14,8 @@ use crate::effect_registry::{
     SupportedEffectV1, UnsupportedReasonV1,
 };
 use crate::engine::combat_stat_compiler::{
-    classify_combat_stat_effect, classify_defeat_recover_pillz,
-    classify_riots_victory_or_defeat_pillz, compact_effect,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_combat_stat_effect, classify_defeat_recover_pillz, classify_victory_or_defeat_pillz,
+    compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -609,7 +608,7 @@ fn prepare_combat_stat_source(
             },
         });
     }
-    if classify_riots_victory_or_defeat_pillz(definition, source_kind) {
+    if classify_victory_or_defeat_pillz(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
@@ -656,12 +655,12 @@ fn prepare_combat_stat_source(
     let unadmitted_combat_stat = attempts_combat_stat_change(definition.structured_input());
     let unadmitted_post_round_recovery =
         definition.structured_input().special_action == SpecialActionV1::RecoverPillz;
-    let unadmitted_riots_victory_or_defeat = source.description == "Victory Or Defeat : +1 Pillz";
+    let unadmitted_victory_or_defeat = source.description == "Victory Or Defeat : +1 Pillz";
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {
         CombatStatDisabledReasonV1::UnsupportedSelectedHazard { registry_reasons }
-    } else if unadmitted_riots_victory_or_defeat {
+    } else if unadmitted_victory_or_defeat {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
     } else if unadmitted_post_round_recovery {
         CombatStatDisabledReasonV1::UnsupportedPostRoundRecovery { registry_reasons }
@@ -680,7 +679,7 @@ fn prepare_combat_stat_source(
         || selected_hazard
         || unadmitted_combat_stat
         || unadmitted_post_round_recovery
-        || unadmitted_riots_victory_or_defeat
+        || unadmitted_victory_or_defeat
     {
         CombatStatSourcePlanV1::RejectIfSelected {
             source_id: source.id,

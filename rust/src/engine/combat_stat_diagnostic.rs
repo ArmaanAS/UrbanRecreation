@@ -7,6 +7,7 @@ use super::combat_resolution::{
     prepare_combat_resolution_with_post_round, CombatResolutionArithmeticStage,
     CombatResolutionError, PreparedCombatResolution, ResolutionCardPlan, ResolutionSourcePlan,
 };
+use super::combat_stat_compiler::victory_or_defeat_pillz_identity_matches;
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
@@ -94,8 +95,8 @@ pub enum CombatStatEffectV1 {
     /// Fixed non-stat post-round work. Identity and source are checked at plan
     /// construction; its values are intentionally not caller-configurable.
     RecoverPaidPillzOnDefeat,
-    /// Riots' fixed bonus-side end-of-round effect. It is neither a combat modifier nor
-    /// configurable public data: a direct plan must use the exact audited identity.
+    /// Fixed end-of-round resource work. It is neither a combat modifier nor configurable
+    /// public data: a direct plan must use one exact audited source/id pair.
     GainOnePillzOnVictoryOrDefeat,
 }
 
@@ -174,8 +175,8 @@ pub enum InvalidCombatStatPlanReasonV1 {
     InvalidModifierDirection,
     DefeatRecoveryIdentity,
     DefeatRecoveryPredicate,
-    RiotsVictoryOrDefeatIdentity,
-    RiotsVictoryOrDefeatPredicate,
+    VictoryOrDefeatIdentity,
+    VictoryOrDefeatPredicate,
     /// The ability uses Support outside the unconditional basic-stat subset admitted by
     /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
@@ -557,13 +558,13 @@ fn validate_combat_stat_source_plan(
         return Ok(());
     }
     if effect == CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat {
-        if (source, source_id) != (CombatStatEffectSourceV1::Bonus, 1034) {
+        if !victory_or_defeat_pillz_identity_matches(source, source_id) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
                 source,
                 source_id,
-                InvalidCombatStatPlanReasonV1::RiotsVictoryOrDefeatIdentity,
+                InvalidCombatStatPlanReasonV1::VictoryOrDefeatIdentity,
             ));
         }
         if predicate != CombatStatPredicateV1::Always {
@@ -572,7 +573,7 @@ fn validate_combat_stat_source_plan(
                 hand_slot,
                 source,
                 source_id,
-                InvalidCombatStatPlanReasonV1::RiotsVictoryOrDefeatPredicate,
+                InvalidCombatStatPlanReasonV1::VictoryOrDefeatPredicate,
             ));
         }
         return Ok(());
@@ -1225,7 +1226,7 @@ mod tests {
     }
 
     #[test]
-    fn riots_bonus_gains_one_after_winning_losing_or_a_ko_and_undo_is_exact() {
+    fn victory_or_defeat_gains_one_after_winning_losing_or_a_ko_and_undo_is_exact() {
         let effect = CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat;
 
         let mut winner_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1034, effect, 3);
@@ -1262,10 +1263,35 @@ mod tests {
         assert_eq!(report.status, MatchStatus::Won(PlayerId::P2));
         assert_eq!(report.players[PlayerId::P1].life, 0);
         assert_eq!(report.players[PlayerId::P1].pillz, 1);
+
+        // The active Bonus:1034 is applied before the static Ability:1375, after the
+        // KO damage has resolved. Both effects are still committed atomically with the
+        // round and undo restores the byte-identical starting position.
+        let mut both_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1034, effect, 3);
+        both_spec.base_rules.players[PlayerId::P1].initial_life = 2;
+        both_spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1375,
+            predicate: CombatStatPredicateV1::Always,
+            effect,
+        };
+        let mut both = CombatStatDiagnosticV1::new(both_spec).unwrap();
+        let before = both.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let (report, undo) = both.make(input(3, false)).unwrap();
+        assert_eq!(report.status, MatchStatus::Won(PlayerId::P2));
+        assert_eq!(report.players[PlayerId::P1].life, 0);
+        assert_eq!(report.players[PlayerId::P1].pillz, 2);
+        both.unmake(undo);
+        assert_eq!(both.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        both.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
     }
 
     #[test]
-    fn riots_bonus_is_stopped_by_stop_bonus_but_not_reinterpreted_by_cancellation() {
+    fn victory_or_defeat_bonus_is_stopped_by_stop_bonus_but_not_reinterpreted_by_cancellation() {
         let effect = CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat;
         let mut stopped_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1034, effect, 3);
         stopped_spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
@@ -1291,16 +1317,26 @@ mod tests {
     }
 
     #[test]
-    fn riots_public_plans_are_exact_and_overflow_is_atomic() {
+    fn victory_or_defeat_public_plans_are_exact_and_overflow_is_atomic() {
         let effect = CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat;
         for (source, id) in [
+            (CombatStatEffectSourceV1::Bonus, 1034),
             (CombatStatEffectSourceV1::Ability, 1034),
+            (CombatStatEffectSourceV1::Ability, 1375),
+            (CombatStatEffectSourceV1::Ability, 4111),
+            (CombatStatEffectSourceV1::Ability, 5085),
+            (CombatStatEffectSourceV1::Ability, 5520),
+        ] {
+            assert!(CombatStatDiagnosticV1::new(spec_with_p1(source, id, effect, 3)).is_ok());
+        }
+        for (source, id) in [
+            (CombatStatEffectSourceV1::Bonus, 1375),
             (CombatStatEffectSourceV1::Bonus, 4111),
         ] {
             assert!(matches!(
                 CombatStatDiagnosticV1::new(spec_with_p1(source, id, effect, 3)),
                 Err(CombatStatPlanErrorV1::InvalidExecute {
-                    reason: InvalidCombatStatPlanReasonV1::RiotsVictoryOrDefeatIdentity,
+                    reason: InvalidCombatStatPlanReasonV1::VictoryOrDefeatIdentity,
                     ..
                 })
             ));
@@ -1314,7 +1350,7 @@ mod tests {
         assert!(matches!(
             CombatStatDiagnosticV1::new(wrong_predicate),
             Err(CombatStatPlanErrorV1::InvalidExecute {
-                reason: InvalidCombatStatPlanReasonV1::RiotsVictoryOrDefeatPredicate,
+                reason: InvalidCombatStatPlanReasonV1::VictoryOrDefeatPredicate,
                 ..
             })
         ));

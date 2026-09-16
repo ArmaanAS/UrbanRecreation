@@ -438,7 +438,10 @@ impl BaseRulesGame {
         // deliberately loser-only; Victory Or Defeat applies after the costs, winner, and
         // damage for either owner, including a KO.
         for owner in PlayerId::ALL {
-            for effect in [post_round[owner].ability, post_round[owner].bonus]
+            // Match the TypeScript reference's within-phase ordering: the clan bonus is
+            // registered before the ability. The admitted additive effects commute today,
+            // but capped post-round effects make this ordering observable.
+            for effect in [post_round[owner].bonus, post_round[owner].ability]
                 .into_iter()
                 .flatten()
             {
