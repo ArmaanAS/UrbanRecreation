@@ -64,6 +64,8 @@ export default class BasicModifier extends Modifier {
   always = false;
   /** Reanimate may apply at zero life; ordinary post-KO resource gains may not. */
   revive = false;
+  /** Riots' Victory Or Defeat clan bonus still returns its Pillz after a KO. */
+  postKoPillz = false;
   // constructor(change: number, minmax?: number) {
   // constructor(change: number) {
   //   super();
@@ -173,7 +175,8 @@ export default class BasicModifier extends Modifier {
     // behaviour seen in captured games (Kubra "Defeat: +1 Pillz And Life" at 0 life).
     if (
       (this.type === Type.LIFE || this.type === Type.PILLZ) && !this.opp &&
-      data.player.life <= 0 && !this.revive
+      data.player.life <= 0 && !this.revive &&
+      !(this.type === Type.PILLZ && this.postKoPillz)
     ) {
       return false;
     }

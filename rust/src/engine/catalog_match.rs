@@ -5,7 +5,8 @@
 //! registry, and refuses a match if any legal card could reach an unsupported effect.
 
 use super::combat_stat_compiler::{
-    classify_combat_stat_effect, classify_defeat_recover_pillz, compact_effect,
+    classify_combat_stat_effect, classify_defeat_recover_pillz,
+    classify_riots_victory_or_defeat_pillz, compact_effect,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
@@ -30,6 +31,10 @@ pub const OCULUS_CLAN_ID: u32 = 56;
 const VORTEX_CLAN_ID: u32 = 45;
 const VORTEX_CATALOG_BONUS_ID: u32 = 43;
 const DEFEAT_RECOVER_DESCRIPTION: &str = "Defeat: Recover 2 Pillz Out Of 3";
+const RIOTS_CLAN_ID: u32 = 49;
+const RIOTS_CATALOG_BONUS_ID: u32 = 47;
+const RIOTS_VICTORY_OR_DEFEAT_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
+const RIOTS_REGISTRY_BONUS_ID: u32 = 1034;
 pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -702,6 +707,49 @@ fn prepare_catalog_source(
             registry_definition_id,
         );
     }
+    if description == RIOTS_VICTORY_OR_DEFEAT_DESCRIPTION {
+        if let Some(registry_definition_id) = riots_victory_or_defeat_registry_definition_id(
+            source_kind,
+            effective_clan_id,
+            catalog_id,
+        ) {
+            return prepare_riots_victory_or_defeat_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                registry_definition_id,
+            );
+        }
+        // The registry intentionally groups several same-text identities. Catalog execution
+        // must not inherit the Riots bridge from a description collision.
+        let definition = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
     let match_ = registry.lookup_description(description).map_err(|source| {
         CatalogCombatStatMatchErrorV1::Lookup {
             player,
@@ -841,6 +889,84 @@ fn prepare_defeat_recover_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+        },
+    })
+}
+
+/// Catalog clan-bonus id 47 is not a capture registry id. It maps to exactly the reviewed
+/// Riots capture definition, only after effective-clan activation has selected the bonus.
+fn riots_victory_or_defeat_registry_definition_id(
+    source_kind: CombatStatEffectSourceV1,
+    effective_clan_id: u32,
+    catalog_id: Option<u32>,
+) -> Option<u32> {
+    (source_kind == CombatStatEffectSourceV1::Bonus
+        && effective_clan_id == RIOTS_CLAN_ID
+        && catalog_id == Some(RIOTS_CATALOG_BONUS_ID))
+    .then_some(RIOTS_REGISTRY_BONUS_ID)
+}
+
+fn prepare_riots_victory_or_defeat_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    if !classify_riots_victory_or_defeat_pillz(definition, source_kind) {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
         },
     })
 }

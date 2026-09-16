@@ -775,6 +775,137 @@ fn strict_catalog_match_bridges_only_active_vortex_bonus_and_stop_bonus_disables
 }
 
 #[test]
+fn strict_catalog_match_bridges_only_active_riots_bonus_47_to_registry_1034() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    let riots = [
+        CardKey::new(1208, 1), // Molder: no ability
+        CardKey::new(1209, 1), // Pr Hartnell: no ability; activates the bonus
+        CardKey::new(1212, 1), // Boomstock Cr: no ability
+        CardKey::new(1214, 1), // De Couture: no ability
+    ];
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(riots, rescue, false), &catalog, &registry, PROJECTION)
+            .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity,
+        effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+    } = &prepared.preparation()[PlayerId::P1][0].bonus
+    else {
+        panic!("active Riots bonus was not bridged to post-round Pillz")
+    };
+    assert_eq!(identity.catalog_id, Some(47));
+    assert_eq!(identity.registry_definition_id, 1034);
+    assert_eq!(
+        identity.registry_alias_ids.as_ref(),
+        [1034, 1375, 4111, 5085, 5520]
+    );
+    assert_eq!(identity.description, "Victory Or Defeat : +1 Pillz");
+    assert!(matches!(
+        prepared.match_spec().cards[PlayerId::P1][0].bonus,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 1034,
+            predicate: CombatStatPredicateV1::Always,
+            effect:
+                urban_recreation_rust::engine::CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
+        }
+    ));
+
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (loss, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 0, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(!loss.cards[PlayerId::P1].won);
+    assert_eq!(loss.players[PlayerId::P1].life, 11);
+    assert_eq!(loss.players[PlayerId::P1].pillz, 13);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+
+    let inactive = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(1208, 1), // singleton Riots: its bonus is inactive
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            rescue,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        inactive.preparation()[PlayerId::P1][0].bonus,
+        CatalogCombatStatSourceDispositionV1::Absent
+    ));
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(2513, 4), // Alba: ability id 4111 shares the Riots text
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(4111),
+            ref description,
+            ..
+        }) if hand_slot.get() == 0 && description == "Victory Or Defeat : +1 Pillz"
+    ));
+
+    let stop_bonus = [
+        CardKey::new(773, 3), // Kobalth: Stop Opp. Bonus
+        CardKey::new(758, 1),
+        CardKey::new(123, 1),
+        CardKey::new(124, 1),
+    ];
+    let stopped = CatalogCombatStatMatchV1::new(
+        input(riots, stop_bonus, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let mut game = stopped.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 0, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 12);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+}
+
+#[test]
 fn strict_catalog_match_defers_sasl_recovery_alias() {
     let catalog = catalog();
     let registry = registry();

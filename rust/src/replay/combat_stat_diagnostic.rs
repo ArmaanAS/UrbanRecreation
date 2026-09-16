@@ -14,7 +14,8 @@ use crate::effect_registry::{
     SupportedEffectV1, UnsupportedReasonV1,
 };
 use crate::engine::combat_stat_compiler::{
-    classify_combat_stat_effect, classify_defeat_recover_pillz, compact_effect,
+    classify_combat_stat_effect, classify_defeat_recover_pillz,
+    classify_riots_victory_or_defeat_pillz, compact_effect,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
@@ -100,6 +101,9 @@ pub enum CombatStatDisabledReasonV1 {
         registry_reasons: Box<[UnsupportedReasonV1]>,
     },
     UnsupportedPostRoundRecovery {
+        registry_reasons: Box<[UnsupportedReasonV1]>,
+    },
+    UnsupportedPostRoundResourceEffect {
         registry_reasons: Box<[UnsupportedReasonV1]>,
     },
 }
@@ -605,6 +609,19 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if classify_riots_victory_or_defeat_pillz(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
+            },
+        });
+    }
     if let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) {
         let compact_effect = compact_effect(effect).ok_or(
             CombatStatDiagnosticPreparationErrorV1::UnsupportedCompiledShape {
@@ -639,10 +656,13 @@ fn prepare_combat_stat_source(
     let unadmitted_combat_stat = attempts_combat_stat_change(definition.structured_input());
     let unadmitted_post_round_recovery =
         definition.structured_input().special_action == SpecialActionV1::RecoverPillz;
+    let unadmitted_riots_victory_or_defeat = source.description == "Victory Or Defeat : +1 Pillz";
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {
         CombatStatDisabledReasonV1::UnsupportedSelectedHazard { registry_reasons }
+    } else if unadmitted_riots_victory_or_defeat {
+        CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
     } else if unadmitted_post_round_recovery {
         CombatStatDisabledReasonV1::UnsupportedPostRoundRecovery { registry_reasons }
     } else if is_capped_increase(definition.structured_input()) {
@@ -660,6 +680,7 @@ fn prepare_combat_stat_source(
         || selected_hazard
         || unadmitted_combat_stat
         || unadmitted_post_round_recovery
+        || unadmitted_riots_victory_or_defeat
     {
         CombatStatSourcePlanV1::RejectIfSelected {
             source_id: source.id,

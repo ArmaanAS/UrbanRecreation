@@ -72,6 +72,7 @@ pub enum CombatStatPredicateV1 {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CombatStatPostRoundEffectV1 {
     RecoverPaidPillzOnDefeat,
+    GainOnePillzOnVictoryOrDefeat,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -90,9 +91,12 @@ pub enum CombatStatEffectV1 {
     CancelOpponentCombatStatModifiers {
         stat: CombatStatAttributeV1,
     },
-    /// The only non-stat effect admitted by this projected model. Identity and source are
-    /// checked at plan construction; its values are intentionally not caller-configurable.
+    /// Fixed non-stat post-round work. Identity and source are checked at plan
+    /// construction; its values are intentionally not caller-configurable.
     RecoverPaidPillzOnDefeat,
+    /// Riots' fixed bonus-side end-of-round effect. It is neither a combat modifier nor
+    /// configurable public data: a direct plan must use the exact audited identity.
+    GainOnePillzOnVictoryOrDefeat,
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and
@@ -170,6 +174,8 @@ pub enum InvalidCombatStatPlanReasonV1 {
     InvalidModifierDirection,
     DefeatRecoveryIdentity,
     DefeatRecoveryPredicate,
+    RiotsVictoryOrDefeatIdentity,
+    RiotsVictoryOrDefeatPredicate,
     /// The ability uses Support outside the unconditional basic-stat subset admitted by
     /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
@@ -550,6 +556,27 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    if effect == CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat {
+        if (source, source_id) != (CombatStatEffectSourceV1::Bonus, 1034) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::RiotsVictoryOrDefeatIdentity,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::RiotsVictoryOrDefeatPredicate,
+            ));
+        }
+        return Ok(());
+    }
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
     {
@@ -892,7 +919,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 },
             }
         }
-        CombatStatEffectV1::RecoverPaidPillzOnDefeat => return None,
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat
+        | CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat => return None,
     })
 }
 
@@ -900,6 +928,9 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffec
     match effect {
         CombatStatEffectV1::RecoverPaidPillzOnDefeat => {
             Some(PostRoundEffect::RecoverPaidPillzOnDefeat)
+        }
+        CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat => {
+            Some(PostRoundEffect::GainOnePillzOnVictoryOrDefeat)
         }
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentBonus
@@ -1186,6 +1217,120 @@ mod tests {
             overflow.make(input(0, false)),
             Err(CombatStatDiagnosticErrorV1::BaseRules(
                 BaseRulesError::PillzRecoveryOverflow {
+                    player: PlayerId::P1
+                }
+            ))
+        ));
+        assert_eq!(overflow.position(), &before);
+    }
+
+    #[test]
+    fn riots_bonus_gains_one_after_winning_losing_or_a_ko_and_undo_is_exact() {
+        let effect = CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat;
+
+        let mut winner_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1034, effect, 3);
+        winner_spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        let mut winner = CombatStatDiagnosticV1::new(winner_spec).unwrap();
+        let before = winner.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let (report, undo) = winner.make(input(3, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 1);
+        winner.unmake(undo);
+        assert_eq!(winner.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        winner.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
+
+        let mut loser = CombatStatDiagnosticV1::new(spec_with_p1(
+            CombatStatEffectSourceV1::Bonus,
+            1034,
+            effect,
+            3,
+        ))
+        .unwrap();
+        let (report, _) = loser.make(input(3, false)).unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 1);
+
+        let mut ko_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1034, effect, 3);
+        ko_spec.base_rules.players[PlayerId::P1].initial_life = 2;
+        let mut ko = CombatStatDiagnosticV1::new(ko_spec).unwrap();
+        let (report, _) = ko.make(input(3, false)).unwrap();
+        assert_eq!(report.status, MatchStatus::Won(PlayerId::P2));
+        assert_eq!(report.players[PlayerId::P1].life, 0);
+        assert_eq!(report.players[PlayerId::P1].pillz, 1);
+    }
+
+    #[test]
+    fn riots_bonus_is_stopped_by_stop_bonus_but_not_reinterpreted_by_cancellation() {
+        let effect = CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat;
+        let mut stopped_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1034, effect, 3);
+        stopped_spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::StopOpponentBonus,
+        };
+        let mut stopped = CombatStatDiagnosticV1::new(stopped_spec).unwrap();
+        let (report, _) = stopped.make(input(3, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].pillz, 0);
+
+        let mut cancelled_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1034, effect, 3);
+        cancelled_spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::PowerAndDamage,
+            },
+        };
+        let mut cancelled = CombatStatDiagnosticV1::new(cancelled_spec).unwrap();
+        let (report, _) = cancelled.make(input(3, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].pillz, 1);
+    }
+
+    #[test]
+    fn riots_public_plans_are_exact_and_overflow_is_atomic() {
+        let effect = CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat;
+        for (source, id) in [
+            (CombatStatEffectSourceV1::Ability, 1034),
+            (CombatStatEffectSourceV1::Bonus, 4111),
+        ] {
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(spec_with_p1(source, id, effect, 3)),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::RiotsVictoryOrDefeatIdentity,
+                    ..
+                })
+            ));
+        }
+        let mut wrong_predicate = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1034, effect, 3);
+        wrong_predicate.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+            source_id: 1034,
+            predicate: CombatStatPredicateV1::OwnerWonPreviousRound,
+            effect,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_predicate),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::RiotsVictoryOrDefeatPredicate,
+                ..
+            })
+        ));
+
+        let mut overflow = CombatStatDiagnosticV1::new(spec_with_p1(
+            CombatStatEffectSourceV1::Bonus,
+            1034,
+            effect,
+            u16::MAX,
+        ))
+        .unwrap();
+        let before = overflow.position().clone();
+        assert!(matches!(
+            overflow.make(input(0, false)),
+            Err(CombatStatDiagnosticErrorV1::BaseRules(
+                BaseRulesError::PillzIncreaseOverflow {
                     player: PlayerId::P1
                 }
             ))

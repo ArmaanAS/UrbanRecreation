@@ -4,6 +4,9 @@ import CachedBattleData from "./battle/CachedBattleData.ts";
 import BasicModifier from "./modifiers/BasicModifier.ts";
 import { type Clan, type ClanId, ClanIdMap } from "@/game/types/CardTypes.ts";
 import { DEBUG } from "../utils/Debug.ts";
+
+const RIOTS_VICTORY_OR_DEFEAT_PILLZ = "Victory Or Defeat : +1 Pillz";
+
 export enum ConditionType {
   UNDEFINED = 0,
   COURAGE = 1,
@@ -189,6 +192,18 @@ export default class Condition {
         for (const mod of ability.mods) {
           if (mod instanceof BasicModifier) {
             mod.win = false;
+            // Riots' clan bonus is paid even after a lethal loss (1058366 r2 and
+            // 1078669 r2). Match its effective clan and exact printed bonus so another
+            // Victory-or-Defeat Pillz source cannot silently inherit the exception.
+            if (
+              ability.type === AbilityType.BONUS &&
+              data.card.clan === "Riots" &&
+              data.card.bonusString === RIOTS_VICTORY_OR_DEFEAT_PILLZ &&
+              ability.ability === "+1 Pillz" && !mod.opp &&
+              mod.type?.name === "PILLZ"
+            ) {
+              mod.postKoPillz = true;
+            }
           }
         }
         break;

@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
 Status from `deno test -A --no-check tests/replay/` against 328 captured battles
-(322 replay-ready, 6 incomplete/Dojo ignored): 269 replay exactly and 53 mismatch. Each entry
+(322 replay-ready, 6 incomplete/Dojo ignored): 277 replay exactly and 45 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -31,6 +31,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-14 | 267 | 53 | +220 extracted captures; fresh replay baseline, new mismatches awaiting triage |
 | 2026-09-15 | 268 | 53 | +1 capture; Reanimate applies after every defeat and can prevent KO |
 | 2026-09-15 | 269 | 53 | +1 capture; refreshed stable replay baseline |
+| 2026-09-16 | 277 | 45 | Riots Victory-or-Defeat Pillz now applies after its owner's KO |
 
 ## Fixed
 
@@ -52,9 +53,18 @@ and testcase; `Game(..., night)` sets `PlayerRound.day` and switches cards to th
 Fixed 877575, 878120.
 
 ### Post-KO gains
-A player at 0 life gains neither life nor pillz from Defeat / clan bonuses that round
-(`BasicModifier.canApply`). Reanimate is the explicit exception: its rules say that it can
-prevent a KO. Fixed 876712, 877023.
+Ordinary Defeat Life/Pillz gains still do not apply after their owner reaches 0 life:
+Kubra receives neither half of `Defeat: +1 Pillz And Life` in lethal captures 876712 and
+877023. Reanimate remains an explicit Life exception because it can prevent a KO.
+
+Riots' `Victory Or Defeat : +1 Pillz` bonus is a second, narrower exception. Eight
+independent captures show the bonus returning one Pillz after its owner is KO'd: 1058366,
+1078669, 1078906, 1079482, 1081234, 1089933, 1092369, and 1093451. The modifier now carries
+a post-KO-Pillz flag only for the exact effective Riots clan bonus; it does not widen Life,
+Defeat abilities, or same-text ordinary abilities. A focused Riots test and all eight
+captured replays pin the distinction. Capture 1092909 separately suggests that Pr Hide's
+same-text ability returns a second Pillz after a KO, but that single ability observation
+remains an open parity item rather than being folded into this bonus fix.
 
 ### Reanimate is an immediate Defeat life gain
 Reanimate activates whenever its card loses, not only when the incoming damage would be
@@ -230,16 +240,15 @@ Exchange card at all, one of them on a loss.
 
 ## Fresh capture backlog
 
-The expanded 326-game corpus exposed 49 additional mismatches that have not yet been
+The expanded corpus now has 41 additional mismatches that have not yet been
 grouped or attributed to rules. They are recorded as regression targets only; inspect the
 first failing round and group them by ability keyword before changing the engine:
 
 924320, 924573, 924615, 924669, 924740, 924853, 924890, 925818, 942983, 943111,
 943231, 946810, 947010, 947670, 948108, 948390, 949439, 956902, 1023946,
-1024592, 1024732, 1024821, 1025413, 1058366, 1059149, 1060341, 1065308,
-1066210, 1069506, 1078555, 1078669, 1078820, 1078906, 1079078, 1079482,
-1081234, 1088641, 1089830, 1089933, 1089974, 1090269, 1091235, 1091381,
-1092066, 1092369, 1092909, 1093129, 1093451, 1093569.
+1024592, 1024732, 1024821, 1025413, 1059149, 1060341, 1065308, 1066210,
+1069506, 1078555, 1078820, 1079078, 1088641, 1089830, 1089974, 1090269,
+1091235, 1091381, 1092066, 1092909, 1093129, 1093569.
 
 ## Legacy tests
 - `tests/Game_2.test.ts` "Protection" uses empty card names (never passed).

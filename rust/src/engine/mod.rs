@@ -267,6 +267,9 @@ pub enum BaseRulesError {
     PillzRecoveryOverflow {
         player: PlayerId,
     },
+    PillzIncreaseOverflow {
+        player: PlayerId,
+    },
 }
 
 impl fmt::Display for BaseRulesError {
@@ -306,6 +309,9 @@ impl fmt::Display for BaseRulesError {
             Self::PillzRecoveryOverflow { player } => {
                 write!(formatter, "{player:?} pillz recovery overflow")
             }
+            Self::PillzIncreaseOverflow { player } => {
+                write!(formatter, "{player:?} pillz increase overflow")
+            }
         }
     }
 }
@@ -338,6 +344,7 @@ pub(super) struct PostRoundPlan {
 #[derive(Clone, Copy)]
 pub(super) enum PostRoundEffect {
     RecoverPaidPillzOnDefeat,
+    GainOnePillzOnVictoryOrDefeat,
 }
 
 #[derive(Clone, Copy)]
@@ -427,18 +434,30 @@ impl BaseRulesGame {
         position.players[loser].life = position.players[loser]
             .life
             .saturating_sub(prepared[winner].result.damage);
-        for effect in [post_round[loser].ability, post_round[loser].bonus]
-            .into_iter()
-            .flatten()
-        {
-            match effect {
-                PostRoundEffect::RecoverPaidPillzOnDefeat => {
-                    let paid = u32::from(prepared[loser].cost);
-                    let recovered = ((paid * 2 + 2) / 3).max(1) as u16;
-                    position.players[loser].pillz = position.players[loser]
-                        .pillz
-                        .checked_add(recovered)
-                        .ok_or(BaseRulesError::PillzRecoveryOverflow { player: loser })?;
+        // Post-round effects belong to their selected owner. Defeat recovery remains
+        // deliberately loser-only; Victory Or Defeat applies after the costs, winner, and
+        // damage for either owner, including a KO.
+        for owner in PlayerId::ALL {
+            for effect in [post_round[owner].ability, post_round[owner].bonus]
+                .into_iter()
+                .flatten()
+            {
+                match effect {
+                    PostRoundEffect::RecoverPaidPillzOnDefeat if owner == loser => {
+                        let paid = u32::from(prepared[owner].cost);
+                        let recovered = ((paid * 2 + 2) / 3).max(1) as u16;
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(recovered)
+                            .ok_or(BaseRulesError::PillzRecoveryOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::RecoverPaidPillzOnDefeat => {}
+                    PostRoundEffect::GainOnePillzOnVictoryOrDefeat => {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(1)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                    }
                 }
             }
         }

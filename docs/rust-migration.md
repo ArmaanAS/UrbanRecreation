@@ -204,12 +204,13 @@ to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attac
 then precede the sorted opponent Attack reductions. Arithmetic observations outside an
 admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is thirty-one sequential prefix rounds:
+The immutable server-backed gate is thirty-eight sequential prefix rounds:
 `875032/2`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/2`, and
 `874837/2`, plus `1011643/2`, `1011768/1`, `1011483/2`, `877812/2`, and
 `874642/1`, `1059269/1`, and `1091585/1`, plus `868094/1`, `875230/1`, and
-`877950/1`, plus `945585/2`, `1023396/2`, `874962/2`, and `946400/1`. Its selected Execute/Disabled identity sets are
-pinned, while focused tests pin
+`877950/1`, plus `945585/2`, `1023396/2`, `874962/2`, and `946400/1`, plus
+`1058366/3` and `1061897/4`. Its selected Execute/Disabled identity sets are pinned, while
+focused tests pin
 the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
 (Galahad Damage 2 to 5 on unequal slots) and active Symmetry (Anagone reduces Bella Ld Power
 7 to 4 on equal slots); `1011768` visibly proves inactive Asymmetry (Aneta remains Damage 3
@@ -235,7 +236,14 @@ five and exact make/unmake restoration. Oscar (`868094`) proves Support Power +1
 matching characters before Callie's opposing reduction; Ludicrite (`875230`) and Boohma
 (`877950`) prove Support Attack +3 and +5 respectively with four matching characters.
 Focused catalog tests also pin singleton Taljion and Oculus-derived effective-clan counts.
-Replay provenance records compiler/policy semantic revision 8 for this scope.
+The Riots prefixes prove exact post-round Pillz accounting on both outcomes. In `1058366`,
+Astromos receives the bonus after winning round 0, the non-Riots Rhum'n'Bass receives
+nothing in round 1, and Kenjy Noel receives it after losing by KO in round 2. In `1061897`,
+all four selected Riots cards receive the bonus, with the resulting resource sequence pinned
+against the capture. That KO observation exposed a narrow TypeScript guard error: the
+reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
+fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
+Replay provenance records compiler/policy semantic revision 9 for this scope.
 
 The carried-forward previous-round portion admits only the exact fixed numeric grammar: a structured
 `previousRoundRequirement` of `win` with `Confidence: ` or `Confidence : `, or `lose` with
@@ -257,7 +265,7 @@ conjunctions and life/pillz effects (`814`, `1652`, `1661`, `1702`, `1810`, `211
 
 Semantic revision 8 adds one deliberately narrow post-round resource effect: the exact
 structured and textual `Defeat: Recover 2 Pillz Out Of 3` shape, with an unconditional
-previous-round field, current-round `lose`, player Pillz increase, `recover_pillz` special
+`previousRoundRequirement=any`, current-round `lose`, player Pillz increase, `recover_pillz` special
 action, values `2` and `3`, and every unrelated link, bound, condition, permanence, and
 multiplier neutral. It is identity- and source-kind-locked: registry id `577` only as a
 bonus, and ids `729` and `1418` only as abilities. Same-text id `2475`, every other source
@@ -278,6 +286,20 @@ Existing Stop Opp. Bonus liveness suppresses bonus-577 recovery (`945585`); Stop
 Ability, protection, and Pillz-cancellation interactions are still unsupported and
 fail-closed if selected.
 
+Semantic revision 9 adds one further exact post-round resource effect: Riots'
+`Victory Or Defeat : +1 Pillz`, registry definition `1034` as a bonus only. Its structured
+shape must be otherwise neutral and unconditional, target the owning player's Pillz, use a
+fixed increase of one, and carry no special action, bounds, links, flags, permanence,
+Support, or multiplier. Same-text registry ids `1375`, `4111`, `5085`, and `5520` are
+ability definitions and remain Disabled; selecting one still fails closed. This is not
+general Victory-or-Defeat, Pillz-increase, or same-text ability parity.
+
+The effect adds exactly one Pillz after move costs and damage resolution for either outcome,
+including when its owner is KO'd, and normal Stop Bonus liveness suppresses it. Post-round
+execution therefore visits both selected owners for this typed plan, while recovery remains
+loser-only. Checked addition reports a distinct `PillzIncreaseOverflow` and aborts before
+commit, and the opaque undo restores the exact pre-round position and hash.
+
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
@@ -285,7 +307,9 @@ retained as visible Disabled metadata but reject atomically if selected. The 33 
 ordinary Support combat-stat definitions are admitted only for an otherwise-neutral,
 unconditional basic Attack, Power, or Damage shape. Conditional, nested, life, pillz,
 Power-and-Damage, post-round, and permanent Support effects remain fail-closed; capped
-increases also remain deferred for lack of clean evidence. Provenance records the model,
+increases also remain deferred for lack of clean evidence. Same-text Victory-or-Defeat
+abilities remain rejected when selected; the Riots exception does not widen the generic
+resource-effect boundary. Provenance records the model,
 explicit projection policy,
 registry schema and non-cryptographic source fingerprint, plus a combined model-specific
 compiler/policy semantic revision. A transposition identity must include that full match
@@ -295,9 +319,10 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 8 records this semantic boundary together with the exact
-Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, and the identity-locked
-Defeat-recovery post-round plan.
+context. Compiler/policy revision 9 records this semantic boundary together with the exact
+Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
+Defeat-recovery post-round plan, and the identity-locked Riots bonus with its both-owner
+post-round execution semantics.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -321,12 +346,16 @@ ability ids `729` and `1418` resolve only to their identically numbered ability 
 Catalog id `43` is not a registry id, and the same-text registry aliases (`577`, `729`,
 `1418`, `2475`) must not collide into text-only admission: source kind, effective clan,
 catalog id, registry id, description, and exact structured shape all agree or strict
-construction rejects the draw. A selected night
+construction rejects the draw. The Riots bridge applies the same rule: active effective
+Riots clan `49`, catalog bonus id `47`, and the exact Victory-or-Defeat description resolve
+only to registry definition `1034`. Same-text registry ability aliases (`1375`, `4111`,
+`5085`, `5520`) remain distinct provenance and cannot enter through description matching.
+A selected night
 variant has no catalog numeric id unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 8, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 9, and catalog-context
 policy revision 1.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
