@@ -49,6 +49,8 @@ pub enum CombatStatOperationV1 {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CombatStatMagnitudeV1 {
     Fixed,
+    /// Legacy public name retained for source compatibility; abilities and bonuses both
+    /// use this magnitude with their own independently validated Support counts.
     SourceBonusSupport,
     Growth,
     Degrowth,
@@ -113,6 +115,9 @@ pub struct CombatStatCardPlanV1 {
     /// Distinct character ids sharing this card's effective clan across the immutable
     /// whole draw when its bonus is active; otherwise zero.
     pub source_bonus_support_count: u16,
+    /// Distinct character ids sharing this card's effective clan across the immutable
+    /// whole draw when its executable ability has Support magnitude; otherwise zero.
+    pub source_ability_support_count: u16,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -152,6 +157,8 @@ pub enum InvalidCombatStatPlanReasonV1 {
     ConditionalControl,
     IncompatibleBounds,
     InvalidModifierDirection,
+    /// The ability uses Support outside the unconditional basic-stat subset admitted by
+    /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
     ZeroMagnitude,
 }
@@ -160,6 +167,13 @@ pub enum InvalidCombatStatPlanReasonV1 {
 pub enum CombatStatPlanErrorV1 {
     CardMismatch(CombatStatPlanMismatchV1),
     InvalidSourceBonusContext {
+        player: PlayerId,
+        hand_slot: HandSlot,
+        source_id: Option<u32>,
+        expected: u16,
+        actual: u16,
+    },
+    InvalidAbilitySupportContext {
         player: PlayerId,
         hand_slot: HandSlot,
         source_id: Option<u32>,
@@ -190,6 +204,17 @@ impl fmt::Display for CombatStatPlanErrorV1 {
                 "invalid combat-stat diagnostic source-bonus context for {player:?} slot {} source {source_id:?}: expected {expected} distinct character ids, got {actual}",
                 hand_slot.get()
             ),
+            Self::InvalidAbilitySupportContext {
+                player,
+                hand_slot,
+                source_id,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "invalid combat-stat diagnostic ability Support context for {player:?} slot {} source {source_id:?}: expected {expected} distinct effective-clan character ids, got {actual}",
+                hand_slot.get()
+            ),
             Self::InvalidExecute {
                 player,
                 hand_slot,
@@ -209,7 +234,9 @@ impl Error for CombatStatPlanErrorV1 {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::CardMismatch(source) => Some(source),
-            Self::InvalidSourceBonusContext { .. } | Self::InvalidExecute { .. } => None,
+            Self::InvalidSourceBonusContext { .. }
+            | Self::InvalidAbilitySupportContext { .. }
+            | Self::InvalidExecute { .. } => None,
         }
     }
 }
@@ -308,7 +335,6 @@ impl CombatStatDiagnosticV1 {
         }
         for player in PlayerId::ALL {
             for slot in HandSlot::ALL {
-                validate_source_bonus_context(player, slot, &spec.cards[player])?;
                 validate_combat_stat_source_plan(
                     player,
                     slot,
@@ -321,6 +347,8 @@ impl CombatStatDiagnosticV1 {
                     CombatStatEffectSourceV1::Bonus,
                     spec.cards[player][slot.index()].bonus,
                 )?;
+                validate_source_bonus_context(player, slot, &spec.cards[player])?;
+                validate_ability_support_context(player, slot, &spec.cards[player])?;
             }
         }
         let base_rules = BaseRulesGame::new(spec.base_rules.clone());
@@ -383,6 +411,39 @@ impl CombatStatDiagnosticV1 {
     }
 }
 
+fn validate_ability_support_context(
+    player: PlayerId,
+    hand_slot: HandSlot,
+    cards: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> Result<(), CombatStatPlanErrorV1> {
+    let plan = cards[hand_slot.index()].ability;
+    let source_id = source_plan_id(plan);
+    let expected = matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ModifyCombatStat {
+                multiplier: CombatStatMagnitudeV1::SourceBonusSupport,
+                ..
+            },
+            ..
+        }
+    )
+    .then(|| effective_clan_character_count(hand_slot, cards))
+    .unwrap_or(0);
+    let actual = cards[hand_slot.index()].source_ability_support_count;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(CombatStatPlanErrorV1::InvalidAbilitySupportContext {
+            player,
+            hand_slot,
+            source_id,
+            expected,
+            actual,
+        })
+    }
+}
+
 fn source_plan_id(plan: CombatStatSourcePlanV1) -> Option<u32> {
     match plan {
         CombatStatSourcePlanV1::Absent => None,
@@ -399,16 +460,7 @@ fn validate_source_bonus_context(
 ) -> Result<(), CombatStatPlanErrorV1> {
     let source_id = source_plan_id(cards[hand_slot.index()].bonus);
     let expected = if source_id.is_some() {
-        let effective_clan_id = cards[hand_slot.index()].effective_clan_id;
-        let mut ids = [0_u32; HAND_SIZE];
-        let mut count = 0_usize;
-        for card in cards {
-            if card.effective_clan_id == effective_clan_id && !ids[..count].contains(&card.key.id) {
-                ids[count] = card.key.id;
-                count += 1;
-            }
-        }
-        count as u16
+        effective_clan_character_count(hand_slot, cards)
     } else {
         0
     };
@@ -424,6 +476,22 @@ fn validate_source_bonus_context(
             actual,
         })
     }
+}
+
+fn effective_clan_character_count(
+    hand_slot: HandSlot,
+    cards: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> u16 {
+    let effective_clan_id = cards[hand_slot.index()].effective_clan_id;
+    let mut ids = [0_u32; HAND_SIZE];
+    let mut count = 0_usize;
+    for card in cards {
+        if card.effective_clan_id == effective_clan_id && !ids[..count].contains(&card.key.id) {
+            ids[count] = card.key.id;
+            count += 1;
+        }
+    }
+    count as u16
 }
 
 fn validate_combat_stat_source_plan(
@@ -453,6 +521,7 @@ fn validate_combat_stat_source_plan(
     }
     let CombatStatEffectV1::ModifyCombatStat {
         side,
+        stat,
         operation,
         value,
         minimum,
@@ -463,6 +532,19 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
+    if source == CombatStatEffectSourceV1::Ability
+        && multiplier == CombatStatMagnitudeV1::SourceBonusSupport
+        && (predicate != CombatStatPredicateV1::Always
+            || stat == CombatStatAttributeV1::PowerAndDamage)
+    {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::SupportAbility,
+        ));
+    }
     if matches!(
         multiplier,
         CombatStatMagnitudeV1::Growth
@@ -494,17 +576,6 @@ fn validate_combat_stat_source_plan(
             source,
             source_id,
             InvalidCombatStatPlanReasonV1::ConditionalBonus,
-        ));
-    }
-    if source == CombatStatEffectSourceV1::Ability
-        && multiplier == CombatStatMagnitudeV1::SourceBonusSupport
-    {
-        return Err(invalid_combat_stat_execute(
-            player,
-            hand_slot,
-            source,
-            source_id,
-            InvalidCombatStatPlanReasonV1::SupportAbility,
         ));
     }
     if operation == CombatStatOperationV1::Increase && maximum.is_some() {
@@ -667,9 +738,7 @@ fn resolution_card_plan(
         ability: ResolutionSourcePlan {
             effect: active_effect(plan.ability, owner, first_mover, owner_slot, opponent_slot)
                 .map(shared_effect),
-            // Ability Support is rejected by plan validation and can never consume the
-            // captured source-bonus Support count.
-            support_count: 0,
+            support_count: plan.source_ability_support_count,
         },
         bonus: ResolutionSourcePlan {
             effect: active_effect(plan.bonus, owner, first_mover, owner_slot, opponent_slot)

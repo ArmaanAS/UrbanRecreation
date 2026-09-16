@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use urban_recreation_rust::catalog::CardCatalog;
 use urban_recreation_rust::effect_registry::{
-    EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
+    AttributeAffectedV1, EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
 };
 use urban_recreation_rust::engine::{CombatStatPredicateV1, PlayerId};
 use urban_recreation_rust::replay::{
@@ -30,6 +30,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (874642, 1),
     (1059269, 1),
     (1091585, 1),
+    (868094, 1),
+    (875230, 1),
+    (877950, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -117,6 +120,17 @@ fn equalizer_numeric_entry(
     entry
 }
 
+fn support_numeric_entry(
+    id: u32,
+    description: &str,
+    value: u16,
+    minimum: u16,
+) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "both", value, minimum);
+    entry["abilityData"]["isSupport"] = serde_json::json!(true);
+    entry
+}
+
 fn one_entry_registry(entry: serde_json::Value) -> EffectRegistryV1 {
     let id = entry["id"].as_u64().unwrap().to_string();
     let mut entries = serde_json::Map::new();
@@ -155,7 +169,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_nineteen_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_twenty_two_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -186,16 +200,19 @@ fn fixed_server_backed_gate_is_exactly_nineteen_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 19);
+    assert_eq!(rounds, 22);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 37, 39, 40, 42, 56, 93, 156, 266, 612, 741, 871, 916, 980, 1163, 1241, 1338, 1342,
-            1372, 1536, 1578, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2881, 3865, 3897, 4216,
-            4718, 4757, 5026, 5273, 5763,
+            6, 37, 39, 40, 42, 56, 93, 156, 266, 412, 612, 741, 871, 916, 980, 1163, 1241, 1338,
+            1342, 1372, 1536, 1578, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2881, 3865, 3897,
+            4216, 4297, 4718, 4757, 5026, 5273, 5763,
         ])
     );
-    assert_eq!(disabled_ids, BTreeSet::from([274, 577, 1852, 4458, 4459]));
+    assert_eq!(
+        disabled_ids,
+        BTreeSet::from([274, 377, 401, 577, 1852, 4458, 4459])
+    );
     assert_eq!(absent, 0);
 }
 
@@ -253,7 +270,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 5);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 6);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -336,7 +353,7 @@ fn canonical_leader_and_team_modifier_are_fatal_even_when_unplayed() {
 }
 
 #[test]
-fn support_abilities_and_capped_increases_are_visible_but_disabled() {
+fn support_abilities_execute_while_capped_increases_remain_disabled() {
     let catalog = catalog();
     let registry = registry();
     let mut source = replay(875032, &catalog);
@@ -353,11 +370,12 @@ fn support_abilities_and_capped_increases_are_visible_but_disabled() {
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
     assert!(matches!(
         prepared.preparation()[PlayerId::P1][0].ability,
-        CombatStatProjectionDispositionV1::Disabled {
-            reason: CombatStatDisabledReasonV1::SupportAbility { .. },
-            ..
-        }
+        CombatStatProjectionDispositionV1::Execute { .. }
     ));
+    assert_eq!(
+        prepared.preparation()[PlayerId::P1][0].source_ability_support_count,
+        prepared.preparation()[PlayerId::P1][0].effective_clan_character_count
+    );
     assert!(matches!(
         prepared.preparation()[PlayerId::P1][1].ability,
         CombatStatProjectionDispositionV1::Disabled {
@@ -366,7 +384,7 @@ fn support_abilities_and_capped_increases_are_visible_but_disabled() {
         }
     ));
 
-    for (id, description) in [(266, "Support: Attack +3"), (2969, "Power +6, Max. 8")] {
+    for (id, description) in [(2969, "Power +6, Max. 8")] {
         let mut source = replay(875032, &catalog);
         clear_sources(&mut source);
         let selected_slot = usize::from(
@@ -387,6 +405,145 @@ fn support_abilities_and_capped_increases_are_visible_but_disabled() {
             prepared.execute_combat_stat_diagnostic_v1_prefix(1),
             Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
         ));
+    }
+}
+
+#[test]
+fn every_observed_basic_combat_stat_support_definition_executes_as_an_ability() {
+    let catalog = catalog();
+    let registry = registry();
+    let expected = BTreeSet::from([
+        266, 272, 295, 367, 391, 412, 469, 472, 514, 532, 546, 567, 574, 739, 899, 1269, 1297,
+        1330, 1735, 1805, 2535, 2556, 3197, 3475, 3719, 4068, 4297, 4593, 4824, 4839, 4857, 5483,
+        5841,
+    ]);
+    let observed: BTreeSet<_> = registry
+        .iter()
+        .filter_map(|(id, definition)| {
+            let input = definition.structured_input();
+            (input.is_support
+                && matches!(
+                    input.attribute_affected,
+                    AttributeAffectedV1::Attack
+                        | AttributeAffectedV1::Damage
+                        | AttributeAffectedV1::Power
+                        | AttributeAffectedV1::PowerAndDamage
+                ))
+            .then_some(id)
+        })
+        .collect();
+    assert_eq!(observed, expected);
+
+    let mut template = replay(875032, &catalog);
+    template.rounds.clear();
+    clear_sources(&mut template);
+    for id in expected {
+        let definition = registry.get(id).unwrap();
+        let mut source = template.clone();
+        source.players[0].hand[0].source_ability = Some(SourceModifier {
+            id,
+            description: definition.description().to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert!(
+            matches!(
+                prepared.preparation()[PlayerId::P1][0].ability,
+                CombatStatProjectionDispositionV1::Execute {
+                    effect: SupportedEffectV1::ModifyCombatStat {
+                        multiplier: MagnitudeMultiplierV1::Support,
+                        ..
+                    },
+                    predicate: CombatStatPredicateV1::Always,
+                    ..
+                }
+            ),
+            "effect {id}"
+        );
+        assert_eq!(
+            prepared.preparation()[PlayerId::P1][0].source_ability_support_count,
+            prepared.preparation()[PlayerId::P1][0].effective_clan_character_count,
+            "effect {id}"
+        );
+    }
+}
+
+#[test]
+fn support_ability_grammar_is_exact_and_nested_or_unobserved_shapes_fail_closed() {
+    const EFFECT_ID: u32 = 900_105;
+    let mut cases = Vec::new();
+    cases.push((
+        "exact",
+        support_numeric_entry(EFFECT_ID, "Support: -2 Opp Power, Min 3", 2, 3),
+        true,
+    ));
+    cases.push((
+        "malformed prefix",
+        support_numeric_entry(EFFECT_ID, "Support:-2 Opp Power, Min 3", 2, 3),
+        false,
+    ));
+
+    let mut position = support_numeric_entry(EFFECT_ID, "Support: -2 Opp Power, Min 3", 2, 3);
+    position["abilityData"]["positionRequirement"] = serde_json::json!("attacker");
+    cases.push(("position", position, false));
+
+    let mut current = support_numeric_entry(EFFECT_ID, "Support: -2 Opp Power, Min 3", 2, 3);
+    current["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    cases.push(("current round", current, false));
+
+    let mut index = support_numeric_entry(EFFECT_ID, "Support: -2 Opp Power, Min 3", 2, 3);
+    index["abilityData"]["indexRequirement"] = serde_json::json!("symmetry");
+    cases.push(("index", index, false));
+
+    let mut growth = support_numeric_entry(EFFECT_ID, "Support: -2 Opp Power, Min 3", 2, 3);
+    growth["abilityData"]["isOverdrive"] = serde_json::json!(true);
+    cases.push(("growth", growth, false));
+
+    let mut power_and_damage =
+        support_numeric_entry(EFFECT_ID, "Support: Power And Damage +1", 1, 0);
+    power_and_damage["abilityData"]["sideAffected"] = serde_json::json!("player");
+    power_and_damage["abilityData"]["attributeAffected"] = serde_json::json!("pwr&dmg");
+    power_and_damage["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    cases.push(("unobserved Power And Damage", power_and_damage, false));
+
+    let catalog = catalog();
+    let mut template = replay(875032, &catalog);
+    template.rounds.clear();
+    clear_sources(&mut template);
+    for (label, entry, admitted) in cases {
+        let description = entry["description"].as_str().unwrap().to_owned();
+        let registry = one_entry_registry(entry);
+        let mut source = template.clone();
+        source.players[0].hand[0].source_ability = Some(SourceModifier {
+            id: EFFECT_ID,
+            description,
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert_eq!(
+            matches!(
+                prepared.preparation()[PlayerId::P1][0].ability,
+                CombatStatProjectionDispositionV1::Execute {
+                    effect: SupportedEffectV1::ModifyCombatStat {
+                        multiplier: MagnitudeMultiplierV1::Support,
+                        ..
+                    },
+                    predicate: CombatStatPredicateV1::Always,
+                    ..
+                }
+            ),
+            admitted,
+            "{label}"
+        );
+        if !admitted {
+            assert!(matches!(
+                prepared.preparation()[PlayerId::P1][0].ability,
+                CombatStatProjectionDispositionV1::Disabled {
+                    reason: CombatStatDisabledReasonV1::SupportAbility { .. },
+                    ..
+                }
+            ));
+        }
     }
 }
 
@@ -1094,6 +1251,39 @@ fn server_replays_pin_equalizer_to_the_selected_opponent_level() {
     assert_eq!(both_sources.rounds[0].round.cards[PlayerId::P1].attack, 51);
     assert_eq!(both_sources.rounds[0].round.cards[PlayerId::P2].power, 7);
     assert_eq!(both_sources.rounds[0].round.cards[PlayerId::P2].attack, 56);
+}
+
+#[test]
+fn server_replays_pin_ordinary_support_ability_counts_and_arithmetic() {
+    let catalog = catalog();
+    let registry = registry();
+    let cases = [
+        (868094, 4297, 7, 2, 42),
+        (875230, 266, 7, 4, 54),
+        (877950, 412, 4, 5, 36),
+    ];
+
+    for (battle_id, ability_id, power, damage, attack) in cases {
+        let report = diagnostic(battle_id, &catalog, &registry)
+            .execute_combat_stat_diagnostic_v1_prefix(1)
+            .unwrap();
+        let round = &report.rounds[0];
+        let player = PlayerId::ALL
+            .into_iter()
+            .find(|player| {
+                matches!(
+                    &round.selected[*player].ability,
+                    CombatStatProjectionDispositionV1::Execute { identity, .. }
+                        if identity.id == ability_id
+                )
+            })
+            .unwrap_or_else(|| panic!("battle {battle_id} did not execute ability {ability_id}"));
+        assert_eq!(round.selected[player].effective_clan_character_count, 4);
+        assert_eq!(round.selected[player].source_ability_support_count, 4);
+        assert_eq!(round.round.cards[player].power, power);
+        assert_eq!(round.round.cards[player].damage, damage);
+        assert_eq!(round.round.cards[player].attack, attack);
+    }
 }
 
 #[test]

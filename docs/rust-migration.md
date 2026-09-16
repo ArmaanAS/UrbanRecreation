@@ -158,7 +158,8 @@ abilities, post-round effects, permanents, protection, or out-of-slice bonuses.
 preparation and now also materialized by the strict catalog constructor described below. It
 does not widen `ClanBonusDiagnostic` or claim full engine parity. It executes reviewed fixed ordinary
 Power, Damage, Power-and-Damage, and Attack abilities alongside the existing fixed and
-Support bonuses, Stop Bonus, and source-owned combat-stat cancellation. The only admitted
+Support bonuses, ordinary unconditional Support Attack/Power/Damage abilities, Stop Bonus,
+and source-owned combat-stat cancellation. The only admitted
 numeric predicates are `Always`, Courage (`OwnerMovesFirst`), Reprisal
 (`OwnerMovesSecond`), Symmetry (`SelectedHandSlotsMatch`), and Asymmetry
 (`SelectedHandSlotsDiffer`). Courage and Reprisal use the round's explicit first mover;
@@ -198,10 +199,11 @@ to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attac
 then precede the sorted opponent Attack reductions. Arithmetic observations outside an
 admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is nineteen sequential prefix rounds:
+The immutable server-backed gate is twenty-two sequential prefix rounds:
 `875032/1`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/1`, and
 `874837/2`, plus `1011643/2`, `1011768/1`, `1011483/2`, `877812/2`, and
-`874642/1`, `1059269/1`, and `1091585/1`. Its selected Execute/Disabled identity sets are
+`874642/1`, `1059269/1`, and `1091585/1`, plus `868094/1`, `875230/1`, and
+`877950/1`. Its selected Execute/Disabled identity sets are
 pinned, while focused tests pin
 the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
 (Galahad Damage 2 to 5 on unequal slots) and active Symmetry (Anagone reduces Bella Ld Power
@@ -224,24 +226,31 @@ Capture `1059269` proves the Hive Equalizer bonus scales from Callie's three sta
 her Attack to 5 after Stop Bonus suppresses Rescue. Capture `1091585` exercises both Aegis
 Cr's Equalizer Power ability and the Hive Equalizer Attack bonus against three-star Nidory,
 in the same round as Growth and Degrowth. Focused tests cover opponent levels one through
-five and exact make/unmake restoration. Replay provenance records compiler/policy semantic
-revision 5 for this scope.
+five and exact make/unmake restoration. Oscar (`868094`) proves Support Power +1 with four
+matching characters before Callie's opposing reduction; Ludicrite (`875230`) and Boohma
+(`877950`) prove Support Attack +3 and +5 respectively with four matching characters.
+Focused catalog tests also pin singleton Taljion and Oculus-derived effective-clan counts.
+Replay provenance records compiler/policy semantic revision 6 for this scope.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
-retained as visible Disabled metadata but reject atomically if selected. Ordinary Support
-abilities never reuse the source-bonus Support count; capped increases also remain deferred
-for lack of clean evidence. Life, pillz, post-round, and permanent effects are explicitly
-disabled by the projection. Provenance records the model, explicit projection policy,
+retained as visible Disabled metadata but reject atomically if selected. The 33 observed
+ordinary Support combat-stat definitions are admitted only for an otherwise-neutral,
+unconditional basic Attack, Power, or Damage shape. Conditional, nested, life, pillz,
+Power-and-Damage, post-round, and permanent Support effects remain fail-closed; capped
+increases also remain deferred for lack of clean evidence. Provenance records the model,
+explicit projection policy,
 registry schema and non-cryptographic source fingerprint, plus a combined model-specific
 compiler/policy semantic revision. A transposition identity must include that full match
 specification, the model, `position()`, and the explicit next first mover.
 
-The combat-stat plan now validates Support context by effective clan rather than captured
-bonus id: it counts distinct character ids in the immutable draw that share the source
-card's effective clan. Compiler/policy revision 5 records this semantic boundary together
-with the exact Equalizer multiplier.
+The combat-stat plan validates Support context by effective clan rather than captured effect
+id: it counts distinct character ids in the immutable draw that share the source card's
+effective clan. Executable ability Support and active bonus Support carry independently
+validated counts, so either source can be absent or stopped without borrowing the other's
+context. Compiler/policy revision 6 records this semantic boundary together with the exact
+Equalizer multiplier.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -263,7 +272,7 @@ variant has no catalog numeric id unless the catalog explicitly supplies one; it
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 5, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 6, and catalog-context
 policy revision 1.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots

@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 5;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 6;
 
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
@@ -55,6 +55,7 @@ fn admitted_supported_effect(
         | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. } => true,
         SupportedEffectV1::ModifyCombatStat {
             side,
+            stat,
             operation,
             maximum,
             multiplier,
@@ -65,8 +66,11 @@ fn admitted_supported_effect(
                 (AffectedSideV1::Player, StatOperationV1::Increase)
                     | (AffectedSideV1::Opponent, StatOperationV1::Decrease)
             ) && !(operation == StatOperationV1::Increase && maximum.is_some())
+                // Support: Power And Damage has no reviewed observed record. Keep it
+                // outside this narrow projection even though the registry can represent it.
                 && !(source_kind == CombatStatEffectSourceV1::Ability
-                    && multiplier == MagnitudeMultiplierV1::Support)
+                    && multiplier == MagnitudeMultiplierV1::Support
+                    && matches!(stat, CombatStatV1::PowerAndDamage))
         }
     }
 }

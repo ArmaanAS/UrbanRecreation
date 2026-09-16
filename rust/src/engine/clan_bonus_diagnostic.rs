@@ -48,6 +48,8 @@ pub enum DiagnosticStatOperationV1 {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DiagnosticMagnitudeV1 {
     Fixed,
+    /// Legacy public name retained for source compatibility; the shared resolver also
+    /// uses this magnitude for ability Support with a separate count.
     SourceBonusSupport,
     Growth,
     Degrowth,

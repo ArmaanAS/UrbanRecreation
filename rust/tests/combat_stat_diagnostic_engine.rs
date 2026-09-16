@@ -47,6 +47,7 @@ fn absent(card: urban_recreation_rust::engine::BaseRulesCardSpec) -> CombatStatC
         ability: CombatStatSourcePlanV1::Absent,
         bonus: CombatStatSourcePlanV1::Absent,
         source_bonus_support_count: 0,
+        source_ability_support_count: 0,
     }
 }
 
@@ -485,6 +486,102 @@ fn cancellation_suppresses_opponent_sources_but_not_base_stats_or_fury() {
         .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
         .unwrap();
     assert_eq!(report.cards[PlayerId::P2].power, 6);
+
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    for slot in 0..4 {
+        cards[PlayerId::P2][slot].effective_clan_id = 200;
+    }
+    cards[PlayerId::P1][0].ability = execute(
+        17,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    cards[PlayerId::P2][0].ability = execute(
+        18,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    cards[PlayerId::P2][0].source_ability_support_count = 4;
+    let mut support_source = game(base, cards);
+    let (report, _) = support_source
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 6);
+
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    for slot in 0..4 {
+        cards[PlayerId::P2][slot].effective_clan_id = 200;
+    }
+    cards[PlayerId::P1][0].ability = execute(
+        19,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::Attack,
+        },
+    );
+    cards[PlayerId::P2][0].ability = execute(
+        20,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Attack,
+            CombatStatOperationV1::Increase,
+            3,
+            None,
+            None,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    cards[PlayerId::P2][0].source_ability_support_count = 4;
+    let mut attack_support_source = game(base, cards);
+    let (report, _) = attack_support_source
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].attack, 6);
+
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    for slot in 0..4 {
+        cards[PlayerId::P2][slot].effective_clan_id = 200;
+    }
+    cards[PlayerId::P1][0].ability = execute(
+        21,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    cards[PlayerId::P2][0].ability = execute(
+        22,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Damage,
+            CombatStatOperationV1::Increase,
+            1,
+            None,
+            None,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    cards[PlayerId::P2][0].source_ability_support_count = 4;
+    let mut nonmatching_support_source = game(base, cards);
+    let (report, _) = nonmatching_support_source
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].damage, 7);
 }
 
 #[test]
@@ -620,6 +717,121 @@ fn source_bonus_context_groups_by_effective_clan_not_source_id() {
 }
 
 #[test]
+fn ability_support_uses_its_own_immutable_effective_clan_context() {
+    let base = base_spec(6, 2);
+    let mut singleton = plans(&base);
+    singleton[PlayerId::P1][0].ability = execute(
+        701,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    singleton[PlayerId::P1][0].source_ability_support_count = 1;
+    let mut singleton_game = game(base.clone(), singleton);
+    let before = singleton_game.position().clone();
+    let (report, undo) = singleton_game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 8);
+    singleton_game.unmake(undo);
+    assert_eq!(singleton_game.position(), &before);
+
+    let mut four = plans(&base);
+    for player in PlayerId::ALL {
+        for slot in 0..4 {
+            four[player][slot].effective_clan_id = 999 + player.index() as u32;
+        }
+    }
+    four[PlayerId::P1][0].ability = execute(
+        702,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    four[PlayerId::P1][0].source_ability_support_count = 4;
+    four[PlayerId::P2][0].ability = execute(
+        703,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Opponent,
+            CombatStatAttributeV1::Attack,
+            CombatStatOperationV1::Decrease,
+            3,
+            Some(2),
+            None,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    four[PlayerId::P2][0].source_ability_support_count = 4;
+    let mut four_game = game(base.clone(), four.clone());
+    let before = four_game.position().clone();
+    let (_, first_undo) = four_game
+        .make(input(PlayerId::P1, (1, 0, false), (1, 0, false)))
+        .unwrap();
+    let (report, undo) = four_game
+        .make(input(PlayerId::P2, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 14);
+    assert_eq!(report.cards[PlayerId::P1].attack, 2);
+    four_game.unmake(undo);
+    four_game.unmake(first_undo);
+    assert_eq!(four_game.position(), &before);
+
+    // Ability and bonus contexts are independently validated: no bonus exists here,
+    // so its count stays zero while the executable abilities use four.
+    assert_eq!(four[PlayerId::P1][0].source_bonus_support_count, 0);
+    assert_eq!(four[PlayerId::P2][0].source_bonus_support_count, 0);
+    four[PlayerId::P1][0].source_ability_support_count = 3;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards: four,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidAbilitySupportContext {
+            player: PlayerId::P1,
+            source_id: Some(702),
+            expected: 4,
+            actual: 3,
+            ..
+        })
+    ));
+
+    let mut non_support = plans(&base);
+    non_support[PlayerId::P1][0].ability = execute(
+        704,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    non_support[PlayerId::P1][0].source_ability_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards: non_support,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidAbilitySupportContext {
+            source_id: Some(704),
+            expected: 0,
+            actual: 1,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn stop_bonus_suppresses_existing_support_bonus() {
     let base = base_spec(6, 2);
     let mut cards = plans(&base);
@@ -710,22 +922,6 @@ fn impossible_execute_plans_fail_at_construction() {
     let cases = [
         (
             execute(
-                1,
-                CombatStatPredicateV1::Always,
-                modifier(
-                    CombatStatAffectedSideV1::Player,
-                    CombatStatAttributeV1::Attack,
-                    CombatStatOperationV1::Increase,
-                    2,
-                    None,
-                    None,
-                    CombatStatMagnitudeV1::SourceBonusSupport,
-                ),
-            ),
-            InvalidCombatStatPlanReasonV1::SupportAbility,
-        ),
-        (
-            execute(
                 2,
                 CombatStatPredicateV1::Always,
                 modifier(
@@ -787,6 +983,38 @@ fn impossible_execute_plans_fail_at_construction() {
                 ),
             ),
             InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,
+        ),
+        (
+            execute(
+                7,
+                CombatStatPredicateV1::OwnerMovesFirst,
+                modifier(
+                    CombatStatAffectedSideV1::Player,
+                    CombatStatAttributeV1::Power,
+                    CombatStatOperationV1::Increase,
+                    1,
+                    None,
+                    None,
+                    CombatStatMagnitudeV1::SourceBonusSupport,
+                ),
+            ),
+            InvalidCombatStatPlanReasonV1::SupportAbility,
+        ),
+        (
+            execute(
+                8,
+                CombatStatPredicateV1::Always,
+                modifier(
+                    CombatStatAffectedSideV1::Player,
+                    CombatStatAttributeV1::PowerAndDamage,
+                    CombatStatOperationV1::Increase,
+                    1,
+                    None,
+                    None,
+                    CombatStatMagnitudeV1::SourceBonusSupport,
+                ),
+            ),
+            InvalidCombatStatPlanReasonV1::SupportAbility,
         ),
     ];
     for (plan, reason) in cases {

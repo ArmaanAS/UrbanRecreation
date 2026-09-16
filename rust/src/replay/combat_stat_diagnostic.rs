@@ -19,8 +19,8 @@ use crate::engine::combat_stat_compiler::{
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
     ByPlayer, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1,
-    CombatStatDiagnosticV1, CombatStatEffectSourceV1, CombatStatPlanErrorV1, CombatStatPredicateV1,
-    CombatStatSourcePlanV1, PlayerId, HAND_SIZE,
+    CombatStatDiagnosticV1, CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1,
+    CombatStatPlanErrorV1, CombatStatPredicateV1, CombatStatSourcePlanV1, PlayerId, HAND_SIZE,
 };
 use std::error::Error;
 use std::fmt;
@@ -92,6 +92,8 @@ pub enum CombatStatDisabledReasonV1 {
     CappedIncrease {
         registry_reasons: Box<[UnsupportedReasonV1]>,
     },
+    /// Support ability shape outside the projection's reviewed unconditional basic-stat
+    /// subset. Retained as a distinct visible reason for compatibility and diagnostics.
     SupportAbility {
         registry_reasons: Box<[UnsupportedReasonV1]>,
     },
@@ -115,7 +117,9 @@ pub enum CombatStatProjectionDispositionV1 {
 pub struct CombatStatCardPreparationV1 {
     pub key: CardKey,
     pub effective_clan_id: u32,
+    pub effective_clan_character_count: u16,
     pub source_bonus_support_count: u16,
+    pub source_ability_support_count: u16,
     pub ability: CombatStatProjectionDispositionV1,
     pub bonus: CombatStatProjectionDispositionV1,
 }
@@ -125,7 +129,9 @@ pub struct CombatStatDiagnosticSelectedCardReportV1 {
     pub key: CardKey,
     pub hand_slot: u8,
     pub effective_clan_id: u32,
+    pub effective_clan_character_count: u16,
     pub source_bonus_support_count: u16,
+    pub source_ability_support_count: u16,
     pub ability: CombatStatProjectionDispositionV1,
     pub bonus: CombatStatProjectionDispositionV1,
 }
@@ -429,7 +435,9 @@ impl CombatStatDiagnosticReplayV1 {
                 key: prepared.key,
                 hand_slot,
                 effective_clan_id: prepared.effective_clan_id,
+                effective_clan_character_count: prepared.effective_clan_character_count,
                 source_bonus_support_count: prepared.source_bonus_support_count,
+                source_ability_support_count: prepared.source_ability_support_count,
                 ability: prepared.ability.clone(),
                 bonus: prepared.bonus.clone(),
             }
@@ -495,7 +503,12 @@ fn prepare_combat_stat_cards(
                 metadata: CombatStatCardPreparationV1 {
                     key: card.key,
                     effective_clan_id: effective[slot].effective_clan_id,
+                    effective_clan_character_count: effective[slot].effective_clan_character_count,
                     source_bonus_support_count,
+                    source_ability_support_count: executable_ability_support_count(
+                        ability.compact_plan,
+                        effective[slot].effective_clan_character_count,
+                    ),
                     ability: ability.disposition,
                     bonus: bonus.disposition,
                 },
@@ -503,6 +516,10 @@ fn prepare_combat_stat_cards(
                     key: card.key,
                     effective_clan_id: effective[slot].effective_clan_id,
                     source_bonus_support_count,
+                    source_ability_support_count: executable_ability_support_count(
+                        ability.compact_plan,
+                        effective[slot].effective_clan_character_count,
+                    ),
                     ability: ability.compact_plan,
                     bonus: bonus.compact_plan,
                 },
@@ -626,6 +643,24 @@ fn prepare_combat_stat_source(
         disposition: CombatStatProjectionDispositionV1::Disabled { identity, reason },
         compact_plan,
     })
+}
+
+fn executable_ability_support_count(
+    plan: CombatStatSourcePlanV1,
+    effective_clan_character_count: u16,
+) -> u16 {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ModifyCombatStat {
+                multiplier: CombatStatMagnitudeV1::SourceBonusSupport,
+                ..
+            },
+            ..
+        }
+    )
+    .then_some(effective_clan_character_count)
+    .unwrap_or(0)
 }
 
 fn is_capped_increase(input: &StructuredEffectV1) -> bool {

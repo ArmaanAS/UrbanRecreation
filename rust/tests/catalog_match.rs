@@ -98,6 +98,11 @@ fn effective_clans_cover_oculus_shapes_night_and_runtime_overrides_without_mutat
             .map(|card| card.effective.source_bonus_support_count),
         [4; 4]
     );
+    assert_eq!(
+        mono.each_ref()
+            .map(|card| card.effective.effective_clan_character_count),
+        [4; 4]
+    );
 
     let split = derive_catalog_hand(
         [
@@ -121,6 +126,12 @@ fn effective_clans_cover_oculus_shapes_night_and_runtime_overrides_without_mutat
         split
             .each_ref()
             .map(|card| card.effective.source_bonus_support_count),
+        [2; 4]
+    );
+    assert_eq!(
+        split
+            .each_ref()
+            .map(|card| card.effective.effective_clan_character_count),
         [2; 4]
     );
 
@@ -178,6 +189,26 @@ fn effective_clans_cover_oculus_shapes_night_and_runtime_overrides_without_mutat
     assert_eq!(
         multiple_oculus[2].bonus.as_ref().unwrap().description,
         "Damage +2"
+    );
+
+    // With O + A + A + B, Oculus infiltrates singleton B, leaving two effective
+    // clans with immutable character counts of two.
+    let oculus_singleton_infiltration = derive_catalog_hand(
+        [
+            CardKey::new(2302, 3),
+            CardKey::new(2548, 3),
+            CardKey::new(1584, 2),
+            CardKey::new(833, 4),
+        ],
+        false,
+        &catalog,
+    )
+    .unwrap();
+    assert_eq!(
+        oculus_singleton_infiltration
+            .each_ref()
+            .map(|card| card.effective.effective_clan_character_count),
+        [2; 4]
     );
 
     let day = derive_catalog_hand(
@@ -305,6 +336,112 @@ fn strict_catalog_match_separates_same_text_clans_and_executes_support() {
     assert_eq!(report.status, MatchStatus::Playing);
     game.unmake(undo);
     assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_derives_ability_support_independently_of_bonus_activity() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, fpc) = fully_supported_hands();
+
+    let oscar = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(549, 3),
+                CardKey::new(129, 2),
+                CardKey::new(130, 3),
+                CardKey::new(216, 4),
+            ],
+            fpc,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let oscar_card = &oscar.preparation()[PlayerId::P1][0];
+    assert_eq!(oscar_card.effective_clan_character_count, 4);
+    assert_eq!(oscar_card.source_ability_support_count, 4);
+    assert_eq!(oscar_card.source_bonus_support_count, 4);
+    let mut game = oscar.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 0, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 9);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+
+    let nantosuelte = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(2179, 3),
+                CardKey::new(1980, 2),
+                CardKey::new(1986, 3),
+                CardKey::new(2013, 2),
+            ],
+            fpc,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert_eq!(
+        nantosuelte.preparation()[PlayerId::P1][0].source_ability_support_count,
+        4
+    );
+    let mut game = nantosuelte.new_game();
+    let (report, _) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 0, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].attack, 13);
+
+    let taljion = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(727, 3),
+                CardKey::new(123, 1),
+                CardKey::new(138, 1),
+                CardKey::new(129, 2),
+            ],
+            fpc,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let taljion_card = &taljion.preparation()[PlayerId::P1][0];
+    assert_eq!(taljion_card.effective_clan_character_count, 1);
+    assert_eq!(taljion_card.source_ability_support_count, 1);
+    assert_eq!(taljion_card.source_bonus_support_count, 0);
+    let mut game = taljion.new_game();
+    let (report, _) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 0, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 9);
 }
 
 #[test]

@@ -10,8 +10,8 @@ use super::combat_stat_compiler::{
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
-    CombatStatPlanErrorV1, CombatStatPredicateV1, CombatStatSourcePlanV1, HandSlot, PlayerId,
-    HAND_SIZE,
+    CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatPlanErrorV1, CombatStatPredicateV1,
+    CombatStatSourcePlanV1, HandSlot, PlayerId, HAND_SIZE,
 };
 use crate::catalog::{
     CanonicalCard, CardCatalog, CardKey, EffectiveCardCatalog,
@@ -71,6 +71,9 @@ pub struct EffectiveCatalogCardV1 {
     /// The clan whose printed bonus is active for this card. `None` covers singleton
     /// bonuses, Leader, and Oculus draws where infiltration does not apply.
     pub active_bonus_clan_id: Option<u32>,
+    /// Distinct canonical character ids sharing this card's effective clan across the
+    /// immutable whole draw, including this card even when no bonus is active.
+    pub effective_clan_character_count: u16,
     pub source_bonus_support_count: u16,
 }
 
@@ -112,7 +115,9 @@ pub struct CatalogCombatStatCardPreparationV1 {
     pub key: CardKey,
     pub canonical_clan_id: u32,
     pub effective_clan_id: u32,
+    pub effective_clan_character_count: u16,
     pub source_bonus_support_count: u16,
+    pub source_ability_support_count: u16,
     pub ability: CatalogCombatStatSourceDispositionV1,
     pub bonus: CatalogCombatStatSourceDispositionV1,
 }
@@ -358,12 +363,21 @@ impl CatalogCombatStatMatchV1 {
                     ability: ability.compact,
                     bonus: bonus.compact,
                     source_bonus_support_count: effective.source_bonus_support_count,
+                    source_ability_support_count: executable_ability_support_count(
+                        ability.compact,
+                        effective.effective_clan_character_count,
+                    ),
                 });
                 metadata[player][index] = Some(CatalogCombatStatCardPreparationV1 {
                     key: card.key(),
                     canonical_clan_id: effective.canonical_clan_id,
                     effective_clan_id: effective.effective_clan_id,
+                    effective_clan_character_count: effective.effective_clan_character_count,
                     source_bonus_support_count: effective.source_bonus_support_count,
+                    source_ability_support_count: executable_ability_support_count(
+                        ability.compact,
+                        effective.effective_clan_character_count,
+                    ),
                     ability: ability.metadata,
                     bonus: bonus.metadata,
                 });
@@ -551,7 +565,7 @@ pub fn derive_effective_catalog_hand(
     });
     Ok(std::array::from_fn(|index| {
         let effective_clan_id = effective_clans[index];
-        let distinct = cards
+        let effective_clan_character_count = cards
             .iter()
             .enumerate()
             .filter(|(other, _)| effective_clans[*other] == effective_clan_id)
@@ -568,15 +582,38 @@ pub fn derive_effective_catalog_hand(
             .1 as u16;
         let has_bonus_source = effective_clan_id != LEADER_CLAN_ID
             && !(cards[index].clan_id == OCULUS_CLAN_ID && infiltrated_clan.is_none());
-        let active = has_bonus_source && distinct >= 2;
+        let active = has_bonus_source && effective_clan_character_count >= 2;
         EffectiveCatalogCardV1 {
             key: cards[index].key(),
             canonical_clan_id: cards[index].clan_id,
             effective_clan_id,
             active_bonus_clan_id: active.then_some(effective_clan_id),
-            source_bonus_support_count: if active { distinct } else { 0 },
+            effective_clan_character_count,
+            source_bonus_support_count: if active {
+                effective_clan_character_count
+            } else {
+                0
+            },
         }
     }))
+}
+
+fn executable_ability_support_count(
+    plan: CombatStatSourcePlanV1,
+    effective_clan_character_count: u16,
+) -> u16 {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ModifyCombatStat {
+                multiplier: CombatStatMagnitudeV1::SourceBonusSupport,
+                ..
+            },
+            ..
+        }
+    )
+    .then_some(effective_clan_character_count)
+    .unwrap_or(0)
 }
 
 fn validate_solver_hand(
