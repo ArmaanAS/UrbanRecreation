@@ -13,6 +13,7 @@
     "time": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 ./tests/IterTree.bench.ts",
     "rust:check": "cargo check --manifest-path rust/Cargo.toml --locked --all-features",
     "rust:test": "cargo test --manifest-path rust/Cargo.toml --locked",
+    "rust:advise": "cargo run --manifest-path rust/Cargo.toml --release --locked --bin urban-recreation-advisor --",
     "rust:legacy": "cargo run --manifest-path rust/Cargo.toml --locked --features legacy-advisor --bin urban-recreation-legacy"
   },
   "imports": {

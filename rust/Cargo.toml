@@ -34,3 +34,7 @@ debug = true
 name = "urban-recreation-legacy"
 path = "src/bin/legacy_advisor.rs"
 required-features = ["legacy-advisor"]
+
+[[bin]]
+name = "urban-recreation-advisor"
+path = "src/bin/advisor.rs"

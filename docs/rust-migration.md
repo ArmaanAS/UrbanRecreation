@@ -424,6 +424,21 @@ TypeScript search policy.
 
 ### 4. Port current solver semantics
 
+The first current-engine vertical slice landed on 2026-09-17. The
+`urban-recreation-advisor` binary loads canonical card/effect data through the strict
+catalog boundary, enumerates every legal current-round card/pillz/Fury pairing, resolves
+each sample with `CombatStatDiagnosticV1::make`/`unmake`, and renders a bounded ANSI/plain
+terminal ranking. The default supported demo evaluates 8,464 pairings in a few milliseconds
+in a warmed release build. First- and second-mover matrices, deadline cutoffs, deterministic
+visible-percent ranking, root restoration, clipping, and ANSI/plain equivalence are tested.
+
+This is a usable integration checkpoint, not solver parity. It uses a clearly labelled
+one-round position heuristic after nonterminal rounds, samples current hidden choices
+uniformly, accepts manual exact-card input rather than live capture state, and only admits
+the engine's current fail-closed effect subset. Do not compare its displayed score or
+runtime with the TypeScript continuation-policy solver as though they were the same
+algorithm.
+
 Do not revive the old perfect-information recommendation model as the live advisor. Port
 the current TypeScript behavior deliberately:
 

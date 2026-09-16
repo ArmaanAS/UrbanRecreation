@@ -8,8 +8,9 @@ The repository contains two implementations:
 - The Deno + TypeScript engine at the repository root is the current reference. It owns
   live capture, canonical card data, replay tests, and the working advisor.
 - The Rust implementation in [`rust/`](rust/) is being brought back to parity as a
-  candidate high-performance engine and solver backend. Its old advisor remains available
-  for archaeology, but it is not yet a replacement for the TypeScript advisor.
+  candidate high-performance engine and solver backend. It now has an experimental
+  current-engine advisor for strict supported draws; the TypeScript advisor remains the
+  live, full-policy reference.
 
 Keeping both implementations here lets them share the same card data and captured games.
 It also makes every parity change reviewable beside the server-backed reference that
@@ -25,7 +26,7 @@ motivated it.
 | `data/` | Canonical card data, with one row per card level. |
 | `captures/games/` | Redacted real-game records used as ground truth. |
 | `tests/` | TypeScript engine, solver, replay, and cross-check tests. |
-| `rust/` | Rust library and opt-in historical advisor. |
+| `rust/` | Rust library, experimental current-engine advisor, and opt-in historical advisor. |
 
 See [`AGENTS.md`](AGENTS.md) for the detailed code map and
 [`docs/rust-migration.md`](docs/rust-migration.md) for the parity plan and source-of-truth
@@ -59,7 +60,15 @@ The normal Rust build is a library and does not compile the historical HTTP advi
 ```bash
 deno task rust:check
 deno task rust:test
+deno task rust:advise --plain
 ```
+
+`rust:advise` defaults to a deterministic supported demo and accepts exact `id:level`
+hands; run `deno task rust:advise --help` for the complete interface. It resolves the real
+current Rust engine's complete current-round matrix with make/unmake and renders a bounded
+terminal ranking. This first vertical slice is deliberately labelled as a one-round
+heuristic: it does not yet ingest the live capture stream or implement the TypeScript
+continuation policy.
 
 To inspect the old advisor explicitly:
 

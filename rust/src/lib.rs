@@ -1,4 +1,5 @@
 pub mod ability;
+pub mod advisor;
 pub mod battle;
 pub mod card;
 pub mod catalog;

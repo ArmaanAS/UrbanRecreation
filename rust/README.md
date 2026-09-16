@@ -1,8 +1,11 @@
 # UrbanRecreation — Rust
 
-This is a Rust port of the [UrbanRecreation TypeScript engine](https://github.com/ArmaanAS/UrbanRecreation). It is now exposed as a library so the engine and solvers can be tested and embedded without starting the original web server and command-line advisor.
+This is a Rust port of the [UrbanRecreation TypeScript engine](https://github.com/ArmaanAS/UrbanRecreation). It is exposed as a library so the engine and solvers can be tested and embedded without starting the original web server and command-line advisor.
 
-The Rust port does _not_ include the TypeScript ability compiler. It currently relies on the precompiled card and ability data checked into `assets/`.
+The current parity engine reads the repository's canonical `data/` and `captures/` inputs
+and fails closed on effects it has not implemented. The older engine still uses the
+precompiled files under `assets/`; those files are an historical baseline, not a current
+source of truth.
 
 ## Tests and historical baseline
 
@@ -26,7 +29,32 @@ unsigned arithmetic behaves differently with debug overflow checks. The baseline
 does not claim game-rule parity or validate solver decisions; future engine fixes
 must review deliberate baseline changes against captured real games.
 
-## Basic Usage
+## Current experimental advisor
+
+From the repository root, run the strict supported demo:
+
+```sh
+deno task rust:advise --plain
+```
+
+The same executable accepts exact card identities and levels:
+
+```sh
+cargo run --release --locked --manifest-path rust/Cargo.toml \
+  --bin urban-recreation-advisor -- \
+  --p1 123:1,124:1,138:1,139:1 \
+  --p2 441:1,444:1,445:1,447:1 --plain
+```
+
+Run `deno task rust:advise --help` for first/second-mover, night, budget, and terminal-size
+options. Construction goes through `CatalogCombatStatMatchV1`, so an unsupported card
+effect produces an error instead of a plausible-looking wrong recommendation. The search
+uses real engine make/unmake over every legal current-round pairing and the TUI shows both
+the average and worst sampled result. Nonterminal continuations currently use a bounded
+one-round heuristic; live capture, captured opening weights, and the TypeScript conservative
+continuation policy remain to be ported.
+
+## Historical engine usage
 
 Define 2 hands of 4 cards, either from their names or card ids:
 
