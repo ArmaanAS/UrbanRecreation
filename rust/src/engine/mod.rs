@@ -2,14 +2,18 @@
 //!
 //! This module intentionally lives alongside the frozen historical implementation.
 //! `BaseRulesGame` remains the effect-free reference, while the separately re-exported
-//! `ClanBonusDiagnostic` is an explicit projected slice rather than a full-effects engine.
+//! `ClanBonusDiagnostic` and `CombatStatDiagnosticV1` are explicit projected slices rather
+//! than claims of a full-effects engine.
 
 use crate::catalog::CardKey;
 use std::error::Error;
 use std::fmt;
 
 mod clan_bonus_diagnostic;
+mod combat_resolution;
 pub use clan_bonus_diagnostic::*;
+mod combat_stat_diagnostic;
+pub use combat_stat_diagnostic::*;
 
 pub const HAND_SIZE: usize = 4;
 pub const MAX_ROUNDS: u8 = 4;

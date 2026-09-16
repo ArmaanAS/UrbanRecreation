@@ -3,10 +3,14 @@
 //! This module owns compact effect plans and hot-path resolution. Capture-specific
 //! preparation and rich disposition metadata live in the replay diagnostic module.
 
+use super::combat_resolution::{
+    prepare_combat_resolution, CombatResolutionArithmeticStage, CombatResolutionError,
+    ResolutionCardPlan, ResolutionSourcePlan,
+};
 use super::{
-    BaseRulesCardResult, BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition,
-    BaseRulesRoundInput, BaseRulesRoundReport, BaseRulesUndo, ByPlayer, HandSlot, PlayerId,
-    PreparedSelection, ValidatedSelection, FURY_DAMAGE, HAND_SIZE,
+    BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
+    BaseRulesRoundReport, BaseRulesUndo, ByPlayer, HandSlot, PlayerId, PreparedSelection,
+    ValidatedSelection, HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -496,36 +500,6 @@ fn reject_selected_control(
     }
 }
 
-#[derive(Clone, Copy, Default)]
-struct DiagnosticCancellationMask {
-    attack: bool,
-    damage: bool,
-    power: bool,
-}
-
-impl DiagnosticCancellationMask {
-    fn insert(&mut self, stat: DiagnosticCombatStatV1) {
-        match stat {
-            DiagnosticCombatStatV1::Attack => self.attack = true,
-            DiagnosticCombatStatV1::Damage => self.damage = true,
-            DiagnosticCombatStatV1::Power => self.power = true,
-            DiagnosticCombatStatV1::PowerAndDamage => {
-                self.power = true;
-                self.damage = true;
-            }
-        }
-    }
-
-    fn contains(self, stat: DiagnosticCombatStatV1) -> bool {
-        match stat {
-            DiagnosticCombatStatV1::Attack => self.attack,
-            DiagnosticCombatStatV1::Damage => self.damage,
-            DiagnosticCombatStatV1::Power => self.power,
-            DiagnosticCombatStatV1::PowerAndDamage => self.power || self.damage,
-        }
-    }
-}
-
 fn executing_effect(plan: DiagnosticSourcePlanV1) -> Option<DiagnosticCombatEffectV1> {
     match plan {
         DiagnosticSourcePlanV1::Execute { effect, .. } => Some(effect),
@@ -535,388 +509,41 @@ fn executing_effect(plan: DiagnosticSourcePlanV1) -> Option<DiagnosticCombatEffe
     }
 }
 
-fn is_stop_bonus(effect: Option<DiagnosticCombatEffectV1>) -> bool {
-    matches!(effect, Some(DiagnosticCombatEffectV1::StopOpponentBonus))
-}
-
-fn add_cancellation(
-    mask: &mut DiagnosticCancellationMask,
-    effect: Option<DiagnosticCombatEffectV1>,
-) {
-    if let Some(DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers { stat }) = effect {
-        mask.insert(stat);
-    }
-}
-
 fn prepare_clan_bonus_diagnostic(
     validated: ByPlayer<ValidatedSelection>,
     cards: &ByPlayer<[DiagnosticCardPlanV1; HAND_SIZE]>,
 ) -> Result<ByPlayer<PreparedSelection>, ClanBonusDiagnosticError> {
     let selected_plans = ByPlayer::new(
-        cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
-        cards[PlayerId::P2][validated[PlayerId::P2].slot.index()],
+        resolution_card_plan(cards[PlayerId::P1][validated[PlayerId::P1].slot.index()]),
+        resolution_card_plan(cards[PlayerId::P2][validated[PlayerId::P2].slot.index()]),
     );
-    let mut bonus_live = ByPlayer::new(
-        executing_effect(selected_plans[PlayerId::P1].bonus).is_some(),
-        executing_effect(selected_plans[PlayerId::P2].bonus).is_some(),
-    );
-
-    // Ability-origin Stop Bonus is outside the bonus-vs-bonus dependency and therefore
-    // resolves first in this deliberately narrow projection.
-    for player in PlayerId::ALL {
-        if is_stop_bonus(executing_effect(selected_plans[player].ability)) {
-            bonus_live[player.other()] = false;
-        }
-    }
-
-    // Surviving bonus-origin Stop Bonus is simultaneous. Snapshot before applying either
-    // result so player iteration order cannot change a mutual Stop Bonus outcome.
-    let bonus_stops = ByPlayer::new(
-        bonus_live[PlayerId::P1]
-            && is_stop_bonus(executing_effect(selected_plans[PlayerId::P1].bonus)),
-        bonus_live[PlayerId::P2]
-            && is_stop_bonus(executing_effect(selected_plans[PlayerId::P2].bonus)),
-    );
-    if bonus_stops[PlayerId::P1] {
-        bonus_live[PlayerId::P2] = false;
-    }
-    if bonus_stops[PlayerId::P2] {
-        bonus_live[PlayerId::P1] = false;
-    }
-
-    let mut cancellations = ByPlayer::new(
-        DiagnosticCancellationMask::default(),
-        DiagnosticCancellationMask::default(),
-    );
-    for player in PlayerId::ALL {
-        add_cancellation(
-            &mut cancellations[player],
-            executing_effect(selected_plans[player].ability),
-        );
-        if bonus_live[player] {
-            add_cancellation(
-                &mut cancellations[player],
-                executing_effect(selected_plans[player].bonus),
-            );
-        }
-    }
-
-    let mut power = ByPlayer::new(
-        validated[PlayerId::P1].card.power,
-        validated[PlayerId::P2].card.power,
-    );
-    let mut damage = ByPlayer::new(
-        validated[PlayerId::P1].card.damage,
-        validated[PlayerId::P2].card.damage,
-    );
-
-    // Own Power/Damage bonuses resolve before opponent reductions and their Min clamps.
-    for origin in PlayerId::ALL {
-        if bonus_live[origin] {
-            apply_power_damage_effect(
-                origin,
-                DiagnosticAffectedSideV1::Player,
-                DiagnosticStatOperationV1::Increase,
-                executing_effect(selected_plans[origin].bonus),
-                selected_plans[origin].source_bonus_support_count,
-                cancellations[origin.other()],
-                &mut power,
-                &mut damage,
-            )?;
-        }
-    }
-    for origin in PlayerId::ALL {
-        if bonus_live[origin] {
-            apply_power_damage_effect(
-                origin,
-                DiagnosticAffectedSideV1::Opponent,
-                DiagnosticStatOperationV1::Decrease,
-                executing_effect(selected_plans[origin].bonus),
-                selected_plans[origin].source_bonus_support_count,
-                cancellations[origin.other()],
-                &mut power,
-                &mut damage,
-            )?;
-        }
-    }
-
-    // The server and current TypeScript engine add Fury after damage modifiers.
-    for player in PlayerId::ALL {
-        if validated[player].selection.fury {
-            damage[player] = damage[player].checked_add(FURY_DAMAGE).ok_or(
-                ClanBonusDiagnosticError::ArithmeticOverflow {
-                    player,
-                    stage: DiagnosticArithmeticStageV1::Damage,
-                },
-            )?;
-        }
-    }
-
-    let mut attack = ByPlayer::new(0_u32, 0_u32);
-    for player in PlayerId::ALL {
-        attack[player] = u32::from(power[player])
-            .checked_mul(u32::from(validated[player].selection.pillz) + 1)
-            .ok_or(ClanBonusDiagnosticError::ArithmeticOverflow {
-                player,
-                stage: DiagnosticArithmeticStageV1::Attack,
-            })?;
-    }
-    for origin in PlayerId::ALL {
-        if bonus_live[origin] {
-            apply_attack_effect(
-                origin,
-                DiagnosticAffectedSideV1::Player,
-                DiagnosticStatOperationV1::Increase,
-                executing_effect(selected_plans[origin].bonus),
-                selected_plans[origin].source_bonus_support_count,
-                cancellations[origin.other()],
-                &mut attack,
-            )?;
-        }
-    }
-    for origin in PlayerId::ALL {
-        if bonus_live[origin] {
-            apply_attack_effect(
-                origin,
-                DiagnosticAffectedSideV1::Opponent,
-                DiagnosticStatOperationV1::Decrease,
-                executing_effect(selected_plans[origin].bonus),
-                selected_plans[origin].source_bonus_support_count,
-                cancellations[origin.other()],
-                &mut attack,
-            )?;
-        }
-    }
-
-    Ok(ByPlayer::new(
-        finish_diagnostic_selection(
-            validated[PlayerId::P1],
-            power[PlayerId::P1],
-            damage[PlayerId::P1],
-            attack[PlayerId::P1],
-        ),
-        finish_diagnostic_selection(
-            validated[PlayerId::P2],
-            power[PlayerId::P2],
-            damage[PlayerId::P2],
-            attack[PlayerId::P2],
-        ),
-    ))
+    prepare_combat_resolution(validated, selected_plans).map_err(map_resolution_error)
 }
 
-fn finish_diagnostic_selection(
-    selected: ValidatedSelection,
-    power: u16,
-    damage: u16,
-    attack: u32,
-) -> PreparedSelection {
-    PreparedSelection {
-        slot: selected.slot,
-        cost: selected.cost,
-        card: selected.card,
-        result: BaseRulesCardResult {
-            key: selected.card.key,
-            hand_slot: selected.slot,
-            power,
-            damage,
-            attack,
-            won: false,
+fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {
+    ResolutionCardPlan {
+        ability: ResolutionSourcePlan {
+            effect: executing_effect(plan.ability),
+            support_count: 0,
+        },
+        bonus: ResolutionSourcePlan {
+            effect: executing_effect(plan.bonus),
+            support_count: plan.source_bonus_support_count,
         },
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn apply_power_damage_effect(
-    origin: PlayerId,
-    expected_side: DiagnosticAffectedSideV1,
-    expected_operation: DiagnosticStatOperationV1,
-    effect: Option<DiagnosticCombatEffectV1>,
-    support_count: u16,
-    opponent_cancellation: DiagnosticCancellationMask,
-    power: &mut ByPlayer<u16>,
-    damage: &mut ByPlayer<u16>,
-) -> Result<(), ClanBonusDiagnosticError> {
-    let Some(DiagnosticCombatEffectV1::ModifyCombatStat {
-        side,
-        stat,
-        operation,
-        value,
-        minimum,
-        maximum,
-        multiplier,
-    }) = effect
-    else {
-        return Ok(());
-    };
-    if side != expected_side || operation != expected_operation {
-        return Ok(());
-    }
-    let affects_power = matches!(
-        stat,
-        DiagnosticCombatStatV1::Power | DiagnosticCombatStatV1::PowerAndDamage
-    );
-    let affects_damage = matches!(
-        stat,
-        DiagnosticCombatStatV1::Damage | DiagnosticCombatStatV1::PowerAndDamage
-    );
-    if !affects_power && !affects_damage {
-        return Ok(());
-    }
-    let target = if side == DiagnosticAffectedSideV1::Player {
-        origin
-    } else {
-        origin.other()
-    };
-    let amount = diagnostic_effect_amount(origin, value, multiplier, support_count)?;
-    if affects_power && !opponent_cancellation.contains(DiagnosticCombatStatV1::Power) {
-        power[target] = apply_u16_modifier(
-            origin,
-            DiagnosticArithmeticStageV1::Power,
-            power[target],
-            operation,
-            amount,
-            minimum,
-            maximum,
-        )?;
-    }
-    if affects_damage && !opponent_cancellation.contains(DiagnosticCombatStatV1::Damage) {
-        damage[target] = apply_u16_modifier(
-            origin,
-            DiagnosticArithmeticStageV1::Damage,
-            damage[target],
-            operation,
-            amount,
-            minimum,
-            maximum,
-        )?;
-    }
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn apply_attack_effect(
-    origin: PlayerId,
-    expected_side: DiagnosticAffectedSideV1,
-    expected_operation: DiagnosticStatOperationV1,
-    effect: Option<DiagnosticCombatEffectV1>,
-    support_count: u16,
-    opponent_cancellation: DiagnosticCancellationMask,
-    attack: &mut ByPlayer<u32>,
-) -> Result<(), ClanBonusDiagnosticError> {
-    let Some(DiagnosticCombatEffectV1::ModifyCombatStat {
-        side,
-        stat: DiagnosticCombatStatV1::Attack,
-        operation,
-        value,
-        minimum,
-        maximum,
-        multiplier,
-    }) = effect
-    else {
-        return Ok(());
-    };
-    if side != expected_side
-        || operation != expected_operation
-        || opponent_cancellation.contains(DiagnosticCombatStatV1::Attack)
-    {
-        return Ok(());
-    }
-    let target = if side == DiagnosticAffectedSideV1::Player {
-        origin
-    } else {
-        origin.other()
-    };
-    let amount = diagnostic_effect_amount(origin, value, multiplier, support_count)?;
-    attack[target] = apply_u32_modifier(
-        origin,
-        attack[target],
-        operation,
-        amount,
-        minimum.map(u32::from),
-        maximum.map(u32::from),
-    )?;
-    Ok(())
-}
-
-fn diagnostic_effect_amount(
-    player: PlayerId,
-    value: u16,
-    multiplier: DiagnosticMagnitudeV1,
-    support_count: u16,
-) -> Result<u32, ClanBonusDiagnosticError> {
-    let multiplier = match multiplier {
-        DiagnosticMagnitudeV1::Fixed => 1,
-        DiagnosticMagnitudeV1::SourceBonusSupport => u32::from(support_count),
-    };
-    u32::from(value)
-        .checked_mul(multiplier)
-        .ok_or(ClanBonusDiagnosticError::ArithmeticOverflow {
-            player,
-            stage: DiagnosticArithmeticStageV1::EffectMagnitude,
-        })
-}
-
-fn apply_u16_modifier(
-    player: PlayerId,
-    stage: DiagnosticArithmeticStageV1,
-    current: u16,
-    operation: DiagnosticStatOperationV1,
-    amount: u32,
-    minimum: Option<u16>,
-    maximum: Option<u16>,
-) -> Result<u16, ClanBonusDiagnosticError> {
-    let current = u32::from(current);
-    let next = match operation {
-        DiagnosticStatOperationV1::Increase => match maximum.map(u32::from) {
-            Some(maximum) if current < maximum => current
-                .checked_add(amount)
-                .ok_or(ClanBonusDiagnosticError::ArithmeticOverflow { player, stage })?
-                .min(maximum),
-            Some(_) => current,
-            None => current
-                .checked_add(amount)
-                .ok_or(ClanBonusDiagnosticError::ArithmeticOverflow { player, stage })?,
-        },
-        DiagnosticStatOperationV1::Decrease => match minimum.map(u32::from) {
-            Some(minimum) if current > minimum => current.saturating_sub(amount).max(minimum),
-            Some(_) => current,
-            None => current.saturating_sub(amount),
-        },
-    };
-    u16::try_from(next).map_err(|_| ClanBonusDiagnosticError::ArithmeticOverflow { player, stage })
-}
-
-fn apply_u32_modifier(
-    player: PlayerId,
-    current: u32,
-    operation: DiagnosticStatOperationV1,
-    amount: u32,
-    minimum: Option<u32>,
-    maximum: Option<u32>,
-) -> Result<u32, ClanBonusDiagnosticError> {
-    match operation {
-        DiagnosticStatOperationV1::Increase => {
-            match maximum {
-                Some(maximum) if current < maximum => current
-                    .checked_add(amount)
-                    .ok_or(ClanBonusDiagnosticError::ArithmeticOverflow {
-                        player,
-                        stage: DiagnosticArithmeticStageV1::Attack,
-                    })
-                    .map(|value| value.min(maximum)),
-                Some(_) => Ok(current),
-                None => current.checked_add(amount).ok_or(
-                    ClanBonusDiagnosticError::ArithmeticOverflow {
-                        player,
-                        stage: DiagnosticArithmeticStageV1::Attack,
-                    },
-                ),
-            }
+fn map_resolution_error(error: CombatResolutionError) -> ClanBonusDiagnosticError {
+    let stage = match error.stage {
+        CombatResolutionArithmeticStage::EffectMagnitude => {
+            DiagnosticArithmeticStageV1::EffectMagnitude
         }
-        DiagnosticStatOperationV1::Decrease => Ok(match minimum {
-            Some(minimum) if current > minimum => current.saturating_sub(amount).max(minimum),
-            Some(_) => current,
-            None => current.saturating_sub(amount),
-        }),
+        CombatResolutionArithmeticStage::Power => DiagnosticArithmeticStageV1::Power,
+        CombatResolutionArithmeticStage::Damage => DiagnosticArithmeticStageV1::Damage,
+        CombatResolutionArithmeticStage::Attack => DiagnosticArithmeticStageV1::Attack,
+    };
+    ClanBonusDiagnosticError::ArithmeticOverflow {
+        player: error.player,
+        stage,
     }
 }
