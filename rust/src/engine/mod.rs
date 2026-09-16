@@ -172,6 +172,10 @@ pub struct BaseRulesPosition {
     pub players: ByPlayer<BaseRulesPlayerState>,
     pub played: ByPlayer<[bool; HAND_SIZE]>,
     pub rounds_played: u8,
+    /// Winner of the completed round immediately before this position, if any.
+    /// This is part of the structural position so temporal predicates and future
+    /// transposition keys cannot conflate otherwise identical states.
+    pub previous_round_winner: Option<PlayerId>,
     pub status: MatchStatus,
 }
 
@@ -343,6 +347,7 @@ impl BaseRulesGame {
                 players,
                 played: ByPlayer::new([false; HAND_SIZE], [false; HAND_SIZE]),
                 rounds_played: 0,
+                previous_round_winner: None,
                 status,
             },
         }
@@ -397,6 +402,7 @@ impl BaseRulesGame {
             .life
             .saturating_sub(prepared[winner].result.damage);
         self.position.rounds_played += 1;
+        self.position.previous_round_winner = Some(winner);
         self.position.status = status_after_round(&self.position);
 
         let mut results = prepared.map(|selection| selection.result);

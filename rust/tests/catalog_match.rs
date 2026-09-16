@@ -1,3 +1,5 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use urban_recreation_rust::catalog::{CardKey, EffectiveCardCatalog};
@@ -8,8 +10,8 @@ use urban_recreation_rust::engine::{
     derive_catalog_hand, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
     CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1, CatalogCombatStatMatchV1,
     CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-    CatalogCombatStatSourceDispositionV1, CombatStatEffectSourceV1, CombatStatSourcePlanV1,
-    EffectiveCatalogHandErrorV1, MatchStatus, PlayerId,
+    CatalogCombatStatSourceDispositionV1, CombatStatEffectSourceV1, CombatStatPredicateV1,
+    CombatStatSourcePlanV1, EffectiveCatalogHandErrorV1, MatchStatus, PlayerId,
     CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
 };
 use urban_recreation_rust::replay::{
@@ -68,6 +70,12 @@ fn fully_supported_hands() -> ([CardKey; 4], [CardKey; 4]) {
             CardKey::new(447, 1),
         ],
     )
+}
+
+fn position_hash(position: &urban_recreation_rust::engine::BaseRulesPosition) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    position.hash(&mut hasher);
+    hasher.finish()
 }
 
 #[test]
@@ -442,6 +450,75 @@ fn strict_catalog_match_derives_ability_support_independently_of_bonus_activity(
         })
         .unwrap();
     assert_eq!(report.cards[PlayerId::P1].attack, 9);
+}
+
+#[test]
+fn strict_catalog_match_executes_confidence_after_its_owner_wins() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, p2) = fully_supported_hands();
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(701, 3),  // Wesley
+                CardKey::new(1707, 3), // Callie
+                CardKey::new(1089, 2), // Sue
+                CardKey::new(549, 3),  // Oscar
+            ],
+            p2,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][0].ability,
+        CatalogCombatStatSourceDispositionV1::Execute {
+            predicate: CombatStatPredicateV1::OwnerWonPreviousRound,
+            ..
+        }
+    ));
+
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let before_hash = position_hash(&before);
+    let (first, undo_first) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(1, 2, false), // Callie
+                BaseRulesSelection::new(1, 0, false), // Slyde Cr
+            ),
+        })
+        .unwrap();
+    assert_eq!(first.cards[PlayerId::P1].key, CardKey::new(1707, 3));
+    assert_eq!(first.cards[PlayerId::P2].key, CardKey::new(444, 1));
+    assert!(first.cards[PlayerId::P1].won);
+    let after_first = game.position().clone();
+    let after_first_hash = position_hash(&after_first);
+
+    let (second, undo_second) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P2,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 3, false), // Wesley
+                BaseRulesSelection::new(0, 0, false), // Lea
+            ),
+        })
+        .unwrap();
+    assert_eq!(second.cards[PlayerId::P1].key, CardKey::new(701, 3));
+    assert_eq!(second.cards[PlayerId::P2].key, CardKey::new(441, 1));
+    // Lea's printed Power 5 is reduced by Wesley's active Confidence to its Min 4.
+    assert_eq!(second.cards[PlayerId::P2].power, 4);
+
+    game.unmake(undo_second);
+    assert_eq!(game.position(), &after_first);
+    assert_eq!(position_hash(game.position()), after_first_hash);
+    game.unmake(undo_first);
+    assert_eq!(game.position(), &before);
+    assert_eq!(position_hash(game.position()), before_hash);
 }
 
 #[test]

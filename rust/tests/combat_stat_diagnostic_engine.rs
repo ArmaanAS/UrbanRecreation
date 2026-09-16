@@ -175,6 +175,125 @@ fn courage_and_reprisal_use_explicit_owner_relative_first_mover() {
 }
 
 #[test]
+fn confidence_and_revenge_are_owner_relative_and_restore_through_undo() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    for slot in 0..2 {
+        cards[PlayerId::P1][slot].ability = execute(
+            560,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            own(CombatStatAttributeV1::Power, 2),
+        );
+        cards[PlayerId::P2][slot].ability = execute(
+            463,
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+            own(CombatStatAttributeV1::Damage, 2),
+        );
+    }
+    let mut game = game(base, cards);
+    let before = game.position().clone();
+    let before_hash = position_hash(&before);
+
+    // Neither predicate has a predecessor in round zero, even though P1 moves first.
+    let (first, undo_first) = game
+        .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(first.cards[PlayerId::P1].power, 6);
+    assert_eq!(first.cards[PlayerId::P2].damage, 3);
+    assert_eq!(game.position().previous_round_winner, Some(PlayerId::P1));
+    let after_first = game.position().clone();
+    let after_first_hash = position_hash(&after_first);
+
+    // First mover is deliberately P2 now: prior outcome is owner-relative, not turn-relative.
+    let (second, undo_second) = game
+        .make(input(PlayerId::P2, (1, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.cards[PlayerId::P1].power, 8);
+    assert_eq!(second.cards[PlayerId::P2].damage, 5);
+    assert_eq!(game.position().previous_round_winner, Some(PlayerId::P1));
+
+    game.unmake(undo_second);
+    assert_eq!(game.position(), &after_first);
+    assert_eq!(position_hash(game.position()), after_first_hash);
+    game.unmake(undo_first);
+    assert_eq!(game.position(), &before);
+    assert_eq!(position_hash(game.position()), before_hash);
+}
+
+#[test]
+fn confidence_and_revenge_follow_the_other_owner_after_a_loss() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    for slot in 0..2 {
+        cards[PlayerId::P1][slot].ability = execute(
+            463,
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+            own(CombatStatAttributeV1::Damage, 2),
+        );
+        cards[PlayerId::P2][slot].ability = execute(
+            560,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            own(CombatStatAttributeV1::Power, 2),
+        );
+    }
+    let mut game = game(base, cards);
+    let (_, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 1, false)))
+        .unwrap();
+    assert_eq!(game.position().previous_round_winner, Some(PlayerId::P2));
+
+    let (report, _) = game
+        .make(input(PlayerId::P1, (1, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].damage, 5);
+    assert_eq!(report.cards[PlayerId::P2].power, 8);
+}
+
+#[test]
+fn previous_round_fixed_bonus_is_inactive_then_active_and_stop_bonus_can_suppress_it() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    for slot in 0..2 {
+        cards[PlayerId::P1][slot].bonus = execute(
+            801,
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+            own(CombatStatAttributeV1::PowerAndDamage, 2),
+        );
+        // Every card has a distinct effective clan in this synthetic draw.
+        cards[PlayerId::P1][slot].source_bonus_support_count = 1;
+    }
+
+    let mut active = game(base.clone(), cards.clone());
+    let (first, _) = active
+        .make(input(PlayerId::P1, (0, 0, false), (0, 1, false)))
+        .unwrap();
+    assert_eq!(first.cards[PlayerId::P1].power, 6);
+    assert_eq!(first.cards[PlayerId::P1].damage, 3);
+    assert_eq!(active.position().previous_round_winner, Some(PlayerId::P2));
+    let (second, _) = active
+        .make(input(PlayerId::P1, (1, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.cards[PlayerId::P1].power, 8);
+    assert_eq!(second.cards[PlayerId::P1].damage, 5);
+
+    let mut stopped_cards = cards;
+    stopped_cards[PlayerId::P2][1].ability = execute(
+        40,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    let mut stopped = game(base, stopped_cards);
+    stopped
+        .make(input(PlayerId::P1, (0, 0, false), (0, 1, false)))
+        .unwrap();
+    let (report, _) = stopped
+        .make(input(PlayerId::P1, (1, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 6);
+    assert_eq!(report.cards[PlayerId::P1].damage, 3);
+}
+
+#[test]
 fn symmetry_and_asymmetry_compare_immutable_hand_slots_for_both_players() {
     for p1_slot in 0..4 {
         for p2_slot in 0..4 {
@@ -954,6 +1073,14 @@ fn impossible_execute_plans_fail_at_construction() {
         ),
         (
             execute(
+                41,
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+                CombatStatEffectV1::StopOpponentBonus,
+            ),
+            InvalidCombatStatPlanReasonV1::ConditionalControl,
+        ),
+        (
+            execute(
                 5,
                 CombatStatPredicateV1::OwnerMovesFirst,
                 modifier(
@@ -980,6 +1107,22 @@ fn impossible_execute_plans_fail_at_construction() {
                     None,
                     None,
                     CombatStatMagnitudeV1::OpponentStars,
+                ),
+            ),
+            InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,
+        ),
+        (
+            execute(
+                61,
+                CombatStatPredicateV1::OwnerLostPreviousRound,
+                modifier(
+                    CombatStatAffectedSideV1::Player,
+                    CombatStatAttributeV1::Power,
+                    CombatStatOperationV1::Increase,
+                    1,
+                    None,
+                    None,
+                    CombatStatMagnitudeV1::Growth,
                 ),
             ),
             InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,
@@ -1080,6 +1223,21 @@ fn impossible_execute_plans_fail_at_construction() {
         })
     ));
 
+    let mut previous_round_fixed_bonus = plans(&base);
+    previous_round_fixed_bonus[PlayerId::P1][0].bonus = execute(
+        71,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    previous_round_fixed_bonus[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards: previous_round_fixed_bonus,
+        })
+        .is_ok()
+    );
+
     let mut conditional_support_bonus = plans(&base);
     conditional_support_bonus[PlayerId::P1][0].bonus = execute(
         8,
@@ -1099,6 +1257,33 @@ fn impossible_execute_plans_fail_at_construction() {
         CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
             base_rules: base.clone(),
             cards: conditional_support_bonus,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            source: CombatStatEffectSourceV1::Bonus,
+            reason: InvalidCombatStatPlanReasonV1::ConditionalBonus,
+            ..
+        })
+    ));
+
+    let mut previous_round_support_bonus = plans(&base);
+    previous_round_support_bonus[PlayerId::P1][0].bonus = execute(
+        81,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Attack,
+            CombatStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    previous_round_support_bonus[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards: previous_round_support_bonus,
         }),
         Err(CombatStatPlanErrorV1::InvalidExecute {
             source: CombatStatEffectSourceV1::Bonus,

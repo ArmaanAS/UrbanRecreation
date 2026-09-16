@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 6;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 7;
 
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
@@ -30,6 +30,9 @@ pub(crate) fn classify_combat_stat_effect(
         return Some(classified);
     }
     if let Some(classified) = classify_position_numeric(definition, source_kind) {
+        return Some(classified);
+    }
+    if let Some(classified) = classify_previous_round_numeric(definition, source_kind) {
         return Some(classified);
     }
     if let Some(classified) = classify_index_numeric(definition) {
@@ -116,6 +119,26 @@ fn classify_index_numeric(
     }
     let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     index_description_matches(definition.description(), predicate, effect)
+        .then_some((effect, predicate))
+}
+
+fn classify_previous_round_numeric(
+    definition: &EffectDefinitionV1,
+    _source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    // This exact fixed numeric Confidence/Revenge grammar is observed for both card
+    // abilities and bonuses. Other temporal bonus shapes remain outside the projection.
+    let input = definition.structured_input();
+    let predicate = match input.previous_round_requirement {
+        PreviousRoundRequirementV1::Win => CombatStatPredicateV1::OwnerWonPreviousRound,
+        PreviousRoundRequirementV1::Lose => CombatStatPredicateV1::OwnerLostPreviousRound,
+        PreviousRoundRequirementV1::Any => return None,
+    };
+    if !neutral_except_previous_round(input) {
+        return None;
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
+    previous_round_description_matches(definition.description(), predicate, effect)
         .then_some((effect, predicate))
 }
 
@@ -286,6 +309,30 @@ fn neutral_except_index(input: &StructuredEffectV1) -> bool {
         && !input.is_immediate_permanent
 }
 
+fn neutral_except_previous_round(input: &StructuredEffectV1) -> bool {
+    input.position_requirement == PositionRequirementV1::Both
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
 fn position_description_matches(
     description: &str,
     predicate: CombatStatPredicateV1,
@@ -295,6 +342,8 @@ fn position_description_matches(
         CombatStatPredicateV1::OwnerMovesFirst => "Courage: ",
         CombatStatPredicateV1::OwnerMovesSecond => "Reprisal: ",
         CombatStatPredicateV1::Always
+        | CombatStatPredicateV1::OwnerWonPreviousRound
+        | CombatStatPredicateV1::OwnerLostPreviousRound
         | CombatStatPredicateV1::SelectedHandSlotsMatch
         | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
     };
@@ -315,13 +364,36 @@ fn index_description_matches(
         CombatStatPredicateV1::SelectedHandSlotsDiffer => "Asymmetry: ",
         CombatStatPredicateV1::Always
         | CombatStatPredicateV1::OwnerMovesFirst
-        | CombatStatPredicateV1::OwnerMovesSecond => return false,
+        | CombatStatPredicateV1::OwnerMovesSecond
+        | CombatStatPredicateV1::OwnerWonPreviousRound
+        | CombatStatPredicateV1::OwnerLostPreviousRound => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
         effect,
         MagnitudeMultiplierV1::Fixed,
     )
+}
+
+fn previous_round_description_matches(
+    description: &str,
+    predicate: CombatStatPredicateV1,
+    effect: SupportedEffectV1,
+) -> bool {
+    let body = match predicate {
+        CombatStatPredicateV1::OwnerWonPreviousRound => description
+            .strip_prefix("Confidence: ")
+            .or_else(|| description.strip_prefix("Confidence : ")),
+        CombatStatPredicateV1::OwnerLostPreviousRound => description.strip_prefix("Revenge: "),
+        CombatStatPredicateV1::Always
+        | CombatStatPredicateV1::OwnerMovesFirst
+        | CombatStatPredicateV1::OwnerMovesSecond
+        | CombatStatPredicateV1::SelectedHandSlotsMatch
+        | CombatStatPredicateV1::SelectedHandSlotsDiffer => None,
+    };
+    body.is_some_and(|body| {
+        numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
+    })
 }
 
 fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1) -> bool {
@@ -461,5 +533,63 @@ const fn compact_stat(stat: CombatStatV1) -> CombatStatAttributeV1 {
         CombatStatV1::Damage => CombatStatAttributeV1::Damage,
         CombatStatV1::Power => CombatStatAttributeV1::Power,
         CombatStatV1::PowerAndDamage => CombatStatAttributeV1::PowerAndDamage,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::effect_registry::EffectRegistryV1;
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    fn registry() -> EffectRegistryV1 {
+        EffectRegistryV1::load(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn observed_previous_round_inventory_is_exact_and_fail_closed() {
+        let registry = registry();
+        let admitted = BTreeSet::from([
+            463, 465, 478, 520, 553, 555, 556, 560, 585, 634, 784, 801, 859, 883, 884, 921, 938,
+            965, 1053, 1091, 1107, 1278, 1286, 1303, 1395, 1417, 1839, 2628, 2657, 3827, 3829,
+            4316, 4399, 4464, 4623, 4711, 4838, 5406, 5881,
+        ]);
+        let deferred = BTreeSet::from([
+            490, 589, 814, 1409, 1643, 1652, 1661, 1680, 1702, 1713, 1719, 1751, 1810, 2113, 2582,
+            3016, 3301, 3546, 4301, 4449, 4972,
+        ]);
+        let observed: BTreeSet<_> = registry
+            .iter()
+            .filter_map(|(id, definition)| {
+                (definition.structured_input().previous_round_requirement
+                    != PreviousRoundRequirementV1::Any)
+                    .then_some(id)
+            })
+            .collect();
+        assert_eq!(observed, admitted.union(&deferred).copied().collect());
+
+        for source in [
+            CombatStatEffectSourceV1::Ability,
+            CombatStatEffectSourceV1::Bonus,
+        ] {
+            let classified: BTreeSet<_> = registry
+                .iter()
+                .filter_map(|(id, definition)| {
+                    classify_combat_stat_effect(definition, source).and_then(|(_, predicate)| {
+                        matches!(
+                            predicate,
+                            CombatStatPredicateV1::OwnerWonPreviousRound
+                                | CombatStatPredicateV1::OwnerLostPreviousRound
+                        )
+                        .then_some(id)
+                    })
+                })
+                .collect();
+            assert_eq!(classified, admitted, "{source:?}");
+        }
     }
 }

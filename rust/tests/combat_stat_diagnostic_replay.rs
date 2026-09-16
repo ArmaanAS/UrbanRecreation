@@ -16,7 +16,7 @@ use urban_recreation_rust::replay::{
 };
 
 const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
-    (875032, 1),
+    (875032, 2),
     (875155, 1),
     (1088323, 1),
     (1081463, 1),
@@ -33,6 +33,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (868094, 1),
     (875230, 1),
     (877950, 1),
+    (945585, 2),
+    (1023396, 2),
+    (874962, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -92,6 +95,18 @@ fn index_numeric_entry(
 ) -> serde_json::Value {
     let mut entry = numeric_entry(id, description, position, value, minimum);
     entry["abilityData"]["indexRequirement"] = serde_json::json!(index);
+    entry
+}
+
+fn previous_round_numeric_entry(
+    id: u32,
+    description: &str,
+    previous_round: &str,
+    value: u16,
+    minimum: u16,
+) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "both", value, minimum);
+    entry["abilityData"]["previousRoundRequirement"] = serde_json::json!(previous_round);
     entry
 }
 
@@ -169,7 +184,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_twenty_two_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_twenty_nine_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -200,18 +215,18 @@ fn fixed_server_backed_gate_is_exactly_twenty_two_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 22);
+    assert_eq!(rounds, 29);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 37, 39, 40, 42, 56, 93, 156, 266, 412, 612, 741, 871, 916, 980, 1163, 1241, 1338,
-            1342, 1372, 1536, 1578, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2881, 3865, 3897,
-            4216, 4297, 4718, 4757, 5026, 5273, 5763,
+            6, 37, 39, 40, 42, 56, 93, 130, 156, 266, 412, 520, 578, 585, 612, 741, 801, 871, 883,
+            916, 980, 1163, 1241, 1338, 1342, 1359, 1372, 1536, 1578, 1694, 1770, 1844, 1845, 1848,
+            1850, 2299, 2881, 3865, 3897, 4216, 4297, 4718, 4757, 5026, 5273, 5763,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([274, 377, 401, 577, 1852, 4458, 4459])
+        BTreeSet::from([274, 377, 401, 577, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459,])
     );
     assert_eq!(absent, 0);
 }
@@ -270,7 +285,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 6);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 7);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -638,6 +653,122 @@ fn positional_grammar_is_exact_and_nested_contexts_fail_closed() {
     assert!(matches!(
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION),
         Err(CombatStatDiagnosticPreparationErrorV1::WholeHandExecutionHazard { .. })
+    ));
+}
+
+#[test]
+fn previous_round_grammar_is_exact_for_fixed_numeric_abilities_and_bonuses() {
+    let catalog = catalog();
+    const EFFECT_ID: u32 = 900_106;
+    let cases = [
+        (
+            "Confidence: -2 Opp Power, Min 3",
+            "win",
+            Some(CombatStatPredicateV1::OwnerWonPreviousRound),
+        ),
+        (
+            "Confidence : -2 Opp Power, Min 3",
+            "win",
+            Some(CombatStatPredicateV1::OwnerWonPreviousRound),
+        ),
+        (
+            "Revenge: -2 Opp Power, Min 3",
+            "lose",
+            Some(CombatStatPredicateV1::OwnerLostPreviousRound),
+        ),
+        ("Confidence: -2 Opp Power, Min 3", "lose", None),
+        ("Confidence: Night: -2 Opp Power, Min 3", "win", None),
+        ("Revenge: -3 Opp Power, Min 3", "lose", None),
+    ];
+    for (description, previous_round, predicate) in cases {
+        let registry = one_entry_registry(previous_round_numeric_entry(
+            EFFECT_ID,
+            description,
+            previous_round,
+            2,
+            3,
+        ));
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let selected_slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+            id: EFFECT_ID,
+            description: description.to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert_eq!(
+            match &prepared.preparation()[PlayerId::P1][selected_slot].ability {
+                CombatStatProjectionDispositionV1::Execute {
+                    predicate: actual, ..
+                } => Some(*actual),
+                CombatStatProjectionDispositionV1::Absent
+                | CombatStatProjectionDispositionV1::Disabled { .. } => None,
+            },
+            predicate,
+            "{description} / {previous_round}"
+        );
+        if predicate.is_none() {
+            assert!(matches!(
+                prepared.execute_combat_stat_diagnostic_v1_prefix(1),
+                Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
+            ));
+        }
+    }
+
+    let description = "Confidence: -2 Opp Power, Min 3";
+    let registry = one_entry_registry(previous_round_numeric_entry(
+        EFFECT_ID,
+        description,
+        "win",
+        2,
+        3,
+    ));
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let selected_slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    source.players[0].hand[selected_slot].source_bonus = Some(SourceModifier {
+        id: EFFECT_ID,
+        description: description.to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].bonus,
+        CombatStatProjectionDispositionV1::Execute {
+            predicate: CombatStatPredicateV1::OwnerWonPreviousRound,
+            ..
+        }
+    ));
+
+    let mut nested = previous_round_numeric_entry(EFFECT_ID, description, "win", 2, 3);
+    nested["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    let nested_registry = one_entry_registry(nested);
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: EFFECT_ID,
+        description: description.to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &nested_registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        CombatStatProjectionDispositionV1::Disabled { .. }
     ));
 }
 
@@ -1284,6 +1415,92 @@ fn server_replays_pin_ordinary_support_ability_counts_and_arithmetic() {
         assert_eq!(round.round.cards[player].damage, damage);
         assert_eq!(round.round.cards[player].attack, attack);
     }
+}
+
+#[test]
+fn server_replays_pin_confidence_revenge_and_the_fixed_revenge_bonus() {
+    let catalog = catalog();
+    let registry = registry();
+
+    let confidence = diagnostic(875032, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    let round = &confidence.rounds[1];
+    let wesley = PlayerId::ALL
+        .into_iter()
+        .find(|player| {
+            matches!(
+                &round.selected[*player].ability,
+                CombatStatProjectionDispositionV1::Execute {
+                    identity,
+                    predicate: CombatStatPredicateV1::OwnerWonPreviousRound,
+                    ..
+                } if identity.id == 520
+            )
+        })
+        .unwrap();
+    assert_eq!(round.round.cards[wesley.other()].power, 4);
+
+    let revenge_reduction = diagnostic(945585, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    let round = &revenge_reduction.rounds[1];
+    let lehrg = PlayerId::ALL
+        .into_iter()
+        .find(|player| {
+            matches!(
+                &round.selected[*player].ability,
+                CombatStatProjectionDispositionV1::Execute {
+                    identity,
+                    predicate: CombatStatPredicateV1::OwnerLostPreviousRound,
+                    ..
+                } if identity.id == 585
+            )
+        })
+        .unwrap();
+    assert_eq!(round.round.cards[lehrg.other()].power, 4);
+
+    let revenge_bonus = diagnostic(1023396, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    for (round_index, expected_power, expected_damage) in [(0, 8, 5), (1, 9, 4)] {
+        let round = &revenge_bonus.rounds[round_index];
+        let frozn = PlayerId::ALL
+            .into_iter()
+            .find(|player| {
+                matches!(
+                    &round.selected[*player].bonus,
+                    CombatStatProjectionDispositionV1::Execute {
+                        identity,
+                        predicate: CombatStatPredicateV1::OwnerLostPreviousRound,
+                        ..
+                    } if identity.id == 801
+                )
+            })
+            .unwrap();
+        assert_eq!(round.round.cards[frozn].power, expected_power);
+        assert_eq!(round.round.cards[frozn].damage, expected_damage);
+    }
+
+    let revenge_power_and_damage = diagnostic(874962, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    let round = &revenge_power_and_damage.rounds[1];
+    let tina = PlayerId::ALL
+        .into_iter()
+        .find(|player| {
+            matches!(
+                &round.selected[*player].ability,
+                CombatStatProjectionDispositionV1::Execute {
+                    identity,
+                    predicate: CombatStatPredicateV1::OwnerLostPreviousRound,
+                    ..
+                } if identity.id == 883
+            )
+        })
+        .unwrap();
+    assert_eq!(round.round.cards[tina].power, 5);
+    assert_eq!(round.round.cards[tina].damage, 6);
 }
 
 #[test]

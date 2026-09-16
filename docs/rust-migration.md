@@ -108,8 +108,10 @@ solver-generated states cannot silently overflow.
 The first current-engine slice now lives in `rust/src/engine/`, alongside rather than inside
 the frozen historical engine. `BaseRulesMatchSpec` is immutable match context (including
 numeric clan IDs, night, and battle-rule identity), while `BaseRulesPosition` is the small,
-structurally comparable mutable state. `BaseRulesGame::make` validates an entire round before
-mutation and returns an opaque snapshot undo for exact `unmake`.
+structurally comparable mutable state. Its owner-relative `previous_round_winner` is `None`
+before round zero and is updated only after a resolved round, so it also round-trips through
+the opaque snapshot undo. `BaseRulesGame::make` validates an entire round before mutation and
+returns that undo for exact `unmake`.
 
 `BaseRulesReplay` revalidates the public replay model, binds cards to the canonical catalog,
 and executes capture selections without consulting expected outputs. Its execution APIs and
@@ -161,14 +163,17 @@ Power, Damage, Power-and-Damage, and Attack abilities alongside the existing fix
 Support bonuses, ordinary unconditional Support Attack/Power/Damage abilities, Stop Bonus,
 and source-owned combat-stat cancellation. The only admitted
 numeric predicates are `Always`, Courage (`OwnerMovesFirst`), Reprisal
-(`OwnerMovesSecond`), Symmetry (`SelectedHandSlotsMatch`), and Asymmetry
-(`SelectedHandSlotsDiffer`). Courage and Reprisal use the round's explicit first mover;
-Symmetry and Asymmetry compare the two immutable original hand slots, not card identity or
-current stats. The index predicates are admitted for fixed numeric abilities and bonuses.
-Positional and index effects require otherwise-neutral structured fields and an exact
-description body matching their typed stat, magnitude, and bound; an unfamiliar nested
-context fails closed. Conditional Stop Bonus, cancellation, copy, and protection remain
-outside this slice even when their predicate would be false.
+(`OwnerMovesSecond`), Symmetry (`SelectedHandSlotsMatch`), Asymmetry
+(`SelectedHandSlotsDiffer`), Confidence (`OwnerWonPreviousRound`), and Revenge
+(`OwnerLostPreviousRound`). Courage and Reprisal use the round's explicit first mover;
+Confidence and Revenge compare the selected owner's identity with the resolved winner of the
+immediately preceding round, so both are false in round zero; Symmetry and Asymmetry compare
+the two immutable original hand slots, not card identity or current stats. The index predicates
+are admitted for fixed numeric abilities and bonuses. Positional, index, and bounded
+previous-round effects require otherwise-neutral structured fields and an exact description
+body matching their typed stat, magnitude, and bound; an unfamiliar nested context fails
+closed. Conditional Stop Bonus, cancellation, copy, and protection remain outside this slice
+even when their predicate would be false.
 
 Growth and Degrowth are magnitude multipliers rather than predicates. From the immutable
 pre-commit zero-based `rounds_played`, Growth uses factors `1, 2, 3, 4` and Degrowth uses
@@ -199,11 +204,11 @@ to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attac
 then precede the sorted opponent Attack reductions. Arithmetic observations outside an
 admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is twenty-two sequential prefix rounds:
-`875032/1`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/1`, and
+The immutable server-backed gate is twenty-nine sequential prefix rounds:
+`875032/2`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/1`, and
 `874837/2`, plus `1011643/2`, `1011768/1`, `1011483/2`, `877812/2`, and
 `874642/1`, `1059269/1`, and `1091585/1`, plus `868094/1`, `875230/1`, and
-`877950/1`. Its selected Execute/Disabled identity sets are
+`877950/1`, plus `945585/2`, `1023396/2`, and `874962/2`. Its selected Execute/Disabled identity sets are
 pinned, while focused tests pin
 the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
 (Galahad Damage 2 to 5 on unequal slots) and active Symmetry (Anagone reduces Bella Ld Power
@@ -230,7 +235,25 @@ five and exact make/unmake restoration. Oscar (`868094`) proves Support Power +1
 matching characters before Callie's opposing reduction; Ludicrite (`875230`) and Boohma
 (`877950`) prove Support Attack +3 and +5 respectively with four matching characters.
 Focused catalog tests also pin singleton Taljion and Oculus-derived effective-clan counts.
-Replay provenance records compiler/policy semantic revision 6 for this scope.
+Replay provenance records compiler/policy semantic revision 7 for this scope.
+
+Semantic revision 7 admits only the exact fixed numeric previous-round grammar: a structured
+`previousRoundRequirement` of `win` with `Confidence: ` or `Confidence : `, or `lose` with
+`Revenge: `; the suffix must satisfy the existing exact fixed combat-stat grammar. The effect
+must otherwise be neutral (`currentRoundRequirement=any`, no other condition, link,
+inversion, permanence, or special action) and remain a player increase or opponent decrease
+of Attack, Power, Damage, or Power-and-Damage. This applies to ordinary abilities and to the
+observed Frozn Revenge bonus id `801`; its normal bonus liveness and Stop Opp. Bonus
+cancellation ordering still apply. The added replay prefixes prove active Confidence
+(`875032/2`), active Revenge reduction (`945585/2`), the inactive then active id-801 bonus
+transition (`1023396/2`), and active Revenge Power-and-Damage (`874962/2`). They do not
+establish a general prior-round-condition model.
+
+The remaining 21 observed prior-round shapes remain explicit deferred/disabled records:
+Stop Opp. Ability (`490`, `589`, `1680`), copy/exchange (`1409`, `1713`, `1751`, `4972`),
+Night-prefixed Confidence (`1643`), dynamic conversion (`1719`), current-round
+conjunctions and life/pillz effects (`814`, `1652`, `1661`, `1702`, `1810`, `2113`, `3016`,
+`3546`, `4301`, `4449`), and permanent Mindwipe/Poison (`2582`, `3301`).
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
@@ -249,8 +272,8 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 6 records this semantic boundary together with the exact
-Equalizer multiplier.
+context. Compiler/policy revision 7 records this semantic boundary together with the exact
+Equalizer multiplier and the bounded Confidence/Revenge/Frozn slice.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -272,7 +295,7 @@ variant has no catalog numeric id unless the catalog explicitly supplies one; it
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 6, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 7, and catalog-context
 policy revision 1.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots

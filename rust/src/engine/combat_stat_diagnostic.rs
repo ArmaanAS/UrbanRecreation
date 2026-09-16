@@ -62,6 +62,8 @@ pub enum CombatStatPredicateV1 {
     Always,
     OwnerMovesFirst,
     OwnerMovesSecond,
+    OwnerWonPreviousRound,
+    OwnerLostPreviousRound,
     SelectedHandSlotsMatch,
     SelectedHandSlotsDiffer,
 }
@@ -396,11 +398,13 @@ impl CombatStatDiagnosticV1 {
             )?;
         }
         let rounds_played = self.base_rules.position().rounds_played;
+        let previous_round_winner = self.base_rules.position().previous_round_winner;
         let prepared = prepare_combat_stat_diagnostic(
             validated,
             &self.spec.cards,
             input.first_mover,
             rounds_played,
+            previous_round_winner,
         )?;
         let (report, base_rules) = self.base_rules.commit(input, prepared);
         Ok((report, CombatStatDiagnosticUndoV1 { base_rules }))
@@ -568,6 +572,8 @@ fn validate_combat_stat_source_plan(
             predicate,
             CombatStatPredicateV1::SelectedHandSlotsMatch
                 | CombatStatPredicateV1::SelectedHandSlotsDiffer
+                | CombatStatPredicateV1::OwnerWonPreviousRound
+                | CombatStatPredicateV1::OwnerLostPreviousRound
         ) && multiplier != CombatStatMagnitudeV1::Fixed))
     {
         return Err(invalid_combat_stat_execute(
@@ -668,11 +674,20 @@ fn active_effect(
     first_mover: PlayerId,
     owner_slot: HandSlot,
     opponent_slot: HandSlot,
+    previous_round_winner: Option<PlayerId>,
 ) -> Option<CombatStatEffectV1> {
     match plan {
         CombatStatSourcePlanV1::Execute {
             predicate, effect, ..
-        } if predicate_matches(predicate, owner, first_mover, owner_slot, opponent_slot) => {
+        } if predicate_matches(
+            predicate,
+            owner,
+            first_mover,
+            owner_slot,
+            opponent_slot,
+            previous_round_winner,
+        ) =>
+        {
             Some(effect)
         }
         CombatStatSourcePlanV1::Absent
@@ -688,11 +703,16 @@ fn predicate_matches(
     first_mover: PlayerId,
     owner_slot: HandSlot,
     opponent_slot: HandSlot,
+    previous_round_winner: Option<PlayerId>,
 ) -> bool {
     match predicate {
         CombatStatPredicateV1::Always => true,
         CombatStatPredicateV1::OwnerMovesFirst => owner == first_mover,
         CombatStatPredicateV1::OwnerMovesSecond => owner != first_mover,
+        CombatStatPredicateV1::OwnerWonPreviousRound => previous_round_winner == Some(owner),
+        CombatStatPredicateV1::OwnerLostPreviousRound => {
+            previous_round_winner == Some(owner.other())
+        }
         CombatStatPredicateV1::SelectedHandSlotsMatch => owner_slot == opponent_slot,
         CombatStatPredicateV1::SelectedHandSlotsDiffer => owner_slot != opponent_slot,
     }
@@ -703,6 +723,7 @@ fn prepare_combat_stat_diagnostic(
     cards: &ByPlayer<[CombatStatCardPlanV1; HAND_SIZE]>,
     first_mover: PlayerId,
     rounds_played: u8,
+    previous_round_winner: Option<PlayerId>,
 ) -> Result<ByPlayer<PreparedSelection>, CombatStatDiagnosticErrorV1> {
     let selected = ByPlayer::new(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
@@ -715,6 +736,7 @@ fn prepare_combat_stat_diagnostic(
             first_mover,
             validated[PlayerId::P1].slot,
             validated[PlayerId::P2].slot,
+            previous_round_winner,
         ),
         resolution_card_plan(
             selected[PlayerId::P2],
@@ -722,6 +744,7 @@ fn prepare_combat_stat_diagnostic(
             first_mover,
             validated[PlayerId::P2].slot,
             validated[PlayerId::P1].slot,
+            previous_round_winner,
         ),
     );
     prepare_combat_resolution(validated, plans, rounds_played).map_err(map_resolution_error)
@@ -733,16 +756,31 @@ fn resolution_card_plan(
     first_mover: PlayerId,
     owner_slot: HandSlot,
     opponent_slot: HandSlot,
+    previous_round_winner: Option<PlayerId>,
 ) -> ResolutionCardPlan {
     ResolutionCardPlan {
         ability: ResolutionSourcePlan {
-            effect: active_effect(plan.ability, owner, first_mover, owner_slot, opponent_slot)
-                .map(shared_effect),
+            effect: active_effect(
+                plan.ability,
+                owner,
+                first_mover,
+                owner_slot,
+                opponent_slot,
+                previous_round_winner,
+            )
+            .map(shared_effect),
             support_count: plan.source_ability_support_count,
         },
         bonus: ResolutionSourcePlan {
-            effect: active_effect(plan.bonus, owner, first_mover, owner_slot, opponent_slot)
-                .map(shared_effect),
+            effect: active_effect(
+                plan.bonus,
+                owner,
+                first_mover,
+                owner_slot,
+                opponent_slot,
+                previous_round_winner,
+            )
+            .map(shared_effect),
             support_count: plan.source_bonus_support_count,
         },
     }
