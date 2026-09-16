@@ -14,7 +14,7 @@ Written by hand by the repo owner (armaanas); AI assistance started September 20
 | `data/` | `data.json` = the card list the engine loads, **one row per card per level** (power, damage and ability differ by level), built by `deno task cards` from `site_characters.jsonl` (gitignored 40 MB dump of the site's own card DB, refreshed via `__ur.dumpCharacters()` in the browser). `site_clans.json` (from `__ur.dumpClans()`) supplies clan names/bonuses; otherwise they come from the legacy `cards.json`. `cards.json` / `data.maxlevel.json` = older OAuth-API dumps (Dec 2024, max level only, stale); `compiled.json` = ability inventory from `deno task compile`. |
 | `scripts/` | Card data (`BuildCardData.ts` is the live path; `RequestCards.ts` / `RequestAllCardLevels.ts` / `UR_API.ts` are the OAuth-API path, needs API_KEY/API_SECRET in `.env` plus a browser auth step), ability compiler (`CompileAbilities.js`), battle capture (`BattleCapture.ts`, `ExtractBattle.ts`). |
 | `tests/` | `deno test -A`. Per-ability tests in `tests/ability/`, replay of captured games in `tests/replay/`, Rust cross-check testcases in `tests/rust/`. |
-| `rust/` | Imported Rust implementation and candidate high-performance backend. `engine::BaseRulesGame` remains the effects-disabled 20-round reference; `engine::ClanBonusDiagnostic` is a separate projected first-effect slice whose ordinary abilities and out-of-slice bonuses remain visible as Disabled metadata. The historical engine remains beside it, and the old HTTP advisor is behind `legacy-advisor`. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
+| `rust/` | Imported Rust implementation and candidate high-performance backend. `engine::BaseRulesGame` remains the effects-disabled 20-round reference; `engine::ClanBonusDiagnostic` preserves its separate 40-round projected gate; `engine::CombatStatDiagnosticV1` adds a distinct fail-closed fixed combat-stat projection with an 8-round gate. The historical engine remains beside them, and the old HTTP advisor is behind `legacy-advisor`. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
 | `ur-logger.user.js` + `log_server.ts` | Tampermonkey userscript mirroring site traffic to a local server that writes `ur_log.jsonl` (raw, **contains tokens, gitignored**) and secret-free per-battle files in `captures/battles/`. Binary response bodies (WebGL asset bundles, images, wasm) are dropped on both sides: `res.text()` decodes them as lossy UTF-8, so they are unrecoverable garbage, and unfiltered they were 65% of the first real log. `scripts/PruneLog.ts` retro-fixes older logs. |
 | `captures/` | `battles/<id>.jsonl` raw battle capture in a compact lossless form (static block once + one dynamic line per `battles.status` poll, ~20 KB/battle instead of ~450 KB; `expandStatus()` in `scripts/BattleCapture.ts` rebuilds the original server objects); `abilities.json` shared ability/bonus dictionary (id → description + structured `abilityData`); `games/<id>.json` clean game records with decks, moves, per-round resolution, life/pillz, and an engine `testcase`. All safe to commit. |
 
@@ -75,6 +75,10 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    unchanged 20-round base set plus 20 audited additions. It trusts captured active bonus
    identity for replay preparation only; do not use its source-bonus Support grouping as a
    catalog-only/effective-clan solver rule. Night bonus id 1442 remains deferred.
+   The separate Rust `CombatStatDiagnosticV1` gate is fixed at 8 sequential prefix rounds.
+   It admits only fixed ordinary combat stats with Always/Courage/Reprisal plus the earlier
+   bonus/control slice; global/off-card hazards are preparation-fatal and other unadmitted
+   current-round combat-stat effects reject if selected.
 5. Do not push without asking the owner. Never commit `ur_log*.jsonl`, `tokens.json`, `.env`,
    `data/site_characters.jsonl`.
 2. Card data is complete as of 2026-09-10 (2496 cards, every level, 36 clans incl. the new
@@ -94,9 +98,10 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   Rust is a candidate backend, not a second source of game rules.
 - Follow `docs/rust-migration.md`: canonical `(card id, level)` data and the versioned replay
   adapter come before engine parity; engine parity comes before porting current solver policy.
-- The current `rust/src/engine/` slice deliberately disables abilities and bonuses. Its fixed
-  server-backed gate is 20 uninterrupted base-rule rounds across 18 captures, including the
-  complete two-round battle 1065231. That proves replay and combat plumbing, not effect parity.
+- `rust/src/engine/` keeps base rules and projected effect models separate. The 20-round
+  base gate proves replay/combat plumbing, the 40-round clan diagnostic executes its bounded
+  bonus slice, and the 8-round combat-stat diagnostic adds fixed ordinary abilities without
+  claiming general condition or full-effect parity.
 - `rust/src/effect_registry.rs` strictly parses and classifies `captures/abilities.json`.
   Supported compiler output is a string-free future execution plan; no effect is implemented
   until an engine slice executes it and replay evidence establishes its behavior. Never treat

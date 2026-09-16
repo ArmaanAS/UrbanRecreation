@@ -146,6 +146,45 @@ deliberately named `base_rules_spec()`. This remains replay-prepared diagnostics
 neither infers active bonuses from catalog clans nor enables conditions, ordinary numeric
 abilities, post-round effects, permanents, protection, or out-of-slice bonuses.
 
+`CombatStatDiagnosticV1` is the next separate replay-prepared projection; it does not widen
+`ClanBonusDiagnostic` or claim full engine parity. It executes reviewed fixed ordinary
+Power, Damage, Power-and-Damage, and Attack abilities alongside the existing fixed and
+Support bonuses, Stop Bonus, and source-owned combat-stat cancellation. The only admitted
+numeric predicates are `Always`, Courage (`OwnerMovesFirst`), and Reprisal
+(`OwnerMovesSecond`), evaluated from the round's explicit first mover. Positional effects
+require neutral structured fields and an exact description body matching their typed stat,
+magnitude, and bound; an unfamiliar nested context fails closed.
+
+Resolution retains Bonus-then-Ability source compilation for own increases. Opponent
+Power/Damage reductions and opponent Attack reductions are independently stable-sorted by
+descending minimum, with Bonus before Ability on an equal minimum. This reproduces the
+server evidence from Robb/All Stars (`1011768`, 6 to 4 to 2), Don Cr/Montana
+(`875272`/`901613`, attack 18 to 8 to 4), and Miss Stella/Sakrohm (`901292`, attack 18 to 11
+to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attack increases
+then precede the sorted opponent Attack reductions. These excluded captures remain focused
+ordering/clamp evidence, not members of the replay gate.
+
+The immutable server-backed gate is eight sequential prefix rounds:
+`875032/1`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/1`, `901400/1`, and
+`874837/2`. Its selected Execute/Disabled identities are pinned so classifier changes cannot
+silently broaden the model. Captures `1011643` and `1011768` reject selected Asymmetry, and
+`877812` rejects selected Degrowth in round zero; none is accepted merely because the
+omitted effect happened to be inactive or numerically clamped in that observation. The gate
+contains observable active Reprisal cases. Courage and both inactive positional branches are
+pinned synthetically because this reduced gate has no independently observable Courage or
+inactive branch.
+
+Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
+Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
+Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
+retained as visible Disabled metadata but reject atomically if selected. Ordinary Support
+abilities never reuse the source-bonus Support count; capped increases also remain deferred
+for lack of clean evidence. Life, pillz, post-round, and permanent effects are explicitly
+disabled by the projection. Provenance records the model, explicit projection policy,
+registry schema and non-cryptographic source fingerprint, plus a combined model-specific
+compiler/policy semantic revision. A transposition identity must include that full match
+specification, the model, `position()`, and the explicit next first mover.
+
 ### 4. Port current solver semantics
 
 Do not revive the old perfect-information recommendation model as the live advisor. Port
