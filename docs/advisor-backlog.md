@@ -34,3 +34,27 @@
 - Make submission one-shot and idempotent per battle, visibly armed in the TUI,
   and default it to OFF on every restart. Check the game's automation rules
   before live use.
+
+## Future experiment: scriptc
+
+- Revisit [Vercel Labs scriptc](https://github.com/vercel-labs/scriptc) only after
+  Rust replay parity has settled. Start with `scriptc coverage` on an isolated,
+  Node-compatible, single-worker `Search` / `Policy` / `Deep` harness; keep Deno
+  APIs, workers, capture code and terminal rendering outside the experiment.
+- Require the hot search graph to be fully static and build with
+  `--backend llvm`. A normal static build contains no JavaScript engine, whereas
+  `--dynamic` deliberately embeds quickjs-ng for dynamic islands. An unpinned
+  executable build may also report that LLVM fell back to the native C backend;
+  neither case should be described as the same experiment. See the official
+  [coverage](https://scriptc.dev/coverage), [CLI](https://scriptc.dev/cli) and
+  [limitations](https://scriptc.dev/limitations) documentation.
+- Gate timings on exact candidate-vector and best-move parity, an unchanged
+  post-search game-state digest, and representative replay/equivalence tests.
+  Then compare identical one-worker inputs with interleaved samples, separating
+  cold startup/compilation from warmed solver throughput and recording elapsed
+  time, CPU time, peak memory, binary size, machine, commits and exact scriptc
+  version.
+- Treat Deno imports/APIs and import maps, JSON imports, prototype manipulation,
+  `Hand`'s `Array` subclass, and V8-specific optimization assumptions as coverage
+  probes, not confirmed blockers. The tool is experimental and rapidly evolving;
+  only the pinned version's coverage and build results can answer them.
