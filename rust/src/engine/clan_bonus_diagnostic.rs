@@ -49,6 +49,8 @@ pub enum DiagnosticStatOperationV1 {
 pub enum DiagnosticMagnitudeV1 {
     Fixed,
     SourceBonusSupport,
+    Growth,
+    Degrowth,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -130,6 +132,7 @@ pub enum InvalidDiagnosticPlanReasonV1 {
     AbilityCombatModifier,
     IncompatibleBounds,
     InvalidModifierDirection,
+    RoundScaledMagnitude,
     ZeroMagnitude,
 }
 
@@ -343,7 +346,8 @@ impl ClanBonusDiagnostic {
                 card.bonus,
             )?;
         }
-        let prepared = prepare_clan_bonus_diagnostic(validated, &self.spec.cards)?;
+        let rounds_played = self.base_rules.position().rounds_played;
+        let prepared = prepare_clan_bonus_diagnostic(validated, &self.spec.cards, rounds_played)?;
         let (report, base_rules) = self.base_rules.commit(input, prepared);
         Ok((report, ClanBonusDiagnosticUndoV1 { base_rules }))
     }
@@ -411,6 +415,7 @@ fn validate_diagnostic_source_plan(
         value,
         minimum,
         maximum,
+        multiplier,
         ..
     } = effect
     else {
@@ -423,6 +428,18 @@ fn validate_diagnostic_source_plan(
             source,
             source_id,
             InvalidDiagnosticPlanReasonV1::AbilityCombatModifier,
+        ));
+    }
+    if matches!(
+        multiplier,
+        DiagnosticMagnitudeV1::Growth | DiagnosticMagnitudeV1::Degrowth
+    ) {
+        return Err(invalid_diagnostic_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidDiagnosticPlanReasonV1::RoundScaledMagnitude,
         ));
     }
     if value == 0 {
@@ -512,12 +529,14 @@ fn executing_effect(plan: DiagnosticSourcePlanV1) -> Option<DiagnosticCombatEffe
 fn prepare_clan_bonus_diagnostic(
     validated: ByPlayer<ValidatedSelection>,
     cards: &ByPlayer<[DiagnosticCardPlanV1; HAND_SIZE]>,
+    rounds_played: u8,
 ) -> Result<ByPlayer<PreparedSelection>, ClanBonusDiagnosticError> {
     let selected_plans = ByPlayer::new(
         resolution_card_plan(cards[PlayerId::P1][validated[PlayerId::P1].slot.index()]),
         resolution_card_plan(cards[PlayerId::P2][validated[PlayerId::P2].slot.index()]),
     );
-    prepare_combat_resolution(validated, selected_plans).map_err(map_resolution_error)
+    prepare_combat_resolution(validated, selected_plans, rounds_played)
+        .map_err(map_resolution_error)
 }
 
 fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {

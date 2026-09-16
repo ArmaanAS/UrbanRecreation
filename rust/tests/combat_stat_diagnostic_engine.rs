@@ -250,6 +250,69 @@ fn symmetry_and_asymmetry_compare_immutable_hand_slots_for_both_players() {
 }
 
 #[test]
+fn growth_and_degrowth_use_the_pre_commit_round_for_both_source_kinds() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    for slot in 0..4 {
+        cards[PlayerId::P1][slot].ability = execute(
+            1,
+            CombatStatPredicateV1::Always,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Power,
+                CombatStatOperationV1::Increase,
+                1,
+                None,
+                None,
+                CombatStatMagnitudeV1::Growth,
+            ),
+        );
+        cards[PlayerId::P2][slot].bonus = execute(
+            2,
+            CombatStatPredicateV1::Always,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Power,
+                CombatStatOperationV1::Increase,
+                1,
+                None,
+                None,
+                CombatStatMagnitudeV1::Degrowth,
+            ),
+        );
+        cards[PlayerId::P2][slot].source_bonus_support_count = 4;
+    }
+
+    let mut sequential = game(base, cards);
+    let initial = sequential.position().clone();
+    let (first, undo) = sequential
+        .make(input(PlayerId::P2, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(first.cards[PlayerId::P1].power, 7);
+    assert_eq!(first.cards[PlayerId::P2].power, 10);
+    sequential.unmake(undo);
+    assert_eq!(sequential.position(), &initial);
+
+    for (slot, (growth, degrowth)) in [(7, 10), (8, 9), (9, 8), (10, 7)].into_iter().enumerate() {
+        let first_mover = if slot % 2 == 0 {
+            PlayerId::P1
+        } else {
+            PlayerId::P2
+        };
+        let (report, _) = sequential
+            .make(input(
+                first_mover,
+                (slot as u8, 0, false),
+                (slot as u8, 0, false),
+            ))
+            .unwrap();
+        assert_eq!(report.round, slot as u8);
+        assert_eq!(report.cards[PlayerId::P1].power, growth);
+        assert_eq!(report.cards[PlayerId::P2].power, degrowth);
+    }
+}
+
+#[test]
 fn opponent_reductions_are_stably_sorted_by_descending_minimum() {
     let base = base_spec(6, 3);
     let mut power_cards = plans(&base);
@@ -392,6 +455,34 @@ fn cancellation_suppresses_opponent_sources_but_not_base_stats_or_fury() {
         .make(input(PlayerId::P1, (0, 0, false), (1, 0, false)))
         .unwrap();
     assert_eq!(report.cards[PlayerId::P2].power, 6);
+
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        15,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    cards[PlayerId::P2][0].ability = execute(
+        16,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            CombatStatMagnitudeV1::Degrowth,
+        ),
+    );
+    let mut round_scaled_source = game(base, cards);
+    let (report, _) = round_scaled_source
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 6);
 }
 
 #[test]
@@ -449,6 +540,33 @@ fn stop_bonus_suppresses_existing_support_bonus() {
         .unwrap();
     assert_eq!(report.cards[PlayerId::P2].power, 8);
     assert_eq!(report.cards[PlayerId::P2].damage, 2);
+
+    let base = base_spec(6, 2);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        2299,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    cards[PlayerId::P2][0].bonus = execute(
+        17,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            CombatStatMagnitudeV1::Growth,
+        ),
+    );
+    cards[PlayerId::P2][0].source_bonus_support_count = 1;
+    let mut round_scaled_bonus = game(base, cards);
+    let (report, _) = round_scaled_bonus
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 6);
 }
 
 #[test]
@@ -503,6 +621,22 @@ fn impossible_execute_plans_fail_at_construction() {
             ),
             InvalidCombatStatPlanReasonV1::ConditionalControl,
         ),
+        (
+            execute(
+                5,
+                CombatStatPredicateV1::OwnerMovesFirst,
+                modifier(
+                    CombatStatAffectedSideV1::Player,
+                    CombatStatAttributeV1::Power,
+                    CombatStatOperationV1::Increase,
+                    1,
+                    None,
+                    None,
+                    CombatStatMagnitudeV1::Growth,
+                ),
+            ),
+            InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,
+        ),
     ];
     for (plan, reason) in cases {
         let mut cards = plans(&base);
@@ -524,7 +658,7 @@ fn impossible_execute_plans_fail_at_construction() {
 
     let mut capped_bonus = plans(&base);
     capped_bonus[PlayerId::P1][0].bonus = execute(
-        5,
+        6,
         CombatStatPredicateV1::Always,
         modifier(
             CombatStatAffectedSideV1::Player,
@@ -551,7 +685,7 @@ fn impossible_execute_plans_fail_at_construction() {
 
     let mut conditional_bonus = plans(&base);
     conditional_bonus[PlayerId::P1][0].bonus = execute(
-        6,
+        7,
         CombatStatPredicateV1::OwnerMovesFirst,
         own(CombatStatAttributeV1::Power, 2),
     );
@@ -569,7 +703,7 @@ fn impossible_execute_plans_fail_at_construction() {
 
     let mut conditional_support_bonus = plans(&base);
     conditional_support_bonus[PlayerId::P1][0].bonus = execute(
-        7,
+        8,
         CombatStatPredicateV1::SelectedHandSlotsDiffer,
         modifier(
             CombatStatAffectedSideV1::Player,
@@ -670,6 +804,39 @@ fn selected_hazards_validation_and_overflow_are_atomic() {
     ));
     assert_eq!(second_source.position(), &before);
     assert_eq!(position_hash(second_source.position()), hash);
+
+    let base = base_spec(u16::MAX - 3, 0);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][3].ability = execute(
+        4,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            1,
+            None,
+            None,
+            CombatStatMagnitudeV1::Growth,
+        ),
+    );
+    let mut late_growth = game(base, cards);
+    for slot in 0..3 {
+        late_growth
+            .make(input(PlayerId::P1, (slot, 0, false), (slot, 0, false)))
+            .unwrap();
+    }
+    let before = late_growth.position().clone();
+    let hash = position_hash(&before);
+    assert!(matches!(
+        late_growth.make(input(PlayerId::P1, (3, 0, false), (3, 0, false))),
+        Err(CombatStatDiagnosticErrorV1::ArithmeticOverflow {
+            player: PlayerId::P1,
+            ..
+        })
+    ));
+    assert_eq!(late_growth.position(), &before);
+    assert_eq!(position_hash(late_growth.position()), hash);
 }
 
 #[test]

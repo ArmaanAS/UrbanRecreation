@@ -229,6 +229,8 @@ pub enum StatOperationV1 {
 pub enum MagnitudeMultiplierV1 {
     Fixed,
     Support,
+    Growth,
+    Degrowth,
 }
 
 /// Compact, string-free building blocks safe to copy into later round plans.
@@ -1141,6 +1143,8 @@ fn reviewed_stat_description(
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Fixed => "",
         MagnitudeMultiplierV1::Support => "Support: ",
+        MagnitudeMultiplierV1::Growth => "Growth: ",
+        MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
     };
     let expected = match (side, operation) {
         (AffectedSideV1::Player, StatOperationV1::Increase) => {
@@ -1543,6 +1547,17 @@ mod tests {
             registry.get(41).unwrap().compiled(),
             CompiledEffectV1::Unsupported(reasons) if !reasons.is_empty()
         ));
+        for (id, link) in [
+            (1241, LinkedMagnitudeV1::Overdrive),
+            (1580, LinkedMagnitudeV1::Divide),
+        ] {
+            assert!(registry
+                .get(id)
+                .unwrap()
+                .compiled()
+                .unsupported_reasons()
+                .contains(&UnsupportedReasonV1::LinkedMagnitude { link }));
+        }
     }
 
     #[test]

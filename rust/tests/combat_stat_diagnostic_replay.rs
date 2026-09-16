@@ -3,7 +3,9 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use urban_recreation_rust::catalog::CardCatalog;
-use urban_recreation_rust::effect_registry::EffectRegistryV1;
+use urban_recreation_rust::effect_registry::{
+    EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
+};
 use urban_recreation_rust::engine::{CombatStatPredicateV1, PlayerId};
 use urban_recreation_rust::replay::{
     adapt_capture, CapturedGame, CombatStatDiagnosticPreparationErrorV1,
@@ -18,12 +20,14 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (875155, 1),
     (1088323, 1),
     (1081463, 1),
-    (1089513, 1),
+    (1089513, 2),
     (901400, 1),
     (874837, 2),
     (1011643, 2),
     (1011768, 1),
     (1011483, 2),
+    (877812, 2),
+    (874642, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -86,6 +90,20 @@ fn index_numeric_entry(
     entry
 }
 
+fn round_scaled_numeric_entry(
+    id: u32,
+    description: &str,
+    growth: bool,
+    degrowth: bool,
+    value: u16,
+    minimum: u16,
+) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "both", value, minimum);
+    entry["abilityData"]["isOverdrive"] = serde_json::json!(growth);
+    entry["abilityData"]["isDivide"] = serde_json::json!(degrowth);
+    entry
+}
+
 fn one_entry_registry(entry: serde_json::Value) -> EffectRegistryV1 {
     let id = entry["id"].as_u64().unwrap().to_string();
     let mut entries = serde_json::Map::new();
@@ -124,7 +142,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_thirteen_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_seventeen_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -155,15 +173,16 @@ fn fixed_server_backed_gate_is_exactly_thirteen_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 13);
+    assert_eq!(rounds, 17);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 37, 40, 42, 56, 93, 156, 266, 612, 741, 871, 916, 1163, 1372, 1536, 1844, 1845,
-            1848, 1850, 2299, 2881, 3865, 4216, 4718, 5026, 5273, 5763,
+            6, 37, 39, 40, 42, 56, 93, 156, 266, 612, 741, 871, 916, 980, 1163, 1241, 1372, 1536,
+            1578, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2881, 3865, 3897, 4216, 4718, 5026,
+            5273, 5763,
         ])
     );
-    assert_eq!(disabled_ids, BTreeSet::from([274, 577, 1852, 4459]));
+    assert_eq!(disabled_ids, BTreeSet::from([274, 577, 1852, 4458, 4459]));
     assert_eq!(absent, 0);
 }
 
@@ -221,7 +240,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 2);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 3);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -628,17 +647,221 @@ fn index_grammar_is_exact_and_nested_contexts_fail_closed() {
 }
 
 #[test]
-fn selected_degrowth_is_rejected_before_the_excluded_second_round() {
+fn round_scaled_grammar_is_exact_and_nested_contexts_fail_closed() {
+    let catalog = catalog();
+    const EFFECT_ID: u32 = 900_103;
+    let cases = [
+        (
+            "Growth: -2 Opp Power, Min 3",
+            true,
+            false,
+            "both",
+            "any",
+            false,
+            Some(MagnitudeMultiplierV1::Growth),
+        ),
+        (
+            "Degrowth: -2 Opp Power, Min 3",
+            false,
+            true,
+            "both",
+            "any",
+            false,
+            Some(MagnitudeMultiplierV1::Degrowth),
+        ),
+        (
+            "Growth: -2 Opp Power, Min 3",
+            false,
+            true,
+            "both",
+            "any",
+            false,
+            None,
+        ),
+        (
+            "Growth: -2 Opp Power, Min 3",
+            true,
+            true,
+            "both",
+            "any",
+            false,
+            None,
+        ),
+        (
+            "Night: Growth: -2 Opp Power, Min 3",
+            true,
+            false,
+            "both",
+            "any",
+            false,
+            None,
+        ),
+        (
+            "Growth: -2 Opp Power, Min 3",
+            true,
+            false,
+            "attacker",
+            "any",
+            false,
+            None,
+        ),
+        (
+            "Growth: -2 Opp Power, Min 3",
+            true,
+            false,
+            "both",
+            "win",
+            false,
+            None,
+        ),
+        (
+            "Growth: -2 Opp Power, Min 3",
+            true,
+            false,
+            "both",
+            "any",
+            true,
+            None,
+        ),
+        (
+            "Growth: -1 Opp Power, Min 3",
+            true,
+            false,
+            "both",
+            "any",
+            false,
+            None,
+        ),
+    ];
+    for (description, growth, degrowth, position, current, support, admitted) in cases {
+        for bonus in [false, true] {
+            let mut entry =
+                round_scaled_numeric_entry(EFFECT_ID, description, growth, degrowth, 2, 3);
+            entry["abilityData"]["positionRequirement"] = serde_json::json!(position);
+            entry["abilityData"]["currentRoundRequirement"] = serde_json::json!(current);
+            entry["abilityData"]["isSupport"] = serde_json::json!(support);
+            let registry = one_entry_registry(entry);
+            let mut source = replay(875032, &catalog);
+            clear_sources(&mut source);
+            let selected_slot = usize::from(
+                source.rounds[0]
+                    .plays
+                    .iter()
+                    .find(|play| play.engine_player == EnginePlayer::P1)
+                    .unwrap()
+                    .hand_index,
+            );
+            let modifier = Some(SourceModifier {
+                id: EFFECT_ID,
+                description: description.to_owned(),
+            });
+            if bonus {
+                source.players[0].hand[selected_slot].source_bonus = modifier;
+            } else {
+                source.players[0].hand[selected_slot].source_ability = modifier;
+            }
+            let prepared =
+                CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+            let disposition = if bonus {
+                &prepared.preparation()[PlayerId::P1][selected_slot].bonus
+            } else {
+                &prepared.preparation()[PlayerId::P1][selected_slot].ability
+            };
+            assert_eq!(
+                match disposition {
+                    CombatStatProjectionDispositionV1::Execute {
+                        effect:
+                            SupportedEffectV1::ModifyCombatStat {
+                                multiplier: actual, ..
+                            },
+                        predicate: CombatStatPredicateV1::Always,
+                        ..
+                    } => Some(*actual),
+                    CombatStatProjectionDispositionV1::Absent
+                    | CombatStatProjectionDispositionV1::Execute { .. }
+                    | CombatStatProjectionDispositionV1::Disabled { .. } => None,
+                },
+                admitted,
+                "source={} {description}",
+                if bonus { "bonus" } else { "ability" }
+            );
+            if admitted.is_none() {
+                assert!(matches!(
+                    prepared.execute_combat_stat_diagnostic_v1_prefix(1),
+                    Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
+                ));
+            }
+        }
+    }
+}
+
+#[test]
+fn server_replays_pin_growth_degrowth_clamping_and_cancellation() {
     let catalog = catalog();
     let registry = registry();
-    let prepared = diagnostic(877812, &catalog, &registry);
-    let error = prepared
+
+    let growth = diagnostic(1089513, &catalog, &registry)
         .execute_combat_stat_diagnostic_v1_prefix(2)
-        .unwrap_err();
-    let CombatStatDiagnosticReplayErrorV1::Engine { context, .. } = error else {
-        panic!("expected selected Degrowth rejection")
-    };
-    assert_eq!(context.round, 0);
+        .unwrap();
+    assert!(matches!(
+        growth.rounds[1].selected[PlayerId::P1].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            effect: SupportedEffectV1::ModifyCombatStat {
+                multiplier: MagnitudeMultiplierV1::Growth,
+                ..
+            },
+            predicate: CombatStatPredicateV1::Always,
+            ..
+        }
+    ));
+    assert_eq!(growth.rounds[1].round.cards[PlayerId::P1].attack, 16);
+
+    let direct = diagnostic(874642, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    assert!(matches!(
+        direct.rounds[0].selected[PlayerId::P2].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            effect: SupportedEffectV1::ModifyCombatStat {
+                multiplier: MagnitudeMultiplierV1::Degrowth,
+                ..
+            },
+            ..
+        }
+    ));
+    assert_eq!(direct.rounds[0].round.cards[PlayerId::P2].power, 7);
+    assert_eq!(direct.rounds[0].round.cards[PlayerId::P2].damage, 5);
+    assert_eq!(direct.rounds[0].round.cards[PlayerId::P2].attack, 28);
+
+    let clamped = diagnostic(877812, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    assert!(matches!(
+        clamped.rounds[0].selected[PlayerId::P1].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            effect: SupportedEffectV1::ModifyCombatStat {
+                multiplier: MagnitudeMultiplierV1::Degrowth,
+                ..
+            },
+            ..
+        }
+    ));
+    assert_eq!(clamped.rounds[0].round.cards[PlayerId::P2].damage, 1);
+
+    let cancelled = diagnostic(878056, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    assert!(matches!(
+        cancelled.rounds[0].selected[PlayerId::P1].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            effect: SupportedEffectV1::ModifyCombatStat {
+                multiplier: MagnitudeMultiplierV1::Degrowth,
+                ..
+            },
+            ..
+        }
+    ));
+    assert_eq!(cancelled.rounds[0].round.cards[PlayerId::P2].damage, 4);
 }
 
 #[test]

@@ -31,7 +31,7 @@ pub enum CombatStatDiagnosticProjectionV1 {
     DisableDeferredAndOutOfSliceCardLocalEffects,
 }
 
-pub const COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 2;
+pub const COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CombatStatReplayModelV1 {
@@ -644,6 +644,9 @@ fn classify_combat_stat_effect(
     // Model-specific conditions take precedence over the registry's model-neutral output.
     // Keep the unconditional guard below as well, so a future registry compiler expansion
     // cannot silently erase a condition by returning Supported first.
+    if let Some(classified) = classify_round_scaled_numeric(definition) {
+        return Some(classified);
+    }
     if let Some(classified) = classify_position_numeric(definition, source_kind) {
         return Some(classified);
     }
@@ -708,7 +711,7 @@ fn classify_position_numeric(
     if !neutral_except_position(input) {
         return None;
     }
-    let effect = fixed_numeric_effect(input)?;
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     position_description_matches(definition.description(), predicate, effect)
         .then_some((effect, predicate))
 }
@@ -725,12 +728,32 @@ fn classify_index_numeric(
     if !neutral_except_index(input) {
         return None;
     }
-    let effect = fixed_numeric_effect(input)?;
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     index_description_matches(definition.description(), predicate, effect)
         .then_some((effect, predicate))
 }
 
-fn fixed_numeric_effect(input: &StructuredEffectV1) -> Option<SupportedEffectV1> {
+fn classify_round_scaled_numeric(
+    definition: &EffectDefinitionV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    let multiplier = match (input.is_overdrive, input.is_divide) {
+        (true, false) => MagnitudeMultiplierV1::Growth,
+        (false, true) => MagnitudeMultiplierV1::Degrowth,
+        (false, false) | (true, true) => return None,
+    };
+    if !neutral_except_round_scaled_magnitude(input) {
+        return None;
+    }
+    let effect = numeric_effect(input, multiplier)?;
+    round_scaled_description_matches(definition.description(), effect)
+        .then_some((effect, CombatStatPredicateV1::Always))
+}
+
+fn numeric_effect(
+    input: &StructuredEffectV1,
+    multiplier: MagnitudeMultiplierV1,
+) -> Option<SupportedEffectV1> {
     if input.special_action != SpecialActionV1::None || input.is_support || input.value == 0 {
         return None;
     }
@@ -763,9 +786,33 @@ fn fixed_numeric_effect(input: &StructuredEffectV1) -> Option<SupportedEffectV1>
         value: input.value,
         minimum: (operation == StatOperationV1::Decrease).then_some(input.value_min),
         maximum: None,
-        multiplier: MagnitudeMultiplierV1::Fixed,
+        multiplier,
     };
     Some(effect)
+}
+
+fn neutral_except_round_scaled_magnitude(input: &StructuredEffectV1) -> bool {
+    input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
 }
 
 fn neutral_except_position(input: &StructuredEffectV1) -> bool {
@@ -871,7 +918,11 @@ fn position_description_matches(
         | CombatStatPredicateV1::SelectedHandSlotsMatch
         | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
     };
-    numeric_description_body_matches(description.strip_prefix(prefix).unwrap_or(""), effect)
+    numeric_description_body_matches(
+        description.strip_prefix(prefix).unwrap_or(""),
+        effect,
+        MagnitudeMultiplierV1::Fixed,
+    )
 }
 
 fn index_description_matches(
@@ -886,10 +937,36 @@ fn index_description_matches(
         | CombatStatPredicateV1::OwnerMovesFirst
         | CombatStatPredicateV1::OwnerMovesSecond => return false,
     };
-    numeric_description_body_matches(description.strip_prefix(prefix).unwrap_or(""), effect)
+    numeric_description_body_matches(
+        description.strip_prefix(prefix).unwrap_or(""),
+        effect,
+        MagnitudeMultiplierV1::Fixed,
+    )
 }
 
-fn numeric_description_body_matches(body: &str, effect: SupportedEffectV1) -> bool {
+fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1) -> bool {
+    let multiplier = match effect {
+        SupportedEffectV1::ModifyCombatStat { multiplier, .. } => multiplier,
+        SupportedEffectV1::StopOpponentBonus
+        | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. } => return false,
+    };
+    let prefix = match multiplier {
+        MagnitudeMultiplierV1::Growth => "Growth: ",
+        MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
+        MagnitudeMultiplierV1::Fixed | MagnitudeMultiplierV1::Support => return false,
+    };
+    numeric_description_body_matches(
+        description.strip_prefix(prefix).unwrap_or(""),
+        effect,
+        multiplier,
+    )
+}
+
+fn numeric_description_body_matches(
+    body: &str,
+    effect: SupportedEffectV1,
+    expected_multiplier: MagnitudeMultiplierV1,
+) -> bool {
     let SupportedEffectV1::ModifyCombatStat {
         side,
         stat,
@@ -897,11 +974,14 @@ fn numeric_description_body_matches(body: &str, effect: SupportedEffectV1) -> bo
         value,
         minimum,
         maximum: None,
-        multiplier: MagnitudeMultiplierV1::Fixed,
+        multiplier,
     } = effect
     else {
         return false;
     };
+    if multiplier != expected_multiplier {
+        return false;
+    }
     match (side, stat, operation, minimum) {
         (AffectedSideV1::Player, CombatStatV1::Power, StatOperationV1::Increase, None) => {
             body == format!("Power +{value}")
@@ -984,6 +1064,8 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffectV1> {
             multiplier: match multiplier {
                 MagnitudeMultiplierV1::Fixed => CombatStatMagnitudeV1::Fixed,
                 MagnitudeMultiplierV1::Support => CombatStatMagnitudeV1::SourceBonusSupport,
+                MagnitudeMultiplierV1::Growth => CombatStatMagnitudeV1::Growth,
+                MagnitudeMultiplierV1::Degrowth => CombatStatMagnitudeV1::Degrowth,
             },
         }),
         SupportedEffectV1::StopOpponentBonus => Some(CombatStatEffectV1::StopOpponentBonus),

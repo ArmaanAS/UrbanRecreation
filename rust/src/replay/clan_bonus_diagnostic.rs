@@ -614,6 +614,7 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<DiagnosticCombatEffectV1>
             multiplier: match multiplier {
                 MagnitudeMultiplierV1::Fixed => DiagnosticMagnitudeV1::Fixed,
                 MagnitudeMultiplierV1::Support => DiagnosticMagnitudeV1::SourceBonusSupport,
+                MagnitudeMultiplierV1::Growth | MagnitudeMultiplierV1::Degrowth => return None,
             },
         }),
         SupportedEffectV1::StopOpponentBonus => Some(DiagnosticCombatEffectV1::StopOpponentBonus),

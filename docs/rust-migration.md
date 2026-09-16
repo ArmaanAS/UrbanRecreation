@@ -160,6 +160,16 @@ description body matching their typed stat, magnitude, and bound; an unfamiliar 
 context fails closed. Conditional Stop Bonus, cancellation, copy, and protection remain
 outside this slice even when their predicate would be false.
 
+Growth and Degrowth are magnitude multipliers rather than predicates. From the immutable
+pre-commit zero-based `rounds_played`, Growth uses factors `1, 2, 3, 4` and Degrowth uses
+`4, 3, 2, 1`; the complete multiplied change is then clamped once. Replay preparation maps
+only exact `isOverdrive`/`isDivide` structured shapes with an exact `Growth: ` or
+`Degrowth: ` numeric body. Round-scaled life, pillz, post-round/permanent effects,
+own-stat decreases, nested conditions, and a round multiplier combined with another
+predicate remain fail-closed. Both abilities and bonuses are admitted because Dominion's
+captured bonus id 1578 is genuinely Growth. The older clan-only diagnostic explicitly
+rejects these new shared resolver magnitudes at its public plan boundary.
+
 Resolution retains Bonus-then-Ability source compilation for own increases. Opponent
 Power/Damage reductions and opponent Attack reductions are independently stable-sorted by
 descending minimum, with Bonus before Ability on an equal minimum. This reproduces the
@@ -169,21 +179,28 @@ to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attac
 then precede the sorted opponent Attack reductions. Arithmetic observations outside an
 admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is thirteen sequential prefix rounds:
-`875032/1`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/1`, `901400/1`, and
-`874837/2`, plus `1011643/2`, `1011768/1`, and `1011483/2`. Its selected
-Execute/Disabled identity sets are pinned, while focused tests pin the new predicate
-assignments and branches. `1011483` visibly proves active Asymmetry (Galahad Damage 2 to 5 on unequal slots) and
-active Symmetry (Anagone reduces Bella Ld Power 7 to 4 on equal slots); `1011768` visibly
-proves inactive Asymmetry (Aneta remains Damage 3 on equal slots); and `1011643` proves an
-active Asymmetry bonus is still suppressed by Stop Bonus. Additional arithmetic evidence for
-both branches comes from Olivia (`1092515` round 2 / `1092660` round 1), Fiend (`963694`
+The immutable server-backed gate is seventeen sequential prefix rounds:
+`875032/1`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/1`, and
+`874837/2`, plus `1011643/2`, `1011768/1`, `1011483/2`, `877812/2`, and
+`874642/1`. Its selected Execute/Disabled identity sets are pinned, while focused tests pin
+the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
+(Galahad Damage 2 to 5 on unequal slots) and active Symmetry (Anagone reduces Bella Ld Power
+7 to 4 on equal slots); `1011768` visibly proves inactive Asymmetry (Aneta remains Damage 3
+on equal slots); and `1011643` proves an active Asymmetry bonus is still suppressed by Stop
+Bonus. Additional arithmetic evidence for both branches comes from Olivia (`1092515` round 2
+/ `1092660` round 1), Fiend (`963694`
 round 1 / `945724` round 1), K Cube (`878056` round 3 / `875322` round 2), and Anagone
-(`1011016` round 1 / `1010898` round 3), using zero-based capture round numbers. `877812`
-continues to reject selected Degrowth in
-round zero. The gate now contains observable active Courage and Reprisal cases; their inactive
-branches and the complete hand-slot predicate matrix are also pinned synthetically. Replay
-provenance records compiler/policy semantic revision 2 for this scope.
+(`1011016` round 1 / `1010898` round 3), using zero-based capture round numbers.
+
+The gate extends `1089513` to `/2` and adds `877812/2` plus `874642/1` for round-scaled
+evidence. `1089513` round 1 proves Growth Attack +3 uses factor 2 (base attack 10 becomes
+16); `874642` round 0 proves Degrowth Power-and-Damage +1 uses factor 4 before Lothar's
+Power reduction (Nidory reaches 10/5, then 7/5); and `877812` supplies a Degrowth
+observation consistent with a numerically clamped no-op when its target is already at the
+minimum. Capture `878056` separately pins cancellation suppressing active Degrowth. The gate
+contains observable active Courage and Reprisal cases; their inactive branches, the complete
+hand-slot predicate matrix, and all four round factors are also pinned synthetically. Replay
+provenance records compiler/policy semantic revision 3 for this scope.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.

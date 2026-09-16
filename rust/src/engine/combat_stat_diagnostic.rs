@@ -50,6 +50,8 @@ pub enum CombatStatOperationV1 {
 pub enum CombatStatMagnitudeV1 {
     Fixed,
     SourceBonusSupport,
+    Growth,
+    Degrowth,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -139,6 +141,7 @@ impl Error for CombatStatPlanMismatchV1 {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InvalidCombatStatPlanReasonV1 {
     CappedIncrease,
+    CompoundPredicateAndMagnitude,
     ConditionalBonus,
     ConditionalControl,
     IncompatibleBounds,
@@ -358,8 +361,13 @@ impl CombatStatDiagnosticV1 {
                 card.bonus,
             )?;
         }
-        let prepared =
-            prepare_combat_stat_diagnostic(validated, &self.spec.cards, input.first_mover)?;
+        let rounds_played = self.base_rules.position().rounds_played;
+        let prepared = prepare_combat_stat_diagnostic(
+            validated,
+            &self.spec.cards,
+            input.first_mover,
+            rounds_played,
+        )?;
         let (report, base_rules) = self.base_rules.commit(input, prepared);
         Ok((report, CombatStatDiagnosticUndoV1 { base_rules }))
     }
@@ -449,6 +457,19 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
+    if matches!(
+        multiplier,
+        CombatStatMagnitudeV1::Growth | CombatStatMagnitudeV1::Degrowth
+    ) && predicate != CombatStatPredicateV1::Always
+    {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,
+        ));
+    }
     if source == CombatStatEffectSourceV1::Bonus
         && (matches!(
             predicate,
@@ -602,6 +623,7 @@ fn prepare_combat_stat_diagnostic(
     validated: ByPlayer<ValidatedSelection>,
     cards: &ByPlayer<[CombatStatCardPlanV1; HAND_SIZE]>,
     first_mover: PlayerId,
+    rounds_played: u8,
 ) -> Result<ByPlayer<PreparedSelection>, CombatStatDiagnosticErrorV1> {
     let selected = ByPlayer::new(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
@@ -623,7 +645,7 @@ fn prepare_combat_stat_diagnostic(
             validated[PlayerId::P1].slot,
         ),
     );
-    prepare_combat_resolution(validated, plans).map_err(map_resolution_error)
+    prepare_combat_resolution(validated, plans, rounds_played).map_err(map_resolution_error)
 }
 
 fn resolution_card_plan(
@@ -682,6 +704,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> DiagnosticCombatEffectV1 {
                 CombatStatMagnitudeV1::SourceBonusSupport => {
                     DiagnosticMagnitudeV1::SourceBonusSupport
                 }
+                CombatStatMagnitudeV1::Growth => DiagnosticMagnitudeV1::Growth,
+                CombatStatMagnitudeV1::Degrowth => DiagnosticMagnitudeV1::Degrowth,
             },
         },
         CombatStatEffectV1::StopOpponentBonus => DiagnosticCombatEffectV1::StopOpponentBonus,
