@@ -9,8 +9,8 @@ use super::combat_resolution::{
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
-    BaseRulesRoundReport, BaseRulesUndo, ByPlayer, HandSlot, PlayerId, PreparedSelection,
-    ValidatedSelection, HAND_SIZE,
+    BaseRulesRoundReport, BaseRulesUndo, ByPlayer, HandSlot, PlayerId, PostRoundPlan,
+    PreparedSelection, ValidatedSelection, HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -352,7 +352,11 @@ impl ClanBonusDiagnostic {
         }
         let rounds_played = self.base_rules.position().rounds_played;
         let prepared = prepare_clan_bonus_diagnostic(validated, &self.spec.cards, rounds_played)?;
-        let (report, base_rules) = self.base_rules.commit(input, prepared);
+        let (report, base_rules) = self.base_rules.commit(
+            input,
+            prepared,
+            ByPlayer::new(PostRoundPlan::default(), PostRoundPlan::default()),
+        )?;
         Ok((report, ClanBonusDiagnosticUndoV1 { base_rules }))
     }
 
@@ -556,10 +560,12 @@ fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {
     ResolutionCardPlan {
         ability: ResolutionSourcePlan {
             effect: executing_effect(plan.ability),
+            post_round: None,
             support_count: 0,
         },
         bonus: ResolutionSourcePlan {
             effect: executing_effect(plan.bonus),
+            post_round: None,
             support_count: plan.source_bonus_support_count,
         },
     }

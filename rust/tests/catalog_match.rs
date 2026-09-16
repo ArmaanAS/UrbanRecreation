@@ -10,9 +10,9 @@ use urban_recreation_rust::engine::{
     derive_catalog_hand, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
     CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1, CatalogCombatStatMatchV1,
     CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-    CatalogCombatStatSourceDispositionV1, CombatStatEffectSourceV1, CombatStatPredicateV1,
-    CombatStatSourcePlanV1, EffectiveCatalogHandErrorV1, MatchStatus, PlayerId,
-    CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
+    CatalogCombatStatSourceDispositionV1, CombatStatEffectSourceV1, CombatStatPostRoundEffectV1,
+    CombatStatPredicateV1, CombatStatSourcePlanV1, EffectiveCatalogHandErrorV1, MatchStatus,
+    PlayerId, CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
 };
 use urban_recreation_rust::replay::{
     load_corpus, COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -577,6 +577,233 @@ fn strict_catalog_match_executes_equalizer_from_the_selected_opponent_level() {
     assert_eq!(report.cards[PlayerId::P2].attack, 11);
     game.unmake(undo);
     assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_executes_audited_ability_recovery_and_restores_undo() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(1608, 3), // AI-Lycs, catalog/registry ability id 1418
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            rescue,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity,
+        effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+    } = &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("AI-Lycs recovery was not admitted as post-round work")
+    };
+    assert_eq!(identity.catalog_id, Some(1418));
+    assert_eq!(identity.registry_definition_id, 1418);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [577, 729, 1418, 2475]);
+    assert_eq!(identity.description, "Defeat: Recover 2 Pillz Out Of 3");
+    assert!(matches!(
+        prepared.match_spec().cards[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 1418,
+            predicate: CombatStatPredicateV1::Always,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+        }
+    ));
+
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 3, false),
+                BaseRulesSelection::new(0, 3, false),
+            ),
+        })
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 11); // 12 - 3 + ceil(3 * 2 / 3)
+    assert_eq!(report.players[PlayerId::P1].life, 11);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_executes_arnie_recovery_with_fury_cost() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(907, 4), // Arnie, catalog/registry ability id 729
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            rescue,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } =
+        &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Arnie recovery was not admitted as post-round work")
+    };
+    assert_eq!(identity.catalog_id, Some(729));
+    assert_eq!(identity.registry_definition_id, 729);
+
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 4, true),
+                BaseRulesSelection::new(0, 5, false),
+            ),
+        })
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.cards[PlayerId::P1].attack, 40);
+    assert_eq!(report.players[PlayerId::P1].pillz, 10); // 12 - (4 + Fury 3) + ceil(7 * 2 / 3)
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_bridges_only_active_vortex_bonus_and_stop_bonus_disables_it() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    let vortex = [
+        CardKey::new(758, 1), // Deea
+        CardKey::new(759, 1), // Sunder
+        CardKey::new(123, 1),
+        CardKey::new(124, 1),
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(vortex, rescue, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } =
+        &prepared.preparation()[PlayerId::P1][0].bonus
+    else {
+        panic!("active Vortex bonus was not bridged to post-round recovery")
+    };
+    // Catalog bonus id 43 is intentionally preserved as catalog provenance, while the
+    // registry identity is pinned to the capture definition 577 rather than registry id 43.
+    assert_eq!(identity.catalog_id, Some(43));
+    assert_eq!(identity.registry_definition_id, 577);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [577, 729, 1418, 2475]);
+    assert!(matches!(
+        prepared.match_spec().cards[PlayerId::P1][0].bonus,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 577,
+            predicate: CombatStatPredicateV1::Always,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+        }
+    ));
+
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 3, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 11);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+
+    let stop_bonus = [
+        CardKey::new(773, 3), // Kobalth: Stop Opp. Bonus, with a live Vortex bonus
+        CardKey::new(758, 1),
+        CardKey::new(123, 1),
+        CardKey::new(124, 1),
+    ];
+    let stopped = CatalogCombatStatMatchV1::new(
+        input(vortex, stop_bonus, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        stopped.preparation()[PlayerId::P2][0].ability,
+        CatalogCombatStatSourceDispositionV1::Execute { .. }
+    ));
+    let mut game = stopped.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 0, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    // A live Vortex bonus would restore the minimum one Pillz after a zero-Pillz loss;
+    // Kobalth's existing Stop Bonus behavior suppresses it without adding Stop Ability.
+    assert_eq!(report.players[PlayerId::P1].pillz, 12);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_defers_sasl_recovery_alias() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(1178, 4), // Sasl Lovelace, catalog ability id 2475
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(2475),
+            ref description,
+            ..
+        }) if hand_slot.get() == 0 && description == "Defeat: Recover 2 Pillz Out Of 3"
+    ));
 }
 
 #[test]

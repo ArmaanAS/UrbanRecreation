@@ -8,8 +8,8 @@ use super::clan_bonus_diagnostic::{
     DiagnosticMagnitudeV1, DiagnosticStatOperationV1,
 };
 use super::{
-    BaseRulesCardResult, ByPlayer, PlayerId, PreparedSelection, ValidatedSelection, FURY_DAMAGE,
-    MAX_ROUNDS,
+    BaseRulesCardResult, ByPlayer, PlayerId, PostRoundEffect, PostRoundPlan, PreparedSelection,
+    ValidatedSelection, FURY_DAMAGE, MAX_ROUNDS,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +29,7 @@ pub(super) struct CombatResolutionError {
 #[derive(Clone, Copy, Default)]
 pub(super) struct ResolutionSourcePlan {
     pub effect: Option<DiagnosticCombatEffectV1>,
+    pub post_round: Option<PostRoundEffect>,
     pub support_count: u16,
 }
 
@@ -36,6 +37,12 @@ pub(super) struct ResolutionSourcePlan {
 pub(super) struct ResolutionCardPlan {
     pub ability: ResolutionSourcePlan,
     pub bonus: ResolutionSourcePlan,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct PreparedCombatResolution {
+    pub selections: ByPlayer<PreparedSelection>,
+    pub post_round: ByPlayer<PostRoundPlan>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -88,13 +95,24 @@ pub(super) fn prepare_combat_resolution(
     selected_plans: ByPlayer<ResolutionCardPlan>,
     rounds_played: u8,
 ) -> Result<ByPlayer<PreparedSelection>, CombatResolutionError> {
+    Ok(
+        prepare_combat_resolution_with_post_round(validated, selected_plans, rounds_played)?
+            .selections,
+    )
+}
+
+pub(super) fn prepare_combat_resolution_with_post_round(
+    validated: ByPlayer<ValidatedSelection>,
+    selected_plans: ByPlayer<ResolutionCardPlan>,
+    rounds_played: u8,
+) -> Result<PreparedCombatResolution, CombatResolutionError> {
     let opponent_stars = ByPlayer::new(
         u16::from(validated[PlayerId::P2].card.key.level),
         u16::from(validated[PlayerId::P1].card.key.level),
     );
     let mut bonus_live = ByPlayer::new(
-        selected_plans[PlayerId::P1].bonus.effect.is_some(),
-        selected_plans[PlayerId::P2].bonus.effect.is_some(),
+        source_is_live(selected_plans[PlayerId::P1].bonus),
+        source_is_live(selected_plans[PlayerId::P2].bonus),
     );
 
     // Ability-origin Stop Bonus resolves before the bonus-vs-bonus dependency.
@@ -249,7 +267,7 @@ pub(super) fn prepare_combat_resolution(
         )?;
     }
 
-    Ok(ByPlayer::new(
+    let selections = ByPlayer::new(
         finish_selection(
             validated[PlayerId::P1],
             power[PlayerId::P1],
@@ -262,7 +280,29 @@ pub(super) fn prepare_combat_resolution(
             damage[PlayerId::P2],
             attack[PlayerId::P2],
         ),
-    ))
+    );
+    let post_round = ByPlayer::new(
+        PostRoundPlan {
+            ability: selected_plans[PlayerId::P1].ability.post_round,
+            bonus: bonus_live[PlayerId::P1]
+                .then_some(selected_plans[PlayerId::P1].bonus.post_round)
+                .flatten(),
+        },
+        PostRoundPlan {
+            ability: selected_plans[PlayerId::P2].ability.post_round,
+            bonus: bonus_live[PlayerId::P2]
+                .then_some(selected_plans[PlayerId::P2].bonus.post_round)
+                .flatten(),
+        },
+    );
+    Ok(PreparedCombatResolution {
+        selections,
+        post_round,
+    })
+}
+
+fn source_is_live(source: ResolutionSourcePlan) -> bool {
+    source.effect.is_some() || source.post_round.is_some()
 }
 
 fn finish_selection(

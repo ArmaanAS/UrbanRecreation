@@ -14,13 +14,15 @@ use crate::effect_registry::{
     SupportedEffectV1, UnsupportedReasonV1,
 };
 use crate::engine::combat_stat_compiler::{
-    classify_combat_stat_effect, compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_combat_stat_effect, classify_defeat_recover_pillz, compact_effect,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
     ByPlayer, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1,
     CombatStatDiagnosticV1, CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1,
-    CombatStatPlanErrorV1, CombatStatPredicateV1, CombatStatSourcePlanV1, PlayerId, HAND_SIZE,
+    CombatStatPlanErrorV1, CombatStatPostRoundEffectV1, CombatStatPredicateV1,
+    CombatStatSourcePlanV1, PlayerId, HAND_SIZE,
 };
 use std::error::Error;
 use std::fmt;
@@ -97,6 +99,9 @@ pub enum CombatStatDisabledReasonV1 {
     SupportAbility {
         registry_reasons: Box<[UnsupportedReasonV1]>,
     },
+    UnsupportedPostRoundRecovery {
+        registry_reasons: Box<[UnsupportedReasonV1]>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -106,6 +111,10 @@ pub enum CombatStatProjectionDispositionV1 {
         identity: CombatStatModifierIdentityV1,
         effect: SupportedEffectV1,
         predicate: CombatStatPredicateV1,
+    },
+    ExecutePostRound {
+        identity: CombatStatModifierIdentityV1,
+        effect: CombatStatPostRoundEffectV1,
     },
     Disabled {
         identity: CombatStatModifierIdentityV1,
@@ -583,6 +592,19 @@ fn prepare_combat_stat_source(
             },
         );
     }
+    if classify_defeat_recover_pillz(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            },
+        });
+    }
     if let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) {
         let compact_effect = compact_effect(effect).ok_or(
             CombatStatDiagnosticPreparationErrorV1::UnsupportedCompiledShape {
@@ -615,10 +637,14 @@ fn prepare_combat_stat_source(
     let attempted_control = attempts_promised_control(definition.structured_input());
     let selected_hazard = attempts_selected_hazard(definition);
     let unadmitted_combat_stat = attempts_combat_stat_change(definition.structured_input());
+    let unadmitted_post_round_recovery =
+        definition.structured_input().special_action == SpecialActionV1::RecoverPillz;
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {
         CombatStatDisabledReasonV1::UnsupportedSelectedHazard { registry_reasons }
+    } else if unadmitted_post_round_recovery {
+        CombatStatDisabledReasonV1::UnsupportedPostRoundRecovery { registry_reasons }
     } else if is_capped_increase(definition.structured_input()) {
         CombatStatDisabledReasonV1::CappedIncrease { registry_reasons }
     } else if source_kind == CombatStatEffectSourceV1::Ability
@@ -630,7 +656,11 @@ fn prepare_combat_stat_source(
     } else {
         CombatStatDisabledReasonV1::OutOfSliceBonus { registry_reasons }
     };
-    let compact_plan = if attempted_control || selected_hazard || unadmitted_combat_stat {
+    let compact_plan = if attempted_control
+        || selected_hazard
+        || unadmitted_combat_stat
+        || unadmitted_post_round_recovery
+    {
         CombatStatSourcePlanV1::RejectIfSelected {
             source_id: source.id,
         }
@@ -708,15 +738,7 @@ fn attempts_combat_stat_change(input: &StructuredEffectV1) -> bool {
 
 fn attempts_promised_control(input: &crate::effect_registry::StructuredEffectV1) -> bool {
     input.special_action == SpecialActionV1::StopBonus
-        || (input.attribute_action == AttributeActionV1::StopModifier
-            && matches!(
-                input.attribute_affected,
-                AttributeAffectedV1::Attack
-                    | AttributeAffectedV1::Damage
-                    | AttributeAffectedV1::Power
-                    | AttributeAffectedV1::PowerAndAttack
-                    | AttributeAffectedV1::PowerAndDamage
-            ))
+        || input.attribute_action == AttributeActionV1::StopModifier
 }
 
 fn assert_combat_stat_round(

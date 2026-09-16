@@ -264,6 +264,9 @@ pub enum BaseRulesError {
     DamageOverflow {
         player: PlayerId,
     },
+    PillzRecoveryOverflow {
+        player: PlayerId,
+    },
 }
 
 impl fmt::Display for BaseRulesError {
@@ -300,6 +303,9 @@ impl fmt::Display for BaseRulesError {
             ),
             Self::AttackOverflow { player } => write!(formatter, "{player:?} attack overflow"),
             Self::DamageOverflow { player } => write!(formatter, "{player:?} damage overflow"),
+            Self::PillzRecoveryOverflow { player } => {
+                write!(formatter, "{player:?} pillz recovery overflow")
+            }
         }
     }
 }
@@ -318,6 +324,20 @@ struct PreparedSelection {
     cost: u16,
     card: BaseRulesCardSpec,
     result: BaseRulesCardResult,
+}
+
+/// Typed post-round work produced by an admitted diagnostic projection. Ordinary base rules
+/// deliberately supply [`PostRoundPlan::default`], keeping effects outside their historical
+/// combat preparation path.
+#[derive(Clone, Copy, Default)]
+pub(super) struct PostRoundPlan {
+    pub ability: Option<PostRoundEffect>,
+    pub bonus: Option<PostRoundEffect>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum PostRoundEffect {
+    RecoverPaidPillzOnDefeat,
 }
 
 #[derive(Clone, Copy)]
@@ -373,7 +393,11 @@ impl BaseRulesGame {
         let p2 = self.validate_player(input, PlayerId::P2)?;
         let p2 = prepare_base_rules_selection(PlayerId::P2, p2)?;
         let prepared = ByPlayer::new(p1, p2);
-        Ok(self.commit(input, prepared))
+        self.commit(
+            input,
+            prepared,
+            ByPlayer::new(PostRoundPlan::default(), PostRoundPlan::default()),
+        )
     }
 
     pub fn unmake(&mut self, undo: BaseRulesUndo) {
@@ -384,26 +408,46 @@ impl BaseRulesGame {
         &mut self,
         input: BaseRulesRoundInput,
         prepared: ByPlayer<PreparedSelection>,
-    ) -> (BaseRulesRoundReport, BaseRulesUndo) {
-        let undo = BaseRulesUndo {
-            before: self.position.clone(),
-        };
-        let round = self.position.rounds_played;
+        post_round: ByPlayer<PostRoundPlan>,
+    ) -> Result<(BaseRulesRoundReport, BaseRulesUndo), BaseRulesError> {
+        // Work on a complete replacement position so a post-round overflow cannot leave a
+        // partially committed card, cost, or winner behind. On success, move the original
+        // position directly into the undo token instead of cloning this hot-path state twice.
+        let mut position = self.position.clone();
+        let round = position.rounds_played;
 
         for player in PlayerId::ALL {
             let selected = prepared[player];
-            self.position.players[player].pillz -= selected.cost;
-            self.position.played[player][selected.slot.index()] = true;
+            position.players[player].pillz -= selected.cost;
+            position.played[player][selected.slot.index()] = true;
         }
 
         let winner = round_winner(input.first_mover, &prepared);
         let loser = winner.other();
-        self.position.players[loser].life = self.position.players[loser]
+        position.players[loser].life = position.players[loser]
             .life
             .saturating_sub(prepared[winner].result.damage);
-        self.position.rounds_played += 1;
-        self.position.previous_round_winner = Some(winner);
-        self.position.status = status_after_round(&self.position);
+        for effect in [post_round[loser].ability, post_round[loser].bonus]
+            .into_iter()
+            .flatten()
+        {
+            match effect {
+                PostRoundEffect::RecoverPaidPillzOnDefeat => {
+                    let paid = u32::from(prepared[loser].cost);
+                    let recovered = ((paid * 2 + 2) / 3).max(1) as u16;
+                    position.players[loser].pillz = position.players[loser]
+                        .pillz
+                        .checked_add(recovered)
+                        .ok_or(BaseRulesError::PillzRecoveryOverflow { player: loser })?;
+                }
+            }
+        }
+        position.rounds_played += 1;
+        position.previous_round_winner = Some(winner);
+        position.status = status_after_round(&position);
+        let undo = BaseRulesUndo {
+            before: std::mem::replace(&mut self.position, position),
+        };
 
         let mut results = prepared.map(|selection| selection.result);
         results[winner].won = true;
@@ -415,7 +459,7 @@ impl BaseRulesGame {
             players: self.position.players,
             status: self.position.status,
         };
-        (report, undo)
+        Ok((report, undo))
     }
 
     fn validate(

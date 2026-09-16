@@ -6,7 +6,10 @@ use urban_recreation_rust::catalog::CardCatalog;
 use urban_recreation_rust::effect_registry::{
     AttributeAffectedV1, EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
 };
-use urban_recreation_rust::engine::{CombatStatPredicateV1, PlayerId};
+use urban_recreation_rust::engine::{
+    BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CombatStatDiagnosticErrorV1,
+    CombatStatEffectSourceV1, CombatStatPredicateV1, CombatStatSourcePlanV1, PlayerId,
+};
 use urban_recreation_rust::replay::{
     adapt_capture, CapturedGame, CombatStatDiagnosticPreparationErrorV1,
     CombatStatDiagnosticProjectionV1, CombatStatDiagnosticReplayErrorV1,
@@ -21,7 +24,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1088323, 1),
     (1081463, 1),
     (1089513, 2),
-    (901400, 1),
+    (901400, 2),
     (874837, 2),
     (1011643, 2),
     (1011768, 1),
@@ -36,6 +39,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (945585, 2),
     (1023396, 2),
     (874962, 2),
+    (946400, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -107,6 +111,16 @@ fn previous_round_numeric_entry(
 ) -> serde_json::Value {
     let mut entry = numeric_entry(id, description, "both", value, minimum);
     entry["abilityData"]["previousRoundRequirement"] = serde_json::json!(previous_round);
+    entry
+}
+
+fn defeat_recover_entry(id: u32, description: &str) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "both", 2, 3);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry["abilityData"]["specialAction"] = serde_json::json!("recover_pillz");
     entry
 }
 
@@ -184,7 +198,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_twenty_nine_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_thirty_one_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -207,6 +221,11 @@ fn fixed_server_backed_gate_is_exactly_twenty_nine_sequential_prefix_rounds() {
                         CombatStatProjectionDispositionV1::Execute { identity, .. } => {
                             execute_ids.insert(identity.id);
                         }
+                        CombatStatProjectionDispositionV1::ExecutePostRound {
+                            identity, ..
+                        } => {
+                            execute_ids.insert(identity.id);
+                        }
                         CombatStatProjectionDispositionV1::Disabled { identity, .. } => {
                             disabled_ids.insert(identity.id);
                         }
@@ -215,18 +234,19 @@ fn fixed_server_backed_gate_is_exactly_twenty_nine_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 29);
+    assert_eq!(rounds, 31);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 37, 39, 40, 42, 56, 93, 130, 156, 266, 412, 520, 578, 585, 612, 741, 801, 871, 883,
-            916, 980, 1163, 1241, 1338, 1342, 1359, 1372, 1536, 1578, 1694, 1770, 1844, 1845, 1848,
-            1850, 2299, 2881, 3865, 3897, 4216, 4297, 4718, 4757, 5026, 5273, 5763,
+            6, 37, 39, 40, 42, 56, 90, 93, 130, 156, 266, 412, 520, 577, 578, 585, 612, 741, 801,
+            871, 883, 916, 980, 1163, 1241, 1338, 1342, 1359, 1372, 1418, 1536, 1578, 1694, 1770,
+            1844, 1845, 1848, 1850, 2299, 2881, 3865, 3897, 4216, 4297, 4718, 4757, 5026, 5273,
+            5763,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([274, 377, 401, 577, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459,])
+        BTreeSet::from([274, 377, 401, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459, 5283,])
     );
     assert_eq!(absent, 0);
 }
@@ -285,7 +305,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 7);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 8);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -599,6 +619,109 @@ fn selected_stop_ability_is_visible_and_rejected_fail_closed() {
 }
 
 #[test]
+fn selected_pillz_and_life_cancellation_rejects_before_admitted_recovery_can_run() {
+    let catalog = catalog();
+    let registry = registry();
+    const CONTROL_ID: u32 = 1497;
+    const CONTROL_DESCRIPTION: &str = "Cancel Opp. Pillz & Life Modif.";
+    const RECOVERY_DESCRIPTION: &str = "Defeat: Recover 2 Pillz Out Of 3";
+    let cases = [
+        (PlayerId::P1, PlayerId::P2, 1418, true),
+        (PlayerId::P2, PlayerId::P1, 577, false),
+    ];
+
+    for (control_player, recovery_player, recovery_id, recovery_is_ability) in cases {
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let (first_mover, selections) = {
+            let round = &source.rounds[0];
+            let selection = |player| {
+                round
+                    .plays
+                    .iter()
+                    .find(|play| {
+                        matches!(
+                            (player, play.engine_player),
+                            (PlayerId::P1, EnginePlayer::P1) | (PlayerId::P2, EnginePlayer::P2)
+                        )
+                    })
+                    .unwrap()
+            };
+            let selection = |player| {
+                let play = selection(player);
+                BaseRulesSelection::new(play.hand_index, play.pillz, play.fury)
+            };
+            (
+                match round.first_mover {
+                    EnginePlayer::P1 => PlayerId::P1,
+                    EnginePlayer::P2 => PlayerId::P2,
+                },
+                ByPlayer::new(selection(PlayerId::P1), selection(PlayerId::P2)),
+            )
+        };
+        let control_slot = usize::from(selections[control_player].hand_index);
+        let recovery_slot = usize::from(selections[recovery_player].hand_index);
+        source.players[control_player.index()].hand[control_slot].source_ability =
+            Some(SourceModifier {
+                id: CONTROL_ID,
+                description: CONTROL_DESCRIPTION.to_owned(),
+            });
+        let recovery = Some(SourceModifier {
+            id: recovery_id,
+            description: RECOVERY_DESCRIPTION.to_owned(),
+        });
+        if recovery_is_ability {
+            source.players[recovery_player.index()].hand[recovery_slot].source_ability = recovery;
+        } else {
+            source.players[recovery_player.index()].hand[recovery_slot].source_bonus = recovery;
+        }
+
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert!(matches!(
+            prepared.preparation()[control_player][control_slot].ability,
+            CombatStatProjectionDispositionV1::Disabled {
+                reason: CombatStatDisabledReasonV1::UnsupportedPromisedControl { .. },
+                ..
+            }
+        ));
+        let recovery_disposition = if recovery_is_ability {
+            &prepared.preparation()[recovery_player][recovery_slot].ability
+        } else {
+            &prepared.preparation()[recovery_player][recovery_slot].bonus
+        };
+        assert!(matches!(
+            recovery_disposition,
+            CombatStatProjectionDispositionV1::ExecutePostRound { identity, .. }
+                if identity.id == recovery_id
+        ));
+
+        let mut game = prepared.new_game();
+        assert!(matches!(
+            game.card_plans()[control_player][control_slot].ability,
+            CombatStatSourcePlanV1::RejectIfSelected {
+                source_id: CONTROL_ID
+            }
+        ));
+        let before = game.position().clone();
+        let input = BaseRulesRoundInput {
+            first_mover,
+            selections,
+        };
+        assert!(matches!(
+            game.make(input),
+            Err(CombatStatDiagnosticErrorV1::UnsupportedSelectedHazard {
+                player,
+                source: CombatStatEffectSourceV1::Ability,
+                source_id: CONTROL_ID,
+                ..
+            }) if player == control_player
+        ));
+        assert_eq!(game.position(), &before);
+    }
+}
+
+#[test]
 fn positional_grammar_is_exact_and_nested_contexts_fail_closed() {
     let catalog = catalog();
     const EFFECT_ID: u32 = 900_101;
@@ -710,6 +833,7 @@ fn previous_round_grammar_is_exact_for_fixed_numeric_abilities_and_bonuses() {
                     predicate: actual, ..
                 } => Some(*actual),
                 CombatStatProjectionDispositionV1::Absent
+                | CombatStatProjectionDispositionV1::ExecutePostRound { .. }
                 | CombatStatProjectionDispositionV1::Disabled { .. } => None,
             },
             predicate,
@@ -769,6 +893,101 @@ fn previous_round_grammar_is_exact_for_fixed_numeric_abilities_and_bonuses() {
     assert!(matches!(
         prepared.preparation()[PlayerId::P1][selected_slot].ability,
         CombatStatProjectionDispositionV1::Disabled { .. }
+    ));
+}
+
+#[test]
+fn defeat_recover_grammar_is_exact_for_the_three_audited_source_id_pairs() {
+    let catalog = catalog();
+    const DESCRIPTION: &str = "Defeat: Recover 2 Pillz Out Of 3";
+    let cases = [
+        (577, false, true),
+        (577, true, false),
+        (729, false, false),
+        (729, true, true),
+        (1418, false, false),
+        (1418, true, true),
+        (2475, false, false),
+        (2475, true, false),
+    ];
+
+    for (id, ability, admitted) in cases {
+        let registry = one_entry_registry(defeat_recover_entry(id, DESCRIPTION));
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let selected_slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        let modifier = Some(SourceModifier {
+            id,
+            description: DESCRIPTION.to_owned(),
+        });
+        if ability {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        let disposition = if ability {
+            &prepared.preparation()[PlayerId::P1][selected_slot].ability
+        } else {
+            &prepared.preparation()[PlayerId::P1][selected_slot].bonus
+        };
+        assert_eq!(
+            matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::ExecutePostRound { .. }
+            ),
+            admitted,
+            "id={id}, ability={ability}"
+        );
+        if id == 2475 {
+            assert!(matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::Disabled { identity, .. }
+                    if identity.id == 2475
+            ));
+        }
+        if !admitted {
+            assert!(matches!(
+                prepared.execute_combat_stat_diagnostic_v1_prefix(1),
+                Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
+            ));
+        }
+    }
+
+    let mut malformed = defeat_recover_entry(1418, DESCRIPTION);
+    malformed["abilityData"]["valueMin"] = serde_json::json!(2);
+    let registry = one_entry_registry(malformed);
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let selected_slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: 1418,
+        description: DESCRIPTION.to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        CombatStatProjectionDispositionV1::Disabled { .. }
+    ));
+    assert!(matches!(
+        prepared.execute_combat_stat_diagnostic_v1_prefix(1),
+        Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
     ));
 }
 
@@ -1080,6 +1299,7 @@ fn round_scaled_grammar_is_exact_and_nested_contexts_fail_closed() {
                     } => Some(*actual),
                     CombatStatProjectionDispositionV1::Absent
                     | CombatStatProjectionDispositionV1::Execute { .. }
+                    | CombatStatProjectionDispositionV1::ExecutePostRound { .. }
                     | CombatStatProjectionDispositionV1::Disabled { .. } => None,
                 },
                 admitted,
@@ -1217,6 +1437,7 @@ fn equalizer_grammar_is_exact_and_nested_contexts_fail_closed() {
                     } => Some(*actual),
                     CombatStatProjectionDispositionV1::Absent
                     | CombatStatProjectionDispositionV1::Execute { .. }
+                    | CombatStatProjectionDispositionV1::ExecutePostRound { .. }
                     | CombatStatProjectionDispositionV1::Disabled { .. } => None,
                 },
                 admitted,
@@ -1501,6 +1722,117 @@ fn server_replays_pin_confidence_revenge_and_the_fixed_revenge_bonus() {
         .unwrap();
     assert_eq!(round.round.cards[tina].power, 5);
     assert_eq!(round.round.cards[tina].damage, 6);
+}
+
+#[test]
+fn server_replays_pin_audited_defeat_recover_sources_and_resource_arithmetic() {
+    let catalog = catalog();
+    let registry = registry();
+
+    let ordinary = diagnostic(901400, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    let round = &ordinary.rounds[1];
+    let vortex = PlayerId::ALL
+        .into_iter()
+        .find(|player| {
+            matches!(
+                &round.selected[*player].bonus,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    identity,
+                    ..
+                } if identity.id == 577
+            )
+        })
+        .unwrap();
+    assert!(!round.round.cards[vortex].won);
+    assert_eq!(round.round.players[vortex].pillz, 9); // 10 - 3 + ceil(3 * 2 / 3)
+    assert_eq!(ordinary.final_position.players[vortex].pillz, 9);
+
+    let ability = diagnostic(946400, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    let round = &ability.rounds[0];
+    let ai_lycs = PlayerId::ALL
+        .into_iter()
+        .find(|player| {
+            matches!(
+                &round.selected[*player].ability,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    identity,
+                    ..
+                } if identity.id == 1418
+            )
+        })
+        .unwrap();
+    assert!(!round.round.cards[ai_lycs].won);
+    assert_eq!(round.round.players[ai_lycs].pillz, 11); // 12 - 4 + ceil(4 * 2 / 3)
+
+    // Arnie's only observed selection is Fury-inclusive. The preceding selected Spade
+    // converts damage to Pillz (id 1090), still intentionally disabled, so this capture is
+    // preparation evidence rather than a whole-prefix gate member.
+    let fury = diagnostic(1024592, &catalog, &registry);
+    let arnie = PlayerId::ALL
+        .into_iter()
+        .find_map(|player| {
+            fury.replay().players[player.index()]
+                .hand
+                .iter()
+                .position(|card| {
+                    card.source_ability
+                        .as_ref()
+                        .is_some_and(|source| source.id == 729)
+                })
+                .map(|slot| (player, slot))
+        })
+        .unwrap();
+    assert!(matches!(
+        fury.preparation()[arnie.0][arnie.1].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, .. }
+            if identity.id == 729
+    ));
+    let spade = PlayerId::ALL
+        .into_iter()
+        .find_map(|player| {
+            fury.replay().players[player.index()]
+                .hand
+                .iter()
+                .position(|card| {
+                    card.source_ability
+                        .as_ref()
+                        .is_some_and(|source| source.id == 1090)
+                })
+                .map(|slot| (player, slot))
+        })
+        .unwrap();
+    assert!(matches!(
+        fury.preparation()[spade.0][spade.1].ability,
+        CombatStatProjectionDispositionV1::Disabled { ref identity, .. }
+            if identity.id == 1090
+    ));
+    assert!(matches!(
+        fury.execute_combat_stat_diagnostic_v1_prefix(2),
+        Err(CombatStatDiagnosticReplayErrorV1::Mismatch { .. })
+    ));
+
+    let stopped = diagnostic(945585, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    let round = &stopped.rounds[0];
+    let deea = PlayerId::ALL
+        .into_iter()
+        .find(|player| {
+            matches!(
+                &round.selected[*player].bonus,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    identity,
+                    ..
+                } if identity.id == 577
+            )
+        })
+        .unwrap();
+    assert!(!round.round.cards[deea].won);
+    assert_eq!(round.round.players[deea].pillz, 10); // Stop Opp. Bonus suppresses recovery.
 }
 
 #[test]

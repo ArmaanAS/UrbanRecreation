@@ -14,12 +14,33 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 7;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 8;
+
+/// Strictly recognize the three replay identities audited for the diagnostic's sole
+/// post-round resource effect. This intentionally does not broaden the registry compiler's
+/// generic `RecoverPillz` support.
+pub(crate) fn classify_defeat_recover_pillz(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> bool {
+    let identity_matches = match source_kind {
+        CombatStatEffectSourceV1::Ability => matches!(definition.id(), 729 | 1418),
+        CombatStatEffectSourceV1::Bonus => definition.id() == 577,
+    };
+    identity_matches
+        && definition.description() == "Defeat: Recover 2 Pillz Out Of 3"
+        && defeat_recover_shape_matches(definition.structured_input())
+}
 
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    // Recovery has its own post-round execution channel. Keep it out of this combat-stat
+    // return type so neither generic numeric admission nor cancellation can reinterpret it.
+    if classify_defeat_recover_pillz(definition, source_kind) {
+        return None;
+    }
     // Model-specific conditions take precedence over the registry's model-neutral output.
     // Keep the unconditional guard below as well, so a future registry compiler expansion
     // cannot silently erase a condition by returning Supported first.
@@ -333,6 +354,39 @@ fn neutral_except_previous_round(input: &StructuredEffectV1) -> bool {
         && !input.is_immediate_permanent
 }
 
+fn defeat_recover_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value == 2
+        && input.value_min == 3
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Lose
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::Pillz
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::RecoverPillz
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
 fn position_description_matches(
     description: &str,
     predicate: CombatStatPredicateV1,
@@ -590,6 +644,54 @@ mod tests {
                 })
                 .collect();
             assert_eq!(classified, admitted, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn defeat_recover_admits_only_the_audited_identity_and_shape() {
+        let registry = registry();
+        assert!(classify_defeat_recover_pillz(
+            registry
+                .lookup_capture(577, "Defeat: Recover 2 Pillz Out Of 3")
+                .unwrap(),
+            CombatStatEffectSourceV1::Bonus,
+        ));
+        assert!(classify_defeat_recover_pillz(
+            registry
+                .lookup_capture(1418, "Defeat: Recover 2 Pillz Out Of 3")
+                .unwrap(),
+            CombatStatEffectSourceV1::Ability,
+        ));
+        assert!(!classify_defeat_recover_pillz(
+            registry
+                .lookup_capture(577, "Defeat: Recover 2 Pillz Out Of 3")
+                .unwrap(),
+            CombatStatEffectSourceV1::Ability,
+        ));
+        assert!(!classify_defeat_recover_pillz(
+            registry
+                .lookup_capture(1418, "Defeat: Recover 2 Pillz Out Of 3")
+                .unwrap(),
+            CombatStatEffectSourceV1::Bonus,
+        ));
+        assert!(classify_defeat_recover_pillz(
+            registry
+                .lookup_capture(729, "Defeat: Recover 2 Pillz Out Of 3")
+                .unwrap(),
+            CombatStatEffectSourceV1::Ability,
+        ));
+        for id in [2475] {
+            let definition = registry
+                .lookup_capture(id, "Defeat: Recover 2 Pillz Out Of 3")
+                .unwrap();
+            assert!(!classify_defeat_recover_pillz(
+                definition,
+                CombatStatEffectSourceV1::Bonus,
+            ));
+            assert!(!classify_defeat_recover_pillz(
+                definition,
+                CombatStatEffectSourceV1::Ability,
+            ));
         }
     }
 }

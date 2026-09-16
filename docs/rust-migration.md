@@ -204,11 +204,11 @@ to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attac
 then precede the sorted opponent Attack reductions. Arithmetic observations outside an
 admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is twenty-nine sequential prefix rounds:
-`875032/2`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/1`, and
+The immutable server-backed gate is thirty-one sequential prefix rounds:
+`875032/2`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/2`, and
 `874837/2`, plus `1011643/2`, `1011768/1`, `1011483/2`, `877812/2`, and
 `874642/1`, `1059269/1`, and `1091585/1`, plus `868094/1`, `875230/1`, and
-`877950/1`, plus `945585/2`, `1023396/2`, and `874962/2`. Its selected Execute/Disabled identity sets are
+`877950/1`, plus `945585/2`, `1023396/2`, `874962/2`, and `946400/1`. Its selected Execute/Disabled identity sets are
 pinned, while focused tests pin
 the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
 (Galahad Damage 2 to 5 on unequal slots) and active Symmetry (Anagone reduces Bella Ld Power
@@ -235,9 +235,9 @@ five and exact make/unmake restoration. Oscar (`868094`) proves Support Power +1
 matching characters before Callie's opposing reduction; Ludicrite (`875230`) and Boohma
 (`877950`) prove Support Attack +3 and +5 respectively with four matching characters.
 Focused catalog tests also pin singleton Taljion and Oculus-derived effective-clan counts.
-Replay provenance records compiler/policy semantic revision 7 for this scope.
+Replay provenance records compiler/policy semantic revision 8 for this scope.
 
-Semantic revision 7 admits only the exact fixed numeric previous-round grammar: a structured
+The carried-forward previous-round portion admits only the exact fixed numeric grammar: a structured
 `previousRoundRequirement` of `win` with `Confidence: ` or `Confidence : `, or `lose` with
 `Revenge: `; the suffix must satisfy the existing exact fixed combat-stat grammar. The effect
 must otherwise be neutral (`currentRoundRequirement=any`, no other condition, link,
@@ -254,6 +254,29 @@ Stop Opp. Ability (`490`, `589`, `1680`), copy/exchange (`1409`, `1713`, `1751`,
 Night-prefixed Confidence (`1643`), dynamic conversion (`1719`), current-round
 conjunctions and life/pillz effects (`814`, `1652`, `1661`, `1702`, `1810`, `2113`, `3016`,
 `3546`, `4301`, `4449`), and permanent Mindwipe/Poison (`2582`, `3301`).
+
+Semantic revision 8 adds one deliberately narrow post-round resource effect: the exact
+structured and textual `Defeat: Recover 2 Pillz Out Of 3` shape, with an unconditional
+previous-round field, current-round `lose`, player Pillz increase, `recover_pillz` special
+action, values `2` and `3`, and every unrelated link, bound, condition, permanence, and
+multiplier neutral. It is identity- and source-kind-locked: registry id `577` only as a
+bonus, and ids `729` and `1418` only as abilities. Same-text id `2475`, every other source
+kind pairing, and every other recovery ratio or shape remain Disabled/fail-closed; this is
+not generic Defeat, Pillz, or post-round-effect parity. `901400/2` proves ordinary
+bonus-577 recovery, while `946400/1` proves ability-1418 recovery. Ability 729 is admitted
+by the same strict compiler and a synthetic Fury-cost test, but capture `1024592/2` remains
+preparation-only: Arnie's 729 is `ExecutePostRound` while unrelated selected id `1090` is
+Disabled, so the prefix intentionally mismatches rather than widening that effect.
+
+Recovery uses the losing card's paid cost after payment: the free attack pill is excluded,
+Fury's three paid Pillz are included, and it restores `max(1, ceil(2 * paid / 3))`. It is
+applied after winner/damage resolution to the loser, including a KO, before the committed
+round's status/report and final position are exposed. It is a typed post-round plan, not a
+combat-stat modifier; the base commit builds a complete replacement position, so recovery
+overflow aborts atomically and the opaque undo restores the pre-round position exactly.
+Existing Stop Opp. Bonus liveness suppresses bonus-577 recovery (`945585`); Stop Opp.
+Ability, protection, and Pillz-cancellation interactions are still unsupported and
+fail-closed if selected.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
@@ -272,8 +295,9 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 7 records this semantic boundary together with the exact
-Equalizer multiplier and the bounded Confidence/Revenge/Frozn slice.
+context. Compiler/policy revision 8 records this semantic boundary together with the exact
+Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, and the identity-locked
+Defeat-recovery post-round plan.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -290,12 +314,19 @@ and `O+A+B+C` does not infiltrate; multiple Oculus cards disable infiltration. A
 card receives the target clan's selected day/night printed bonus before activation and
 Support counting. Duplicate character ids and any Leader are rejected by strict solver
 construction. Catalog source ids remain distinct from registry definition ids, so source
-structure is resolved by conflict-checking exact description lookup. A selected night
+structure is resolved by conflict-checking exact description lookup. The reviewed recovery
+bridge is intentionally narrower still: active effective Vortex clan `45` with catalog bonus
+id `43` and the exact recovery description resolves to registry definition `577`; catalog
+ability ids `729` and `1418` resolve only to their identically numbered ability definitions.
+Catalog id `43` is not a registry id, and the same-text registry aliases (`577`, `729`,
+`1418`, `2475`) must not collide into text-only admission: source kind, effective clan,
+catalog id, registry id, description, and exact structured shape all agree or strict
+construction rejects the draw. A selected night
 variant has no catalog numeric id unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 7, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 8, and catalog-context
 policy revision 1.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots

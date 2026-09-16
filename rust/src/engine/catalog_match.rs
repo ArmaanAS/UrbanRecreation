@@ -5,13 +5,14 @@
 //! registry, and refuses a match if any legal card could reach an unsupported effect.
 
 use super::combat_stat_compiler::{
-    classify_combat_stat_effect, compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_combat_stat_effect, classify_defeat_recover_pillz, compact_effect,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
-    CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatPlanErrorV1, CombatStatPredicateV1,
-    CombatStatSourcePlanV1, HandSlot, PlayerId, HAND_SIZE,
+    CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatPlanErrorV1, CombatStatPostRoundEffectV1,
+    CombatStatPredicateV1, CombatStatSourcePlanV1, HandSlot, PlayerId, HAND_SIZE,
 };
 use crate::catalog::{
     CanonicalCard, CardCatalog, CardKey, EffectiveCardCatalog,
@@ -26,6 +27,9 @@ use std::fmt;
 
 pub const LEADER_CLAN_ID: u32 = 36;
 pub const OCULUS_CLAN_ID: u32 = 56;
+const VORTEX_CLAN_ID: u32 = 45;
+const VORTEX_CATALOG_BONUS_ID: u32 = 43;
+const DEFEAT_RECOVER_DESCRIPTION: &str = "Defeat: Recover 2 Pillz Out Of 3";
 pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -107,6 +111,13 @@ pub enum CatalogCombatStatSourceDispositionV1 {
         identity: CatalogCombatStatModifierIdentityV1,
         effect: SupportedEffectV1,
         predicate: CombatStatPredicateV1,
+    },
+    /// The card is executable, but its effect is applied only after round damage has
+    /// resolved. Its compact plan still carries `Always` so the engine can construct the
+    /// post-round work without widening ordinary stat-effect classification.
+    ExecutePostRound {
+        identity: CatalogCombatStatModifierIdentityV1,
+        effect: CombatStatPostRoundEffectV1,
     },
 }
 
@@ -339,6 +350,7 @@ impl CatalogCombatStatMatchV1 {
                         player,
                         slot,
                         CombatStatEffectSourceV1::Ability,
+                        effective.effective_clan_id,
                         source.catalog_id,
                         &source.description,
                     )?
@@ -351,6 +363,7 @@ impl CatalogCombatStatMatchV1 {
                         player,
                         slot,
                         CombatStatEffectSourceV1::Bonus,
+                        effective.effective_clan_id,
                         source.catalog_id,
                         &source.description,
                     )?
@@ -666,11 +679,28 @@ fn prepare_catalog_source(
     player: PlayerId,
     hand_slot: HandSlot,
     source_kind: CombatStatEffectSourceV1,
+    effective_clan_id: u32,
     catalog_id: Option<u32>,
     description: &str,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
     if matches!(description, "No Ability" | "No Bonus") {
         return Ok(absent_source());
+    }
+    if let Some(registry_definition_id) = defeat_recover_registry_definition_id(
+        source_kind,
+        effective_clan_id,
+        catalog_id,
+        description,
+    ) {
+        return prepare_defeat_recover_source(
+            registry,
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description,
+            registry_definition_id,
+        );
     }
     let match_ = registry.lookup_description(description).map_err(|source| {
         CatalogCombatStatMatchErrorV1::Lookup {
@@ -721,6 +751,96 @@ fn prepare_catalog_source(
             source_id: definition.id(),
             predicate,
             effect: compact_effect,
+        },
+    })
+}
+
+/// Resolves only the reviewed recovery identities. In particular, catalog bonus id 43 is
+/// the Vortex catalog identifier, not an effect-registry definition id; its bridge is valid
+/// only for an active effective Vortex bonus and pins registry definition 577.
+fn defeat_recover_registry_definition_id(
+    source_kind: CombatStatEffectSourceV1,
+    effective_clan_id: u32,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Option<u32> {
+    if description != DEFEAT_RECOVER_DESCRIPTION {
+        return None;
+    }
+    match (source_kind, catalog_id) {
+        (CombatStatEffectSourceV1::Ability, Some(id @ (729 | 1418))) => Some(id),
+        (CombatStatEffectSourceV1::Bonus, Some(VORTEX_CATALOG_BONUS_ID))
+            if effective_clan_id == VORTEX_CLAN_ID =>
+        {
+            Some(577)
+        }
+        _ => None,
+    }
+}
+
+fn prepare_defeat_recover_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    if !classify_defeat_recover_pillz(definition, source_kind) {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
+    // Report the registry's actual structurally identical aliases as provenance. Admission
+    // remains pinned to `registry_definition_id`; aliases never inherit executability.
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
         },
     })
 }

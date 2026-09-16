@@ -4,15 +4,14 @@
 //! preparation and rich disposition metadata live in the replay diagnostic module.
 
 use super::combat_resolution::{
-    prepare_combat_resolution, CombatResolutionArithmeticStage, CombatResolutionError,
-    ResolutionCardPlan, ResolutionSourcePlan,
+    prepare_combat_resolution_with_post_round, CombatResolutionArithmeticStage,
+    CombatResolutionError, PreparedCombatResolution, ResolutionCardPlan, ResolutionSourcePlan,
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
     DiagnosticCombatEffectV1, DiagnosticCombatStatV1, DiagnosticMagnitudeV1,
-    DiagnosticStatOperationV1, HandSlot, PlayerId, PreparedSelection, ValidatedSelection,
-    HAND_SIZE,
+    DiagnosticStatOperationV1, HandSlot, PlayerId, PostRoundEffect, ValidatedSelection, HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -68,6 +67,13 @@ pub enum CombatStatPredicateV1 {
     SelectedHandSlotsDiffer,
 }
 
+/// Public provenance metadata for an admitted post-round effect. The hot path converts this
+/// fixed effect into its private typed commit plan; its numeric rule is not configurable.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CombatStatPostRoundEffectV1 {
+    RecoverPaidPillzOnDefeat,
+}
+
 /// String-free execution primitives admitted by the first diagnostic projection.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CombatStatEffectV1 {
@@ -84,6 +90,9 @@ pub enum CombatStatEffectV1 {
     CancelOpponentCombatStatModifiers {
         stat: CombatStatAttributeV1,
     },
+    /// The only non-stat effect admitted by this projected model. Identity and source are
+    /// checked at plan construction; its values are intentionally not caller-configurable.
+    RecoverPaidPillzOnDefeat,
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and
@@ -159,6 +168,8 @@ pub enum InvalidCombatStatPlanReasonV1 {
     ConditionalControl,
     IncompatibleBounds,
     InvalidModifierDirection,
+    DefeatRecoveryIdentity,
+    DefeatRecoveryPredicate,
     /// The ability uses Support outside the unconditional basic-stat subset admitted by
     /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
@@ -406,7 +417,9 @@ impl CombatStatDiagnosticV1 {
             rounds_played,
             previous_round_winner,
         )?;
-        let (report, base_rules) = self.base_rules.commit(input, prepared);
+        let (report, base_rules) =
+            self.base_rules
+                .commit(input, prepared.selections, prepared.post_round)?;
         Ok((report, CombatStatDiagnosticUndoV1 { base_rules }))
     }
 
@@ -512,6 +525,31 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
+    if effect == CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+        if !matches!(
+            (source, source_id),
+            (CombatStatEffectSourceV1::Ability, 729 | 1418)
+                | (CombatStatEffectSourceV1::Bonus, 577)
+        ) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::DefeatRecoveryIdentity,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::DefeatRecoveryPredicate,
+            ));
+        }
+        return Ok(());
+    }
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
     {
@@ -724,7 +762,7 @@ fn prepare_combat_stat_diagnostic(
     first_mover: PlayerId,
     rounds_played: u8,
     previous_round_winner: Option<PlayerId>,
-) -> Result<ByPlayer<PreparedSelection>, CombatStatDiagnosticErrorV1> {
+) -> Result<PreparedCombatResolution, CombatStatDiagnosticErrorV1> {
     let selected = ByPlayer::new(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
         cards[PlayerId::P2][validated[PlayerId::P2].slot.index()],
@@ -747,7 +785,8 @@ fn prepare_combat_stat_diagnostic(
             previous_round_winner,
         ),
     );
-    prepare_combat_resolution(validated, plans, rounds_played).map_err(map_resolution_error)
+    prepare_combat_resolution_with_post_round(validated, plans, rounds_played)
+        .map_err(map_resolution_error)
 }
 
 fn resolution_card_plan(
@@ -768,7 +807,16 @@ fn resolution_card_plan(
                 opponent_slot,
                 previous_round_winner,
             )
-            .map(shared_effect),
+            .and_then(shared_effect),
+            post_round: active_effect(
+                plan.ability,
+                owner,
+                first_mover,
+                owner_slot,
+                opponent_slot,
+                previous_round_winner,
+            )
+            .and_then(shared_post_round_effect),
             support_count: plan.source_ability_support_count,
         },
         bonus: ResolutionSourcePlan {
@@ -780,14 +828,23 @@ fn resolution_card_plan(
                 opponent_slot,
                 previous_round_winner,
             )
-            .map(shared_effect),
+            .and_then(shared_effect),
+            post_round: active_effect(
+                plan.bonus,
+                owner,
+                first_mover,
+                owner_slot,
+                opponent_slot,
+                previous_round_winner,
+            )
+            .and_then(shared_post_round_effect),
             support_count: plan.source_bonus_support_count,
         },
     }
 }
 
-fn shared_effect(effect: CombatStatEffectV1) -> DiagnosticCombatEffectV1 {
-    match effect {
+fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1> {
+    Some(match effect {
         CombatStatEffectV1::ModifyCombatStat {
             side,
             stat,
@@ -835,6 +892,18 @@ fn shared_effect(effect: CombatStatEffectV1) -> DiagnosticCombatEffectV1 {
                 },
             }
         }
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat => return None,
+    })
+}
+
+fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffect> {
+    match effect {
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat => {
+            Some(PostRoundEffect::RecoverPaidPillzOnDefeat)
+        }
+        CombatStatEffectV1::ModifyCombatStat { .. }
+        | CombatStatEffectV1::StopOpponentBonus
+        | CombatStatEffectV1::CancelOpponentCombatStatModifiers { .. } => None,
     }
 }
 
@@ -850,5 +919,277 @@ fn map_resolution_error(error: CombatResolutionError) -> CombatStatDiagnosticErr
     CombatStatDiagnosticErrorV1::ArithmeticOverflow {
         player: error.player,
         stage,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::CardKey;
+    use crate::engine::{BaseRulesCardSpec, BaseRulesPlayerSpec, BaseRulesSelection, MatchStatus};
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    fn base_spec(p1_pillz: u16) -> BaseRulesMatchSpec {
+        let card = |id, power| BaseRulesCardSpec {
+            key: CardKey::new(id, 3),
+            clan_id: id,
+            power,
+            damage: 3,
+        };
+        BaseRulesMatchSpec {
+            battle_rule_id: 10,
+            night: false,
+            players: ByPlayer::new(
+                BaseRulesPlayerSpec {
+                    initial_life: 20,
+                    initial_pillz: p1_pillz,
+                    hand: [card(1, 6), card(2, 6), card(3, 6), card(4, 6)],
+                },
+                BaseRulesPlayerSpec {
+                    initial_life: 20,
+                    initial_pillz: 20,
+                    hand: [card(11, 31), card(12, 31), card(13, 31), card(14, 31)],
+                },
+            ),
+        }
+    }
+
+    fn absent(card: BaseRulesCardSpec) -> CombatStatCardPlanV1 {
+        CombatStatCardPlanV1 {
+            key: card.key,
+            effective_clan_id: card.clan_id,
+            ability: CombatStatSourcePlanV1::Absent,
+            bonus: CombatStatSourcePlanV1::Absent,
+            source_bonus_support_count: 0,
+            source_ability_support_count: 0,
+        }
+    }
+
+    fn spec_with_p1(
+        effect_source: CombatStatEffectSourceV1,
+        id: u32,
+        effect: CombatStatEffectV1,
+        p1_pillz: u16,
+    ) -> CombatStatDiagnosticMatchSpecV1 {
+        let base_rules = base_spec(p1_pillz);
+        let mut cards = ByPlayer::new(
+            base_rules.players[PlayerId::P1].hand.map(absent),
+            base_rules.players[PlayerId::P2].hand.map(absent),
+        );
+        let plan = CombatStatSourcePlanV1::Execute {
+            source_id: id,
+            predicate: CombatStatPredicateV1::Always,
+            effect,
+        };
+        match effect_source {
+            CombatStatEffectSourceV1::Ability => cards[PlayerId::P1][0].ability = plan,
+            CombatStatEffectSourceV1::Bonus => {
+                cards[PlayerId::P1][0].bonus = plan;
+                cards[PlayerId::P1][0].source_bonus_support_count = 1;
+            }
+        }
+        CombatStatDiagnosticMatchSpecV1 { base_rules, cards }
+    }
+
+    fn input(p1_pillz: u16, fury: bool) -> BaseRulesRoundInput {
+        BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, p1_pillz, fury),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        }
+    }
+
+    #[test]
+    fn defeat_recovery_uses_fury_inclusive_cost_and_undo_is_exact() {
+        let spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            729,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            7,
+        );
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let before = game.position().clone();
+        let mut hasher = DefaultHasher::new();
+        before.hash(&mut hasher);
+        let before_hash = hasher.finish();
+
+        // Four selected pillz plus Fury costs seven; losing recovers ceil(7 * 2 / 3) = 5.
+        let (report, undo) = game.make(input(4, true)).unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 5);
+        assert_eq!(game.position().players[PlayerId::P1].pillz, 5);
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        game.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
+    }
+
+    #[test]
+    fn defeat_recovery_is_source_live_but_not_a_combat_stat_modifier() {
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Bonus,
+            577,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            3,
+        );
+        spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::StopOpponentBonus,
+        };
+        let mut stopped = CombatStatDiagnosticV1::new(spec).unwrap();
+        let (report, _) = stopped.make(input(3, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].pillz, 0);
+
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1418,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            3,
+        );
+        spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::PowerAndDamage,
+            },
+        };
+        let mut uncancelled = CombatStatDiagnosticV1::new(spec).unwrap();
+        let (report, _) = uncancelled.make(input(3, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].pillz, 2);
+
+        let mut minimum = CombatStatDiagnosticV1::new(spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1418,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            0,
+        ))
+        .unwrap();
+        let (report, _) = minimum.make(input(0, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].pillz, 1);
+
+        // The two independently active sources represent two END events, so each exact
+        // recovery applies after the same paid cost.
+        let mut double = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            729,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            3,
+        );
+        double.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+            source_id: 577,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+        };
+        double.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        let mut double = CombatStatDiagnosticV1::new(double).unwrap();
+        let (report, _) = double.make(input(3, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].pillz, 4);
+    }
+
+    #[test]
+    fn defeat_recovery_requires_a_round_loss_and_still_runs_after_a_tie_break_or_ko() {
+        let mut winning_spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1418,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            3,
+        );
+        winning_spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        let mut winner = CombatStatDiagnosticV1::new(winning_spec).unwrap();
+        let (report, _) = winner.make(input(3, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 0);
+
+        let mut tied_spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1418,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            0,
+        );
+        tied_spec.base_rules.players[PlayerId::P2].hand[0].power = 6;
+        let mut tied = CombatStatDiagnosticV1::new(tied_spec).unwrap();
+        let (report, _) = tied
+            .make(BaseRulesRoundInput {
+                first_mover: PlayerId::P2,
+                selections: ByPlayer::new(
+                    BaseRulesSelection::new(0, 0, false),
+                    BaseRulesSelection::new(0, 0, false),
+                ),
+            })
+            .unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 1);
+
+        let mut ko_spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1418,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            3,
+        );
+        ko_spec.base_rules.players[PlayerId::P1].initial_life = 2;
+        let mut ko = CombatStatDiagnosticV1::new(ko_spec).unwrap();
+        let (report, _) = ko.make(input(3, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].life, 0);
+        assert_eq!(report.players[PlayerId::P1].pillz, 2);
+        assert_eq!(report.status, MatchStatus::Won(PlayerId::P2));
+    }
+
+    #[test]
+    fn defeat_recovery_public_plans_are_identity_locked_and_overflow_is_atomic() {
+        let wrong_identity = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            2475,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            3,
+        );
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_identity),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::DefeatRecoveryIdentity,
+                ..
+            })
+        ));
+
+        let mut wrong_predicate = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1418,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            3,
+        );
+        wrong_predicate.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1418,
+            predicate: CombatStatPredicateV1::OwnerLostPreviousRound,
+            effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_predicate),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::DefeatRecoveryPredicate,
+                ..
+            })
+        ));
+
+        let mut overflow = CombatStatDiagnosticV1::new(spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1418,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            u16::MAX,
+        ))
+        .unwrap();
+        let before = overflow.position().clone();
+        assert!(matches!(
+            overflow.make(input(0, false)),
+            Err(CombatStatDiagnosticErrorV1::BaseRules(
+                BaseRulesError::PillzRecoveryOverflow {
+                    player: PlayerId::P1
+                }
+            ))
+        ));
+        assert_eq!(overflow.position(), &before);
     }
 }
