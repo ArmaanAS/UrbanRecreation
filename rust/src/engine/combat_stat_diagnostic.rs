@@ -57,6 +57,8 @@ pub enum CombatStatPredicateV1 {
     Always,
     OwnerMovesFirst,
     OwnerMovesSecond,
+    SelectedHandSlotsMatch,
+    SelectedHandSlotsDiffer,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -447,7 +449,16 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
-    if source == CombatStatEffectSourceV1::Bonus && predicate != CombatStatPredicateV1::Always {
+    if source == CombatStatEffectSourceV1::Bonus
+        && (matches!(
+            predicate,
+            CombatStatPredicateV1::OwnerMovesFirst | CombatStatPredicateV1::OwnerMovesSecond
+        ) || (matches!(
+            predicate,
+            CombatStatPredicateV1::SelectedHandSlotsMatch
+                | CombatStatPredicateV1::SelectedHandSlotsDiffer
+        ) && multiplier != CombatStatMagnitudeV1::Fixed))
+    {
         return Err(invalid_combat_stat_execute(
             player,
             hand_slot,
@@ -555,11 +566,15 @@ fn active_effect(
     plan: CombatStatSourcePlanV1,
     owner: PlayerId,
     first_mover: PlayerId,
+    owner_slot: HandSlot,
+    opponent_slot: HandSlot,
 ) -> Option<CombatStatEffectV1> {
     match plan {
         CombatStatSourcePlanV1::Execute {
             predicate, effect, ..
-        } if predicate_matches(predicate, owner, first_mover) => Some(effect),
+        } if predicate_matches(predicate, owner, first_mover, owner_slot, opponent_slot) => {
+            Some(effect)
+        }
         CombatStatSourcePlanV1::Absent
         | CombatStatSourcePlanV1::Disabled { .. }
         | CombatStatSourcePlanV1::RejectIfSelected { .. }
@@ -571,11 +586,15 @@ fn predicate_matches(
     predicate: CombatStatPredicateV1,
     owner: PlayerId,
     first_mover: PlayerId,
+    owner_slot: HandSlot,
+    opponent_slot: HandSlot,
 ) -> bool {
     match predicate {
         CombatStatPredicateV1::Always => true,
         CombatStatPredicateV1::OwnerMovesFirst => owner == first_mover,
         CombatStatPredicateV1::OwnerMovesSecond => owner != first_mover,
+        CombatStatPredicateV1::SelectedHandSlotsMatch => owner_slot == opponent_slot,
+        CombatStatPredicateV1::SelectedHandSlotsDiffer => owner_slot != opponent_slot,
     }
 }
 
@@ -589,8 +608,20 @@ fn prepare_combat_stat_diagnostic(
         cards[PlayerId::P2][validated[PlayerId::P2].slot.index()],
     );
     let plans = ByPlayer::new(
-        resolution_card_plan(selected[PlayerId::P1], PlayerId::P1, first_mover),
-        resolution_card_plan(selected[PlayerId::P2], PlayerId::P2, first_mover),
+        resolution_card_plan(
+            selected[PlayerId::P1],
+            PlayerId::P1,
+            first_mover,
+            validated[PlayerId::P1].slot,
+            validated[PlayerId::P2].slot,
+        ),
+        resolution_card_plan(
+            selected[PlayerId::P2],
+            PlayerId::P2,
+            first_mover,
+            validated[PlayerId::P2].slot,
+            validated[PlayerId::P1].slot,
+        ),
     );
     prepare_combat_resolution(validated, plans).map_err(map_resolution_error)
 }
@@ -599,16 +630,20 @@ fn resolution_card_plan(
     plan: CombatStatCardPlanV1,
     owner: PlayerId,
     first_mover: PlayerId,
+    owner_slot: HandSlot,
+    opponent_slot: HandSlot,
 ) -> ResolutionCardPlan {
     ResolutionCardPlan {
         ability: ResolutionSourcePlan {
-            effect: active_effect(plan.ability, owner, first_mover).map(shared_effect),
+            effect: active_effect(plan.ability, owner, first_mover, owner_slot, opponent_slot)
+                .map(shared_effect),
             // Ability Support is rejected by plan validation and can never consume the
             // captured source-bonus Support count.
             support_count: 0,
         },
         bonus: ResolutionSourcePlan {
-            effect: active_effect(plan.bonus, owner, first_mover).map(shared_effect),
+            effect: active_effect(plan.bonus, owner, first_mover, owner_slot, opponent_slot)
+                .map(shared_effect),
             support_count: plan.source_bonus_support_count,
         },
     }

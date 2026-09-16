@@ -21,6 +21,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1089513, 1),
     (901400, 1),
     (874837, 2),
+    (1011643, 2),
+    (1011768, 1),
+    (1011483, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -70,6 +73,19 @@ fn numeric_entry(
     })
 }
 
+fn index_numeric_entry(
+    id: u32,
+    description: &str,
+    index: &str,
+    position: &str,
+    value: u16,
+    minimum: u16,
+) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, position, value, minimum);
+    entry["abilityData"]["indexRequirement"] = serde_json::json!(index);
+    entry
+}
+
 fn one_entry_registry(entry: serde_json::Value) -> EffectRegistryV1 {
     let id = entry["id"].as_u64().unwrap().to_string();
     let mut entries = serde_json::Map::new();
@@ -108,7 +124,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_eight_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_thirteen_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -139,14 +155,15 @@ fn fixed_server_backed_gate_is_exactly_eight_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 8);
+    assert_eq!(rounds, 13);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            37, 42, 93, 156, 266, 612, 871, 916, 1163, 1372, 1536, 2299, 4216, 5026, 5273, 5763,
+            6, 37, 40, 42, 56, 93, 156, 266, 612, 741, 871, 916, 1163, 1372, 1536, 1844, 1845,
+            1848, 1850, 2299, 2881, 3865, 4216, 4718, 5026, 5273, 5763,
         ])
     );
-    assert_eq!(disabled_ids, BTreeSet::from([274, 577, 4459]));
+    assert_eq!(disabled_ids, BTreeSet::from([274, 577, 1852, 4459]));
     assert_eq!(absent, 0);
 }
 
@@ -204,6 +221,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
+    assert_eq!(provenance.compiler_policy_semantic_revision, 2);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -435,6 +453,181 @@ fn positional_grammar_is_exact_and_nested_contexts_fail_closed() {
 }
 
 #[test]
+fn index_grammar_is_exact_and_nested_contexts_fail_closed() {
+    let catalog = catalog();
+    const EFFECT_ID: u32 = 900_102;
+    let cases = [
+        (
+            "Asymmetry: Night: -2 Opp Power, Min 3",
+            "asymmetry",
+            "both",
+            false,
+        ),
+        ("Symmetry: -2 Opp Power, Min 3", "asymmetry", "both", false),
+        ("Asymmetry: -3 Opp Power, Min 3", "asymmetry", "both", false),
+        (
+            "Asymmetry: -2 Opp Power, Min 3",
+            "asymmetry",
+            "attacker",
+            false,
+        ),
+        ("Asymmetry: -2 Opp Power, Min 3", "asymmetry", "both", true),
+        ("Symmetry: -2 Opp Power, Min 3", "symmetry", "both", true),
+    ];
+    for (description, index, position, admitted) in cases {
+        for bonus in [false, true] {
+            let registry = one_entry_registry(index_numeric_entry(
+                EFFECT_ID,
+                description,
+                index,
+                position,
+                2,
+                3,
+            ));
+            let mut source = replay(875032, &catalog);
+            clear_sources(&mut source);
+            let selected_slot = usize::from(
+                source.rounds[0]
+                    .plays
+                    .iter()
+                    .find(|play| play.engine_player == EnginePlayer::P1)
+                    .unwrap()
+                    .hand_index,
+            );
+            let modifier = Some(SourceModifier {
+                id: EFFECT_ID,
+                description: description.to_owned(),
+            });
+            if bonus {
+                source.players[0].hand[selected_slot].source_bonus = modifier;
+            } else {
+                source.players[0].hand[selected_slot].source_ability = modifier;
+            }
+            let prepared =
+                CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+            assert_eq!(
+                matches!(
+                    if bonus {
+                        &prepared.preparation()[PlayerId::P1][selected_slot].bonus
+                    } else {
+                        &prepared.preparation()[PlayerId::P1][selected_slot].ability
+                    },
+                    CombatStatProjectionDispositionV1::Execute { .. }
+                ),
+                admitted,
+                "source={} {description}",
+                if bonus { "bonus" } else { "ability" }
+            );
+            if !admitted {
+                assert!(matches!(
+                    prepared.execute_combat_stat_diagnostic_v1_prefix(1),
+                    Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
+                ));
+            }
+        }
+    }
+
+    for (description, index, side, attribute, action, value, minimum, predicate) in [
+        (
+            "Asymmetry: Power And Damage + 3",
+            "asymmetry",
+            "player",
+            "pwr&dmg",
+            "increase",
+            3,
+            0,
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        ),
+        (
+            "Symmetry: -2 Opp Pow. And Dam., Min 1",
+            "symmetry",
+            "opponent",
+            "pwr&dmg",
+            "decrease",
+            2,
+            1,
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+        ),
+    ] {
+        let mut entry = index_numeric_entry(EFFECT_ID, description, index, "both", value, minimum);
+        entry["abilityData"]["sideAffected"] = serde_json::json!(side);
+        entry["abilityData"]["attributeAffected"] = serde_json::json!(attribute);
+        entry["abilityData"]["attributeAction"] = serde_json::json!(action);
+        let registry = one_entry_registry(entry);
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let selected_slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+            id: EFFECT_ID,
+            description: description.to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert!(matches!(
+            prepared.preparation()[PlayerId::P1][selected_slot].ability,
+            CombatStatProjectionDispositionV1::Execute {
+                predicate: actual,
+                ..
+            } if actual == predicate
+        ));
+    }
+
+    let mut nested = index_numeric_entry(
+        EFFECT_ID,
+        "Asymmetry: -2 Opp Power, Min 3",
+        "asymmetry",
+        "both",
+        2,
+        3,
+    );
+    nested["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    let nested_registry = one_entry_registry(nested);
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let selected_slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: EFFECT_ID,
+        description: "Asymmetry: -2 Opp Power, Min 3".to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &nested_registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.execute_combat_stat_diagnostic_v1_prefix(1),
+        Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
+    ));
+
+    // The selected slots differ, so Symmetry is false. Conditional controls still reject
+    // before predicate evaluation rather than becoming a successful no-op.
+    let registry = registry();
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: 4525,
+        description: "Symmetry: Stop Opp. Bonus".to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.execute_combat_stat_diagnostic_v1_prefix(1),
+        Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
+    ));
+}
+
+#[test]
 fn selected_degrowth_is_rejected_before_the_excluded_second_round() {
     let catalog = catalog();
     let registry = registry();
@@ -449,24 +642,51 @@ fn selected_degrowth_is_rejected_before_the_excluded_second_round() {
 }
 
 #[test]
-fn selected_asymmetry_is_rejected_instead_of_fixture_specialized() {
+fn server_replays_pin_active_inactive_and_stopped_index_predicates() {
     let catalog = catalog();
     let registry = registry();
-    for battle_id in [1011643, 1011768] {
-        let prepared = diagnostic(battle_id, &catalog, &registry);
-        let error = prepared
-            .execute_combat_stat_diagnostic_v1_prefix(1)
-            .unwrap_err();
-        let CombatStatDiagnosticReplayErrorV1::Engine {
-            context, selected, ..
-        } = error
-        else {
-            panic!("expected selected Asymmetry rejection for {battle_id}")
-        };
-        assert_eq!(context.round, 0);
-        assert!(selected.0.iter().any(|card| matches!(
-            card.bonus,
-            CombatStatProjectionDispositionV1::Disabled { .. }
-        )));
-    }
+
+    let inactive = diagnostic(1011768, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    assert!(matches!(
+        inactive.rounds[0].selected[PlayerId::P1].bonus,
+        CombatStatProjectionDispositionV1::Execute {
+            predicate: CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ..
+        }
+    ));
+    assert_eq!(inactive.rounds[0].round.cards[PlayerId::P1].damage, 3);
+
+    let active = diagnostic(1011483, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    assert!(matches!(
+        active.rounds[0].selected[PlayerId::P1].bonus,
+        CombatStatProjectionDispositionV1::Execute {
+            predicate: CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ..
+        }
+    ));
+    assert_eq!(active.rounds[0].round.cards[PlayerId::P1].damage, 5);
+    assert!(matches!(
+        active.rounds[1].selected[PlayerId::P1].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            predicate: CombatStatPredicateV1::SelectedHandSlotsMatch,
+            ..
+        }
+    ));
+    assert_eq!(active.rounds[1].round.cards[PlayerId::P2].power, 4);
+
+    let stopped = diagnostic(1011643, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    assert!(matches!(
+        stopped.rounds[1].selected[PlayerId::P1].bonus,
+        CombatStatProjectionDispositionV1::Execute {
+            predicate: CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ..
+        }
+    ));
+    assert_eq!(stopped.rounds[1].round.cards[PlayerId::P1].damage, 4);
 }

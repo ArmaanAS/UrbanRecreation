@@ -150,10 +150,15 @@ abilities, post-round effects, permanents, protection, or out-of-slice bonuses.
 `ClanBonusDiagnostic` or claim full engine parity. It executes reviewed fixed ordinary
 Power, Damage, Power-and-Damage, and Attack abilities alongside the existing fixed and
 Support bonuses, Stop Bonus, and source-owned combat-stat cancellation. The only admitted
-numeric predicates are `Always`, Courage (`OwnerMovesFirst`), and Reprisal
-(`OwnerMovesSecond`), evaluated from the round's explicit first mover. Positional effects
-require neutral structured fields and an exact description body matching their typed stat,
-magnitude, and bound; an unfamiliar nested context fails closed.
+numeric predicates are `Always`, Courage (`OwnerMovesFirst`), Reprisal
+(`OwnerMovesSecond`), Symmetry (`SelectedHandSlotsMatch`), and Asymmetry
+(`SelectedHandSlotsDiffer`). Courage and Reprisal use the round's explicit first mover;
+Symmetry and Asymmetry compare the two immutable original hand slots, not card identity or
+current stats. The index predicates are admitted for fixed numeric abilities and bonuses.
+Positional and index effects require otherwise-neutral structured fields and an exact
+description body matching their typed stat, magnitude, and bound; an unfamiliar nested
+context fails closed. Conditional Stop Bonus, cancellation, copy, and protection remain
+outside this slice even when their predicate would be false.
 
 Resolution retains Bonus-then-Ability source compilation for own increases. Opponent
 Power/Damage reductions and opponent Attack reductions are independently stable-sorted by
@@ -161,18 +166,24 @@ descending minimum, with Bonus before Ability on an equal minimum. This reproduc
 server evidence from Robb/All Stars (`1011768`, 6 to 4 to 2), Don Cr/Montana
 (`875272`/`901613`, attack 18 to 8 to 4), and Miss Stella/Sakrohm (`901292`, attack 18 to 11
 to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attack increases
-then precede the sorted opponent Attack reductions. These excluded captures remain focused
-ordering/clamp evidence, not members of the replay gate.
+then precede the sorted opponent Attack reductions. Arithmetic observations outside an
+admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is eight sequential prefix rounds:
+The immutable server-backed gate is thirteen sequential prefix rounds:
 `875032/1`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/1`, `901400/1`, and
-`874837/2`. Its selected Execute/Disabled identities are pinned so classifier changes cannot
-silently broaden the model. Captures `1011643` and `1011768` reject selected Asymmetry, and
-`877812` rejects selected Degrowth in round zero; none is accepted merely because the
-omitted effect happened to be inactive or numerically clamped in that observation. The gate
-contains observable active Reprisal cases. Courage and both inactive positional branches are
-pinned synthetically because this reduced gate has no independently observable Courage or
-inactive branch.
+`874837/2`, plus `1011643/2`, `1011768/1`, and `1011483/2`. Its selected
+Execute/Disabled identity sets are pinned, while focused tests pin the new predicate
+assignments and branches. `1011483` visibly proves active Asymmetry (Galahad Damage 2 to 5 on unequal slots) and
+active Symmetry (Anagone reduces Bella Ld Power 7 to 4 on equal slots); `1011768` visibly
+proves inactive Asymmetry (Aneta remains Damage 3 on equal slots); and `1011643` proves an
+active Asymmetry bonus is still suppressed by Stop Bonus. Additional arithmetic evidence for
+both branches comes from Olivia (`1092515` round 2 / `1092660` round 1), Fiend (`963694`
+round 1 / `945724` round 1), K Cube (`878056` round 3 / `875322` round 2), and Anagone
+(`1011016` round 1 / `1010898` round 3), using zero-based capture round numbers. `877812`
+continues to reject selected Degrowth in
+round zero. The gate now contains observable active Courage and Reprisal cases; their inactive
+branches and the complete hand-slot predicate matrix are also pinned synthetically. Replay
+provenance records compiler/policy semantic revision 2 for this scope.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.

@@ -31,7 +31,7 @@ pub enum CombatStatDiagnosticProjectionV1 {
     DisableDeferredAndOutOfSliceCardLocalEffects,
 }
 
-pub const COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 1;
+pub const COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CombatStatReplayModelV1 {
@@ -641,12 +641,24 @@ fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
-    if let CompiledEffectV1::Supported(effect) = definition.compiled() {
-        if admitted_supported_effect(*effect, source_kind) {
-            return Some((*effect, CombatStatPredicateV1::Always));
+    // Model-specific conditions take precedence over the registry's model-neutral output.
+    // Keep the unconditional guard below as well, so a future registry compiler expansion
+    // cannot silently erase a condition by returning Supported first.
+    if let Some(classified) = classify_position_numeric(definition, source_kind) {
+        return Some(classified);
+    }
+    if let Some(classified) = classify_index_numeric(definition) {
+        return Some(classified);
+    }
+    let input = definition.structured_input();
+    if input.position_requirement == PositionRequirementV1::Both && neutral_except_position(input) {
+        if let CompiledEffectV1::Supported(effect) = definition.compiled() {
+            if admitted_supported_effect(*effect, source_kind) {
+                return Some((*effect, CombatStatPredicateV1::Always));
+            }
         }
     }
-    classify_position_numeric(definition, source_kind)
+    None
 }
 
 fn admitted_supported_effect(
@@ -693,11 +705,33 @@ fn classify_position_numeric(
         | PositionRequirementV1::Attacker
         | PositionRequirementV1::Defender => return None,
     };
-    if !neutral_except_position(input)
-        || input.special_action != SpecialActionV1::None
-        || input.is_support
-        || input.value == 0
-    {
+    if !neutral_except_position(input) {
+        return None;
+    }
+    let effect = fixed_numeric_effect(input)?;
+    position_description_matches(definition.description(), predicate, effect)
+        .then_some((effect, predicate))
+}
+
+fn classify_index_numeric(
+    definition: &EffectDefinitionV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    let predicate = match input.index_requirement {
+        IndexRequirementV1::Symmetry => CombatStatPredicateV1::SelectedHandSlotsMatch,
+        IndexRequirementV1::Asymmetry => CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        IndexRequirementV1::Any => return None,
+    };
+    if !neutral_except_index(input) {
+        return None;
+    }
+    let effect = fixed_numeric_effect(input)?;
+    index_description_matches(definition.description(), predicate, effect)
+        .then_some((effect, predicate))
+}
+
+fn fixed_numeric_effect(input: &StructuredEffectV1) -> Option<SupportedEffectV1> {
+    if input.special_action != SpecialActionV1::None || input.is_support || input.value == 0 {
         return None;
     }
     let operation = match input.attribute_action {
@@ -731,14 +765,37 @@ fn classify_position_numeric(
         maximum: None,
         multiplier: MagnitudeMultiplierV1::Fixed,
     };
-    position_description_matches(definition.description(), predicate, effect)
-        .then_some((effect, predicate))
+    Some(effect)
 }
 
 fn neutral_except_position(input: &StructuredEffectV1) -> bool {
     input.previous_round_requirement == PreviousRoundRequirementV1::Any
         && input.current_round_requirement == CurrentRoundRequirementV1::Any
         && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+fn neutral_except_index(input: &StructuredEffectV1) -> bool {
+    input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
@@ -810,8 +867,29 @@ fn position_description_matches(
     let prefix = match predicate {
         CombatStatPredicateV1::OwnerMovesFirst => "Courage: ",
         CombatStatPredicateV1::OwnerMovesSecond => "Reprisal: ",
-        CombatStatPredicateV1::Always => return false,
+        CombatStatPredicateV1::Always
+        | CombatStatPredicateV1::SelectedHandSlotsMatch
+        | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
     };
+    numeric_description_body_matches(description.strip_prefix(prefix).unwrap_or(""), effect)
+}
+
+fn index_description_matches(
+    description: &str,
+    predicate: CombatStatPredicateV1,
+    effect: SupportedEffectV1,
+) -> bool {
+    let prefix = match predicate {
+        CombatStatPredicateV1::SelectedHandSlotsMatch => "Symmetry: ",
+        CombatStatPredicateV1::SelectedHandSlotsDiffer => "Asymmetry: ",
+        CombatStatPredicateV1::Always
+        | CombatStatPredicateV1::OwnerMovesFirst
+        | CombatStatPredicateV1::OwnerMovesSecond => return false,
+    };
+    numeric_description_body_matches(description.strip_prefix(prefix).unwrap_or(""), effect)
+}
+
+fn numeric_description_body_matches(body: &str, effect: SupportedEffectV1) -> bool {
     let SupportedEffectV1::ModifyCombatStat {
         side,
         stat,
@@ -824,7 +902,6 @@ fn position_description_matches(
     else {
         return false;
     };
-    let body = description.strip_prefix(prefix).unwrap_or("");
     match (side, stat, operation, minimum) {
         (AffectedSideV1::Player, CombatStatV1::Power, StatOperationV1::Increase, None) => {
             body == format!("Power +{value}")
@@ -836,7 +913,9 @@ fn position_description_matches(
             body == format!("Attack +{value}")
         }
         (AffectedSideV1::Player, CombatStatV1::PowerAndDamage, StatOperationV1::Increase, None) => {
-            body == format!("Power And Damage +{value}") || body == format!("Pow. & Dam. +{value}")
+            body == format!("Power And Damage +{value}")
+                || body == format!("Power And Damage + {value}")
+                || body == format!("Pow. & Dam. +{value}")
         }
         (AffectedSideV1::Opponent, CombatStatV1::Power, StatOperationV1::Decrease, Some(min)) => {
             body == format!("-{value} Opp Power, Min {min}")
@@ -858,6 +937,7 @@ fn position_description_matches(
         ) => {
             body == format!("-{value} Opp Power And Damage, Min {min}")
                 || body == format!("-{value} Opp Pow. & Dam., Min {min}")
+                || body == format!("-{value} Opp Pow. And Dam., Min {min}")
                 || body == format!("-{value} Opp Pow. & Dmg,min {min}")
         }
         _ => false,

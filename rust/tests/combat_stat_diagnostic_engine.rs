@@ -173,6 +173,83 @@ fn courage_and_reprisal_use_explicit_owner_relative_first_mover() {
 }
 
 #[test]
+fn symmetry_and_asymmetry_compare_immutable_hand_slots_for_both_players() {
+    for p1_slot in 0..4 {
+        for p2_slot in 0..4 {
+            for first_mover in PlayerId::ALL {
+                let mut base = base_spec(6, 3);
+                if p1_slot != p2_slot {
+                    // Equal card identity on unequal slots must not turn Asymmetry off.
+                    base.players[PlayerId::P2].hand[p2_slot as usize].key =
+                        base.players[PlayerId::P1].hand[p1_slot as usize].key;
+                }
+                let mut cards = plans(&base);
+                cards[PlayerId::P1][p1_slot as usize].ability = execute(
+                    1,
+                    CombatStatPredicateV1::SelectedHandSlotsMatch,
+                    own(CombatStatAttributeV1::Power, 2),
+                );
+                cards[PlayerId::P1][p1_slot as usize].bonus = execute(
+                    2,
+                    CombatStatPredicateV1::SelectedHandSlotsDiffer,
+                    own(CombatStatAttributeV1::Damage, 3),
+                );
+                cards[PlayerId::P1][p1_slot as usize].source_bonus_support_count = 1;
+                cards[PlayerId::P2][p2_slot as usize].ability = execute(
+                    3,
+                    CombatStatPredicateV1::SelectedHandSlotsDiffer,
+                    own(CombatStatAttributeV1::Power, 4),
+                );
+                cards[PlayerId::P2][p2_slot as usize].bonus = execute(
+                    4,
+                    CombatStatPredicateV1::SelectedHandSlotsMatch,
+                    own(CombatStatAttributeV1::Damage, 5),
+                );
+                cards[PlayerId::P2][p2_slot as usize].source_bonus_support_count = 1;
+
+                let mut game = game(base, cards);
+                let initial = game.position().clone();
+                let (report, undo) = game
+                    .make(input(first_mover, (p1_slot, 0, false), (p2_slot, 0, false)))
+                    .unwrap();
+                if p1_slot == p2_slot {
+                    assert_eq!(report.cards[PlayerId::P1].power, 8);
+                    assert_eq!(report.cards[PlayerId::P1].damage, 3);
+                    assert_eq!(report.cards[PlayerId::P2].power, 6);
+                    assert_eq!(report.cards[PlayerId::P2].damage, 8);
+                } else {
+                    assert_eq!(report.cards[PlayerId::P1].power, 6);
+                    assert_eq!(report.cards[PlayerId::P1].damage, 6);
+                    assert_eq!(report.cards[PlayerId::P2].power, 10);
+                    assert_eq!(report.cards[PlayerId::P2].damage, 3);
+                }
+                game.unmake(undo);
+                assert_eq!(game.position(), &initial);
+            }
+        }
+    }
+
+    // Played cards do not compact the remaining hand: round two still compares the
+    // original nonzero slots.
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][3].ability = execute(
+        5,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    let mut sequential = game(base, cards);
+    sequential
+        .make(input(PlayerId::P1, (0, 0, false), (1, 0, false)))
+        .unwrap();
+    let (report, _) = sequential
+        .make(input(PlayerId::P2, (3, 0, false), (3, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].hand_slot.get(), 3);
+    assert_eq!(report.cards[PlayerId::P1].power, 8);
+}
+
+#[test]
 fn opponent_reductions_are_stably_sorted_by_descending_minimum() {
     let base = base_spec(6, 3);
     let mut power_cards = plans(&base);
@@ -295,6 +372,26 @@ fn cancellation_suppresses_opponent_sources_but_not_base_stats_or_fury() {
         .unwrap();
     assert_eq!(report.cards[PlayerId::P2].power, 6);
     assert_eq!(report.cards[PlayerId::P2].damage, 3);
+
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        13,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    cards[PlayerId::P2][1].ability = execute(
+        14,
+        CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    let mut conditional_source = game(base, cards);
+    let (report, _) = conditional_source
+        .make(input(PlayerId::P1, (0, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 6);
 }
 
 #[test]
@@ -398,6 +495,14 @@ fn impossible_execute_plans_fail_at_construction() {
             ),
             InvalidCombatStatPlanReasonV1::ConditionalControl,
         ),
+        (
+            execute(
+                4,
+                CombatStatPredicateV1::SelectedHandSlotsMatch,
+                CombatStatEffectV1::StopOpponentBonus,
+            ),
+            InvalidCombatStatPlanReasonV1::ConditionalControl,
+        ),
     ];
     for (plan, reason) in cases {
         let mut cards = plans(&base);
@@ -419,7 +524,7 @@ fn impossible_execute_plans_fail_at_construction() {
 
     let mut capped_bonus = plans(&base);
     capped_bonus[PlayerId::P1][0].bonus = execute(
-        4,
+        5,
         CombatStatPredicateV1::Always,
         modifier(
             CombatStatAffectedSideV1::Player,
@@ -446,7 +551,7 @@ fn impossible_execute_plans_fail_at_construction() {
 
     let mut conditional_bonus = plans(&base);
     conditional_bonus[PlayerId::P1][0].bonus = execute(
-        5,
+        6,
         CombatStatPredicateV1::OwnerMovesFirst,
         own(CombatStatAttributeV1::Power, 2),
     );
@@ -457,6 +562,33 @@ fn impossible_execute_plans_fail_at_construction() {
             cards: conditional_bonus,
         }),
         Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::ConditionalBonus,
+            ..
+        })
+    ));
+
+    let mut conditional_support_bonus = plans(&base);
+    conditional_support_bonus[PlayerId::P1][0].bonus = execute(
+        7,
+        CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Attack,
+            CombatStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+        ),
+    );
+    conditional_support_bonus[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards: conditional_support_bonus,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            source: CombatStatEffectSourceV1::Bonus,
             reason: InvalidCombatStatPlanReasonV1::ConditionalBonus,
             ..
         })

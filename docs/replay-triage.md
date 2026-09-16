@@ -264,7 +264,7 @@ first failing round and group them by ability keyword before changing the engine
   that clan; a Day/Night card, where the DB row is the day variant; or a Hazard game (874590),
   where the abilities are random. None of these are card-data bugs, but all of them will look
   like engine bugs in a replay.
-- Brawl, Support, Growth, Degrowth, Equalizer, Symmetry and Asymmetry are per-X multipliers
-  (`Per` in `BasicModifier.ts`, wired up by `Condition.compile`), not conditions that gate an
-  effect. A replay mismatch on a card carrying one of these is much more likely to be the
-  card data or another ability in the round than the multiplier itself.
+- Brawl, Support, Growth, Degrowth and Equalizer are per-X multipliers (`Per` in
+  `BasicModifier.ts`). Symmetry and Asymmetry are instead conditions that gate the complete
+  effect by equality or inequality of the two cards' immutable original hand slots. Do not
+  diagnose either family using the other's execution model.
