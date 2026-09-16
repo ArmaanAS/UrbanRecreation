@@ -14,7 +14,7 @@ Written by hand by the repo owner (armaanas); AI assistance started September 20
 | `data/` | `data.json` = the card list the engine loads, **one row per card per level** (power, damage and ability differ by level), built by `deno task cards` from `site_characters.jsonl` (gitignored 40 MB dump of the site's own card DB, refreshed via `__ur.dumpCharacters()` in the browser). `site_clans.json` (from `__ur.dumpClans()`) supplies clan names/bonuses; otherwise they come from the legacy `cards.json`. `cards.json` / `data.maxlevel.json` = older OAuth-API dumps (Dec 2024, max level only, stale); `compiled.json` = ability inventory from `deno task compile`. |
 | `scripts/` | Card data (`BuildCardData.ts` is the live path; `RequestCards.ts` / `RequestAllCardLevels.ts` / `UR_API.ts` are the OAuth-API path, needs API_KEY/API_SECRET in `.env` plus a browser auth step), ability compiler (`CompileAbilities.js`), battle capture (`BattleCapture.ts`, `ExtractBattle.ts`). |
 | `tests/` | `deno test -A`. Per-ability tests in `tests/ability/`, replay of captured games in `tests/replay/`, Rust cross-check testcases in `tests/rust/`. |
-| `rust/` | Imported Rust implementation and candidate high-performance backend. `engine::BaseRulesGame` remains the effects-disabled 20-round reference; `engine::ClanBonusDiagnostic` preserves its separate 40-round projected gate; `engine::CombatStatDiagnosticV1` adds a distinct fail-closed combat-stat projection with a 17-round gate. The historical engine remains beside them, and the old HTTP advisor is behind `legacy-advisor`. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
+| `rust/` | Imported Rust implementation and candidate high-performance backend. `engine::BaseRulesGame` remains the effects-disabled 20-round reference; `engine::ClanBonusDiagnostic` preserves its separate 40-round projected gate; `engine::CombatStatDiagnosticV1` adds a distinct fail-closed combat-stat projection with a 17-round gate. `engine::CatalogCombatStatMatchV1` is the strict catalog-only constructor for future search positions: it applies reviewed runtime card overrides, derives immutable Oculus/effective-clan and day/night context, and rejects a draw unless all eight cards are executable by that projection. The historical engine remains beside them, and the old HTTP advisor is behind `legacy-advisor`. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
 | `ur-logger.user.js` + `log_server.ts` | Tampermonkey userscript mirroring site traffic to a local server that writes `ur_log.jsonl` (raw, **contains tokens, gitignored**) and secret-free per-battle files in `captures/battles/`. Binary response bodies (WebGL asset bundles, images, wasm) are dropped on both sides: `res.text()` decodes them as lossy UTF-8, so they are unrecoverable garbage, and unfiltered they were 65% of the first real log. `scripts/PruneLog.ts` retro-fixes older logs. |
 | `captures/` | `battles/<id>.jsonl` raw battle capture in a compact lossless form (static block once + one dynamic line per `battles.status` poll, ~20 KB/battle instead of ~450 KB; `expandStatus()` in `scripts/BattleCapture.ts` rebuilds the original server objects); `abilities.json` shared ability/bonus dictionary (id → description + structured `abilityData`); `games/<id>.json` clean game records with decks, moves, per-round resolution, life/pillz, and an engine `testcase`. All safe to commit. |
 
@@ -80,7 +80,9 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    Symmetry/Asymmetry (immutable original hand-slot equality/inequality), round-scaled
    Growth/Degrowth combat stats, and the earlier bonus/control slice; global/off-card
    hazards are preparation-fatal and other unadmitted current-round combat-stat effects
-   reject if selected.
+   reject if selected. Its compact Support context is now validated by effective clan and
+   distinct character id rather than registry/capture effect identity; provenance revision
+   4 records that boundary change.
 5. Do not push without asking the owner. Never commit `ur_log*.jsonl`, `tokens.json`, `.env`,
    `data/site_characters.jsonl`.
 2. Card data is complete as of 2026-09-10 (2496 cards, every level, 36 clans incl. the new
@@ -105,6 +107,14 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   bonus slice, and the 17-round combat-stat diagnostic adds fixed ordinary abilities,
   numeric hand-slot predicates, and round-scaled magnitudes without claiming general
   condition or full-effect parity.
+- `EffectiveCardCatalog` is required for solver-facing construction and validates
+  `data/battle_card_overrides.json` before exposing rows. `CatalogCombatStatMatchV1` takes
+  exact `(card id, level)` keys, derives canonical versus effective clans without mutation,
+  resolves active day/night descriptions through the effect registry, and rejects duplicate
+  characters, Leaders, dynamic Copy, and every other source outside the bounded projection.
+  Its provenance includes exact effective-catalog and registry source fingerprints plus
+  compiler and catalog-context policy revisions. It prepares trustworthy match inputs; the
+  current TypeScript solver policy has not yet been ported.
 - `rust/src/effect_registry.rs` strictly parses and classifies `captures/abilities.json`.
   Supported compiler output is a string-free future execution plan; no effect is implemented
   until an engine slice executes it and replay evidence establishes its behavior. Never treat

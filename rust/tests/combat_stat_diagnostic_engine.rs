@@ -40,9 +40,10 @@ fn base_spec(power: u16, damage: u16) -> BaseRulesMatchSpec {
     }
 }
 
-fn absent(key: CardKey) -> CombatStatCardPlanV1 {
+fn absent(card: urban_recreation_rust::engine::BaseRulesCardSpec) -> CombatStatCardPlanV1 {
     CombatStatCardPlanV1 {
-        key,
+        key: card.key,
+        effective_clan_id: card.clan_id,
         ability: CombatStatSourcePlanV1::Absent,
         bonus: CombatStatSourcePlanV1::Absent,
         source_bonus_support_count: 0,
@@ -51,8 +52,8 @@ fn absent(key: CardKey) -> CombatStatCardPlanV1 {
 
 fn plans(base: &BaseRulesMatchSpec) -> ByPlayer<[CombatStatCardPlanV1; 4]> {
     ByPlayer::new(
-        base.players[PlayerId::P1].hand.map(|card| absent(card.key)),
-        base.players[PlayerId::P2].hand.map(|card| absent(card.key)),
+        base.players[PlayerId::P1].hand.map(absent),
+        base.players[PlayerId::P2].hand.map(absent),
     )
 }
 
@@ -281,6 +282,7 @@ fn growth_and_degrowth_use_the_pre_commit_round_for_both_source_kinds() {
             ),
         );
         cards[PlayerId::P2][slot].source_bonus_support_count = 4;
+        cards[PlayerId::P2][slot].effective_clan_id = 200;
     }
 
     let mut sequential = game(base, cards);
@@ -486,6 +488,50 @@ fn cancellation_suppresses_opponent_sources_but_not_base_stats_or_fury() {
 }
 
 #[test]
+fn source_bonus_context_groups_by_effective_clan_not_source_id() {
+    let base = base_spec(6, 2);
+    let mut cards = plans(&base);
+    for (slot, source_id) in [(0, 23), (1, 25)] {
+        cards[PlayerId::P1][slot].effective_clan_id = 999;
+        cards[PlayerId::P1][slot].bonus = execute(
+            source_id,
+            CombatStatPredicateV1::Always,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Attack,
+                CombatStatOperationV1::Increase,
+                3,
+                None,
+                None,
+                CombatStatMagnitudeV1::SourceBonusSupport,
+            ),
+        );
+        cards[PlayerId::P1][slot].source_bonus_support_count = 2;
+    }
+
+    let mut grouped = game(base.clone(), cards.clone());
+    let (report, _) = grouped
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 12);
+
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidSourceBonusContext {
+            player: PlayerId::P1,
+            source_id: Some(23),
+            expected: 2,
+            actual: 1,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn stop_bonus_suppresses_existing_support_bonus() {
     let base = base_spec(6, 2);
     let mut cards = plans(&base);
@@ -504,6 +550,7 @@ fn stop_bonus_suppresses_existing_support_bonus() {
             ),
         );
         cards[PlayerId::P2][slot].source_bonus_support_count = 4;
+        cards[PlayerId::P2][slot].effective_clan_id = 200;
     }
     cards[PlayerId::P1][0].ability = execute(
         2299,

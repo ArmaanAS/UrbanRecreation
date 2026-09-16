@@ -14,7 +14,7 @@ independently against the same server results.
 
 | Concern | Source of truth | Notes |
 | --- | --- | --- |
-| Card identity and level stats | `data/data.json` | One row per `(card id, level)`; do not use names as identity. |
+| Card identity and level stats | `data/data.json` plus `data/battle_card_overrides.json` | One row per `(card id, level)`; solver-facing Rust construction validates and applies the reviewed runtime overrides used by TypeScript. Do not use names as identity. |
 | Effect definitions | `captures/abilities.json` | Versioned Rust compilation preserves the structured record and fails closed on unsupported semantics. |
 | Observed game behavior | `captures/games/*.json` | Server power, damage, attack, winner, life, and pillz are the parity oracle. |
 | Capture normalization | `scripts/ExtractBattle.ts` and the Rust replay adapter | Both must preserve side identity and the first-mover convention. |
@@ -71,6 +71,14 @@ well-formed definitions—including textual Team/Day/Night context not represent
 The registry itself is replay-model neutral: replay preparation owns absent/present source
 mapping and calls strict id-and-description lookup rather than the registry importing capture
 types.
+
+`CardCatalog` also validates a 36-entry clan index derived from the card rows. The distinct
+`EffectiveCardCatalog` type requires an explicit override contract and accepts each override
+only when a row equals either its reviewed `from` definition or its already-updated `to`
+definition. Any missing card, duplicate override, name mismatch, or unexpected third state
+fails construction. This currently corrects Quetzal Cr `(1577, 3)` from the stale raw 2/6
+No Ability row to the captured 7/4 Stop Opp. Bonus definition and live ability id 5927.
+The effective catalog fingerprints the exact catalog and override bytes it validated.
 
 ### 3. Reach engine parity vertically
 
@@ -146,8 +154,9 @@ deliberately named `base_rules_spec()`. This remains replay-prepared diagnostics
 neither infers active bonuses from catalog clans nor enables conditions, ordinary numeric
 abilities, post-round effects, permanents, protection, or out-of-slice bonuses.
 
-`CombatStatDiagnosticV1` is the next separate replay-prepared projection; it does not widen
-`ClanBonusDiagnostic` or claim full engine parity. It executes reviewed fixed ordinary
+`CombatStatDiagnosticV1` is the next separate projection, first exercised through replay
+preparation and now also materialized by the strict catalog constructor described below. It
+does not widen `ClanBonusDiagnostic` or claim full engine parity. It executes reviewed fixed ordinary
 Power, Damage, Power-and-Damage, and Attack abilities alongside the existing fixed and
 Support bonuses, Stop Bonus, and source-owned combat-stat cancellation. The only admitted
 numeric predicates are `Always`, Courage (`OwnerMovesFirst`), Reprisal
@@ -200,7 +209,7 @@ observation consistent with a numerically clamped no-op when its target is alrea
 minimum. Capture `878056` separately pins cancellation suppressing active Degrowth. The gate
 contains observable active Courage and Reprisal cases; their inactive branches, the complete
 hand-slot predicate matrix, and all four round factors are also pinned synthetically. Replay
-provenance records compiler/policy semantic revision 3 for this scope.
+provenance records compiler/policy semantic revision 4 for this scope.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
@@ -212,6 +221,43 @@ disabled by the projection. Provenance records the model, explicit projection po
 registry schema and non-cryptographic source fingerprint, plus a combined model-specific
 compiler/policy semantic revision. A transposition identity must include that full match
 specification, the model, `position()`, and the explicit next first mover.
+
+The combat-stat plan now validates Support context by effective clan rather than captured
+bonus id: it counts distinct character ids in the immutable draw that share the source
+card's effective clan. Compiler/policy revision 4 records this semantic boundary.
+
+`CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
+future solver work. Its input contains battle-rule id, explicit day/night state, initial
+life and pillz, and exactly four `CardKey`s per player. It materializes base stats plus the
+complete compact combat plan once; catalog and registry lookups never enter round execution
+or the eventual search hot path. Unlike replay preparation, it rejects the whole draw when
+any of the eight cards has an unsupported active source, because a solver must be total over
+every legal selection rather than defer failure until a card is played.
+
+Effective clan derivation is pure match context. It retains canonical clan separately,
+counts distinct character ids across the immutable original draw, and never mutates catalog
+rows. With exactly one Oculus, `O+A+A+A` infiltrates A, `O+A+A+B` infiltrates singleton B,
+and `O+A+B+C` does not infiltrate; multiple Oculus cards disable infiltration. An infiltrated
+card receives the target clan's selected day/night printed bonus before activation and
+Support counting. Duplicate character ids and any Leader are rejected by strict solver
+construction. Catalog source ids remain distinct from registry definition ids, so source
+structure is resolved by conflict-checking exact description lookup. A selected night
+variant has no catalog numeric id unless the catalog explicitly supplies one; its public
+identity records `None`, while the compact plan uses the resolved registry definition id.
+Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
+uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
+registry schema and source fingerprint, compiler/policy revision 4, and catalog-context
+policy revision 1.
+
+The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
+were derived using only catalog clans, explicit night state, and these Oculus rules. There
+are 38 Oblivion slots; all 18 description mismatches are captures where the server had
+already replaced printed `Copy: Opp. Ability` with the opponent-dependent copied result.
+Every one of the other 2,538 slots matches captured bonus presence and description exactly.
+No current captured eight-card draw is wholly executable by this deliberately narrow
+projection, so strict end-to-end execution is pinned with synthetic catalog hands while the
+corpus test pins derivation. This is solver-ready input construction, not yet a port of the
+TypeScript search policy.
 
 ### 4. Port current solver semantics
 

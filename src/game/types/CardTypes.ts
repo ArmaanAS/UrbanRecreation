@@ -101,6 +101,7 @@ export interface CardJSON {
   rarity: Rarity;
   power: Power;
   damage: Damage;
+  ability_id: number;
   ability: string;
   bonus: string;
   /** Night variants (GhosTown and a few others); undefined = same as day. */

@@ -9,18 +9,18 @@ use super::execute::{
 use super::model::{ReplayCaseV1, ReplayRound};
 use crate::catalog::{CardCatalog, CardKey};
 use crate::effect_registry::{
-    AffectedSideV1, AttributeActionV1, AttributeAffectedV1, BetPillzLinkV1, CombatStatV1,
-    CompiledEffectV1, CurrentRoundRequirementV1, EffectDefinitionV1, EffectLookupError,
-    EffectRegistryV1, IndexRequirementV1, MagnitudeMultiplierV1, PositionRequirementV1,
-    PreviousRoundRequirementV1, SourceFingerprintFnv1a64, SpecialActionV1, StatOperationV1,
-    StructuredEffectV1, SupportedEffectV1, UnsupportedReasonV1,
+    AttributeActionV1, AttributeAffectedV1, EffectDefinitionV1, EffectLookupError,
+    EffectRegistryV1, SourceFingerprintFnv1a64, SpecialActionV1, StructuredEffectV1,
+    SupportedEffectV1, UnsupportedReasonV1,
+};
+use crate::engine::combat_stat_compiler::{
+    classify_combat_stat_effect, compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
-    BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport, ByPlayer,
-    CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatCardPlanV1,
-    CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1,
-    CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1,
-    CombatStatPlanErrorV1, CombatStatPredicateV1, CombatStatSourcePlanV1, PlayerId, HAND_SIZE,
+    derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
+    ByPlayer, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1,
+    CombatStatDiagnosticV1, CombatStatEffectSourceV1, CombatStatPlanErrorV1, CombatStatPredicateV1,
+    CombatStatSourcePlanV1, PlayerId, HAND_SIZE,
 };
 use std::error::Error;
 use std::fmt;
@@ -31,7 +31,8 @@ pub enum CombatStatDiagnosticProjectionV1 {
     DisableDeferredAndOutOfSliceCardLocalEffects,
 }
 
-pub const COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 3;
+pub const COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 =
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CombatStatReplayModelV1 {
@@ -113,6 +114,7 @@ pub enum CombatStatProjectionDispositionV1 {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CombatStatCardPreparationV1 {
     pub key: CardKey,
+    pub effective_clan_id: u32,
     pub source_bonus_support_count: u16,
     pub ability: CombatStatProjectionDispositionV1,
     pub bonus: CombatStatProjectionDispositionV1,
@@ -122,6 +124,7 @@ pub struct CombatStatCardPreparationV1 {
 pub struct CombatStatDiagnosticSelectedCardReportV1 {
     pub key: CardKey,
     pub hand_slot: u8,
+    pub effective_clan_id: u32,
     pub source_bonus_support_count: u16,
     pub ability: CombatStatProjectionDispositionV1,
     pub bonus: CombatStatProjectionDispositionV1,
@@ -425,6 +428,7 @@ impl CombatStatDiagnosticReplayV1 {
             CombatStatDiagnosticSelectedCardReportV1 {
                 key: prepared.key,
                 hand_slot,
+                effective_clan_id: prepared.effective_clan_id,
                 source_bonus_support_count: prepared.source_bonus_support_count,
                 ability: prepared.ability.clone(),
                 bonus: prepared.bonus.clone(),
@@ -443,6 +447,11 @@ fn prepare_combat_stat_cards(
     let mut prepared: ByPlayer<[Option<PreparedCombatStatCardV1>; HAND_SIZE]> =
         ByPlayer::new([const { None }; HAND_SIZE], [const { None }; HAND_SIZE]);
     for player in PlayerId::ALL {
+        let effective = derive_effective_catalog_hand(
+            std::array::from_fn(|slot| replay.players[player.index()].hand[slot].key),
+            catalog,
+        )
+        .expect("BaseRulesReplay validated every card and catalog clan definition");
         for slot in 0..HAND_SIZE {
             let card = &replay.players[player.index()].hand[slot];
             let canonical = catalog
@@ -461,10 +470,11 @@ fn prepare_combat_stat_cards(
                     },
                 );
             }
-            let source_bonus_support_count = source_bonus_support_count(
-                &replay.players[player.index()].hand,
-                card.source_bonus.as_ref().map(|modifier| modifier.id),
-            );
+            let source_bonus_support_count = if card.source_bonus.is_some() {
+                effective[slot].source_bonus_support_count
+            } else {
+                0
+            };
             let ability = prepare_combat_stat_source(
                 registry,
                 battle_id,
@@ -484,12 +494,14 @@ fn prepare_combat_stat_cards(
             prepared[player][slot] = Some(PreparedCombatStatCardV1 {
                 metadata: CombatStatCardPreparationV1 {
                     key: card.key,
+                    effective_clan_id: effective[slot].effective_clan_id,
                     source_bonus_support_count,
                     ability: ability.disposition,
                     bonus: bonus.disposition,
                 },
                 compact_plan: CombatStatCardPlanV1 {
                     key: card.key,
+                    effective_clan_id: effective[slot].effective_clan_id,
                     source_bonus_support_count,
                     ability: ability.compact_plan,
                     bonus: bonus.compact_plan,
@@ -512,27 +524,6 @@ fn prepare_combat_stat_cards(
             std::array::from_fn(|slot| prepared[PlayerId::P2][slot].compact_plan),
         ),
     })
-}
-
-fn source_bonus_support_count(
-    hand: &[super::model::ReplayCard; HAND_SIZE],
-    id: Option<u32>,
-) -> u16 {
-    let Some(id) = id else {
-        return 0;
-    };
-    let mut distinct = [0_u32; HAND_SIZE];
-    let mut count = 0_usize;
-    for card in hand {
-        if card.source_bonus.as_ref().map(|modifier| modifier.id) != Some(id)
-            || distinct[..count].contains(&card.key.id)
-        {
-            continue;
-        }
-        distinct[count] = card.key.id;
-        count += 1;
-    }
-    count as u16
 }
 
 fn prepare_combat_stat_source(
@@ -637,232 +628,6 @@ fn prepare_combat_stat_source(
     })
 }
 
-fn classify_combat_stat_effect(
-    definition: &EffectDefinitionV1,
-    source_kind: CombatStatEffectSourceV1,
-) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
-    // Model-specific conditions take precedence over the registry's model-neutral output.
-    // Keep the unconditional guard below as well, so a future registry compiler expansion
-    // cannot silently erase a condition by returning Supported first.
-    if let Some(classified) = classify_round_scaled_numeric(definition) {
-        return Some(classified);
-    }
-    if let Some(classified) = classify_position_numeric(definition, source_kind) {
-        return Some(classified);
-    }
-    if let Some(classified) = classify_index_numeric(definition) {
-        return Some(classified);
-    }
-    let input = definition.structured_input();
-    if input.position_requirement == PositionRequirementV1::Both && neutral_except_position(input) {
-        if let CompiledEffectV1::Supported(effect) = definition.compiled() {
-            if admitted_supported_effect(*effect, source_kind) {
-                return Some((*effect, CombatStatPredicateV1::Always));
-            }
-        }
-    }
-    None
-}
-
-fn admitted_supported_effect(
-    effect: SupportedEffectV1,
-    source_kind: CombatStatEffectSourceV1,
-) -> bool {
-    match effect {
-        SupportedEffectV1::StopOpponentBonus
-        | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. } => true,
-        SupportedEffectV1::ModifyCombatStat {
-            side,
-            operation,
-            maximum,
-            multiplier,
-            ..
-        } => {
-            matches!(
-                (side, operation),
-                (AffectedSideV1::Player, StatOperationV1::Increase)
-                    | (AffectedSideV1::Opponent, StatOperationV1::Decrease)
-            ) && !(operation == StatOperationV1::Increase && maximum.is_some())
-                && !(source_kind == CombatStatEffectSourceV1::Ability
-                    && multiplier == MagnitudeMultiplierV1::Support)
-        }
-    }
-}
-
-fn classify_position_numeric(
-    definition: &EffectDefinitionV1,
-    source_kind: CombatStatEffectSourceV1,
-) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
-    if source_kind != CombatStatEffectSourceV1::Ability {
-        return None;
-    }
-    let input = definition.structured_input();
-    let predicate = match input.position_requirement {
-        PositionRequirementV1::Attacker if definition.description().starts_with("Courage:") => {
-            CombatStatPredicateV1::OwnerMovesFirst
-        }
-        PositionRequirementV1::Defender if definition.description().starts_with("Reprisal:") => {
-            CombatStatPredicateV1::OwnerMovesSecond
-        }
-        PositionRequirementV1::Both
-        | PositionRequirementV1::Attacker
-        | PositionRequirementV1::Defender => return None,
-    };
-    if !neutral_except_position(input) {
-        return None;
-    }
-    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
-    position_description_matches(definition.description(), predicate, effect)
-        .then_some((effect, predicate))
-}
-
-fn classify_index_numeric(
-    definition: &EffectDefinitionV1,
-) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
-    let input = definition.structured_input();
-    let predicate = match input.index_requirement {
-        IndexRequirementV1::Symmetry => CombatStatPredicateV1::SelectedHandSlotsMatch,
-        IndexRequirementV1::Asymmetry => CombatStatPredicateV1::SelectedHandSlotsDiffer,
-        IndexRequirementV1::Any => return None,
-    };
-    if !neutral_except_index(input) {
-        return None;
-    }
-    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
-    index_description_matches(definition.description(), predicate, effect)
-        .then_some((effect, predicate))
-}
-
-fn classify_round_scaled_numeric(
-    definition: &EffectDefinitionV1,
-) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
-    let input = definition.structured_input();
-    let multiplier = match (input.is_overdrive, input.is_divide) {
-        (true, false) => MagnitudeMultiplierV1::Growth,
-        (false, true) => MagnitudeMultiplierV1::Degrowth,
-        (false, false) | (true, true) => return None,
-    };
-    if !neutral_except_round_scaled_magnitude(input) {
-        return None;
-    }
-    let effect = numeric_effect(input, multiplier)?;
-    round_scaled_description_matches(definition.description(), effect)
-        .then_some((effect, CombatStatPredicateV1::Always))
-}
-
-fn numeric_effect(
-    input: &StructuredEffectV1,
-    multiplier: MagnitudeMultiplierV1,
-) -> Option<SupportedEffectV1> {
-    if input.special_action != SpecialActionV1::None || input.is_support || input.value == 0 {
-        return None;
-    }
-    let operation = match input.attribute_action {
-        AttributeActionV1::Increase => StatOperationV1::Increase,
-        AttributeActionV1::Decrease => StatOperationV1::Decrease,
-        _ => return None,
-    };
-    if !matches!(
-        (input.side_affected, operation),
-        (AffectedSideV1::Player, StatOperationV1::Increase)
-            | (AffectedSideV1::Opponent, StatOperationV1::Decrease)
-    ) || (operation == StatOperationV1::Increase
-        && (input.value_min != 0 || input.value_max != 0))
-        || (operation == StatOperationV1::Decrease && input.value_max != 0)
-    {
-        return None;
-    }
-    let stat = match input.attribute_affected {
-        AttributeAffectedV1::Attack => CombatStatV1::Attack,
-        AttributeAffectedV1::Damage => CombatStatV1::Damage,
-        AttributeAffectedV1::Power => CombatStatV1::Power,
-        AttributeAffectedV1::PowerAndDamage => CombatStatV1::PowerAndDamage,
-        _ => return None,
-    };
-    let effect = SupportedEffectV1::ModifyCombatStat {
-        side: input.side_affected,
-        stat,
-        operation,
-        value: input.value,
-        minimum: (operation == StatOperationV1::Decrease).then_some(input.value_min),
-        maximum: None,
-        multiplier,
-    };
-    Some(effect)
-}
-
-fn neutral_except_round_scaled_magnitude(input: &StructuredEffectV1) -> bool {
-    input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Any
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.value_condition == 0
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
-}
-
-fn neutral_except_position(input: &StructuredEffectV1) -> bool {
-    input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Any
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.value_condition == 0
-        && !input.is_inverted
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
-}
-
-fn neutral_except_index(input: &StructuredEffectV1) -> bool {
-    input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.value_condition == 0
-        && !input.is_inverted
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
-}
-
 fn is_capped_increase(input: &StructuredEffectV1) -> bool {
     input.attribute_action == AttributeActionV1::Increase && input.value_max != 0
 }
@@ -906,124 +671,6 @@ fn attempts_combat_stat_change(input: &StructuredEffectV1) -> bool {
     )
 }
 
-fn position_description_matches(
-    description: &str,
-    predicate: CombatStatPredicateV1,
-    effect: SupportedEffectV1,
-) -> bool {
-    let prefix = match predicate {
-        CombatStatPredicateV1::OwnerMovesFirst => "Courage: ",
-        CombatStatPredicateV1::OwnerMovesSecond => "Reprisal: ",
-        CombatStatPredicateV1::Always
-        | CombatStatPredicateV1::SelectedHandSlotsMatch
-        | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
-    };
-    numeric_description_body_matches(
-        description.strip_prefix(prefix).unwrap_or(""),
-        effect,
-        MagnitudeMultiplierV1::Fixed,
-    )
-}
-
-fn index_description_matches(
-    description: &str,
-    predicate: CombatStatPredicateV1,
-    effect: SupportedEffectV1,
-) -> bool {
-    let prefix = match predicate {
-        CombatStatPredicateV1::SelectedHandSlotsMatch => "Symmetry: ",
-        CombatStatPredicateV1::SelectedHandSlotsDiffer => "Asymmetry: ",
-        CombatStatPredicateV1::Always
-        | CombatStatPredicateV1::OwnerMovesFirst
-        | CombatStatPredicateV1::OwnerMovesSecond => return false,
-    };
-    numeric_description_body_matches(
-        description.strip_prefix(prefix).unwrap_or(""),
-        effect,
-        MagnitudeMultiplierV1::Fixed,
-    )
-}
-
-fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1) -> bool {
-    let multiplier = match effect {
-        SupportedEffectV1::ModifyCombatStat { multiplier, .. } => multiplier,
-        SupportedEffectV1::StopOpponentBonus
-        | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. } => return false,
-    };
-    let prefix = match multiplier {
-        MagnitudeMultiplierV1::Growth => "Growth: ",
-        MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
-        MagnitudeMultiplierV1::Fixed | MagnitudeMultiplierV1::Support => return false,
-    };
-    numeric_description_body_matches(
-        description.strip_prefix(prefix).unwrap_or(""),
-        effect,
-        multiplier,
-    )
-}
-
-fn numeric_description_body_matches(
-    body: &str,
-    effect: SupportedEffectV1,
-    expected_multiplier: MagnitudeMultiplierV1,
-) -> bool {
-    let SupportedEffectV1::ModifyCombatStat {
-        side,
-        stat,
-        operation,
-        value,
-        minimum,
-        maximum: None,
-        multiplier,
-    } = effect
-    else {
-        return false;
-    };
-    if multiplier != expected_multiplier {
-        return false;
-    }
-    match (side, stat, operation, minimum) {
-        (AffectedSideV1::Player, CombatStatV1::Power, StatOperationV1::Increase, None) => {
-            body == format!("Power +{value}")
-        }
-        (AffectedSideV1::Player, CombatStatV1::Damage, StatOperationV1::Increase, None) => {
-            body == format!("Damage +{value}")
-        }
-        (AffectedSideV1::Player, CombatStatV1::Attack, StatOperationV1::Increase, None) => {
-            body == format!("Attack +{value}")
-        }
-        (AffectedSideV1::Player, CombatStatV1::PowerAndDamage, StatOperationV1::Increase, None) => {
-            body == format!("Power And Damage +{value}")
-                || body == format!("Power And Damage + {value}")
-                || body == format!("Pow. & Dam. +{value}")
-        }
-        (AffectedSideV1::Opponent, CombatStatV1::Power, StatOperationV1::Decrease, Some(min)) => {
-            body == format!("-{value} Opp Power, Min {min}")
-                || body == format!("-{value} Opp. Power, Min {min}")
-        }
-        (AffectedSideV1::Opponent, CombatStatV1::Damage, StatOperationV1::Decrease, Some(min)) => {
-            body == format!("-{value} Opp Damage, Min {min}")
-                || body == format!("-{value} Opp. Damage, Min {min}")
-        }
-        (AffectedSideV1::Opponent, CombatStatV1::Attack, StatOperationV1::Decrease, Some(min)) => {
-            body == format!("-{value} Opp Attack, Min {min}")
-                || body == format!("-{value} Opp. Attack, Min {min}")
-        }
-        (
-            AffectedSideV1::Opponent,
-            CombatStatV1::PowerAndDamage,
-            StatOperationV1::Decrease,
-            Some(min),
-        ) => {
-            body == format!("-{value} Opp Power And Damage, Min {min}")
-                || body == format!("-{value} Opp Pow. & Dam., Min {min}")
-                || body == format!("-{value} Opp Pow. And Dam., Min {min}")
-                || body == format!("-{value} Opp Pow. & Dmg,min {min}")
-        }
-        _ => false,
-    }
-}
-
 fn attempts_promised_control(input: &crate::effect_registry::StructuredEffectV1) -> bool {
     input.special_action == SpecialActionV1::StopBonus
         || (input.attribute_action == AttributeActionV1::StopModifier
@@ -1035,55 +682,6 @@ fn attempts_promised_control(input: &crate::effect_registry::StructuredEffectV1)
                     | AttributeAffectedV1::PowerAndAttack
                     | AttributeAffectedV1::PowerAndDamage
             ))
-}
-
-fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffectV1> {
-    match effect {
-        SupportedEffectV1::ModifyCombatStat {
-            side,
-            stat,
-            operation,
-            value,
-            minimum,
-            maximum,
-            multiplier,
-        } => Some(CombatStatEffectV1::ModifyCombatStat {
-            side: match side {
-                AffectedSideV1::Opponent => CombatStatAffectedSideV1::Opponent,
-                AffectedSideV1::Player => CombatStatAffectedSideV1::Player,
-                AffectedSideV1::Both => return None,
-            },
-            stat: compact_stat(stat),
-            operation: match operation {
-                StatOperationV1::Decrease => CombatStatOperationV1::Decrease,
-                StatOperationV1::Increase => CombatStatOperationV1::Increase,
-            },
-            value,
-            minimum,
-            maximum,
-            multiplier: match multiplier {
-                MagnitudeMultiplierV1::Fixed => CombatStatMagnitudeV1::Fixed,
-                MagnitudeMultiplierV1::Support => CombatStatMagnitudeV1::SourceBonusSupport,
-                MagnitudeMultiplierV1::Growth => CombatStatMagnitudeV1::Growth,
-                MagnitudeMultiplierV1::Degrowth => CombatStatMagnitudeV1::Degrowth,
-            },
-        }),
-        SupportedEffectV1::StopOpponentBonus => Some(CombatStatEffectV1::StopOpponentBonus),
-        SupportedEffectV1::CancelOpponentCombatStatModifiers { stat } => {
-            Some(CombatStatEffectV1::CancelOpponentCombatStatModifiers {
-                stat: compact_stat(stat),
-            })
-        }
-    }
-}
-
-const fn compact_stat(stat: CombatStatV1) -> CombatStatAttributeV1 {
-    match stat {
-        CombatStatV1::Attack => CombatStatAttributeV1::Attack,
-        CombatStatV1::Damage => CombatStatAttributeV1::Damage,
-        CombatStatV1::Power => CombatStatAttributeV1::Power,
-        CombatStatV1::PowerAndDamage => CombatStatAttributeV1::PowerAndDamage,
-    }
 }
 
 fn assert_combat_stat_round(

@@ -82,7 +82,9 @@ pub enum CombatStatEffectV1 {
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and
-/// disabled reasons remain at the outer replay-diagnostic boundary.
+/// preparation policy remain at the outer replay or catalog boundary. `source_id` is an
+/// opaque diagnostic identity; replay plans use capture ids and catalog plans use the
+/// resolved registry-definition id.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CombatStatSourcePlanV1 {
     Absent,
@@ -102,10 +104,13 @@ pub enum CombatStatSourcePlanV1 {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CombatStatCardPlanV1 {
     pub key: CardKey,
+    /// Clan identity after immutable whole-draw rules such as Oculus infiltration.
+    /// This is deliberately separate from the canonical clan retained by base rules.
+    pub effective_clan_id: u32,
     pub ability: CombatStatSourcePlanV1,
     pub bonus: CombatStatSourcePlanV1,
-    /// Distinct captured character ids sharing this card's active source-bonus id across
-    /// the immutable whole draw. This is capture context, not inferred clan membership.
+    /// Distinct character ids sharing this card's effective clan across the immutable
+    /// whole draw when its bonus is active; otherwise zero.
     pub source_bonus_support_count: u16,
 }
 
@@ -392,12 +397,12 @@ fn validate_source_bonus_context(
     cards: &[CombatStatCardPlanV1; HAND_SIZE],
 ) -> Result<(), CombatStatPlanErrorV1> {
     let source_id = source_plan_id(cards[hand_slot.index()].bonus);
-    let expected = if let Some(source_id) = source_id {
+    let expected = if source_id.is_some() {
+        let effective_clan_id = cards[hand_slot.index()].effective_clan_id;
         let mut ids = [0_u32; HAND_SIZE];
         let mut count = 0_usize;
         for card in cards {
-            if source_plan_id(card.bonus) == Some(source_id) && !ids[..count].contains(&card.key.id)
-            {
+            if card.effective_clan_id == effective_clan_id && !ids[..count].contains(&card.key.id) {
                 ids[count] = card.key.id;
                 count += 1;
             }

@@ -76,16 +76,17 @@ interface BattleCardOverride {
   id: number;
   name: string;
   level: number;
-  from: Pick<CardJSON, "power" | "damage" | "ability">;
-  to: Pick<CardJSON, "power" | "damage" | "ability">;
+  from: Pick<CardJSON, "power" | "damage" | "ability_id" | "ability">;
+  to: Pick<CardJSON, "power" | "damage" | "ability_id" | "ability">;
   sourceBattle: number;
 }
 
 const sameDefinition = (
-  card: Pick<CardJSON, "power" | "damage" | "ability">,
-  expected: Pick<CardJSON, "power" | "damage" | "ability">,
+  card: Pick<CardJSON, "power" | "damage" | "ability_id" | "ability">,
+  expected: Pick<CardJSON, "power" | "damage" | "ability_id" | "ability">,
 ) =>
   card.power === expected.power && card.damage === expected.damage &&
+  card.ability_id === expected.ability_id &&
   card.ability === expected.ability;
 
 for (const override of _battleOverrides as BattleCardOverride[]) {

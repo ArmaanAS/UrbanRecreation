@@ -1,0 +1,689 @@
+//! Catalog-only construction for fully executable combat-stat matches.
+//!
+//! This is deliberately separate from replay preparation. It derives immutable whole-draw
+//! context from canonical cards, resolves printed descriptions through the reviewed effect
+//! registry, and refuses a match if any legal card could reach an unsupported effect.
+
+use super::combat_stat_compiler::{
+    classify_combat_stat_effect, compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+};
+use super::{
+    BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
+    CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
+    CombatStatPlanErrorV1, CombatStatPredicateV1, CombatStatSourcePlanV1, HandSlot, PlayerId,
+    HAND_SIZE,
+};
+use crate::catalog::{
+    CanonicalCard, CardCatalog, CardKey, EffectiveCardCatalog,
+    EffectiveCatalogSourceFingerprintFnv1a64,
+};
+use crate::effect_registry::{
+    EffectLookupError, EffectRegistryV1, SourceFingerprintFnv1a64, SupportedEffectV1,
+    UnsupportedReasonV1,
+};
+use std::error::Error;
+use std::fmt;
+
+pub const LEADER_CLAN_ID: u32 = 36;
+pub const OCULUS_CLAN_ID: u32 = 56;
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 1;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CatalogCombatStatPlayerInputV1 {
+    pub initial_life: u16,
+    pub initial_pillz: u16,
+    pub hand: [CardKey; HAND_SIZE],
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CatalogCombatStatMatchInputV1 {
+    pub battle_rule_id: u32,
+    pub night: bool,
+    pub players: ByPlayer<CatalogCombatStatPlayerInputV1>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CatalogCombatStatProjectionV1 {
+    RequireFullyExecutableDraws,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CatalogCombatStatModelV1 {
+    CombatStatDiagnosticV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CatalogCombatStatProvenanceV1 {
+    pub model: CatalogCombatStatModelV1,
+    pub projection: CatalogCombatStatProjectionV1,
+    pub effect_registry_schema_version: u16,
+    pub effect_registry_source_fingerprint_fnv1a64: SourceFingerprintFnv1a64,
+    pub effective_catalog_source_fingerprint_fnv1a64: EffectiveCatalogSourceFingerprintFnv1a64,
+    pub compiler_policy_semantic_revision: u16,
+    pub catalog_context_policy_semantic_revision: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct EffectiveCatalogCardV1 {
+    pub key: CardKey,
+    pub canonical_clan_id: u32,
+    pub effective_clan_id: u32,
+    /// The clan whose printed bonus is active for this card. `None` covers singleton
+    /// bonuses, Leader, and Oculus draws where infiltration does not apply.
+    pub active_bonus_clan_id: Option<u32>,
+    pub source_bonus_support_count: u16,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogPrintedModifierV1 {
+    /// Numeric identity from the catalog when the selected day/night variant supplies one.
+    pub catalog_id: Option<u32>,
+    pub description: String,
+}
+
+/// Pure catalog derivation before the bounded execution policy is applied.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DerivedCatalogCardV1 {
+    pub effective: EffectiveCatalogCardV1,
+    pub ability: Option<CatalogPrintedModifierV1>,
+    pub bonus: Option<CatalogPrintedModifierV1>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogCombatStatModifierIdentityV1 {
+    pub catalog_id: Option<u32>,
+    pub description: String,
+    pub registry_definition_id: u32,
+    pub registry_alias_ids: Box<[u32]>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CatalogCombatStatSourceDispositionV1 {
+    Absent,
+    Execute {
+        identity: CatalogCombatStatModifierIdentityV1,
+        effect: SupportedEffectV1,
+        predicate: CombatStatPredicateV1,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogCombatStatCardPreparationV1 {
+    pub key: CardKey,
+    pub canonical_clan_id: u32,
+    pub effective_clan_id: u32,
+    pub source_bonus_support_count: u16,
+    pub ability: CatalogCombatStatSourceDispositionV1,
+    pub bonus: CatalogCombatStatSourceDispositionV1,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CatalogCombatStatMatchV1 {
+    input: CatalogCombatStatMatchInputV1,
+    match_spec: CombatStatDiagnosticMatchSpecV1,
+    cards: ByPlayer<[CatalogCombatStatCardPreparationV1; HAND_SIZE]>,
+    provenance: CatalogCombatStatProvenanceV1,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EffectiveCatalogHandErrorV1 {
+    MissingCard {
+        hand_slot: HandSlot,
+        key: CardKey,
+    },
+    MissingClan {
+        hand_slot: HandSlot,
+        key: CardKey,
+        clan_id: u32,
+    },
+}
+
+impl fmt::Display for EffectiveCatalogHandErrorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingCard { hand_slot, key } => write!(
+                formatter,
+                "slot {} references unknown card id {} level {}",
+                hand_slot.get(),
+                key.id,
+                key.level
+            ),
+            Self::MissingClan {
+                hand_slot,
+                key,
+                clan_id,
+            } => write!(
+                formatter,
+                "slot {} card id {} level {} references missing clan {clan_id}",
+                hand_slot.get(),
+                key.id,
+                key.level
+            ),
+        }
+    }
+}
+
+impl Error for EffectiveCatalogHandErrorV1 {}
+
+#[derive(Debug)]
+pub enum CatalogCombatStatMatchErrorV1 {
+    Hand {
+        player: PlayerId,
+        source: EffectiveCatalogHandErrorV1,
+    },
+    DuplicateCharacter {
+        player: PlayerId,
+        first_slot: HandSlot,
+        second_slot: HandSlot,
+        character_id: u32,
+    },
+    WholeHandLeaderHazard {
+        player: PlayerId,
+        hand_slot: HandSlot,
+        key: CardKey,
+        name: String,
+    },
+    Lookup {
+        player: PlayerId,
+        hand_slot: HandSlot,
+        source_kind: CombatStatEffectSourceV1,
+        catalog_id: Option<u32>,
+        description: String,
+        source: EffectLookupError,
+    },
+    UnsupportedSource {
+        player: PlayerId,
+        hand_slot: HandSlot,
+        source_kind: CombatStatEffectSourceV1,
+        catalog_id: Option<u32>,
+        description: String,
+        registry_definition_id: u32,
+        registry_reasons: Box<[UnsupportedReasonV1]>,
+    },
+    UnsupportedCompiledShape {
+        player: PlayerId,
+        hand_slot: HandSlot,
+        source_kind: CombatStatEffectSourceV1,
+        catalog_id: Option<u32>,
+        registry_definition_id: u32,
+    },
+    EnginePlan(CombatStatPlanErrorV1),
+}
+
+impl fmt::Display for CatalogCombatStatMatchErrorV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Hand { player, source } => write!(formatter, "{player:?} {source}"),
+            Self::DuplicateCharacter {
+                player,
+                first_slot,
+                second_slot,
+                character_id,
+            } => write!(
+                formatter,
+                "{player:?} slots {} and {} repeat character id {character_id}",
+                first_slot.get(),
+                second_slot.get()
+            ),
+            Self::WholeHandLeaderHazard {
+                player,
+                hand_slot,
+                key,
+                name,
+            } => write!(
+                formatter,
+                "{player:?} slot {} contains unsupported Leader {name} (id {} level {})",
+                hand_slot.get(),
+                key.id,
+                key.level
+            ),
+            Self::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                source,
+            } => write!(
+                formatter,
+                "{player:?} slot {} {source_kind:?} catalog source {catalog_id:?} {description:?} lookup failed: {source}",
+                hand_slot.get()
+            ),
+            Self::UnsupportedSource {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                registry_definition_id,
+                ..
+            } => write!(
+                formatter,
+                "{player:?} slot {} {source_kind:?} catalog source {catalog_id:?} {description:?} is not executable by this projection (registry definition {registry_definition_id})",
+                hand_slot.get()
+            ),
+            Self::UnsupportedCompiledShape {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                registry_definition_id,
+            } => write!(
+                formatter,
+                "{player:?} slot {} {source_kind:?} catalog source {catalog_id:?} registry definition {registry_definition_id} cannot map to a compact plan",
+                hand_slot.get()
+            ),
+            Self::EnginePlan(source) => write!(formatter, "catalog match plan is invalid: {source}"),
+        }
+    }
+}
+
+impl Error for CatalogCombatStatMatchErrorV1 {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Hand { source, .. } => Some(source),
+            Self::Lookup { source, .. } => Some(source),
+            Self::EnginePlan(source) => Some(source),
+            Self::DuplicateCharacter { .. }
+            | Self::WholeHandLeaderHazard { .. }
+            | Self::UnsupportedSource { .. }
+            | Self::UnsupportedCompiledShape { .. } => None,
+        }
+    }
+}
+
+struct PreparedCatalogSourceV1 {
+    metadata: CatalogCombatStatSourceDispositionV1,
+    compact: CombatStatSourcePlanV1,
+}
+
+impl CatalogCombatStatMatchV1 {
+    pub fn new(
+        input: CatalogCombatStatMatchInputV1,
+        catalog: &EffectiveCardCatalog,
+        registry: &EffectRegistryV1,
+        projection: CatalogCombatStatProjectionV1,
+    ) -> Result<Self, CatalogCombatStatMatchErrorV1> {
+        let mut base_players: ByPlayer<Option<BaseRulesPlayerSpec>> = ByPlayer::new(None, None);
+        let mut compact_cards: ByPlayer<[Option<CombatStatCardPlanV1>; HAND_SIZE]> =
+            ByPlayer::new([const { None }; HAND_SIZE], [const { None }; HAND_SIZE]);
+        let mut metadata: ByPlayer<[Option<CatalogCombatStatCardPreparationV1>; HAND_SIZE]> =
+            ByPlayer::new([const { None }; HAND_SIZE], [const { None }; HAND_SIZE]);
+
+        for player in PlayerId::ALL {
+            validate_solver_hand(player, input.players[player].hand, catalog)?;
+            let derived = derive_catalog_hand(input.players[player].hand, input.night, catalog)
+                .map_err(|source| CatalogCombatStatMatchErrorV1::Hand { player, source })?;
+            let mut base_hand: [Option<BaseRulesCardSpec>; HAND_SIZE] = [const { None }; HAND_SIZE];
+            for slot in HandSlot::ALL {
+                let index = slot.index();
+                let derived = &derived[index];
+                let effective = derived.effective;
+                let card = catalog
+                    .get(effective.key)
+                    .expect("effective-hand derivation validated every card key");
+                base_hand[index] = Some(BaseRulesCardSpec {
+                    key: card.key(),
+                    clan_id: card.clan_id,
+                    power: u16::from(card.power),
+                    damage: u16::from(card.damage),
+                });
+                let ability = if let Some(source) = &derived.ability {
+                    prepare_catalog_source(
+                        registry,
+                        player,
+                        slot,
+                        CombatStatEffectSourceV1::Ability,
+                        source.catalog_id,
+                        &source.description,
+                    )?
+                } else {
+                    absent_source()
+                };
+                let bonus = if let Some(source) = &derived.bonus {
+                    prepare_catalog_source(
+                        registry,
+                        player,
+                        slot,
+                        CombatStatEffectSourceV1::Bonus,
+                        source.catalog_id,
+                        &source.description,
+                    )?
+                } else {
+                    absent_source()
+                };
+                compact_cards[player][index] = Some(CombatStatCardPlanV1 {
+                    key: card.key(),
+                    effective_clan_id: effective.effective_clan_id,
+                    ability: ability.compact,
+                    bonus: bonus.compact,
+                    source_bonus_support_count: effective.source_bonus_support_count,
+                });
+                metadata[player][index] = Some(CatalogCombatStatCardPreparationV1 {
+                    key: card.key(),
+                    canonical_clan_id: effective.canonical_clan_id,
+                    effective_clan_id: effective.effective_clan_id,
+                    source_bonus_support_count: effective.source_bonus_support_count,
+                    ability: ability.metadata,
+                    bonus: bonus.metadata,
+                });
+            }
+            base_players[player] = Some(BaseRulesPlayerSpec {
+                initial_life: input.players[player].initial_life,
+                initial_pillz: input.players[player].initial_pillz,
+                hand: base_hand.map(|card| card.expect("all four base cards were prepared")),
+            });
+        }
+
+        let match_spec = CombatStatDiagnosticMatchSpecV1 {
+            base_rules: BaseRulesMatchSpec {
+                battle_rule_id: input.battle_rule_id,
+                night: input.night,
+                players: base_players.map(|player| player.expect("both players were prepared")),
+            },
+            cards: compact_cards
+                .map(|hand| hand.map(|card| card.expect("all eight compact cards were prepared"))),
+        };
+        CombatStatDiagnosticV1::new(match_spec.clone())
+            .map_err(CatalogCombatStatMatchErrorV1::EnginePlan)?;
+        Ok(Self {
+            input,
+            match_spec,
+            cards: metadata
+                .map(|hand| hand.map(|card| card.expect("all eight metadata cards were prepared"))),
+            provenance: CatalogCombatStatProvenanceV1 {
+                model: CatalogCombatStatModelV1::CombatStatDiagnosticV1,
+                projection,
+                effect_registry_schema_version: registry.schema_version(),
+                effect_registry_source_fingerprint_fnv1a64: registry.source_fingerprint_fnv1a64(),
+                effective_catalog_source_fingerprint_fnv1a64: catalog.source_fingerprint_fnv1a64(),
+                compiler_policy_semantic_revision: COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+                catalog_context_policy_semantic_revision:
+                    CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
+            },
+        })
+    }
+
+    pub fn input(&self) -> &CatalogCombatStatMatchInputV1 {
+        &self.input
+    }
+
+    pub fn match_spec(&self) -> &CombatStatDiagnosticMatchSpecV1 {
+        &self.match_spec
+    }
+
+    pub fn preparation(&self) -> &ByPlayer<[CatalogCombatStatCardPreparationV1; HAND_SIZE]> {
+        &self.cards
+    }
+
+    pub const fn provenance(&self) -> CatalogCombatStatProvenanceV1 {
+        self.provenance
+    }
+
+    pub fn new_game(&self) -> CombatStatDiagnosticV1 {
+        CombatStatDiagnosticV1::new(self.match_spec.clone())
+            .expect("catalog match plan was validated at construction")
+    }
+}
+
+/// Selects the exact printed day/night ability and derived active bonus without compiling
+/// either source. The returned descriptions are suitable for corpus comparison and strict
+/// registry resolution; no capture-resolved Copy result enters this layer.
+pub fn derive_catalog_hand(
+    keys: [CardKey; HAND_SIZE],
+    night: bool,
+    catalog: &EffectiveCardCatalog,
+) -> Result<[DerivedCatalogCardV1; HAND_SIZE], EffectiveCatalogHandErrorV1> {
+    let effective = derive_effective_catalog_hand(keys, catalog.as_catalog())?;
+    let mut derived: [Option<DerivedCatalogCardV1>; HAND_SIZE] = [const { None }; HAND_SIZE];
+    for slot in HandSlot::ALL {
+        let index = slot.index();
+        let card = catalog
+            .get(keys[index])
+            .expect("effective-hand derivation validated every card key");
+        let uses_night_ability = night && card.night_ability.is_some();
+        let ability_description = if uses_night_ability {
+            card.night_ability.as_deref().unwrap_or(&card.ability)
+        } else {
+            &card.ability
+        };
+        let ability = (ability_description != "No Ability").then(|| CatalogPrintedModifierV1 {
+            catalog_id: (!uses_night_ability && card.ability_id != 0).then_some(card.ability_id),
+            description: ability_description.to_owned(),
+        });
+        let bonus = if let Some(clan_id) = effective[index].active_bonus_clan_id {
+            let clan =
+                catalog
+                    .get_clan(clan_id)
+                    .ok_or(EffectiveCatalogHandErrorV1::MissingClan {
+                        hand_slot: slot,
+                        key: card.key(),
+                        clan_id,
+                    })?;
+            let uses_night_bonus = night && clan.night_bonus.is_some();
+            let description = if uses_night_bonus {
+                clan.night_bonus.as_deref().unwrap_or(&clan.bonus)
+            } else {
+                &clan.bonus
+            };
+            (description != "No Bonus").then(|| CatalogPrintedModifierV1 {
+                catalog_id: (!uses_night_bonus && clan.bonus_id != 0).then_some(clan.bonus_id),
+                description: description.to_owned(),
+            })
+        } else {
+            None
+        };
+        derived[index] = Some(DerivedCatalogCardV1 {
+            effective: effective[index],
+            ability,
+            bonus,
+        });
+    }
+    Ok(derived.map(|card| card.expect("all four catalog sources were derived")))
+}
+
+/// Derives immutable effective-clan and bonus-activation context without consulting a
+/// capture. This function intentionally classifies Leader rather than rejecting it; the
+/// strict solver constructor rejects Leader separately, while corpus diagnostics can still
+/// inspect the remaining cards in such hands.
+pub fn derive_effective_catalog_hand(
+    keys: [CardKey; HAND_SIZE],
+    catalog: &CardCatalog,
+) -> Result<[EffectiveCatalogCardV1; HAND_SIZE], EffectiveCatalogHandErrorV1> {
+    let mut cards: [Option<&CanonicalCard>; HAND_SIZE] = [const { None }; HAND_SIZE];
+    for slot in HandSlot::ALL {
+        let key = keys[slot.index()];
+        let card = catalog
+            .get(key)
+            .ok_or(EffectiveCatalogHandErrorV1::MissingCard {
+                hand_slot: slot,
+                key,
+            })?;
+        if catalog.get_clan(card.clan_id).is_none() {
+            return Err(EffectiveCatalogHandErrorV1::MissingClan {
+                hand_slot: slot,
+                key,
+                clan_id: card.clan_id,
+            });
+        }
+        cards[slot.index()] = Some(card);
+    }
+    let cards = cards.map(|card| card.expect("all four catalog cards were resolved"));
+    let oculus_slots: Vec<_> = HandSlot::ALL
+        .into_iter()
+        .filter(|slot| cards[slot.index()].clan_id == OCULUS_CLAN_ID)
+        .collect();
+    let infiltrated_clan = if oculus_slots.len() == 1 {
+        let oculus_slot = oculus_slots[0];
+        let mut clans = [0_u32; HAND_SIZE - 1];
+        let mut counts = [0_u8; HAND_SIZE - 1];
+        let mut clan_count = 0_usize;
+        for slot in HandSlot::ALL {
+            if slot == oculus_slot {
+                continue;
+            }
+            let clan_id = cards[slot.index()].clan_id;
+            if let Some(index) = clans[..clan_count].iter().position(|id| *id == clan_id) {
+                counts[index] += 1;
+            } else {
+                clans[clan_count] = clan_id;
+                counts[clan_count] = 1;
+                clan_count += 1;
+            }
+        }
+        match clan_count {
+            1 => Some(clans[0]),
+            2 => (0..clan_count)
+                .find(|index| counts[*index] == 1)
+                .map(|index| clans[index]),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    let effective_clans: [u32; HAND_SIZE] = std::array::from_fn(|index| {
+        if cards[index].clan_id == OCULUS_CLAN_ID && oculus_slots.len() == 1 {
+            infiltrated_clan.unwrap_or(OCULUS_CLAN_ID)
+        } else {
+            cards[index].clan_id
+        }
+    });
+    Ok(std::array::from_fn(|index| {
+        let effective_clan_id = effective_clans[index];
+        let distinct = cards
+            .iter()
+            .enumerate()
+            .filter(|(other, _)| effective_clans[*other] == effective_clan_id)
+            .fold(
+                ([0_u32; HAND_SIZE], 0_usize),
+                |(mut ids, mut count), (_, card)| {
+                    if !ids[..count].contains(&card.id) {
+                        ids[count] = card.id;
+                        count += 1;
+                    }
+                    (ids, count)
+                },
+            )
+            .1 as u16;
+        let has_bonus_source = effective_clan_id != LEADER_CLAN_ID
+            && !(cards[index].clan_id == OCULUS_CLAN_ID && infiltrated_clan.is_none());
+        let active = has_bonus_source && distinct >= 2;
+        EffectiveCatalogCardV1 {
+            key: cards[index].key(),
+            canonical_clan_id: cards[index].clan_id,
+            effective_clan_id,
+            active_bonus_clan_id: active.then_some(effective_clan_id),
+            source_bonus_support_count: if active { distinct } else { 0 },
+        }
+    }))
+}
+
+fn validate_solver_hand(
+    player: PlayerId,
+    keys: [CardKey; HAND_SIZE],
+    catalog: &EffectiveCardCatalog,
+) -> Result<(), CatalogCombatStatMatchErrorV1> {
+    for slot in HandSlot::ALL {
+        let key = keys[slot.index()];
+        let card = catalog
+            .get(key)
+            .ok_or(CatalogCombatStatMatchErrorV1::Hand {
+                player,
+                source: EffectiveCatalogHandErrorV1::MissingCard {
+                    hand_slot: slot,
+                    key,
+                },
+            })?;
+        for prior in HandSlot::ALL.into_iter().take(slot.index()) {
+            if keys[prior.index()].id == key.id {
+                return Err(CatalogCombatStatMatchErrorV1::DuplicateCharacter {
+                    player,
+                    first_slot: prior,
+                    second_slot: slot,
+                    character_id: key.id,
+                });
+            }
+        }
+        if card.clan_id == LEADER_CLAN_ID {
+            return Err(CatalogCombatStatMatchErrorV1::WholeHandLeaderHazard {
+                player,
+                hand_slot: slot,
+                key,
+                name: card.name.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn absent_source() -> PreparedCatalogSourceV1 {
+    PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::Absent,
+        compact: CombatStatSourcePlanV1::Absent,
+    }
+}
+
+fn prepare_catalog_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    if matches!(description, "No Ability" | "No Bonus") {
+        return Ok(absent_source());
+    }
+    let match_ = registry.lookup_description(description).map_err(|source| {
+        CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        }
+    })?;
+    let definition = match_.definition();
+    let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    let compact_effect =
+        compact_effect(effect).ok_or(CatalogCombatStatMatchErrorV1::UnsupportedCompiledShape {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            registry_definition_id: definition.id(),
+        })?;
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::Execute {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids: match_.alias_ids().to_vec().into_boxed_slice(),
+            },
+            effect,
+            predicate,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate,
+            effect: compact_effect,
+        },
+    })
+}

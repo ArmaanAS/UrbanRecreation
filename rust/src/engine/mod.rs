@@ -9,9 +9,12 @@ use crate::catalog::CardKey;
 use std::error::Error;
 use std::fmt;
 
+mod catalog_match;
 mod clan_bonus_diagnostic;
+pub use catalog_match::*;
 mod combat_resolution;
 pub use clan_bonus_diagnostic::*;
+pub(crate) mod combat_stat_compiler;
 mod combat_stat_diagnostic;
 pub use combat_stat_diagnostic::*;
 
