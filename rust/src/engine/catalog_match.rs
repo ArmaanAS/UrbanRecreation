@@ -5,8 +5,9 @@
 //! registry, and refuses a match if any legal card could reach an unsupported effect.
 
 use super::combat_stat_compiler::{
-    classify_combat_stat_effect, classify_defeat_recover_pillz, classify_victory_or_defeat_pillz,
-    compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_recover_pillz,
+    classify_victory_or_defeat_pillz, compact_effect,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
@@ -30,6 +31,8 @@ pub const OCULUS_CLAN_ID: u32 = 56;
 const VORTEX_CLAN_ID: u32 = 45;
 const VORTEX_CATALOG_BONUS_ID: u32 = 43;
 const DEFEAT_RECOVER_DESCRIPTION: &str = "Defeat: Recover 2 Pillz Out Of 3";
+const ARGOS_DEFEAT_CAPPED_PILLZ_DESCRIPTION: &str = "Defeat: +2 Pillz Max. 11";
+const ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID: u32 = 1158;
 const RIOTS_CLAN_ID: u32 = 49;
 const RIOTS_CATALOG_BONUS_ID: u32 = 47;
 const VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
@@ -706,6 +709,46 @@ fn prepare_catalog_source(
             registry_definition_id,
         );
     }
+    if description == ARGOS_DEFEAT_CAPPED_PILLZ_DESCRIPTION {
+        if source_kind == CombatStatEffectSourceV1::Ability
+            && catalog_id == Some(ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID)
+        {
+            return prepare_argos_defeat_capped_pillz_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+            );
+        }
+        // Catalog execution is pinned to Argos' actual static ability id. Same text can
+        // never inherit this identity, and dynamic Copy remains outside this constructor.
+        let definition = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
     if description == VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION {
         if let Some(registry_definition_id) = victory_or_defeat_pillz_registry_definition_id(
             source_kind,
@@ -888,6 +931,70 @@ fn prepare_defeat_recover_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+        },
+    })
+}
+
+fn prepare_argos_defeat_capped_pillz_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    if !classify_argos_defeat_capped_pillz(definition, source_kind) {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
         },
     })
 }

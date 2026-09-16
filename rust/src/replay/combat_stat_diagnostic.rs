@@ -14,8 +14,9 @@ use crate::effect_registry::{
     SupportedEffectV1, UnsupportedReasonV1,
 };
 use crate::engine::combat_stat_compiler::{
-    classify_combat_stat_effect, classify_defeat_recover_pillz, classify_victory_or_defeat_pillz,
-    compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_recover_pillz,
+    classify_victory_or_defeat_pillz, compact_effect,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -608,6 +609,19 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if classify_argos_defeat_capped_pillz(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
+            },
+        });
+    }
     if classify_victory_or_defeat_pillz(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -656,11 +670,17 @@ fn prepare_combat_stat_source(
     let unadmitted_post_round_recovery =
         definition.structured_input().special_action == SpecialActionV1::RecoverPillz;
     let unadmitted_victory_or_defeat = source.description == "Victory Or Defeat : +1 Pillz";
+    // A shape, identity, or description mutation of the reviewed Argos record must remain
+    // a selected hazard instead of quietly becoming a disabled no-op.
+    let unadmitted_argos_defeat_capped_pillz =
+        source.id == 1158 || source.description == "Defeat: +2 Pillz Max. 11";
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {
         CombatStatDisabledReasonV1::UnsupportedSelectedHazard { registry_reasons }
     } else if unadmitted_victory_or_defeat {
+        CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
+    } else if unadmitted_argos_defeat_capped_pillz {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
     } else if unadmitted_post_round_recovery {
         CombatStatDisabledReasonV1::UnsupportedPostRoundRecovery { registry_reasons }
@@ -680,6 +700,7 @@ fn prepare_combat_stat_source(
         || unadmitted_combat_stat
         || unadmitted_post_round_recovery
         || unadmitted_victory_or_defeat
+        || unadmitted_argos_defeat_capped_pillz
     {
         CombatStatSourcePlanV1::RejectIfSelected {
             source_id: source.id,

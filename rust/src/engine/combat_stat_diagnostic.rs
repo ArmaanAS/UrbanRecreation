@@ -7,7 +7,9 @@ use super::combat_resolution::{
     prepare_combat_resolution_with_post_round, CombatResolutionArithmeticStage,
     CombatResolutionError, PreparedCombatResolution, ResolutionCardPlan, ResolutionSourcePlan,
 };
-use super::combat_stat_compiler::victory_or_defeat_pillz_identity_matches;
+use super::combat_stat_compiler::{
+    argos_defeat_capped_pillz_identity_matches, victory_or_defeat_pillz_identity_matches,
+};
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
@@ -74,6 +76,7 @@ pub enum CombatStatPredicateV1 {
 pub enum CombatStatPostRoundEffectV1 {
     RecoverPaidPillzOnDefeat,
     GainOnePillzOnVictoryOrDefeat,
+    GainTwoPillzOnDefeatMaxEleven,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -98,6 +101,9 @@ pub enum CombatStatEffectV1 {
     /// Fixed end-of-round resource work. It is neither a combat modifier nor configurable
     /// public data: a direct plan must use one exact audited source/id pair.
     GainOnePillzOnVictoryOrDefeat,
+    /// Argos' fixed surviving-Defeat gain, applied after the clan bonus and capped at 11
+    /// without lowering a value which is already at or above that cap.
+    GainTwoPillzOnDefeatMaxEleven,
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and
@@ -177,6 +183,8 @@ pub enum InvalidCombatStatPlanReasonV1 {
     DefeatRecoveryPredicate,
     VictoryOrDefeatIdentity,
     VictoryOrDefeatPredicate,
+    ArgosDefeatCappedPillzIdentity,
+    ArgosDefeatCappedPillzPredicate,
     /// The ability uses Support outside the unconditional basic-stat subset admitted by
     /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
@@ -578,6 +586,27 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    if effect == CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven {
+        if !argos_defeat_capped_pillz_identity_matches(source, source_id) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ArgosDefeatCappedPillzIdentity,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ArgosDefeatCappedPillzPredicate,
+            ));
+        }
+        return Ok(());
+    }
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
     {
@@ -921,7 +950,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
             }
         }
         CombatStatEffectV1::RecoverPaidPillzOnDefeat
-        | CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat => return None,
+        | CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat
+        | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven => return None,
     })
 }
 
@@ -932,6 +962,9 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffec
         }
         CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat => {
             Some(PostRoundEffect::GainOnePillzOnVictoryOrDefeat)
+        }
+        CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven => {
+            Some(PostRoundEffect::GainTwoPillzOnDefeatMaxEleven)
         }
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentBonus
@@ -1372,5 +1405,131 @@ mod tests {
             ))
         ));
         assert_eq!(overflow.position(), &before);
+    }
+
+    #[test]
+    fn argos_defeat_pillz_is_capped_after_bonus_and_skips_wins_or_kos() {
+        let argos = CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven;
+        let vod = CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat;
+        let mut ordered = spec_with_p1(CombatStatEffectSourceV1::Ability, 1158, argos, 12);
+        ordered.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+            source_id: 1034,
+            predicate: CombatStatPredicateV1::Always,
+            effect: vod,
+        };
+        ordered.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        let mut ordered = CombatStatDiagnosticV1::new(ordered).unwrap();
+        let before = ordered.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let (report, undo) = ordered.make(input(2, false)).unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        // 12 - 2 = 10; Bonus:1034 runs first to 11, then Argos is already capped.
+        assert_eq!(report.players[PlayerId::P1].pillz, 11);
+        ordered.unmake(undo);
+        assert_eq!(ordered.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        ordered.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
+
+        let mut above = spec_with_p1(CombatStatEffectSourceV1::Ability, 1158, argos, 13);
+        above.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+            source_id: 1034,
+            predicate: CombatStatPredicateV1::Always,
+            effect: vod,
+        };
+        above.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        let mut above = CombatStatDiagnosticV1::new(above).unwrap();
+        let (report, _) = above.make(input(2, false)).unwrap();
+        // 13 - 2 = 11; bonus first gives 12 and Argos must not lower it.
+        assert_eq!(report.players[PlayerId::P1].pillz, 12);
+
+        let mut winning = spec_with_p1(CombatStatEffectSourceV1::Ability, 1158, argos, 12);
+        winning.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        let mut winning = CombatStatDiagnosticV1::new(winning).unwrap();
+        let (report, _) = winning.make(input(2, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 10);
+
+        let mut zero = CombatStatDiagnosticV1::new(spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1158,
+            argos,
+            3,
+        ))
+        .unwrap();
+        let (report, _) = zero.make(input(3, false)).unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 2);
+
+        let mut stopped_bonus = spec_with_p1(CombatStatEffectSourceV1::Ability, 1158, argos, 9);
+        stopped_bonus.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+            source_id: 1034,
+            predicate: CombatStatPredicateV1::Always,
+            effect: vod,
+        };
+        stopped_bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        stopped_bonus.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::StopOpponentBonus,
+        };
+        let mut stopped_bonus = CombatStatDiagnosticV1::new(stopped_bonus).unwrap();
+        let (report, _) = stopped_bonus.make(input(2, false)).unwrap();
+        // 9 - 2 = 7; Stop Bonus suppresses only VOD, so Argos still returns two.
+        assert_eq!(report.players[PlayerId::P1].pillz, 9);
+
+        let mut ko = spec_with_p1(CombatStatEffectSourceV1::Ability, 1158, argos, 12);
+        ko.base_rules.players[PlayerId::P1].initial_life = 2;
+        ko.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+            source_id: 1034,
+            predicate: CombatStatPredicateV1::Always,
+            effect: vod,
+        };
+        ko.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        let mut ko = CombatStatDiagnosticV1::new(ko).unwrap();
+        let (report, _) = ko.make(input(2, false)).unwrap();
+        assert_eq!(report.status, MatchStatus::Won(PlayerId::P2));
+        assert_eq!(report.players[PlayerId::P1].life, 0);
+        // VOD is the audited post-KO exception; Argos' ordinary Pillz gain is suppressed.
+        assert_eq!(report.players[PlayerId::P1].pillz, 11);
+    }
+
+    #[test]
+    fn argos_public_plans_are_identity_and_predicate_locked() {
+        let effect = CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven;
+        assert!(CombatStatDiagnosticV1::new(spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1158,
+            effect,
+            12,
+        ))
+        .is_ok());
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(spec_with_p1(
+                CombatStatEffectSourceV1::Bonus,
+                1158,
+                effect,
+                12,
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::ArgosDefeatCappedPillzIdentity,
+                ..
+            })
+        ));
+        let mut wrong_predicate = spec_with_p1(CombatStatEffectSourceV1::Ability, 1158, effect, 12);
+        wrong_predicate.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1158,
+            predicate: CombatStatPredicateV1::OwnerLostPreviousRound,
+            effect,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_predicate),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::ArgosDefeatCappedPillzPredicate,
+                ..
+            })
+        ));
     }
 }

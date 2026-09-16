@@ -345,6 +345,7 @@ pub(super) struct PostRoundPlan {
 pub(super) enum PostRoundEffect {
     RecoverPaidPillzOnDefeat,
     GainOnePillzOnVictoryOrDefeat,
+    GainTwoPillzOnDefeatMaxEleven,
 }
 
 #[derive(Clone, Copy)]
@@ -439,8 +440,8 @@ impl BaseRulesGame {
         // damage for either owner, including a KO.
         for owner in PlayerId::ALL {
             // Match the TypeScript reference's within-phase ordering: the clan bonus is
-            // registered before the ability. The admitted additive effects commute today,
-            // but capped post-round effects make this ordering observable.
+            // registered before the ability. The VOD effects commute, but Argos' capped
+            // post-round effect makes this ordering observable.
             for effect in [post_round[owner].bonus, post_round[owner].ability]
                 .into_iter()
                 .flatten()
@@ -461,6 +462,22 @@ impl BaseRulesGame {
                             .checked_add(1)
                             .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
                     }
+                    // Argos is ordinary post-round Pillz work: unlike the audited VOD
+                    // sources, it only pays on a surviving defeat. Its Max belongs to this
+                    // modifier, after the clan bonus has already run; never lower a value
+                    // that the earlier bonus raised to or above eleven.
+                    PostRoundEffect::GainTwoPillzOnDefeatMaxEleven
+                        if owner == loser && position.players[owner].life > 0 =>
+                    {
+                        let pillz = position.players[owner].pillz;
+                        if pillz < 11 {
+                            position.players[owner].pillz = pillz
+                                .checked_add(2)
+                                .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?
+                                .min(11);
+                        }
+                    }
+                    PostRoundEffect::GainTwoPillzOnDefeatMaxEleven => {}
                 }
             }
         }

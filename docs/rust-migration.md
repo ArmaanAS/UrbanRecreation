@@ -204,15 +204,14 @@ to 3). Fury follows Power/Damage resolution; base Attack follows Fury; own Attac
 then precede the sorted opponent Attack reductions. Arithmetic observations outside an
 admitted sequential prefix remain focused evidence rather than replay-gate members.
 
-The immutable server-backed gate is forty-two sequential prefix rounds:
+The immutable server-backed gate is forty-four sequential prefix rounds:
 `875032/2`, `875155/1`, `1088323/1`, `1081463/1`, `1089513/2`, `901400/2`, and
 `874837/2`, plus `1011643/2`, `1011768/1`, `1011483/2`, `877812/2`, and
 `874642/1`, `1059269/1`, and `1091585/1`, plus `868094/1`, `875230/1`, and
 `877950/1`, plus `945585/2`, `1023396/2`, `874962/2`, and `946400/1`, plus
-`1058366/3` and `1061897/4`, plus `946288/1`, `1092660/1`, and `1093500/2`. Its selected
-Execute/Disabled identity sets are pinned, while
-focused tests pin
-the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
+`1058366/3` and `1061897/4`, plus `946288/1`, `1092660/1`, and `1093500/2`, plus
+`1092909/2`. Its selected Execute/Disabled/Absent identity sets are pinned, while focused
+tests pin the new predicate assignments and branches. `1011483` visibly proves active Asymmetry
 (Galahad Damage 2 to 5 on unequal slots) and active Symmetry (Anagone reduces Bella Ld Power
 7 to 4 on equal slots); `1011768` visibly proves inactive Asymmetry (Aneta remains Damage 3
 on equal slots); and `1011643` proves an active Asymmetry bonus is still suppressed by Stop
@@ -244,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 10 for this scope.
+Replay provenance records compiler/policy semantic revision 11 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -253,7 +252,12 @@ also suppresses Agnes's Riots bonus in the latter round. `1093500` first execute
 dynamically copied `ability:1034`, then executes Pr Hide's printed `ability:1375` together
 with her Riots bonus. Capture `1092909` round 3 separately proves Pr Hide receives both gains
 after a KO; a focused make/unmake test pins the same +2 transition because the preceding
-Argos round remains outside this revision's gate.
+Argos round remained outside revision 10's gate.
+
+Revision 11 extends `1092909` through round 1. Round 0 re-exercises an admitted Riots bonus;
+round 1 then pins Argos' exact `ability:1158` after costs and the Riots bonus: 9 carried
+Pillz minus 2 paid becomes 7, the bonus makes 8, and Argos makes 10 after losing. This adds
+two sequential rounds and raises the immutable gate from 42 to 44.
 
 The carried-forward previous-round portion admits only the exact fixed numeric grammar: a structured
 `previousRoundRequirement` of `win` with `Confidence: ` or `Confidence : `, or `lose` with
@@ -322,14 +326,36 @@ selected owners for this typed plan, while recovery remains loser-only. Checked 
 reports a distinct `PillzIncreaseOverflow` and aborts before commit, and the opaque undo
 restores the exact pre-round position and hash.
 
+Semantic revision 11 admits one capped increase without widening the generic boundary:
+Argos' exact `ability:1158`, `Defeat: +2 Pillz Max. 11`. The complete structured record must
+be a fixed increase of two to the owning player's Pillz, capped at 11, with
+`currentRoundRequirement=lose`; every other condition, link, flag, permanence field and
+special action must be neutral. The source kind, registry id, printed description and full
+shape are all authority. Catalog construction maps only Argos level 2's printed ability id
+1158 to registry definition 1158; Argos level 1 has no ability, and description equality or
+dynamic Copy cannot synthesize the effect.
+
+Execution follows the TypeScript END phase after costs and damage. A live clan bonus runs
+before the ability. If Argos loses and survives, a value below 11 gains two and clamps at
+11; a value already at or above 11 is left unchanged rather than pulled down. Captures cover
+post-cost values 0, 2, 4, 7, 8 and 11, a win, Stop Ability, and combined Stop Ability/Stop
+Bonus. In particular, `1093451` proves 11 becomes 12 from Riots before Argos observes that
+the value is already capped. Stop Bonus suppresses only Riots; Argos remains an ability.
+The only captured Argos KO also has Stop Ability active, so it does not establish live-server
+post-KO behavior. The Rust slice deliberately follows the current TypeScript reference and
+suppresses Argos at zero life; this is recorded as a bounded inference pending an active
+post-KO capture. Focused tests pin bonus-before-ability ordering, zero residual Pillz, wins,
+the cap, above-cap preservation, KO suppression, Stop Bonus isolation, and exact undo/hash
+restoration.
+
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
 retained as visible Disabled metadata but reject atomically if selected. The 33 observed
 ordinary Support combat-stat definitions are admitted only for an otherwise-neutral,
 unconditional basic Attack, Power, or Damage shape. Conditional, nested, life, pillz,
-Power-and-Damage, post-round, and permanent Support effects remain fail-closed; capped
-increases also remain deferred for lack of clean evidence. Only the five exact audited
+Power-and-Damage, post-round, and permanent Support effects remain fail-closed; every capped
+increase except exact `ability:1158` remains deferred. Only the five exact audited
 Victory-or-Defeat ability identities are admitted; all other same-text sources remain
 rejected when selected, so this family does not widen the generic resource-effect boundary.
 Provenance records the model,
@@ -342,10 +368,10 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 10 records this semantic boundary together with the exact
+context. Compiler/policy revision 11 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
-Defeat-recovery post-round plan, and the identity-locked Victory-or-Defeat Pillz family with
-its both-owner post-round execution semantics.
+Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
+both-owner post-round execution semantics, and Argos' identity-locked capped Defeat gain.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -376,12 +402,14 @@ only to registry definition `1034`. Printed catalog abilities `1375`, `4111`, `5
 `ability:1034` is executable replay evidence for a concrete post-Copy result, but no printed
 catalog ability owns that id and strict construction never synthesizes it. Same-text aliases
 therefore remain distinct provenance and cannot enter through description matching.
-A selected night
-variant has no catalog numeric id unless the catalog explicitly supplies one; its public
+Argos follows the same fail-closed rule without an alias bridge: only catalog ability id
+`1158`, exact description, and exact registry definition `1158` produce its typed capped
+post-round plan; level 1 remains absent. A selected night variant has no catalog numeric id
+unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 10, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 11, and catalog-context
 policy revision 1.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots

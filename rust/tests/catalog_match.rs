@@ -888,6 +888,59 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
         ));
     }
 
+    let argos = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(1333, 2), // Argos: the sole printed Ability:1158 source
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            rescue,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        argos.preparation()[PlayerId::P1][0].ability,
+        CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+        } if identity.catalog_id == Some(1158) && identity.registry_definition_id == 1158
+    ));
+    assert!(matches!(
+        argos.match_spec().cards[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 1158,
+            predicate: CombatStatPredicateV1::Always,
+            effect:
+                urban_recreation_rust::engine::CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
+        }
+    ));
+    let argos_level_one = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(1333, 1), // no printed ability: never synthesize 1158 by card name
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            rescue,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        argos_level_one.preparation()[PlayerId::P1][0].ability,
+        CatalogCombatStatSourceDispositionV1::Absent
+    ));
+
     // Atess has the same printed text but none of her level-specific identities has an
     // audited registry definition. Description equality must not inherit a known alias.
     assert!(matches!(

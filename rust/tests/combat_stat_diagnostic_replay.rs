@@ -45,6 +45,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (946288, 1),
     (1092660, 1),
     (1093500, 2),
+    (1092909, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -137,6 +138,16 @@ fn victory_or_defeat_entry(id: u32) -> serde_json::Value {
     entry
 }
 
+fn argos_defeat_capped_pillz_entry(id: u32, description: &str) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "both", 2, 0);
+    entry["abilityData"]["valueMax"] = serde_json::json!(11);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry
+}
+
 fn round_scaled_numeric_entry(
     id: u32,
     description: &str,
@@ -211,7 +222,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_forty_two_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_forty_four_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -247,22 +258,22 @@ fn fixed_server_backed_gate_is_exactly_forty_two_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 42);
+    assert_eq!(rounds, 44);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 37, 39, 40, 42, 56, 90, 93, 130, 156, 266, 333, 412, 520, 577, 578, 585, 612, 741,
-            801, 871, 883, 916, 980, 1034, 1047, 1163, 1241, 1335, 1338, 1342, 1359, 1372, 1375,
-            1418, 1536, 1578, 1688, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2329, 2535, 2881,
-            3677, 3865, 3897, 4041, 4216, 4297, 4399, 4711, 4718, 4757, 5026, 5085, 5273, 5520,
-            5763, 5852,
+            6, 36, 37, 39, 40, 42, 56, 90, 93, 130, 156, 266, 333, 412, 520, 577, 578, 585, 612,
+            741, 801, 871, 883, 916, 980, 1034, 1047, 1158, 1163, 1241, 1335, 1338, 1342, 1359,
+            1372, 1375, 1418, 1536, 1578, 1688, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2329,
+            2412, 2535, 2881, 3677, 3865, 3897, 4041, 4216, 4297, 4399, 4711, 4718, 4757, 5026,
+            5085, 5273, 5520, 5763, 5852,
         ])
     );
     assert_eq!(
         disabled_ids,
         BTreeSet::from([274, 377, 401, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459, 5283,])
     );
-    assert_eq!(absent, 0);
+    assert_eq!(absent, 1);
 }
 
 #[test]
@@ -319,7 +330,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 10);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 11);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -1145,6 +1156,120 @@ fn victory_or_defeat_is_exactly_the_audited_post_round_resource_effect() {
         prepared.new_game().card_plans()[PlayerId::P1][0].bonus,
         CombatStatSourcePlanV1::Disabled { source_id: 900_107 }
     ));
+}
+
+#[test]
+fn argos_defeat_capped_pillz_is_exact_and_fails_closed_when_selected() {
+    let catalog = catalog();
+    const DESCRIPTION: &str = "Defeat: +2 Pillz Max. 11";
+    for (id, source_kind, admitted) in [
+        (1158, CombatStatEffectSourceV1::Ability, true),
+        (1158, CombatStatEffectSourceV1::Bonus, false),
+        (900_108, CombatStatEffectSourceV1::Ability, false),
+    ] {
+        let registry = one_entry_registry(argos_defeat_capped_pillz_entry(id, DESCRIPTION));
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let selected_slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        let modifier = Some(SourceModifier {
+            id,
+            description: DESCRIPTION.to_owned(),
+        });
+        if source_kind == CombatStatEffectSourceV1::Ability {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        let disposition = if source_kind == CombatStatEffectSourceV1::Ability {
+            &prepared.preparation()[PlayerId::P1][selected_slot].ability
+        } else {
+            &prepared.preparation()[PlayerId::P1][selected_slot].bonus
+        };
+        assert_eq!(
+            matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+                    ..
+                }
+            ),
+            admitted,
+            "id={id}, source={source_kind:?}"
+        );
+        if !admitted {
+            assert!(matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::Disabled {
+                    reason: CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { .. },
+                    ..
+                }
+            ));
+            let plan = if source_kind == CombatStatEffectSourceV1::Ability {
+                prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability
+            } else {
+                prepared.new_game().card_plans()[PlayerId::P1][selected_slot].bonus
+            };
+            assert!(matches!(
+                plan,
+                CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+            ));
+        }
+    }
+
+    let mut malformed = argos_defeat_capped_pillz_entry(1158, DESCRIPTION);
+    malformed["abilityData"]["valueMax"] = serde_json::json!(12);
+    let registry = one_entry_registry(malformed);
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    source.players[0].hand[0].source_ability = Some(SourceModifier {
+        id: 1158,
+        description: DESCRIPTION.to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 1158 }
+    ));
+
+    let registry = one_entry_registry(argos_defeat_capped_pillz_entry(1158, "+2 Pillz"));
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    source.players[0].hand[0].source_ability = Some(SourceModifier {
+        id: 1158,
+        description: "+2 Pillz".to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 1158 }
+    ));
+}
+
+#[test]
+fn server_replay_pins_argos_after_cost_and_riots_bonus_arithmetic() {
+    let report = diagnostic(1092909, &catalog(), &registry())
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    let round = &report.rounds[1];
+    assert!(matches!(
+        round.selected[PlayerId::P2].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven }
+            if identity.id == 1158
+    ));
+    assert!(!round.round.cards[PlayerId::P2].won);
+    // 9 carried - 2 paid = 7; Riots bonus first gives 8, then Argos gives 2.
+    assert_eq!(round.round.players[PlayerId::P2].pillz, 10);
 }
 
 #[test]

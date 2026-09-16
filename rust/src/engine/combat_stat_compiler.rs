@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 10;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 11;
 
 /// Strictly recognize the three replay identities audited for the diagnostic's Defeat
 /// recovery effect. This intentionally does not broaden the registry compiler's generic
@@ -60,6 +60,25 @@ pub(crate) fn victory_or_defeat_pillz_identity_matches(
     )
 }
 
+/// Strictly recognize Argos' printed Defeat Pillz effect. Its cap is applied after a
+/// live clan bonus in the shared END phase, so it requires a distinct typed path.
+pub(crate) fn classify_argos_defeat_capped_pillz(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> bool {
+    argos_defeat_capped_pillz_identity_matches(source_kind, definition.id())
+        && definition.description() == "Defeat: +2 Pillz Max. 11"
+        && argos_defeat_capped_pillz_shape_matches(definition.structured_input())
+}
+
+/// Shared identity gate for compiler output and caller-provided compact plans.
+pub(crate) fn argos_defeat_capped_pillz_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    (source_kind, definition_id) == (CombatStatEffectSourceV1::Ability, 1158)
+}
+
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -67,6 +86,9 @@ pub(crate) fn classify_combat_stat_effect(
     // Recovery has its own post-round execution channel. Keep it out of this combat-stat
     // return type so neither generic numeric admission nor cancellation can reinterpret it.
     if classify_defeat_recover_pillz(definition, source_kind) {
+        return None;
+    }
+    if classify_argos_defeat_capped_pillz(definition, source_kind) {
         return None;
     }
     // Victory Or Defeat Pillz likewise has its own post-round execution channel.
@@ -454,6 +476,39 @@ fn victory_or_defeat_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
         && !input.is_immediate_permanent
 }
 
+fn argos_defeat_capped_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value == 2
+        && input.value_min == 0
+        && input.value_max == 11
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Lose
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::Pillz
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
 fn position_description_matches(
     description: &str,
     predicate: CombatStatPredicateV1,
@@ -812,5 +867,51 @@ mod tests {
                 .unwrap(),
             CombatStatEffectSourceV1::Bonus,
         ));
+    }
+
+    #[test]
+    fn argos_defeat_capped_pillz_admits_only_ability_1158_and_its_full_shape() {
+        let registry = registry();
+        let argos = registry
+            .lookup_capture(1158, "Defeat: +2 Pillz Max. 11")
+            .unwrap();
+        assert!(classify_argos_defeat_capped_pillz(
+            argos,
+            CombatStatEffectSourceV1::Ability,
+        ));
+        assert!(!classify_argos_defeat_capped_pillz(
+            argos,
+            CombatStatEffectSourceV1::Bonus,
+        ));
+        assert!(!classify_argos_defeat_capped_pillz(
+            registry
+                .lookup_capture(1034, "Victory Or Defeat : +1 Pillz")
+                .unwrap(),
+            CombatStatEffectSourceV1::Ability,
+        ));
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("valueMax", serde_json::json!(12)),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("specialAction", serde_json::json!("recover_pillz")),
+            ("isSupport", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1158"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert!(
+                !classify_argos_defeat_capped_pillz(
+                    malformed
+                        .lookup_capture(1158, "Defeat: +2 Pillz Max. 11")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                "mutated field {field}"
+            );
+        }
     }
 }
