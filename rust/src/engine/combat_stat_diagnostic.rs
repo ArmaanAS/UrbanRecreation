@@ -11,7 +11,7 @@ use super::combat_stat_compiler::{
     anita_courage_damage_to_life_identity_matches, argos_defeat_capped_pillz_identity_matches,
     equalizer_opponent_life_on_victory_identity_matches,
     komboka_victory_pillz_and_life_identity_matches, victory_opponent_life_identity_matches,
-    victory_or_defeat_pillz_identity_matches,
+    victory_opponent_life_predicate, victory_or_defeat_pillz_identity_matches,
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
@@ -194,13 +194,20 @@ pub enum CombatStatSourcePlanV1 {
         predicate: CombatStatPredicateV1,
         effect: CombatStatEffectV1,
     },
-    /// Unconditional Copy. The source has no effect of its own: at round resolution it
-    /// adopts the opposing selected card's corresponding immutable source plan, keeping
-    /// this card's own slot kind for Stop liveness and its own Support context. The
-    /// opposing plan is already materialized, so resolution stays a plain index.
+    /// Copy. The source has no effect of its own: at round resolution it adopts the opposing
+    /// selected card's corresponding immutable source plan, keeping this card's own slot
+    /// kind for Stop liveness and its own Support context. The opposing plan is already
+    /// materialized, so resolution stays a plain index.
+    ///
+    /// `predicate` gates the adoption itself and is `Always` for an unconditional Copy. It
+    /// is resolved before the round is prepared, exactly like a combat-stat predicate, so a
+    /// conditional Copy costs nothing extra in the hot path. The adopted plan keeps its own
+    /// predicate afterwards: copying a Confidence effect does not inherit the opponent's
+    /// history, it has to satisfy the copier's.
     CopyOpponentSource {
         source_id: u32,
         copied: CopiedSourceKindV1,
+        predicate: CombatStatPredicateV1,
     },
     Disabled {
         source_id: u32,
@@ -620,6 +627,10 @@ fn validate_ability_support_context(
 /// every opposing card it could face already carries a concrete adoptable plan. A Copy of
 /// a Copy, of a disabled source, or of a selected hazard is rejected for the whole match
 /// rather than deferred to the round that would have to resolve it.
+///
+/// A condition does not soften this. The predicate depends on the round, not on the draw,
+/// so every conditional Copy has some legal line in which it does adopt, and admitting one
+/// whose target is unresolvable would only move the failure to that line.
 fn validate_copy_targets(
     player: PlayerId,
     hand_slot: HandSlot,
@@ -636,7 +647,10 @@ fn validate_copy_targets(
             own[hand_slot.index()].bonus,
         ),
     ] {
-        let CombatStatSourcePlanV1::CopyOpponentSource { source_id, copied } = plan else {
+        let CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id, copied, ..
+        } = plan
+        else {
             continue;
         };
         for opposing in opponent.iter() {
@@ -728,7 +742,7 @@ fn equalizer_opponent_life_id_is_reserved(source_id: u32) -> bool {
 /// caller claims, so neither magnitude can be smuggled onto the other id or onto a
 /// generic plan.
 fn victory_opponent_life_id_is_reserved(source_id: u32) -> bool {
-    matches!(source_id, 680 | 1399)
+    matches!(source_id, 680 | 1399 | 3016 | 4301 | 4708)
 }
 
 fn victory_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
@@ -745,6 +759,18 @@ fn victory_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffect
             CombatStatEffectV1::ReduceOpponentLifeOnVictory {
                 life: 2,
                 minimum: 2
+            }
+        ) | (
+            4708,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 4,
+                minimum: 0
+            }
+        ) | (
+            3016 | 4301,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 3,
+                minimum: 0
             }
         )
     )
@@ -869,9 +895,10 @@ fn validate_combat_stat_source_plan(
             InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeIdentity,
         ));
     }
-    // Both unconditional Victory opponent-Life identities are source-kind and magnitude
-    // locked, and the effect itself may not appear under any other id. Conditional
-    // siblings never reach this plan, so no predicate but Always is accepted here.
+    // Every reviewed Victory opponent-Life identity is source-kind, magnitude and predicate
+    // locked, and the effect itself may not appear under any other id. A conditional member
+    // carries exactly the one predicate its printed text names, so a plan cannot pair a
+    // reviewed magnitude with some other condition.
     if victory_opponent_life_id_is_reserved(source_id) {
         if !victory_opponent_life_identity_matches(source, source_id) {
             return Err(invalid_combat_stat_execute(
@@ -891,7 +918,7 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryOpponentLifeMagnitude,
             ));
         }
-        if predicate != CombatStatPredicateV1::Always {
+        if Some(predicate) != victory_opponent_life_predicate(source_id) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -1512,18 +1539,42 @@ fn prepare_combat_stat_diagnostic(
         .map_err(map_resolution_error)
 }
 
-/// Resolve one source against the opposing selected card. An unconditional Copy adopts
-/// that card's corresponding immutable plan; everything else is already concrete. The
-/// adopted plan is never itself a Copy, which construction has already guaranteed.
+/// Resolve one source against the opposing selected card. A Copy whose condition holds
+/// adopts that card's corresponding immutable plan; everything else is already concrete.
+/// The adopted plan is never itself a Copy, which construction has already guaranteed.
+///
+/// A Copy whose condition fails contributes nothing at all, which is not the same as
+/// adopting an absent source: the distinction is invisible today because both produce no
+/// effect, and it is kept explicit so a future Copy effect cannot quietly acquire one.
+#[allow(clippy::too_many_arguments)]
 fn resolved_source_plan(
     plan: CombatStatSourcePlanV1,
     opponent: CombatStatCardPlanV1,
+    owner: PlayerId,
+    first_mover: PlayerId,
+    owner_slot: HandSlot,
+    opponent_slot: HandSlot,
+    previous_round_winner: Option<PlayerId>,
 ) -> CombatStatSourcePlanV1 {
     match plan {
-        CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } => match copied {
-            CopiedSourceKindV1::Ability => opponent.ability,
-            CopiedSourceKindV1::Bonus => opponent.bonus,
-        },
+        CombatStatSourcePlanV1::CopyOpponentSource {
+            copied, predicate, ..
+        } => {
+            if !predicate_matches(
+                predicate,
+                owner,
+                first_mover,
+                owner_slot,
+                opponent_slot,
+                previous_round_winner,
+            ) {
+                return CombatStatSourcePlanV1::Absent;
+            }
+            match copied {
+                CopiedSourceKindV1::Ability => opponent.ability,
+                CopiedSourceKindV1::Bonus => opponent.bonus,
+            }
+        }
         other => other,
     }
 }
@@ -1537,49 +1588,35 @@ fn resolution_card_plan(
     opponent_slot: HandSlot,
     previous_round_winner: Option<PlayerId>,
 ) -> ResolutionCardPlan {
+    // Resolve each source once. Copy substitution and the predicate are the same work for
+    // the combat effect and the post-round effect, and a source only ever supplies one of
+    // the two, so doing it twice per source was only ever duplicated cost.
+    let source = |plan: CombatStatSourcePlanV1, support_count: u16| {
+        let effect = active_effect(
+            resolved_source_plan(
+                plan,
+                opponent_plan,
+                owner,
+                first_mover,
+                owner_slot,
+                opponent_slot,
+                previous_round_winner,
+            ),
+            owner,
+            first_mover,
+            owner_slot,
+            opponent_slot,
+            previous_round_winner,
+        );
+        ResolutionSourcePlan {
+            effect: effect.and_then(shared_effect),
+            post_round: effect.and_then(shared_post_round_effect),
+            support_count,
+        }
+    };
     ResolutionCardPlan {
-        ability: ResolutionSourcePlan {
-            effect: active_effect(
-                resolved_source_plan(plan.ability, opponent_plan),
-                owner,
-                first_mover,
-                owner_slot,
-                opponent_slot,
-                previous_round_winner,
-            )
-            .and_then(shared_effect),
-            post_round: active_effect(
-                resolved_source_plan(plan.ability, opponent_plan),
-                owner,
-                first_mover,
-                owner_slot,
-                opponent_slot,
-                previous_round_winner,
-            )
-            .and_then(shared_post_round_effect),
-            support_count: plan.source_ability_support_count,
-        },
-        bonus: ResolutionSourcePlan {
-            effect: active_effect(
-                resolved_source_plan(plan.bonus, opponent_plan),
-                owner,
-                first_mover,
-                owner_slot,
-                opponent_slot,
-                previous_round_winner,
-            )
-            .and_then(shared_effect),
-            post_round: active_effect(
-                resolved_source_plan(plan.bonus, opponent_plan),
-                owner,
-                first_mover,
-                owner_slot,
-                opponent_slot,
-                previous_round_winner,
-            )
-            .and_then(shared_post_round_effect),
-            support_count: plan.source_bonus_support_count,
-        },
+        ability: source(plan.ability, plan.source_ability_support_count),
+        bonus: source(plan.bonus, plan.source_bonus_support_count),
     }
 }
 

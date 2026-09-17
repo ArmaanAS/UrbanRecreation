@@ -10,8 +10,8 @@ use super::combat_stat_compiler::{
     classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
     classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
     classify_victory_opponent_life, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, compact_effect, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_victory_or_defeat_pillz, compact_effect, is_copy_opponent_source_description,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::CopiedSourceKindV1;
 use super::{
@@ -48,6 +48,33 @@ const BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION: &str = "-2 Opp. Life Min 2";
 const MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID: u32 = 1399;
 const MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION: &str = "-5 Opp. Life Min 5";
 const MOU_CARD: CardKey = CardKey { id: 1589, level: 3 };
+/// Printed card abilities that carry a reviewed Victory opponent-Life reduction, keyed by
+/// the exact card and its printed catalog id, which must equal the registry definition id.
+/// The catalog is authority here: description equality never transfers one of these to
+/// another card, and a level whose printed id has no registry definition — Doela Noel level
+/// one's `4843` — stays fail-closed with no special handling.
+const VICTORY_OPPONENT_LIFE_ABILITY_CARDS: [(CardKey, u32, &str); 4] = [
+    (
+        MOU_CARD,
+        MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID,
+        MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION,
+    ),
+    (
+        CardKey { id: 2058, level: 2 },
+        4708,
+        "Symmetry: - 4 Opp. Life Min 0",
+    ),
+    (
+        CardKey { id: 2270, level: 1 },
+        4301,
+        "Confidence: -3 Opp. Life, Min 0",
+    ),
+    (
+        CardKey { id: 2270, level: 2 },
+        3016,
+        "Confidence: -3 Opp. Life, Min 0",
+    ),
+];
 const RIOTS_CLAN_ID: u32 = 49;
 const RIOTS_CATALOG_BONUS_ID: u32 = 47;
 const VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
@@ -165,6 +192,10 @@ pub enum CatalogCombatStatSourceDispositionV1 {
     ExecutePostRound {
         identity: CatalogCombatStatModifierIdentityV1,
         effect: CombatStatPostRoundEffectV1,
+        /// The condition the effect's own printed text names, or `Always`. A post-round
+        /// plan may be conditional, so preparation metadata has to say so: without this a
+        /// reviewed conditional reduction would read exactly like an unconditional one.
+        predicate: CombatStatPredicateV1,
     },
     /// The card carries an unconditional Copy. It has no effect of its own: at round time
     /// it adopts the opposing selected card's named source, keeping this slot's kind for
@@ -172,6 +203,9 @@ pub enum CatalogCombatStatSourceDispositionV1 {
     CopyOpponentSource {
         identity: CatalogCombatStatModifierIdentityV1,
         copied: CopiedSourceKindV1,
+        /// `Always` for an unconditional Copy; otherwise the condition the printed text
+        /// names, which gates the adoption itself rather than the adopted effect.
+        predicate: CombatStatPredicateV1,
     },
 }
 
@@ -745,10 +779,11 @@ fn prepare_catalog_source(
     if matches!(description, "No Ability" | "No Bonus") {
         return Ok(absent_source());
     }
-    // Unconditional Copy. The registry holds many structurally identical Copy definitions,
-    // so the printed catalog id must itself be one of them: an id that is not a definition
-    // of this exact text and shape stays fail-closed, and description alone never admits.
-    if matches!(description, "Copy: Opp. Ability" | "Copy: Opp. Bonus") {
+    // Copy, unconditional or Reprisal/Revenge. The registry holds many structurally
+    // identical Copy definitions, so the printed catalog id must itself be one of them: an
+    // id that is not a definition of this exact text and shape stays fail-closed, and
+    // description alone never admits.
+    if is_copy_opponent_source_description(description) {
         let definition = catalog_id
             .and_then(|id| registry.lookup_capture(id, description).ok())
             .filter(|definition| classify_copy_opponent_source(definition).is_some());
@@ -778,7 +813,7 @@ fn prepare_catalog_source(
                     .into_boxed_slice(),
             });
         };
-        let copied = classify_copy_opponent_source(definition).expect("checked above");
+        let (copied, predicate) = classify_copy_opponent_source(definition).expect("checked above");
         let registry_alias_ids = registry
             .lookup_description(description)
             .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
@@ -801,10 +836,12 @@ fn prepare_catalog_source(
                     registry_alias_ids,
                 },
                 copied,
+                predicate,
             },
             compact: CombatStatSourcePlanV1::CopyOpponentSource {
                 source_id: definition.id(),
                 copied,
+                predicate,
             },
         });
     }
@@ -997,12 +1034,14 @@ fn prepare_catalog_source(
                 .into_boxed_slice(),
         });
     }
-    // Unconditional Victory opponent-Life has exactly two reviewed catalog identities:
-    // Mou level three's printed Ability and the active Berzerk clan Bonus. Same-text
-    // catalog ids (Rakhan 978, Milovan 498, Fraser 1289) carry no registry definition, and
-    // description equality never transfers this effect to another card or clan.
-    if description == MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION
-        || description == BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION
+    // Victory opponent-Life has a closed set of reviewed catalog identities: three printed
+    // card abilities and the active Berzerk clan Bonus. Same-text catalog ids (Rakhan 978,
+    // Milovan 498, Fraser 1289) carry no registry definition, and description equality never
+    // transfers this effect to another card or clan.
+    if description == BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION
+        || VICTORY_OPPONENT_LIFE_ABILITY_CARDS
+            .iter()
+            .any(|(_, _, text)| *text == description)
     {
         if let Some(registry_definition_id) = victory_opponent_life_registry_definition_id(
             card_key,
@@ -1541,6 +1580,7 @@ fn prepare_victory_life_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -1606,6 +1646,7 @@ fn prepare_defeat_life_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::GainLifeOnDefeat { life },
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -1671,6 +1712,7 @@ fn prepare_reanimate_life_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::ReanimateLife { life },
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -1761,6 +1803,7 @@ fn prepare_defeat_recover_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -1825,6 +1868,7 @@ fn prepare_argos_defeat_capped_pillz_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -1967,6 +2011,7 @@ fn prepare_victory_or_defeat_life_source(
                 registry_alias_ids,
             },
             effect: post_round_effect,
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -2056,6 +2101,7 @@ fn prepare_equalizer_opponent_life_source(
                 per_star,
                 minimum,
             },
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -2071,9 +2117,10 @@ fn prepare_equalizer_opponent_life_source(
 /// Catalog clan-bonus id 47 is not a capture registry id. It maps to the reviewed Riots
 /// definition only after effective-clan activation. Printed ability ids map only to their
 /// exact same registry definitions; notably, no catalog card can synthesize dynamic 1034.
-/// Catalog authority for the two reviewed identities. Mou must be the exact card key and
-/// printed ability id; Berzerk must be the active effective clan with its catalog bonus id.
-/// Neither the registry's text lookup nor a card from another clan can substitute.
+/// Catalog authority for the reviewed identities. A printed ability must be the exact card
+/// key and printed ability id; Berzerk must be the active effective clan with its catalog
+/// bonus id. Neither the registry's text lookup nor a card from another clan can
+/// substitute, and a Copy cannot synthesize any of them.
 fn victory_opponent_life_registry_definition_id(
     card_key: CardKey,
     source_kind: CombatStatEffectSourceV1,
@@ -2082,11 +2129,12 @@ fn victory_opponent_life_registry_definition_id(
     description: &str,
 ) -> Option<u32> {
     match (source_kind, catalog_id) {
-        (CombatStatEffectSourceV1::Ability, Some(MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID))
-            if card_key == MOU_CARD && description == MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION =>
-        {
-            Some(MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID)
-        }
+        (CombatStatEffectSourceV1::Ability, Some(id)) => VICTORY_OPPONENT_LIFE_ABILITY_CARDS
+            .iter()
+            .find(|(key, registry_id, text)| {
+                *key == card_key && *registry_id == id && *text == description
+            })
+            .map(|(_, registry_id, _)| *registry_id),
         (CombatStatEffectSourceV1::Bonus, Some(BERZERK_CATALOG_BONUS_ID))
             if effective_clan_id == BERZERK_CLAN_ID
                 && description == BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION =>
@@ -2116,7 +2164,8 @@ fn prepare_victory_opponent_life_source(
             description: description.to_owned(),
             source,
         })?;
-    let Some((life, minimum)) = classify_victory_opponent_life(definition, source_kind) else {
+    let Some((life, minimum, predicate)) = classify_victory_opponent_life(definition, source_kind)
+    else {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player,
             hand_slot,
@@ -2153,10 +2202,11 @@ fn prepare_victory_opponent_life_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+            predicate,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
+            predicate,
             effect: CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
         },
     })
@@ -2234,6 +2284,7 @@ fn prepare_victory_or_defeat_pillz_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -2316,6 +2367,7 @@ fn prepare_anita_courage_damage_to_life_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+            predicate: CombatStatPredicateV1::OwnerMovesFirst,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
@@ -2380,6 +2432,7 @@ fn prepare_komboka_victory_pillz_and_life_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),

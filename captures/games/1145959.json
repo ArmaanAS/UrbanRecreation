@@ -1,0 +1,340 @@
+{
+  "id": 1145959,
+  "capturedAt": "2026-09-15T13:59:17.231Z",
+  "creationTime": 1789480757,
+  "room": {
+    "id": 5,
+    "name": "EFC",
+    "idBattleRule": 3,
+    "idDeckFormat": 1
+  },
+  "battleRuleId": 3,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 1,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19541564,
+      "name": "UoS-Nocturno",
+      "level": 330,
+      "grade": "Divinity",
+      "country": "it",
+      "club": {
+        "id": 321645,
+        "name": "UNION OF THE SUPREMES"
+      },
+      "registrationTime": 1324977603,
+      "certificationLevel": 0,
+      "baseLife": 14,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2388,
+          "name": "Ashara",
+          "clan": "Oblivion",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 3545,
+            "description": "Versus [clan:51][clan:49][clan:30][clan:45] : +2 Life"
+          },
+          "bonus": {
+            "id": 2918,
+            "description": "Copy: Opp. Ability"
+          }
+        },
+        {
+          "id": 2261,
+          "name": "Gibus",
+          "clan": "Oblivion",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 2991,
+            "description": "+3 Attack Per Opp. Damage"
+          },
+          "bonus": {
+            "id": 2918,
+            "description": "Copy: Opp. Ability"
+          }
+        },
+        {
+          "id": 2295,
+          "name": "Pere Barali",
+          "clan": "Oblivion",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 5341,
+            "description": "Heal 1 Max. 18"
+          },
+          "bonus": {
+            "id": 2918,
+            "description": "Copy: Opp. Ability"
+          }
+        },
+        {
+          "id": 2273,
+          "name": "Wez Cr",
+          "clan": "Oblivion",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "p",
+          "ability": {
+            "id": 3047,
+            "description": "Brawl: Attack +5"
+          },
+          "bonus": {
+            "id": 2918,
+            "description": "Copy: Opp. Ability"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 14,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 528,
+          "name": "Goldie",
+          "clan": "Piranas",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 347,
+            "description": "-8 Opp Attack, Min 2"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 566,
+          "name": "Scubb",
+          "clan": "Piranas",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 384,
+            "description": "Support: + 1 Pillz"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 2011,
+          "name": "Segar",
+          "clan": "Piranas",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 2000,
+            "description": "Support: Dope 1, Max. 4"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 516,
+          "name": "Smokey Cr",
+          "clan": "Piranas",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "m1",
+          "ability": {
+            "id": 337,
+            "description": "+3 Pillz"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 566,
+          "pillz": 9,
+          "pillzUsed": 10,
+          "fury": false,
+          "t": 1789480763675
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 2261,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789480784312
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 21,
+          "won": false
+        },
+        {
+          "power": 6,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 60,
+          "won": true
+        }
+      ],
+      "life": [
+        9,
+        14
+      ],
+      "pillz": [
+        12,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 37210
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 2295,
+          "pillz": 0,
+          "pillzUsed": 0,
+          "fury": false,
+          "t": 1789480798659
+        }
+      ],
+      "resolution": [
+        {
+          "power": -1,
+          "damage": -1,
+          "damageAfter": -1,
+          "attack": -1,
+          "won": false
+        },
+        null
+      ],
+      "life": [
+        null,
+        null
+      ],
+      "pillz": [
+        null,
+        null
+      ],
+      "postRoundAbilities": [],
+      "durationMs": null
+    }
+  ],
+  "result": null,
+  "finalStatus": "playing",
+  "snapshots": 15,
+  "issues": [
+    "round 1: no resolution snapshot captured for side 0 (attack unknown)",
+    "round 1: expected 2 moves, saw 1"
+  ],
+  "testcase": {
+    "cards": [
+      "Goldie",
+      "Scubb",
+      "Segar",
+      "Smokey Cr",
+      "Ashara",
+      "Gibus",
+      "Pere Barali",
+      "Wez Cr"
+    ],
+    "levels": [
+      3,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2,
+      2
+    ],
+    "night": true,
+    "flip": false,
+    "life": 14,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          9,
+          false
+        ],
+        "s2": [
+          1,
+          0,
+          false
+        ],
+        "p1life": 14,
+        "p2life": 9,
+        "p1pillz": 7,
+        "p2pillz": 12,
+        "r1": {
+          "power": 6,
+          "damage": 5,
+          "attack": 60,
+          "won": true
+        },
+        "r2": {
+          "power": 6,
+          "damage": 4,
+          "attack": 21,
+          "won": false
+        }
+      }
+    ]
+  }
+}

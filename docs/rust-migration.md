@@ -22,7 +22,7 @@ independently against the same server results.
 | Candidate engine and solver backend | `rust/` | Narrow advisor integration is gated by strict supported-input and result validation; it does not establish replay or policy parity. |
 | Old Rust assets and 10,000-case corpus | Historical baseline only | Useful for detecting accidental behavior changes, not evidence of current game correctness. |
 
-The 53 TypeScript replay mismatches are known gaps in the reference, not expected Rust
+The 48 TypeScript replay mismatches are known gaps in the reference, not expected Rust
 answers. When TypeScript and a capture disagree, the capture wins after the evidence has
 been checked.
 
@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 21 for the current scope.
+Replay provenance records compiler/policy semantic revision 22 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 21.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 22.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -560,10 +560,11 @@ effect: the capture transport's own `postRoundAbilities` records a quantity-2 Li
 `1025645/2`, `1080662/3`, `1092020/3`, `876752/1` and `877533/3`.
 
 The immutable sequential gate adds `926367/3`, `1091473/2`, `877093/1`, `1080662/2` and
-`1025102/3`, raising it from 87 to 98 unique rounds. Conditional siblings sharing this exact
-structure — Symmetry `4708`, Courage `4533`, Confidence `3016` and Growth `1730` — remain
-explicitly deferred, because a post-round plan carries no predicate today and admitting them
-would need that separate design step rather than a wider grammar.
+`1025102/3`, raising it from 87 to 98 unique rounds. Revision 20 left the conditional
+siblings — Symmetry `4708`, Courage `4533`, Confidence `3016` and Growth `1730` — explicitly
+deferred, believing a post-round plan carried no predicate. Revision 22 found that it already
+did and admitted `4708`, `3016` and `4301`; `4533` and `1730` remain deferred for the reasons
+recorded there.
 
 Semantic revision 21 adds unconditional Copy to the strict catalog constructor. Only the
 exact texts `Copy: Opp. Ability` and `Copy: Opp. Bonus` are admitted, and like generic
@@ -601,13 +602,94 @@ concrete: the Copy adopts nothing. Resolution stays allocation-free and string-f
 the opposing plan is already materialized and adopting it is a plain index; make/unmake is
 unchanged.
 
+Semantic revision 22 adds a predicate to the two post-round families whose machinery already
+existed. `active_effect` had always run `predicate_matches` over a source's post-round effect
+as well as its combat effect, so nothing in the engine needed a new mechanism: only admission
+was closed. The compact `CopyOpponentSource` plan now carries a predicate that gates the
+adoption itself, and both preparation dispositions expose the predicate beside the effect, so
+a conditional post-round plan can no longer read as an unconditional one.
+
+Conditional Copy admits exactly four more grammars — `Reprisal: Copy Opp. Bonus`,
+`Reprisal: Copy: Opp. Ability`, `Revenge: Copy Opp. Bonus` and `Revenge: Copy: Opp. Ability`
+— by exact description and structured shape, like unconditional Copy. Note the site's own
+inconsistent punctuation: a copied Bonus loses the second colon under these prefixes while an
+Ability keeps it. Exactly one structured field may carry the condition and it must be the one
+the printed prefix names, so a Reprisal record with `previousRoundRequirement=lose`, or a
+Revenge record with `positionRequirement=defender`, fails closed. The condition gates only
+whether the opposing plan is adopted; the adopted plan then keeps its own predicate, so a
+copied Confidence effect must satisfy the copier's history rather than inheriting the
+original owner's. Totality is unchanged: a predicate depends on the round, not the draw, so
+every conditional Copy has some legal line in which it does adopt, and one unresolvable
+opposing target still closes the whole match at construction.
+
+The server evidence separates the two branches cleanly, using the same capture property the
+unconditional slice relies on: a Copy's static block records what it resolved to. A Reprisal
+Copy therefore keeps its printed text when its owner moved first — `1060341/3`, `1091235/3`
+and `1091381/3` — and shows the adopted source when it moved second, in `1088323/2` (McMaster
+takes Sue's `916`), `943111/2` (an adopted Stop Opp. Ability), `1059030/1`, `1066077/0`,
+`877167/1`, `926584/1`, `1079482/2`, `1092992/0`, `1059454/0`, `1090607/0` and `1130425/0`.
+Revenge's decisive round is `1059149/3`: Cravy adopts Rescue's `Support: Attack +3` after
+losing round 2, and the server's attack of 40 is 7 x 4 plus 3 x **4** — scaled by Cravy's own
+four clan-mates, which extends the already-established "the adopted effect belongs to the
+copier" rule to the conditional form.
+
+Two captures qualify that reading and are recorded rather than smoothed over. In `1069721/3`
+and `875098/2` the condition held, yet the static block still carries the printed Copy text.
+In both, the ability that would have been adopted is a Confidence effect whose own predicate
+was false for the copier, so nothing observable differed either way. The rule that survives is
+narrower than "the capture always shows the adopted source": a static-block rewrite is
+evidence of adoption, but its absence is not evidence against it. The model is unaffected,
+because both rounds resolve identically under it.
+
+Conditional Victory opponent-Life admits three more reviewed identities on the existing typed
+`ReduceOpponentLifeOnVictory` plan: `4708` (Doela Noel level 2, Symmetry, -4 Min 0) and the
+byte-identical pair `3016` / `4301` (Diabolus levels 2 and 1, Confidence, -3 Min 0), each
+admitted on its own evidence rather than one being treated as an alias of the other. As
+everywhere else in this projection, each identity carries exactly one permitted predicate, so
+a plan can neither add a condition to an unconditional member nor swap another in.
+
+Symmetry has three independent active observations and a clean inactive one. `1011297/0` and
+`877308/0` both put Doela Noel and her opponent in hand slot 1: two printed damage takes 12
+Life to 10 and the complete -4 makes 6. `1023274/2` is a Fury win on matching slot 0 where the
+capture transport independently names the effect, recording a quantity-4 non-permanent Life
+decrease in `postRoundAbilities`. `1058151/2` is the inactive branch on unequal slots: the
+Asymmetry bonus fires instead, damage is 5 rather than 2, and 8 Life becomes 3 with no
+reduction at all. Confidence has two observations in independent captures: `948654/2` takes 10
+to 8 on two damage and then to 5, and `878056/2` takes 6 to 5 on one damage and then to 2,
+both after their own side won the preceding round. Its inactive branch has no captured
+observation and is pinned synthetically.
+
+`1011297/0` is also a valid sequential prefix and raises the immutable diagnostic gate from 98
+to 99 rounds: Aneta's Courage leaves Doela Noel at 6 power for attack 42 after Edd Cr's clan
+reduction, and every server field is exact. The other four observations sit behind an
+unsupported effect earlier in their own prefix — Pride's `Protection: Attack` in `1011297/1`,
+Edd Cr's Courage Stop Opp. Bonus in `877308/0`, a Poison bonus in `1023274/0`, Malfass in
+`948654/0` and a Heal permanent in `878056/2` — so they remain focused arithmetic evidence
+rather than gate members.
+
+Two members of the family the measurement grouped together are deliberately left out. Courage
+`4533` (Ligea level 3) has **no selected observation anywhere in the 359-capture corpus**, so
+there is nothing to check it against; the Min-1 siblings `4531`/`4532` that do appear are a
+different effect. Growth `1730` is a round-scaled magnitude rather than a predicate, which is
+the separate design step a post-round plan still cannot carry. Both are pinned as fail-closed
+under the exact structure they share with the admitted members, which is the point: admission
+here is by reviewed identity, never by shape.
+
+Catalog admission stays narrower than the registry, as usual. Only the exact card keys and
+printed ids are authority — Doela Noel `(2058, 2)` with catalog ability `4708`, Diabolus
+`(2270, 1)` with `4301` and `(2270, 2)` with `3016`. Doela Noel level 1 prints the same text
+under catalog id `4843`, which is not a registry definition at all, so it stays fail-closed
+with no special handling, exactly as Rakhan, Milovan and Fraser do. The same rule closes Nexus
+and XU91, which print an admitted Copy text under catalog ids `1334` and `1828` that own no
+definition of it.
+
 Strict catalog coverage rises from 14 to 17 of 328, adding `878011`, `925254`, and
 `1078906`. None of the three is advisor-replayable, and that is deliberate: a Copy card's
 captured static block records what the Copy resolved to rather than the printed Copy, so
 capture and catalog identity cannot agree. `--replay` and the hosted worker both refuse those
-draws with that exact reason instead of preferring either side. The 98-round sequential gate
-is unchanged, because replay preparation continues to consume each capture's recorded
-resolved source and never emits a Copy plan.
+draws with that exact reason instead of preferring either side. Revision 21 left the 98-round
+sequential gate unchanged, because replay preparation continues to consume each capture's
+recorded resolved source and never emits a Copy plan.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
@@ -629,7 +711,7 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 21 records this semantic boundary together with the exact
+context. Compiler/policy revision 22 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
@@ -675,7 +757,7 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Conditional Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 21, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 22, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
@@ -683,17 +765,21 @@ were derived using only catalog clans, explicit night state, and these Oculus ru
 are 38 Oblivion slots; all 18 description mismatches are captures where the server had
 already replaced printed `Copy: Opp. Ability` with the opponent-dependent copied result.
 Every one of the other 2,538 slots matches captured bonus presence and description exactly.
-On 2026-09-17, the deterministic strict-coverage regression scanned all 328 captured
+On 2026-09-17, the deterministic strict-coverage regression scanned all 359 captured
 complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captured
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
-`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 17 capture ids
-are eligible: `830285`, `869944`, `877636`, `877812`, `877950`, `878011`, `925254`,
-`925674`, `925719`, `970972`, `1024673`, `1060199`, `1061897`, `1069813`, `1078906`,
-`1081463`, and `1089346`. Revision 21 adds `878011`, `925254`, and `1078906` to revision
-20's fourteen. Catalog
+`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 23 capture ids
+are eligible: `830285`, `869944`, `875098`, `875322`, `877636`, `877812`, `877950`,
+`878011`, `925254`, `925674`, `925719`, `970972`, `1011712`, `1024673`, `1059030`,
+`1059454`, `1060199`, `1061897`, `1069813`, `1078906`, `1081463`, `1089346`, and
+`1090607`. Revision 21 added `878011`, `925254`, and `1078906` to revision 20's fourteen;
+revision 22 then added `875098`, `875322`, `1011712`, `1059030`, `1059454`, and `1090607`.
+That is six for two families the report had predicted would unlock three each, because six
+draws were blocked by *both* families at once — which is exactly why reach and unlock are
+measured separately, and why the measurement has to be rerun rather than added up. Catalog
 eligibility is a strict whole-draw admission measurement, not proof of full engine or
 TypeScript solver parity;
-the 98-round immutable diagnostic gate supplies the separately checked sequential replay
+the 99-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
 
 ### Choosing the next slice
@@ -709,22 +795,29 @@ cargo test --manifest-path rust/Cargo.toml --locked \
     --test strict_coverage_blockers -- --ignored --nocapture
 ```
 
-On 2026-09-17 at revision 21 it scanned 328 complete draws: 17 eligible and 8 refused
-structurally, by a Leader or a duplicate character rather than by a missing effect. The
-widest-reaching source is `759` `Protection: Power And Damage` in 50 draws, but reach is
-not value: the candidate families each unlock only a few draws on their own — conditional
-Copy (Reprisal/Revenge) 3, conditional Victory opponent-Life
-(`4708`/`4533`/`3016`/`1730`) 3, Protection (`759`/`461`/`481`/`1132`/`1355`) 3,
-stat-copying Copy 2, and Asymmetry/Unison Copy 1.
+An id named in a candidate family must be a real registry definition, or the family silently
+under-reports: an id no definition owns can never appear as a blocker. The list carried
+`990` for conditional Copy until 2026-09-17, so that family was only ever scored by `958`.
 
-Two of those are cheap because their machinery already exists. Conditional Copy needs only a
-predicate on the existing Copy plan, and conditional Victory opponent-Life needs only a
-predicate on the existing `ReduceOpponentLifeOnVictory` plan; both reuse admitted predicates
-(`OwnerMovesFirst`, `OwnerMovesSecond`, `SelectedHandSlotsMatch`, `OwnerWonPreviousRound`).
-Today a post-round plan carries no predicate, so that one shared change would serve both.
-Protection is a genuinely new control channel and Growth-on-post-round is a new magnitude
-interaction, so neither is a small slice. The measurement should be rerun after any admission
-change rather than trusted from this paragraph.
+On 2026-09-17 at revision 22 it scanned 359 complete draws: 23 eligible and 10 refused
+structurally, by a Leader or a duplicate character rather than by a missing effect. The
+widest-reaching source is `759` `Protection: Power And Damage` in 53 draws, but reach is not
+value. After revision 22 the remaining candidates unlock: Protection
+(`759`/`461`/`481`/`1132`/`1355`) 4, stat-copying Copy 2, Asymmetry/Unison Copy 1, and the
+deferred half of conditional Victory opponent-Life (`4533`/`1730`) 1.
+
+Protection is now the largest remaining slice as well as the widest-reaching source, which is
+unusual here and makes it the obvious next candidate — but it is a genuinely new control
+channel, not a predicate on an existing plan, so it is a real slice rather than a cheap one.
+The other three are small. `4533` has no selected observation in the corpus at all, so it
+cannot be admitted on evidence no matter how cheap the mechanism; `1730` needs round-scaled
+magnitude on a post-round plan, which is its own design step.
+
+The two families revision 22 took were cheaper than this section predicted. It claimed a
+post-round plan carries no predicate and that adding one was the shared change both needed;
+in fact `active_effect` already evaluated `predicate_matches` over the post-round effect, so
+only admission was closed. Check the code before pricing a slice from this paragraph, and
+rerun the measurement after any admission change rather than trusting the numbers above.
 
 ### 4. Port current solver semantics
 

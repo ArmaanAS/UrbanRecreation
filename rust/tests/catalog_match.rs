@@ -708,6 +708,7 @@ fn strict_catalog_match_executes_audited_ability_recovery_and_restores_undo() {
     let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
         identity,
         effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+        ..
     } = &prepared.preparation()[PlayerId::P1][0].ability
     else {
         panic!("AI-Lycs recovery was not admitted as post-round work")
@@ -896,6 +897,7 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
     let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
         identity,
         effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+        ..
     } = &prepared.preparation()[PlayerId::P1][0].bonus
     else {
         panic!("active Riots bonus was not bridged to post-round Pillz")
@@ -981,6 +983,7 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
             CatalogCombatStatSourceDispositionV1::ExecutePostRound {
                 ref identity,
                 effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+                ..
             } if identity.catalog_id == Some(id) && identity.registry_definition_id == id
         ));
         assert!(matches!(
@@ -1014,6 +1017,7 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
         CatalogCombatStatSourceDispositionV1::ExecutePostRound {
             ref identity,
             effect: CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+            ..
         } if identity.catalog_id == Some(1158) && identity.registry_definition_id == 1158
     ));
     assert!(matches!(
@@ -1122,14 +1126,18 @@ fn strict_catalog_match_admits_only_anitas_exact_courage_damage_life_ability() {
         PROJECTION,
     )
     .unwrap();
-    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-        &prepared.preparation()[PlayerId::P1][0].ability
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity, effect, ..
+    } = &prepared.preparation()[PlayerId::P1][0].ability
     else {
         panic!("Anita L3 was not prepared as Courage damage-to-Life")
     };
     assert_eq!(identity.catalog_id, Some(274));
     assert_eq!(identity.registry_definition_id, 274);
-    assert_eq!(identity.registry_alias_ids.as_ref(), [274]);
+    // Ellie's own definition 843 is now captured and is structurally identical to Anita's
+    // 274, so the shared text resolves to both. The alias set is provenance: admission stays
+    // locked to Anita's card key and catalog id, which the Ellie/Lorea cases below prove.
+    assert_eq!(identity.registry_alias_ids.as_ref(), [274, 843]);
     assert_eq!(
         *effect,
         CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory
@@ -1300,8 +1308,9 @@ fn strict_catalog_match_admits_only_card_key_locked_victory_or_defeat_life_sourc
             PROJECTION,
         )
         .unwrap_or_else(|error| panic!("{key:?} was not catalog-executable: {error}"));
-        let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-            &prepared.preparation()[PlayerId::P1][0].ability
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity, effect, ..
+        } = &prepared.preparation()[PlayerId::P1][0].ability
         else {
             panic!("{key:?} was not prepared as Victory Or Defeat Life")
         };
@@ -1456,8 +1465,9 @@ fn strict_catalog_match_admits_only_two_printed_equalizer_opponent_life_sources(
             PROJECTION,
         )
         .unwrap_or_else(|error| panic!("{key:?} was not catalog-executable: {error}"));
-        let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-            &prepared.preparation()[PlayerId::P1][0].ability
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity, effect, ..
+        } = &prepared.preparation()[PlayerId::P1][0].ability
         else {
             panic!("{key:?} was not prepared as Equalizer opponent-Life")
         };
@@ -1585,8 +1595,9 @@ fn strict_catalog_match_preserves_dave_catalog_and_registry_life_identity() {
         PROJECTION,
     )
     .unwrap();
-    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-        &prepared.preparation()[PlayerId::P1][1].ability
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity, effect, ..
+    } = &prepared.preparation()[PlayerId::P1][1].ability
     else {
         panic!("Dave's catalog ability was not prepared as Victory Life")
     };
@@ -1630,8 +1641,9 @@ fn strict_catalog_match_admits_alias_bound_defeat_life_and_lobos_reanimate_only(
         PROJECTION,
     )
     .unwrap();
-    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-        &lobo.preparation()[PlayerId::P1][0].ability
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity, effect, ..
+    } = &lobo.preparation()[PlayerId::P1][0].ability
     else {
         panic!("Lobo's observed Reanimate was not prepared")
     };
@@ -1664,8 +1676,9 @@ fn strict_catalog_match_admits_alias_bound_defeat_life_and_lobos_reanimate_only(
         PROJECTION,
     )
     .unwrap();
-    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-        &eugene.preparation()[PlayerId::P1][0].ability
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity, effect, ..
+    } = &eugene.preparation()[PlayerId::P1][0].ability
     else {
         panic!("Eugene's Defeat Life was not prepared")
     };
@@ -1727,8 +1740,9 @@ fn strict_catalog_match_bridges_only_the_active_jungo_victory_life_bonus() {
     .unwrap();
 
     for slot in 0..4 {
-        let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-            &prepared.preparation()[PlayerId::P1][slot].bonus
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity, effect, ..
+        } = &prepared.preparation()[PlayerId::P1][slot].bonus
         else {
             panic!("active Jungo bonus in slot {slot} was not executable")
         };
@@ -1872,6 +1886,7 @@ fn strict_catalog_match_bridges_only_the_active_komboka_victory_pillz_and_life_b
         let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
             identity,
             effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            ..
         } = &prepared.preparation()[PlayerId::P1][slot].bonus
         else {
             panic!("active Komboka bonus in slot {slot} was not executable")
@@ -2118,33 +2133,106 @@ fn strict_catalog_match_admits_unconditional_copy_and_rejects_conditional_varian
         PROJECTION,
     )
     .unwrap();
-    let CatalogCombatStatSourceDispositionV1::CopyOpponentSource { identity, copied } =
-        &prepared.preparation()[PlayerId::P1][0].ability
+    let CatalogCombatStatSourceDispositionV1::CopyOpponentSource {
+        identity,
+        copied,
+        predicate,
+    } = &prepared.preparation()[PlayerId::P1][0].ability
     else {
         panic!("Saki L3 was not prepared as an unconditional Copy")
     };
     assert_eq!(identity.catalog_id, Some(846));
     assert_eq!(identity.registry_definition_id, 846);
     assert_eq!(*copied, CopiedSourceKindV1::Bonus);
+    assert_eq!(*predicate, CombatStatPredicateV1::Always);
     assert!(matches!(
         prepared.match_spec().cards[PlayerId::P1][0].ability,
         CombatStatSourcePlanV1::CopyOpponentSource {
             source_id: 846,
             copied: CopiedSourceKindV1::Bonus,
+            predicate: CombatStatPredicateV1::Always,
         }
     ));
 
-    // Every conditional Copy keeps its own deferred grammar and stays fail-closed.
-    assert!(matches!(
-        CatalogCombatStatMatchV1::new(
-            input(with(CardKey::new(1134, 3)), p2, false), // Reprisal: Copy Opp. Bonus.
+    // The reviewed conditional Copies are admitted with the predicate their printed text
+    // names. Noctezuma Cr level three prints `Reprisal: Copy Opp. Bonus` under catalog id
+    // 958; Nexus level three prints `Revenge: Copy Opp. Bonus` under 1751.
+    for (key, catalog_id, description, copied, predicate) in [
+        (
+            CardKey::new(1134, 3),
+            958,
+            "Reprisal: Copy Opp. Bonus",
+            CopiedSourceKindV1::Bonus,
+            CombatStatPredicateV1::OwnerMovesSecond,
+        ),
+        (
+            CardKey::new(1901, 4),
+            1751,
+            "Revenge: Copy Opp. Bonus",
+            CopiedSourceKindV1::Bonus,
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+        ),
+        (
+            CardKey::new(2605, 5),
+            4972,
+            "Revenge: Copy: Opp. Ability",
+            CopiedSourceKindV1::Ability,
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+        ),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(with(key), p2, false),
             &catalog,
             &registry,
             PROJECTION,
-        ),
-        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { ref description, .. })
-            if description == "Reprisal: Copy Opp. Bonus"
-    ));
+        )
+        .unwrap_or_else(|error| panic!("{key:?} {description}: {error}"));
+        let CatalogCombatStatSourceDispositionV1::CopyOpponentSource {
+            identity,
+            copied: actual_copied,
+            predicate: actual_predicate,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as a conditional Copy")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert_eq!(identity.registry_definition_id, catalog_id);
+        assert_eq!(identity.description, description);
+        assert_eq!(*actual_copied, copied);
+        assert_eq!(*actual_predicate, predicate);
+        assert_eq!(
+            prepared.match_spec().cards[PlayerId::P1][0].ability,
+            CombatStatSourcePlanV1::CopyOpponentSource {
+                source_id: catalog_id,
+                copied,
+                predicate,
+            }
+        );
+    }
+
+    // Every Copy grammar outside the reviewed set stays fail-closed, including a Reprisal
+    // whose payload is a stat rather than a source. Nexus and XU91 print an admitted text
+    // but under a catalog id that is not a registry definition of it, so they stay closed
+    // for the same reason Lorna's `752` does: description alone never admits.
+    for (key, description) in [
+        (CardKey::new(1596, 2), "Confidence: Copy: Opp. Power"),
+        (CardKey::new(2520, 1), "Reprisal: Copy: Opp. Damage"),
+        (CardKey::new(1531, 3), "Revenge: Copy Opp. Bonus"),
+        (CardKey::new(1965, 4), "Revenge: Copy Opp. Bonus"),
+    ] {
+        assert!(
+            matches!(
+                CatalogCombatStatMatchV1::new(
+                    input(with(key), p2, false),
+                    &catalog,
+                    &registry,
+                    PROJECTION,
+                ),
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { .. })
+            ),
+            "{key:?} {description} must stay fail-closed",
+        );
+    }
 
     // A printed Copy whose catalog id is not itself a registry definition of that text
     // cannot borrow one by description alone.
@@ -2384,7 +2472,7 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
     ));
 
     let mut unsupported = p1;
-    unsupported[0] = CardKey::new(1134, 3); // Noctezuma Cr: Reprisal: Copy Opp. Bonus.
+    unsupported[0] = CardKey::new(921, 4); // Mantiz: Protection: Power And Damage.
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(unsupported, p2, false),
@@ -2569,12 +2657,13 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
         }
     }
 
-    assert_eq!(scanned, 328);
+    assert_eq!(scanned, 359);
     assert_eq!(
         eligible,
         BTreeSet::from([
-            830285, 869944, 877636, 877812, 877950, 878011, 925254, 925674, 925719, 970972,
-            1024673, 1060199, 1061897, 1069813, 1078906, 1081463, 1089346,
+            830285, 869944, 875098, 875322, 877636, 877812, 877950, 878011, 925254, 925674, 925719,
+            970972, 1011712, 1024673, 1059030, 1059454, 1060199, 1061897, 1069813, 1078906,
+            1081463, 1089346, 1090607,
         ])
     );
 }
@@ -2610,8 +2699,9 @@ fn strict_catalog_match_admits_only_the_two_reviewed_victory_opponent_life_ident
         PROJECTION,
     )
     .unwrap();
-    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-        &prepared.preparation()[PlayerId::P1][0].ability
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity, effect, ..
+    } = &prepared.preparation()[PlayerId::P1][0].ability
     else {
         panic!("Mou L3 was not prepared as unconditional Victory opponent-Life")
     };
@@ -2658,8 +2748,9 @@ fn strict_catalog_match_admits_only_the_two_reviewed_victory_opponent_life_ident
         PROJECTION,
     )
     .unwrap();
-    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
-        &prepared.preparation()[PlayerId::P1][0].bonus
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity, effect, ..
+    } = &prepared.preparation()[PlayerId::P1][0].bonus
     else {
         panic!("the active Berzerk bonus was not prepared")
     };
@@ -2672,4 +2763,99 @@ fn strict_catalog_match_admits_only_the_two_reviewed_victory_opponent_life_ident
             minimum: 2
         }
     );
+}
+
+#[test]
+fn strict_catalog_match_admits_the_reviewed_conditional_victory_opponent_life_cards() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let with = |key: CardKey| {
+        [
+            key,
+            CardKey::new(123, 1),
+            CardKey::new(124, 1),
+            CardKey::new(138, 1),
+        ]
+    };
+
+    // Each reviewed conditional member is bound to one exact card, level and catalog id, and
+    // carries the predicate its own printed text names. Diabolus prints the effect at both
+    // levels under two distinct, byte-identical registry records.
+    for (key, catalog_id, life, predicate) in [
+        (
+            CardKey::new(2058, 2),
+            4708,
+            4,
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+        ),
+        (
+            CardKey::new(2270, 1),
+            4301,
+            3,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+        ),
+        (
+            CardKey::new(2270, 2),
+            3016,
+            3,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+        ),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(with(key), opponent, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate: actual_predicate,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as conditional Victory opponent-Life")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert_eq!(identity.registry_definition_id, catalog_id);
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum: 0 }
+        );
+        assert_eq!(*actual_predicate, predicate);
+        assert_eq!(
+            prepared.match_spec().cards[PlayerId::P1][0].ability,
+            CombatStatSourcePlanV1::Execute {
+                source_id: catalog_id,
+                predicate,
+                effect:
+                    urban_recreation_rust::engine::CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                        life,
+                        minimum: 0,
+                    },
+            }
+        );
+    }
+
+    // Doela Noel level one prints the same text under catalog id 4843, which has no registry
+    // definition, so it stays fail-closed without any special handling. Ligea level three's
+    // Courage `4533` and Bekum's Growth `1730` share the structure but have no admitted
+    // evidence and no predicate a post-round plan can carry, respectively.
+    for key in [
+        CardKey::new(2058, 1), // Doela Noel L1, catalog ability 4843.
+        CardKey::new(2556, 3), // Ligea L3, Courage: - 3 Opp. Life Min 0.
+        CardKey::new(1882, 2), // Bekum, Growth: - 1 Opp. Life Min 4.
+    ] {
+        assert!(
+            CatalogCombatStatMatchV1::new(
+                input(with(key), opponent, false),
+                &catalog,
+                &registry,
+                PROJECTION,
+            )
+            .is_err(),
+            "{key:?} must stay fail-closed",
+        );
+    }
 }

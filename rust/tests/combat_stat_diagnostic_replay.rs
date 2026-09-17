@@ -70,6 +70,12 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877093, 1),
     (1080662, 2),
     (1025102, 3),
+    // Revision 22 conditional Victory opponent-Life. Both players picked hand slot 1, so
+    // Doela Noel's Symmetry reduction is live: Aneta's Courage leaves her at 6 power for
+    // attack 42, her two damage takes P2's 12 Life to 10, and the complete -4 makes 6.
+    // Only this one round is a valid prefix - round 1 then selects Pride's deferred
+    // `Protection: Attack`.
+    (1011297, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -326,7 +332,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_ninety_eight_unique_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_ninety_nine_unique_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -362,7 +368,7 @@ fn fixed_server_backed_gate_is_exactly_ninety_eight_unique_sequential_prefix_rou
             }
         }
     }
-    assert_eq!(rounds, 98);
+    assert_eq!(rounds, 99);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
@@ -372,8 +378,8 @@ fn fixed_server_backed_gate_is_exactly_ninety_eight_unique_sequential_prefix_rou
             1310, 1335, 1338, 1341, 1342, 1359, 1372, 1375, 1399, 1415, 1418, 1420, 1518, 1536,
             1578, 1628, 1634, 1688, 1694, 1699, 1714, 1770, 1805, 1806, 1844, 1845, 1848, 1850,
             2073, 2299, 2329, 2412, 2535, 2657, 2881, 2944, 2965, 3284, 3487, 3677, 3864, 3865,
-            3897, 4041, 4216, 4297, 4299, 4389, 4399, 4417, 4458, 4464, 4711, 4718, 4757, 4966,
-            5026, 5085, 5273, 5404, 5520, 5763, 5849, 5852, 5859,
+            3897, 4041, 4216, 4297, 4299, 4389, 4399, 4417, 4458, 4464, 4708, 4711, 4718, 4757,
+            4966, 5026, 5085, 5273, 5404, 5520, 5763, 5849, 5852, 5859,
         ])
     );
     assert_eq!(
@@ -575,7 +581,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 21);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 22);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -631,7 +637,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        21
+        22
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -642,6 +648,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReanimateLife {
                 life: 2
             },
+            ..
         } if identity.id == 4951
     ));
 
@@ -672,6 +679,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnDefeat {
                 life: 2
             },
+            ..
         } if identity.id == 4635
     ));
 
@@ -739,6 +747,7 @@ fn kombokas_exact_pillz_and_life_bonus_unlocks_1069193_round_zero() {
         CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            ..
         } if identity.id == 1714
     ));
     // Pantherine pays five, then atomically gains Pillz before Life: 12 - 5 + 1 = 8.
@@ -804,6 +813,7 @@ fn kombokas_pillz_and_life_admission_is_exact_to_bonus_1714_and_its_full_shape()
                 CombatStatProjectionDispositionV1::ExecutePostRound {
                     identity,
                     effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+                    ..
                 } if identity.id == 1714
             ),
             admitted,
@@ -846,6 +856,7 @@ fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
         CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            ..
         } if identity.id == 1714
     ));
     assert_eq!(
@@ -866,6 +877,7 @@ fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
         CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            ..
         } if identity.id == 1714
     ));
     assert!(matches!(
@@ -905,6 +917,7 @@ fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
         CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            ..
         } if identity.id == 1714
     ));
     assert!(
@@ -934,6 +947,7 @@ fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
         CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            ..
         } if identity.id == 1714
     ));
     assert!(
@@ -963,6 +977,7 @@ fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
         CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            ..
         } if identity.id == 1714
     ));
     assert!(
@@ -1094,8 +1109,8 @@ fn every_observed_basic_combat_stat_support_definition_executes_as_an_ability() 
     let registry = registry();
     let expected = BTreeSet::from([
         266, 272, 295, 367, 391, 412, 469, 472, 514, 532, 546, 567, 574, 739, 899, 1269, 1297,
-        1330, 1735, 1805, 2535, 2556, 3197, 3475, 3719, 4068, 4297, 4593, 4824, 4839, 4857, 5483,
-        5841,
+        1325, 1330, 1735, 1805, 2535, 2556, 3197, 3475, 3719, 4068, 4297, 4593, 4824, 4839, 4857,
+        5483, 5841,
     ]);
     let observed: BTreeSet<_> = registry
         .iter()
@@ -2328,6 +2343,7 @@ fn victory_or_defeat_life_server_evidence_preserves_liveness_and_stop_semantics(
                 CombatStatProjectionDispositionV1::ExecutePostRound {
                     identity,
                     effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life: 1, minimum: 1 },
+                    ..
                 } if identity.id == 1628
             ),
             "battle {battle_id}"
@@ -2379,6 +2395,7 @@ fn equalizer_opponent_life_is_exactly_the_audited_post_round_family() {
             CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: 1, minimum: 2 },
+                ..
             } if identity.id == id
         ));
         let plan = if source_kind == CombatStatEffectSourceV1::Ability {
@@ -2451,6 +2468,7 @@ fn equalizer_opponent_life_copy_bonus_preparation_preserves_924669_provenance() 
         CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: 1, minimum: 2 },
+            ..
         } if identity.id == 1415
     ));
     assert_eq!(round.expected_player_states[PlayerId::P1.index()].life, 2);
@@ -2473,6 +2491,7 @@ fn uuber_victory_or_defeat_life_unlocks_925719_through_round_two() {
             CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life: 1, minimum: 1 },
+                ..
             } if identity.id == 1628
         ))
         .expect("Uuber's exact source must be selected in 925719/r0");
@@ -2508,6 +2527,7 @@ fn anita_courage_damage_to_life_is_exactly_ability_274_on_anita_level_three() {
         CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+            ..
         } if identity.id == ID
     ));
     assert!(matches!(
@@ -2646,6 +2666,7 @@ fn anita_server_replays_pin_active_normal_fury_and_losing_courage() {
                 CombatStatProjectionDispositionV1::ExecutePostRound {
                     identity: ref id,
                     effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+                    ..
                 } if id.id == 274
             ))
             .unwrap_or_else(|| panic!("battle {battle_id} must select Anita"));
@@ -2679,6 +2700,7 @@ fn anita_server_replays_pin_active_normal_fury_and_losing_courage() {
         CombatStatProjectionDispositionV1::ExecutePostRound {
             identity: ref id,
             effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+            ..
         } if id.id == 274
     ));
     assert_eq!(
@@ -2795,7 +2817,7 @@ fn server_replay_pins_argos_after_cost_and_riots_bonus_arithmetic() {
     let round = &report.rounds[1];
     assert!(matches!(
         round.selected[PlayerId::P2].ability,
-        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven }
+        CombatStatProjectionDispositionV1::ExecutePostRound { ref identity, effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven, .. }
             if identity.id == 1158
     ));
     assert!(!round.round.cards[PlayerId::P2].won);
@@ -2878,6 +2900,7 @@ fn server_replays_pin_riots_post_round_pillz_for_wins_losses_zero_bets_and_a_ko(
             CombatStatProjectionDispositionV1::ExecutePostRound {
                 ref identity,
                 effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+                ..
             } if identity.id == 1034
         ));
         assert_eq!(report.round.cards[PlayerId::P1].attack, attack);
@@ -2912,6 +2935,7 @@ fn server_replays_pin_riots_post_round_pillz_for_wins_losses_zero_bets_and_a_ko(
             CombatStatProjectionDispositionV1::ExecutePostRound {
                 ref identity,
                 effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+                ..
             } if identity.id == 1034
         ));
         assert_eq!(report.round.cards[PlayerId::P1].attack, attack);

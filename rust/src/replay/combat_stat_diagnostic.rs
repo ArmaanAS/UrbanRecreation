@@ -125,6 +125,10 @@ pub enum CombatStatProjectionDispositionV1 {
     ExecutePostRound {
         identity: CombatStatModifierIdentityV1,
         effect: CombatStatPostRoundEffectV1,
+        /// The condition the effect's own printed text names, or `Always`. A post-round
+        /// plan may be conditional, so a preparation report has to say so: without this a
+        /// reviewed conditional reduction would read exactly like an unconditional one.
+        predicate: CombatStatPredicateV1,
     },
     Disabled {
         identity: CombatStatModifierIdentityV1,
@@ -607,6 +611,7 @@ fn prepare_combat_stat_source(
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+                predicate: CombatStatPredicateV1::Always,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -620,6 +625,7 @@ fn prepare_combat_stat_source(
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+                predicate: CombatStatPredicateV1::Always,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -636,6 +642,7 @@ fn prepare_combat_stat_source(
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+                predicate: CombatStatPredicateV1::OwnerMovesFirst,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -644,18 +651,22 @@ fn prepare_combat_stat_source(
             },
         });
     }
-    // The two reviewed unconditional Victory opponent-Life reductions are a typed
-    // post-round plan, not a combat-stat modifier, so normal Stop liveness still applies
-    // but cancellation never reinterprets their magnitude.
-    if let Some((life, minimum)) = classify_victory_opponent_life(definition, source_kind) {
+    // The reviewed Victory opponent-Life reductions are a typed post-round plan, not a
+    // combat-stat modifier, so normal Stop liveness still applies but cancellation never
+    // reinterprets their magnitude. The conditional members carry the predicate their own
+    // printed text names, which the engine resolves before the round is prepared.
+    if let Some((life, minimum, predicate)) =
+        classify_victory_opponent_life(definition, source_kind)
+    {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+                predicate,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
                 effect: CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
             },
         });
@@ -665,6 +676,7 @@ fn prepare_combat_stat_source(
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+                predicate: CombatStatPredicateV1::Always,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -688,6 +700,7 @@ fn prepare_combat_stat_source(
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: post_round_effect,
+                predicate: CombatStatPredicateV1::Always,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -706,6 +719,7 @@ fn prepare_combat_stat_source(
                     per_star,
                     minimum,
                 },
+                predicate: CombatStatPredicateV1::Always,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -722,6 +736,7 @@ fn prepare_combat_stat_source(
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+                predicate: CombatStatPredicateV1::Always,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -735,6 +750,7 @@ fn prepare_combat_stat_source(
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
+                predicate: CombatStatPredicateV1::Always,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -748,6 +764,7 @@ fn prepare_combat_stat_source(
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainLifeOnDefeat { life },
+                predicate: CombatStatPredicateV1::Always,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
@@ -764,6 +781,7 @@ fn prepare_combat_stat_source(
                 disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                     identity,
                     effect: CombatStatPostRoundEffectV1::ReanimateLife { life },
+                    predicate: CombatStatPredicateV1::Always,
                 },
                 compact_plan: CombatStatSourcePlanV1::Execute {
                     source_id: source.id,

@@ -342,8 +342,8 @@ mod tests {
             "capture errors: {:#?}",
             corpus.errors
         );
-        assert_eq!(corpus.skipped.len(), 6);
-        assert!(corpus.ready.len() >= 322);
+        assert_eq!(corpus.skipped.len(), 7);
+        assert!(corpus.ready.len() >= 352);
 
         let skipped_ids: Vec<_> = corpus
             .skipped
@@ -352,7 +352,7 @@ mod tests {
             .collect();
         assert_eq!(
             skipped_ids,
-            [830285, 869944, 957643, 1009234, 1024388, 1092729]
+            [830285, 869944, 957643, 1009234, 1024388, 1092729, 1145959]
         );
         assert_eq!(corpus.skipped[0].reason, ReplaySkipReason::NoReplayTestcase);
         assert!(corpus.skipped[1..]

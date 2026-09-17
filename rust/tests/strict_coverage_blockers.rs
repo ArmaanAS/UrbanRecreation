@@ -44,14 +44,23 @@ const FILLER: [CardKey; 8] = [
 
 /// Candidate slices, each as the registry definition ids it would admit. A draw counts as
 /// unlocked by a family when every one of its blockers is in that family.
+/// Every id here must be a real registry definition, or the family silently under-reports:
+/// an id that no definition owns can never appear as a blocker. A family drops to zero once
+/// its slice lands, which is the intended way to see that it is done.
 const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
-    ("conditional Copy: Reprisal/Revenge", &[958, 990]),
-    ("conditional Copy: Asymmetry/Unison", &[2482]),
-    ("stat Copy: Power/Damage/exchange", &[315, 1592, 1588]),
     (
-        "conditional Victory opponent-Life",
-        &[4708, 4533, 3016, 1730],
+        "conditional Copy: Asymmetry/Unison",
+        &[
+            2482, 3291, 3355, 3368, 4556, 4991, 3994, 4141, 4767, 5073, 5108,
+        ],
     ),
+    (
+        "stat Copy: Power/Damage/exchange",
+        &[
+            315, 346, 394, 421, 1409, 1513, 1588, 1592, 1710, 2673, 3986, 4126, 4956, 5525,
+        ],
+    ),
+    ("conditional Victory opponent-Life", &[4533, 1730]),
     ("Protection", &[759, 461, 481, 1132, 1355]),
 ];
 

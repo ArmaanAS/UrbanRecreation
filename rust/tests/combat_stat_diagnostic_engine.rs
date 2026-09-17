@@ -2251,40 +2251,136 @@ fn victory_opponent_life_plan_is_identity_magnitude_and_predicate_locked() {
         })
     ));
 
-    // No unreviewed id may carry the effect, and no reviewed id may carry a predicate.
-    let mut foreign_id = victory_opponent_life_spec(7, 3, 20);
-    foreign_id.cards[PlayerId::P1][0].ability = execute(
-        4708,
-        CombatStatPredicateV1::SelectedHandSlotsMatch,
-        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
-            life: 4,
-            minimum: 0,
-        },
-    );
-    assert!(matches!(
-        CombatStatDiagnosticV1::new(foreign_id),
-        Err(CombatStatPlanErrorV1::InvalidExecute {
-            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity,
-            ..
-        })
-    ));
+    // No unreviewed id may carry the effect. `4533` and `1730` share the structure exactly
+    // and are still refused, because admission is by reviewed identity, not by shape.
+    for unreviewed in [4533, 1730] {
+        let mut foreign_id = victory_opponent_life_spec(7, 3, 20);
+        foreign_id.cards[PlayerId::P1][0].ability = execute(
+            unreviewed,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 3,
+                minimum: 0,
+            },
+        );
+        assert!(
+            matches!(
+                CombatStatDiagnosticV1::new(foreign_id),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity,
+                    ..
+                })
+            ),
+            "unreviewed {unreviewed}",
+        );
+    }
 
-    let mut conditional = victory_opponent_life_spec(7, 3, 20);
-    conditional.cards[PlayerId::P1][0].ability = execute(
-        1399,
-        CombatStatPredicateV1::OwnerMovesFirst,
-        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
-            life: 5,
-            minimum: 5,
-        },
-    );
-    assert!(matches!(
-        CombatStatDiagnosticV1::new(conditional),
-        Err(CombatStatPlanErrorV1::InvalidExecute {
-            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifePredicate,
-            ..
-        })
-    ));
+    // Every reviewed identity carries exactly one predicate, so a plan can neither add a
+    // condition to an unconditional member nor swap in another condition for a conditional
+    // one. Each reviewed id is checked against every predicate but its own.
+    for (source_id, life, minimum, allowed) in [
+        (1399, 5, 5, CombatStatPredicateV1::Always),
+        (4708, 4, 0, CombatStatPredicateV1::SelectedHandSlotsMatch),
+        (3016, 3, 0, CombatStatPredicateV1::OwnerWonPreviousRound),
+        (4301, 3, 0, CombatStatPredicateV1::OwnerWonPreviousRound),
+    ] {
+        for predicate in [
+            CombatStatPredicateV1::Always,
+            CombatStatPredicateV1::OwnerMovesFirst,
+            CombatStatPredicateV1::OwnerMovesSecond,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        ] {
+            let mut spec = victory_opponent_life_spec(7, 3, 20);
+            spec.cards[PlayerId::P1][0].ability = execute(
+                source_id,
+                predicate,
+                CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+            );
+            let result = CombatStatDiagnosticV1::new(spec);
+            if predicate == allowed {
+                assert!(result.is_ok(), "{source_id} with {predicate:?}");
+            } else {
+                assert!(
+                    matches!(
+                        result,
+                        Err(CombatStatPlanErrorV1::InvalidExecute {
+                            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifePredicate,
+                            ..
+                        })
+                    ),
+                    "{source_id} with {predicate:?}",
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_conditional_victory_opponent_life_reduction_runs_only_when_its_condition_holds() {
+    // Doela Noel's Symmetry reduction fires only when both players picked the same hand
+    // slot. P2 starts on 20 Life and takes three printed damage either way.
+    for (opponent_slot, expected) in [(0, 13), (1, 17)] {
+        let mut spec = victory_opponent_life_spec(7, 3, 20);
+        spec.cards[PlayerId::P1][0].ability = execute(
+            4708,
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 4,
+                minimum: 0,
+            },
+        );
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let before = game.position().clone();
+        let before_hash = position_hash(&before);
+        let (report, undo) = game
+            .make(input(
+                PlayerId::P1,
+                (0, 1, false),
+                (opponent_slot, 0, false),
+            ))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(
+            report.players[PlayerId::P2].life,
+            expected,
+            "opponent slot {opponent_slot}",
+        );
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+        assert_eq!(position_hash(game.position()), before_hash);
+    }
+
+    // Diabolus' Confidence reduction needs its own owner to have won the previous round, so
+    // it can never fire in round zero.
+    let spec = || {
+        let mut spec = victory_opponent_life_spec(7, 3, 20);
+        spec.cards[PlayerId::P1][0].ability = execute(
+            3016,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 3,
+                minimum: 0,
+            },
+        );
+        spec
+    };
+    let mut game = CombatStatDiagnosticV1::new(spec()).unwrap();
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+
+    let mut game = CombatStatDiagnosticV1::new(spec()).unwrap();
+    game.make(input(PlayerId::P1, (1, 1, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(game.position().previous_round_winner, Some(PlayerId::P1));
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 20 - 3 - 3 - 3);
 }
 
 #[test]
@@ -2350,7 +2446,19 @@ fn victory_opponent_life_applies_after_damage_clamps_and_unmakes_exactly() {
 }
 
 fn copy(source_id: u32, copied: CopiedSourceKindV1) -> CombatStatSourcePlanV1 {
-    CombatStatSourcePlanV1::CopyOpponentSource { source_id, copied }
+    conditional_copy(source_id, copied, CombatStatPredicateV1::Always)
+}
+
+fn conditional_copy(
+    source_id: u32,
+    copied: CopiedSourceKindV1,
+    predicate: CombatStatPredicateV1,
+) -> CombatStatSourcePlanV1 {
+    CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id,
+        copied,
+        predicate,
+    }
 }
 
 /// P1 slot 0 copies the opposing card's named source. Every opposing card carries a
@@ -2505,4 +2613,77 @@ fn copy_is_rejected_unless_every_opposing_target_is_already_concrete() {
         .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
         .unwrap();
     assert_eq!(report.cards[PlayerId::P1].damage, 3);
+}
+
+#[test]
+fn a_conditional_copy_adopts_only_when_its_own_condition_holds() {
+    // Reprisal is about who moved, not who owns the copied source. P1 adopts an opposing
+    // Damage +2 only in the round it replies second; base damage is 3.
+    for (first_mover, expected) in [(PlayerId::P2, 5), (PlayerId::P1, 3)] {
+        let mut spec = copy_spec(
+            CopiedSourceKindV1::Bonus,
+            execute(
+                202,
+                CombatStatPredicateV1::Always,
+                own(CombatStatAttributeV1::Damage, 2),
+            ),
+        );
+        spec.cards[PlayerId::P1][0].ability = conditional_copy(
+            958,
+            CopiedSourceKindV1::Bonus,
+            CombatStatPredicateV1::OwnerMovesSecond,
+        );
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let before = game.position().clone();
+        let before_hash = position_hash(&before);
+        let (report, undo) = game
+            .make(input(first_mover, (0, 1, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].damage,
+            expected,
+            "first mover {first_mover:?}",
+        );
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+        assert_eq!(position_hash(game.position()), before_hash);
+    }
+}
+
+#[test]
+fn a_copied_effect_keeps_its_own_predicate_against_the_copier() {
+    // Adopting a Confidence effect does not inherit the opponent's history: the copier has
+    // to have won the previous round itself. Round zero has no previous winner at all, so
+    // both conditions are false and the copier keeps its base damage of 3.
+    let spec = || {
+        let mut spec = copy_spec(
+            CopiedSourceKindV1::Bonus,
+            execute(
+                202,
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+                own(CombatStatAttributeV1::Damage, 2),
+            ),
+        );
+        spec.cards[PlayerId::P1][0].ability = conditional_copy(
+            958,
+            CopiedSourceKindV1::Bonus,
+            CombatStatPredicateV1::OwnerMovesSecond,
+        );
+        spec
+    };
+    let mut game = CombatStatDiagnosticV1::new(spec()).unwrap();
+    let (report, _) = game
+        .make(input(PlayerId::P2, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].damage, 3);
+
+    // Once P1 has won a round, the same adopted Confidence does apply to P1.
+    let mut game = CombatStatDiagnosticV1::new(spec()).unwrap();
+    game.make(input(PlayerId::P2, (1, 1, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(game.position().previous_round_winner, Some(PlayerId::P1));
+    let (report, _) = game
+        .make(input(PlayerId::P2, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].damage, 5);
 }

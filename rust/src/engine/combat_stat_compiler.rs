@@ -8,6 +8,54 @@ use super::{
     CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatEffectSourceV1, CombatStatEffectV1,
     CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPredicateV1,
 };
+
+/// Every Copy grammar this projection admits, as the exact printed text it requires.
+/// `Reprisal:` and `Revenge:` reuse predicates the projection already resolves before a
+/// round is prepared, so they gate the adoption itself rather than needing new context.
+/// Every other conditional (`Asymmetry`, `Unison`, `Confidence`, `Bet > N`) and every
+/// stat-copying variant (`Copy: Opp. Power`, `Copy: Opp. Damage`, `Copy: Power And Damage
+/// Opp.`) keeps its own deferred grammar. Note the site's own inconsistent punctuation: a
+/// copied Bonus loses the second colon under `Reprisal`/`Revenge` but an Ability keeps it.
+const COPY_OPPONENT_SOURCE_GRAMMARS: [(&str, CopiedSourceKindV1, CombatStatPredicateV1); 6] = [
+    (
+        "Copy: Opp. Ability",
+        CopiedSourceKindV1::Ability,
+        CombatStatPredicateV1::Always,
+    ),
+    (
+        "Copy: Opp. Bonus",
+        CopiedSourceKindV1::Bonus,
+        CombatStatPredicateV1::Always,
+    ),
+    (
+        "Reprisal: Copy: Opp. Ability",
+        CopiedSourceKindV1::Ability,
+        CombatStatPredicateV1::OwnerMovesSecond,
+    ),
+    (
+        "Reprisal: Copy Opp. Bonus",
+        CopiedSourceKindV1::Bonus,
+        CombatStatPredicateV1::OwnerMovesSecond,
+    ),
+    (
+        "Revenge: Copy: Opp. Ability",
+        CopiedSourceKindV1::Ability,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+    ),
+    (
+        "Revenge: Copy Opp. Bonus",
+        CopiedSourceKindV1::Bonus,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+    ),
+];
+
+/// True for every printed text the Copy compiler recognizes, so the catalog boundary can
+/// route a source here without repeating the table.
+pub(crate) fn is_copy_opponent_source_description(description: &str) -> bool {
+    COPY_OPPONENT_SOURCE_GRAMMARS
+        .iter()
+        .any(|(text, _, _)| *text == description)
+}
 use crate::effect_registry::{
     AffectedSideV1, AttributeActionV1, AttributeAffectedV1, BetPillzLinkV1, CombatStatV1,
     CompiledEffectV1, CurrentRoundRequirementV1, EffectDefinitionV1, IndexRequirementV1,
@@ -15,31 +63,58 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 21;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 22;
 
-/// Recognize the two unconditional Copy grammars. Like generic Victory Life this is
-/// admitted by exact description and structured shape rather than a fixed id list,
-/// because the registry carries many structurally identical Copy definitions. Every
-/// conditional variant (Reprisal, Revenge, Asymmetry, Unison, Confidence, Bet) has extra
-/// context and is therefore not matched here.
+/// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
+/// exact description and structured shape rather than a fixed id list, because the registry
+/// carries many structurally identical Copy definitions. The condition, when there is one,
+/// gates whether the opposing source is adopted at all; the adopted plan then keeps its own
+/// predicate, so a copied Confidence effect still has to satisfy the copier's own history.
 pub(crate) fn classify_copy_opponent_source(
     definition: &EffectDefinitionV1,
-) -> Option<CopiedSourceKindV1> {
-    let (copied, action) = match definition.description() {
-        "Copy: Opp. Ability" => (CopiedSourceKindV1::Ability, SpecialActionV1::CopyAbility),
-        "Copy: Opp. Bonus" => (CopiedSourceKindV1::Bonus, SpecialActionV1::CopyBonus),
-        _ => return None,
+) -> Option<(CopiedSourceKindV1, CombatStatPredicateV1)> {
+    let (_, copied, predicate) = COPY_OPPONENT_SOURCE_GRAMMARS
+        .iter()
+        .find(|(text, _, _)| *text == definition.description())?;
+    let action = match copied {
+        CopiedSourceKindV1::Ability => SpecialActionV1::CopyAbility,
+        CopiedSourceKindV1::Bonus => SpecialActionV1::CopyBonus,
     };
-    copy_opponent_source_shape_matches(definition.structured_input(), action).then_some(copied)
+    copy_opponent_source_shape_matches(definition.structured_input(), action, *predicate)
+        .then_some((*copied, *predicate))
 }
 
-fn copy_opponent_source_shape_matches(input: &StructuredEffectV1, action: SpecialActionV1) -> bool {
+fn copy_opponent_source_shape_matches(
+    input: &StructuredEffectV1,
+    action: SpecialActionV1,
+    predicate: CombatStatPredicateV1,
+) -> bool {
+    // Exactly one structured field may carry the condition, and it must be the one the
+    // printed prefix names. Everything else stays neutral, so an unfamiliar nested context
+    // cannot ride in beside a familiar prefix.
+    let (position, previous_round) = match predicate {
+        CombatStatPredicateV1::Always => {
+            (PositionRequirementV1::Both, PreviousRoundRequirementV1::Any)
+        }
+        CombatStatPredicateV1::OwnerMovesSecond => (
+            PositionRequirementV1::Defender,
+            PreviousRoundRequirementV1::Any,
+        ),
+        CombatStatPredicateV1::OwnerLostPreviousRound => (
+            PositionRequirementV1::Both,
+            PreviousRoundRequirementV1::Lose,
+        ),
+        CombatStatPredicateV1::OwnerMovesFirst
+        | CombatStatPredicateV1::OwnerWonPreviousRound
+        | CombatStatPredicateV1::SelectedHandSlotsMatch
+        | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
+    };
     input.value == 0
         && input.value_min == 0
         && input.value_max == 0
         && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.position_requirement == position
+        && input.previous_round_requirement == previous_round
         && input.current_round_requirement == CurrentRoundRequirementV1::Any
         && input.index_requirement == IndexRequirementV1::Any
         && input.clan_requirement.is_empty()
@@ -364,54 +439,147 @@ pub(crate) fn victory_or_defeat_life_identity_matches(
     )
 }
 
-/// Recognize the two reviewed unconditional Victory opponent-Life reductions. They are
-/// post-round resource work rather than combat-stat modifiers, so they stay out of the
-/// generic numeric compiler. Only the exact reviewed identities are admitted: Mou level
-/// three's printed `ability:1399` and the active Berzerk `bonus:680`. Conditional
-/// siblings (Symmetry `4708`, Courage `4533`, Confidence `3016`, Growth `1730`), every
-/// other magnitude/minimum pair, and the same-text catalog ids that have no registry
-/// definition at all (Rakhan `978`, Milovan `498`, Fraser `1289`) remain fail-closed.
+/// Every reviewed Victory opponent-Life identity: the registry definition id, its exact
+/// printed text, the source kind that is allowed to own it, the magnitude and bound, and
+/// the predicate that gates it. The source kind is authority in both directions, so `1399`
+/// is only ever a printed Ability and `680` only ever the clan Bonus.
+///
+/// The conditional members reuse predicates the projection already resolves before a round
+/// is prepared. Courage `4533` (Ligea level 3) and Growth `1730` deliberately stay out:
+/// `4533` has no selected observation anywhere in the corpus, and `1730` is a round-scaled
+/// magnitude rather than a predicate, which a post-round plan cannot carry today.
+const VICTORY_OPPONENT_LIFE_IDENTITIES: [(
+    u32,
+    &str,
+    CombatStatEffectSourceV1,
+    u16,
+    u16,
+    CombatStatPredicateV1,
+); 5] = [
+    (
+        1399,
+        "-5 Opp. Life Min 5",
+        CombatStatEffectSourceV1::Ability,
+        5,
+        5,
+        CombatStatPredicateV1::Always,
+    ),
+    (
+        680,
+        "-2 Opp. Life Min 2",
+        CombatStatEffectSourceV1::Bonus,
+        2,
+        2,
+        CombatStatPredicateV1::Always,
+    ),
+    (
+        4708,
+        "Symmetry: - 4 Opp. Life Min 0",
+        CombatStatEffectSourceV1::Ability,
+        4,
+        0,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+    ),
+    // Diabolus prints the same effect at both of her levels under two registry ids whose
+    // structured records and descriptions are byte-identical, so each is admitted on its
+    // own evidence rather than one being treated as an alias of the other.
+    (
+        3016,
+        "Confidence: -3 Opp. Life, Min 0",
+        CombatStatEffectSourceV1::Ability,
+        3,
+        0,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+    ),
+    (
+        4301,
+        "Confidence: -3 Opp. Life, Min 0",
+        CombatStatEffectSourceV1::Ability,
+        3,
+        0,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+    ),
+];
+
+/// Recognize the reviewed Victory opponent-Life reductions. They are post-round resource
+/// work rather than combat-stat modifiers, so they stay out of the generic numeric
+/// compiler. Only the exact reviewed identities are admitted; every other magnitude/minimum
+/// pair, every unlisted same-text sibling, and the same-text catalog ids that have no
+/// registry definition at all (Rakhan `978`, Milovan `498`, Fraser `1289`) remain
+/// fail-closed.
 pub(crate) fn classify_victory_opponent_life(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
-) -> Option<(u16, u16)> {
-    let (life, minimum) = match definition.id() {
-        1399 => (5, 5),
-        680 => (2, 2),
-        _ => return None,
-    };
-    (victory_opponent_life_identity_matches(source_kind, definition.id())
-        && definition.description() == format!("-{life} Opp. Life Min {minimum}")
-        && victory_opponent_life_shape_matches(definition.structured_input(), life, minimum))
-    .then_some((life, minimum))
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
+    let (_, description, _, life, minimum, predicate) = VICTORY_OPPONENT_LIFE_IDENTITIES
+        .iter()
+        .find(|(id, _, kind, _, _, _)| *id == definition.id() && *kind == source_kind)?;
+    (definition.description() == *description
+        && victory_opponent_life_shape_matches(
+            definition.structured_input(),
+            *life,
+            *minimum,
+            *predicate,
+        ))
+    .then_some((*life, *minimum, *predicate))
 }
 
-/// Shared identity gate for cold compilation and direct compact-plan validation. The
-/// source kind is authority: `1399` is only ever a printed Ability and `680` only ever
-/// the clan Bonus, so neither can be borrowed through the other slot.
+/// Shared identity gate for cold compilation and direct compact-plan validation.
 pub(crate) fn victory_opponent_life_identity_matches(
     source_kind: CombatStatEffectSourceV1,
     definition_id: u32,
 ) -> bool {
-    matches!(
-        (source_kind, definition_id),
-        (CombatStatEffectSourceV1::Ability, 1399) | (CombatStatEffectSourceV1::Bonus, 680)
-    )
+    VICTORY_OPPONENT_LIFE_IDENTITIES
+        .iter()
+        .any(|(id, _, kind, _, _, _)| *id == definition_id && *kind == source_kind)
+}
+
+/// The one predicate a reviewed Victory opponent-Life identity may carry, so a compact plan
+/// handed straight to the engine cannot swap in a different condition.
+pub(crate) fn victory_opponent_life_predicate(definition_id: u32) -> Option<CombatStatPredicateV1> {
+    VICTORY_OPPONENT_LIFE_IDENTITIES
+        .iter()
+        .find(|(id, _, _, _, _, _)| *id == definition_id)
+        .map(|(_, _, _, _, _, predicate)| *predicate)
 }
 
 fn victory_opponent_life_shape_matches(
     input: &StructuredEffectV1,
     life: u16,
     minimum: u16,
+    predicate: CombatStatPredicateV1,
 ) -> bool {
+    // Exactly one structured field carries the condition, and it must be the one the printed
+    // text names. Every other context field stays neutral.
+    let (position, previous_round, index) = match predicate {
+        CombatStatPredicateV1::Always => (
+            PositionRequirementV1::Both,
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Any,
+        ),
+        CombatStatPredicateV1::SelectedHandSlotsMatch => (
+            PositionRequirementV1::Both,
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Symmetry,
+        ),
+        CombatStatPredicateV1::OwnerWonPreviousRound => (
+            PositionRequirementV1::Both,
+            PreviousRoundRequirementV1::Win,
+            IndexRequirementV1::Any,
+        ),
+        CombatStatPredicateV1::OwnerMovesFirst
+        | CombatStatPredicateV1::OwnerMovesSecond
+        | CombatStatPredicateV1::OwnerLostPreviousRound
+        | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
+    };
     input.value == life
         && input.value_min == minimum
         && input.value_max == 0
         && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.position_requirement == position
+        && input.previous_round_requirement == previous_round
         && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
+        && input.index_requirement == index
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
@@ -1381,43 +1549,121 @@ mod tests {
     }
 
     #[test]
-    fn unconditional_copy_is_admitted_by_grammar_and_excludes_every_variant() {
+    fn copy_is_admitted_by_grammar_and_excludes_every_unreviewed_variant() {
         let registry = registry();
-        assert_eq!(
-            classify_copy_opponent_source(
-                registry.lookup_capture(764, "Copy: Opp. Bonus").unwrap()
-            ),
-            Some(CopiedSourceKindV1::Bonus)
-        );
-        assert_eq!(
-            classify_copy_opponent_source(
-                registry.lookup_capture(2918, "Copy: Opp. Ability").unwrap()
-            ),
-            Some(CopiedSourceKindV1::Ability)
-        );
         // The registry holds many structurally identical Copy definitions; each is admitted
-        // on its own grammar rather than through a fixed identity list.
-        for (id, description, expected) in [
-            (846, "Copy: Opp. Bonus", CopiedSourceKindV1::Bonus),
-            (4774, "Copy: Opp. Bonus", CopiedSourceKindV1::Bonus),
-            (4497, "Copy: Opp. Ability", CopiedSourceKindV1::Ability),
+        // on its own grammar rather than through a fixed identity list. Every admitted
+        // grammar appears here, including the conditional ones and the site's inconsistent
+        // punctuation between a copied Bonus and a copied Ability.
+        for (id, description, copied, predicate) in [
+            (
+                764,
+                "Copy: Opp. Bonus",
+                CopiedSourceKindV1::Bonus,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                846,
+                "Copy: Opp. Bonus",
+                CopiedSourceKindV1::Bonus,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                4774,
+                "Copy: Opp. Bonus",
+                CopiedSourceKindV1::Bonus,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                2918,
+                "Copy: Opp. Ability",
+                CopiedSourceKindV1::Ability,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                4497,
+                "Copy: Opp. Ability",
+                CopiedSourceKindV1::Ability,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                958,
+                "Reprisal: Copy Opp. Bonus",
+                CopiedSourceKindV1::Bonus,
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ),
+            (
+                5453,
+                "Reprisal: Copy Opp. Bonus",
+                CopiedSourceKindV1::Bonus,
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ),
+            (
+                3101,
+                "Reprisal: Copy: Opp. Ability",
+                CopiedSourceKindV1::Ability,
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ),
+            (
+                1751,
+                "Revenge: Copy Opp. Bonus",
+                CopiedSourceKindV1::Bonus,
+                CombatStatPredicateV1::OwnerLostPreviousRound,
+            ),
+            (
+                4972,
+                "Revenge: Copy: Opp. Ability",
+                CopiedSourceKindV1::Ability,
+                CombatStatPredicateV1::OwnerLostPreviousRound,
+            ),
         ] {
             assert_eq!(
                 classify_copy_opponent_source(registry.lookup_capture(id, description).unwrap()),
-                Some(expected),
-                "alias {id}",
+                Some((copied, predicate)),
+                "grammar {id}",
             );
         }
-        // Conditional and stat-copying variants keep their own deferred grammars.
+        // Every other conditional, and every stat-copying variant, keeps its own deferred
+        // grammar. `4126` matters in particular: it is a Reprisal Copy, but of a stat.
         for (id, description) in [
-            (958, "Reprisal: Copy Opp. Bonus"),
             (2482, "Asymmetry: Copy: Opp. Bonus"),
+            (3994, "Unison : Copy: Opp. Ability"),
+            (1409, "Confidence: Copy: Opp. Power"),
+            (5304, "Bet > 3 Pillz: Copy: Opp. Ability"),
             (315, "Copy: Opp. Power"),
+            (1513, "Copy: Opp. Damage"),
+            (2673, "Copy: Power And Damage Opp."),
+            (4126, "Reprisal: Copy: Opp. Damage"),
         ] {
             assert_eq!(
                 classify_copy_opponent_source(registry.lookup_capture(id, description).unwrap()),
                 None,
                 "variant {id}",
+            );
+        }
+        // A conditional grammar may not borrow another condition's structured field: the
+        // printed prefix and the structured record have to name the same one.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let crossed: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            // Reprisal's condition lives in positionRequirement, not previousRoundRequirement.
+            (958, "positionRequirement", serde_json::json!("both")),
+            (958, "previousRoundRequirement", serde_json::json!("lose")),
+            // ...and Revenge's the other way around.
+            (1751, "previousRoundRequirement", serde_json::json!("any")),
+            (1751, "positionRequirement", serde_json::json!("defender")),
+        ] {
+            let mut malformed = crossed.clone();
+            malformed[id.to_string()]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            let definition = malformed.get(id).unwrap();
+            assert_eq!(
+                classify_copy_opponent_source(definition),
+                None,
+                "crossed {id} {field}",
             );
         }
         // An otherwise-exact record with any extra context is not this grammar.
@@ -1454,11 +1700,11 @@ mod tests {
         let berzerk = registry.lookup_capture(680, "-2 Opp. Life Min 2").unwrap();
         assert_eq!(
             classify_victory_opponent_life(mou, CombatStatEffectSourceV1::Ability),
-            Some((5, 5))
+            Some((5, 5, CombatStatPredicateV1::Always))
         );
         assert_eq!(
             classify_victory_opponent_life(berzerk, CombatStatEffectSourceV1::Bonus),
-            Some((2, 2))
+            Some((2, 2, CombatStatPredicateV1::Always))
         );
         // The source kind is authority in both directions.
         assert_eq!(
@@ -1469,18 +1715,78 @@ mod tests {
             classify_victory_opponent_life(berzerk, CombatStatEffectSourceV1::Ability),
             None
         );
-        // The conditional siblings share the structure but never this admission.
+        // The reviewed conditional members carry the one predicate their printed text names.
+        // Diabolus prints the same effect at both levels under two byte-identical registry
+        // records, so each is admitted on its own rather than as an alias of the other.
+        for (id, description, life, predicate) in [
+            (
+                4708,
+                "Symmetry: - 4 Opp. Life Min 0",
+                4,
+                CombatStatPredicateV1::SelectedHandSlotsMatch,
+            ),
+            (
+                3016,
+                "Confidence: -3 Opp. Life, Min 0",
+                3,
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+            ),
+            (
+                4301,
+                "Confidence: -3 Opp. Life, Min 0",
+                3,
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+            ),
+        ] {
+            let conditional = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_victory_opponent_life(conditional, CombatStatEffectSourceV1::Ability),
+                Some((life, 0, predicate)),
+                "conditional {id}",
+            );
+            // None of them is a clan bonus, and none may be borrowed through that slot.
+            assert_eq!(
+                classify_victory_opponent_life(conditional, CombatStatEffectSourceV1::Bonus),
+                None,
+                "conditional {id} as bonus",
+            );
+        }
+        // Courage `4533` has no selected observation anywhere in the corpus and Growth
+        // `1730` is a round-scaled magnitude rather than a predicate, so both stay deferred
+        // although they share this exact structure.
         for (id, description) in [
-            (4708, "Symmetry: - 4 Opp. Life Min 0"),
             (4533, "Courage: - 3 Opp. Life Min 0"),
-            (3016, "Confidence: -3 Opp. Life, Min 0"),
             (1730, "Growth: - 1 Opp. Life Min 4"),
         ] {
-            let sibling = registry.lookup_capture(id, description).unwrap();
+            let deferred = registry.lookup_capture(id, description).unwrap();
             assert_eq!(
-                classify_victory_opponent_life(sibling, CombatStatEffectSourceV1::Ability),
+                classify_victory_opponent_life(deferred, CombatStatEffectSourceV1::Ability),
                 None,
-                "sibling {id}",
+                "deferred {id}",
+            );
+        }
+        // A reviewed conditional may not pair its magnitude with a different condition.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let crossed: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            (4708, "indexRequirement", serde_json::json!("asymmetry")),
+            (4708, "previousRoundRequirement", serde_json::json!("win")),
+            (3016, "previousRoundRequirement", serde_json::json!("lose")),
+            (3016, "positionRequirement", serde_json::json!("attacker")),
+        ] {
+            let mut malformed = crossed.clone();
+            malformed[id.to_string()]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_victory_opponent_life(
+                    malformed.get(id).unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "crossed {id} {field}",
             );
         }
         // A mutated record loses its exact identity even under the right id and text.

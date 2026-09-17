@@ -36,6 +36,12 @@ interface Move {
   side: Side;
   index: number;
   cardId: number;
+  /**
+   * The id this slot showed while it was disguised, present only when it differs from
+   * `cardId`. Illusion hides a card behind another for the whole battle and the server
+   * reveals the real one in a rewritten static block at the end.
+   */
+  displayedCardId?: number;
   /** Pillz bet, engine convention (excludes the free pill and the 3 fury pillz). */
   pillz: number;
   /** Raw server value: pillz bet + 1 (the free pill). Attack = power × pillzUsed. */
@@ -266,6 +272,15 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
     for (const m of round.moves) {
       const c = (last[sides[m.side]].characters as Character[]).find((c) => c.index === m.index);
       if (c) {
+        // The hand comes from the last snapshot, so the moves must identify cards the same
+        // way. Illusion disguises a slot as another card for the whole battle and the server
+        // only reveals it at the end, so the snapshot a move was first seen in can carry the
+        // disguise. Battle 1130527: side 0 slot 2 reads Bonnie Ld (808) every round, and the
+        // final static block reveals Kate (1966) - which is the card that actually fought,
+        // since the round resolved at 9 power / 5 damage, Kate's level 3 stats, not Bonnie
+        // Ld level 1's 8/1. Keep the disguise beside the real card rather than dropping it.
+        if (c.id !== m.cardId) m.displayedCardId = m.cardId;
+        m.cardId = c.id;
         m.pillzUsed = c.pillzUsed;
         m.pillz = Math.max(0, c.pillzUsed - 1);
         m.fury = !!c.isFury;

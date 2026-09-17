@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 328 captured battles
-(322 replay-ready, 6 incomplete/Dojo ignored): 278 replay exactly and 44 mismatch. Each entry
+Status from `deno test -A --no-check tests/replay/` against 359 captured battles
+(352 replay-ready, 7 incomplete/Dojo ignored): 304 replay exactly and 48 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -33,6 +33,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-15 | 269 | 53 | +1 capture; refreshed stable replay baseline |
 | 2026-09-16 | 277 | 45 | Riots Victory-or-Defeat Pillz now applies after its owner's KO |
 | 2026-09-16 | 278 | 44 | Pr Hide's exact printed Victory-or-Defeat Pillz ability now also applies after KO |
+| 2026-09-17 | 304 | 48 | +31 captures extracted (29 committed but never extracted, plus 2 new); 4 fresh mismatches awaiting triage |
 
 ## Fixed
 
@@ -243,7 +244,7 @@ Exchange card at all, one of them on a loss.
 
 ## Fresh capture backlog
 
-The expanded corpus now has 40 additional mismatches that have not yet been
+The expanded corpus now has 44 additional mismatches that have not yet been
 grouped or attributed to rules. They are recorded as regression targets only; inspect the
 first failing round and group them by ability keyword before changing the engine:
 
@@ -251,7 +252,11 @@ first failing round and group them by ability keyword before changing the engine
 943231, 946810, 947010, 947670, 948108, 948390, 949439, 956902, 1023946,
 1024592, 1024732, 1024821, 1025413, 1059149, 1060341, 1065308, 1066210,
 1069506, 1078555, 1078820, 1079078, 1088641, 1089830, 1089974, 1090269,
-1091235, 1091381, 1092066, 1093129, 1093569.
+1091235, 1091381, 1092066, 1093129, 1093569, 1130425, 1130726, 1131144,
+1207064.
+
+The last four arrived on 2026-09-17 with the 31 newly extracted captures and are the only
+genuinely new ground truth in that list.
 
 ## Legacy tests
 - `tests/Game_2.test.ts` "Protection" uses empty card names (never passed).
@@ -280,3 +285,12 @@ first failing round and group them by ability keyword before changing the engine
   `BasicModifier.ts`). Symmetry and Asymmetry are instead conditions that gate the complete
   effect by equality or inequality of the two cards' immutable original hand slots. Do not
   diagnose either family using the other's execution model.
+- **Illusion rewrites a slot's whole card identity in the capture, not just its ability.**
+  In battle 1130527 the server showed side 0's slot 2 as Bonnie Ld (808) in every status
+  snapshot and only revealed Kate (1966) in a static block rewritten at the end. Kate is what
+  actually fought: the round resolved at 9 power / 5 damage, her level-3 stats, not Bonnie Ld
+  level 1's 8/1. `ExtractBattle.ts` builds each player's hand from the last snapshot, so a
+  move first seen under the disguise used to contradict its own hand; it now follows the hand
+  and records the disguise as `displayedCardId` beside it. That capture is the only one of
+  359 that carries the field. Expect more as Kate and her siblings turn up, and do not treat
+  a `moves[].cardId` as evidence about a card's real identity.
