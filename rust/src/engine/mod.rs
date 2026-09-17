@@ -356,6 +356,8 @@ pub(super) enum PostRoundEffect {
     GainLifeOnVictory(u16),
     GainLifeOnDefeat(u16),
     ReanimateLife(u16),
+    GainLifeOnVictoryOrDefeat { life: u16 },
+    ReduceOpponentLifeOnVictoryOrDefeat { life: u16, minimum: u16 },
 }
 
 #[derive(Clone, Copy)]
@@ -517,6 +519,31 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainLifeOnVictory(_) => {}
+                    // The reviewed Victory Or Defeat Life sources are ordinary Life
+                    // gains, not Reanimate: a living owner gains after either outcome,
+                    // while a KO remains terminal.  Keep the addition checked so the
+                    // replacement-position commit retains its all-or-nothing guarantee.
+                    PostRoundEffect::GainLifeOnVictoryOrDefeat { life }
+                        if position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(life)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainLifeOnVictoryOrDefeat { .. } => {}
+                    // Uuber's reviewed Victory Or Defeat reduction is directed at the
+                    // opposing player.  It still happens when its owner was KO'd, but a
+                    // target already at zero must never be revived by the Min clamp.
+                    PostRoundEffect::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum } => {
+                        let target = owner.other();
+                        if position.players[target].life > 0 {
+                            position.players[target].life = position.players[target]
+                                .life
+                                .saturating_sub(life)
+                                .max(minimum);
+                        }
+                    }
                     // Ordinary Defeat Life is post-damage work for a loss that did not KO
                     // its owner. It deliberately cannot turn a terminal zero back into a
                     // live position.

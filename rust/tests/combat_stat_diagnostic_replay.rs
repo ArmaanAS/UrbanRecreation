@@ -50,6 +50,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1092660, 1),
     (1093500, 2),
     (1092909, 2),
+    (925719, 3),
     (877636, 4),
 ];
 
@@ -140,6 +141,22 @@ fn victory_or_defeat_entry(id: u32) -> serde_json::Value {
     entry["abilityData"]["sideAffected"] = serde_json::json!("player");
     entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
     entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry
+}
+
+fn victory_or_defeat_life_entry(
+    id: u32,
+    description: &str,
+    life: u16,
+    minimum: u16,
+    owner_life: bool,
+) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "both", life, minimum);
+    entry["abilityData"]["sideAffected"] =
+        serde_json::json!(if owner_life { "player" } else { "opponent" });
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    entry["abilityData"]["attributeAction"] =
+        serde_json::json!(if owner_life { "increase" } else { "decrease" });
     entry
 }
 
@@ -272,7 +289,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_fifty_nine_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_sixty_two_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -308,16 +325,16 @@ fn fixed_server_backed_gate_is_exactly_fifty_nine_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 59);
+    assert_eq!(rounds, 62);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 36, 37, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 257, 266, 292, 310, 333, 377,
-            401, 412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980, 1034, 1047,
-            1158, 1163, 1241, 1310, 1335, 1338, 1342, 1359, 1372, 1375, 1418, 1420, 1518, 1536,
-            1578, 1688, 1694, 1714, 1770, 1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881,
-            2965, 3677, 3864, 3865, 3897, 4041, 4216, 4297, 4299, 4399, 4464, 4711, 4718, 4757,
-            4966, 5026, 5085, 5273, 5520, 5763, 5852,
+            6, 36, 37, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 257, 266, 292, 310, 333, 368,
+            377, 391, 401, 412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980,
+            1034, 1047, 1158, 1163, 1241, 1310, 1335, 1338, 1342, 1359, 1372, 1375, 1418, 1420,
+            1518, 1536, 1578, 1628, 1688, 1694, 1714, 1770, 1844, 1845, 1848, 1850, 2299, 2329,
+            2412, 2535, 2881, 2965, 3677, 3864, 3865, 3897, 4041, 4216, 4297, 4299, 4399, 4464,
+            4711, 4718, 4757, 4966, 5026, 5085, 5273, 5520, 5763, 5852,
         ])
     );
     assert_eq!(
@@ -519,7 +536,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 16);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 17);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -575,7 +592,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        16
+        17
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -2050,6 +2067,260 @@ fn victory_or_defeat_is_exactly_the_audited_post_round_resource_effect() {
         prepared.new_game().card_plans()[PlayerId::P1][0].bonus,
         CombatStatSourcePlanV1::Disabled { source_id: 900_107 }
     ));
+}
+
+#[test]
+fn victory_or_defeat_life_is_exactly_the_audited_post_round_family() {
+    let catalog = catalog();
+    let cases = [
+        (1396, "Victory Or Defeat : +1 Life", 1, 1, true),
+        (2992, "Victory Or Defeat : +1 Life", 1, 1, true),
+        (5835, "Victory Or Defeat : +1 Life", 1, 1, true),
+        (5799, "Victory Or Defeat : +1 Life", 1, 1, true),
+        (5802, "Victory Or Defeat : +2 Life", 2, 1, true),
+        (2944, "Victory Or Defeat : +2 Life", 2, 1, true),
+        (1628, "Victory Or Defeat: - 1 Opp. Life Min 1", 1, 1, false),
+    ];
+
+    for (id, description, life, minimum, owner_life) in cases {
+        let registry = one_entry_registry(victory_or_defeat_life_entry(
+            id,
+            description,
+            life,
+            minimum,
+            owner_life,
+        ));
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let selected_slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+            id,
+            description: description.to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert!(
+            matches!(
+                prepared.preparation()[PlayerId::P1][selected_slot].ability,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnVictoryOrDefeat { life: actual },
+                    ..
+                } if owner_life && actual == life
+            ) || matches!(
+                prepared.preparation()[PlayerId::P1][selected_slot].ability,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life: actual_life, minimum: actual_minimum },
+                    ..
+                } if !owner_life && actual_life == life && actual_minimum == minimum
+            ),
+            "id={id}"
+        );
+    }
+
+    // Same-text and structurally adjacent Life forms are deliberately selected hazards.
+    let mut malformed =
+        victory_or_defeat_life_entry(1396, "Victory Or Defeat : +1 Life", 1, 1, true);
+    malformed["abilityData"]["valueMin"] = serde_json::json!(0);
+    let adjacent = victory_or_defeat_life_entry(
+        900_1396,
+        "Victory Or Defeat: - 2 Opp. Life Min 1",
+        2,
+        1,
+        false,
+    );
+    for (id, description, entry) in [
+        (1396, "Victory Or Defeat : +1 Life", malformed),
+        (900_1396, "Victory Or Defeat: - 2 Opp. Life Min 1", adjacent),
+    ] {
+        let registry = one_entry_registry(entry);
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let selected_slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+            id,
+            description: description.to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert!(
+            matches!(
+                prepared.preparation()[PlayerId::P1][selected_slot].ability,
+                CombatStatProjectionDispositionV1::Disabled {
+                    reason: CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { .. },
+                    ..
+                }
+            ),
+            "id={id}"
+        );
+        assert!(
+            matches!(
+                prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
+                CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+            ),
+            "id={id}"
+        );
+    }
+}
+
+#[test]
+fn victory_or_defeat_life_server_evidence_preserves_liveness_and_stop_semantics() {
+    let catalog = catalog();
+    let registry = registry();
+    let source_in_round = |prepared: &CombatStatDiagnosticReplayV1,
+                           round_index: usize,
+                           card_id: u32| {
+        let round = &prepared.replay().rounds[round_index];
+        let play = round
+            .plays
+            .iter()
+            .find(|play| play.card.id == card_id)
+            .unwrap_or_else(|| panic!("battle {} is missing card {card_id}", prepared.battle_id()));
+        let owner = match play.engine_player {
+            EnginePlayer::P1 => PlayerId::P1,
+            EnginePlayer::P2 => PlayerId::P2,
+        };
+        (owner, usize::from(play.hand_index))
+    };
+
+    // Independent owner-Life evidence: Scott's +1 is paid after a win, and Kora Mail Ld's
+    // distinct +2 is paid after a clean loss.
+    for (battle_id, round_index, card_id, life, won, gain) in [
+        (947370, 0, 820, 13, true, 1),
+        (1091235, 2, 1676, 7, false, 2),
+    ] {
+        let prepared = diagnostic(battle_id, &catalog, &registry);
+        let (owner, slot) = source_in_round(&prepared, round_index, card_id);
+        let round = &prepared.replay().rounds[round_index];
+        assert_eq!(
+            round.expected_player_states[owner.index()].life,
+            life,
+            "battle {battle_id}"
+        );
+        assert_eq!(
+            round.expected_card_results[owner.index()].unwrap().won,
+            won,
+            "battle {battle_id}"
+        );
+        assert!(matches!(
+            prepared.preparation()[owner][slot].ability,
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnVictoryOrDefeat { life: actual },
+                ..
+            } if actual == gain
+        ));
+    }
+
+    // Reprisal is SOA, so it suppresses Scott's selected ability: the owner reaches 1,
+    // not 2, after Spidee's six damage.
+    let stopped = diagnostic(1069721, &catalog, &registry);
+    let (owner, slot) = source_in_round(&stopped, 2, 820);
+    let round = &stopped.replay().rounds[2];
+    assert!(!round.expected_card_results[owner.index()].unwrap().won);
+    assert_eq!(round.expected_player_states[owner.index()].life, 1);
+    assert!(matches!(
+        stopped.preparation()[owner][slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnVictoryOrDefeat { life: 1 },
+            ..
+        }
+    ));
+
+    // Uuber directs the effect at the live opponent after either outcome.  The last case
+    // proves that an owner KO does not cancel the opponent reduction (11 -> 10).
+    for (battle_id, round_index, owner_life, opponent_life, won) in [
+        (924485, 0, 12, 9, true),
+        (867116, 0, 6, 11, false),
+        (956608, 3, 0, 10, false),
+    ] {
+        let prepared = diagnostic(battle_id, &catalog, &registry);
+        let (owner, slot) = source_in_round(&prepared, round_index, 1788);
+        let round = &prepared.replay().rounds[round_index];
+        assert_eq!(
+            round.expected_card_results[owner.index()].unwrap().won,
+            won,
+            "battle {battle_id}"
+        );
+        assert_eq!(
+            round.expected_player_states[owner.index()].life,
+            owner_life,
+            "battle {battle_id}"
+        );
+        assert_eq!(
+            round.expected_player_states[owner.other().index()].life,
+            opponent_life,
+            "battle {battle_id}"
+        );
+        assert!(matches!(
+            prepared.preparation()[owner][slot].ability,
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life: 1, minimum: 1 },
+                ..
+            }
+        ));
+    }
+
+    // Capture packets expose Copy's resulting source on the receiving card.  Both an
+    // ability and a bonus source must remain live under the exact VOD-Life classifier.
+    for (battle_id, card_id, bonus) in [(924573, 2364, false), (924669, 2295, true)] {
+        let prepared = diagnostic(battle_id, &catalog, &registry);
+        let (owner, slot) = source_in_round(&prepared, 0, card_id);
+        let disposition = if bonus {
+            &prepared.preparation()[owner][slot].bonus
+        } else {
+            &prepared.preparation()[owner][slot].ability
+        };
+        assert!(
+            matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    identity,
+                    effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life: 1, minimum: 1 },
+                } if identity.id == 1628
+            ),
+            "battle {battle_id}"
+        );
+    }
+}
+
+#[test]
+fn uuber_victory_or_defeat_life_unlocks_925719_through_round_two() {
+    let catalog = catalog();
+    let registry = registry();
+    let report = diagnostic(925719, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(3)
+        .expect("925719/r0-r2 must remain exact after Uuber's VOD-Life admission");
+    assert_eq!(report.rounds.len(), 3);
+
+    let round = &report.rounds[0];
+    let owner = PlayerId::ALL
+        .into_iter()
+        .find(|player| matches!(
+            &round.selected[*player].ability,
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life: 1, minimum: 1 },
+            } if identity.id == 1628
+        ))
+        .expect("Uuber's exact source must be selected in 925719/r0");
+    assert!(!round.round.cards[owner].won);
+    // Prince Jr deals three to Uuber; even on this loss Uuber's effect reduces the live
+    // opponent from 12 to 11, matching the server's 9 / 11 endpoint.
+    assert_eq!(round.round.players[owner].life, 9);
+    assert_eq!(round.round.players[owner.other()].life, 11);
 }
 
 #[test]

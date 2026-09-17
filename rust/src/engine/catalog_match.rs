@@ -7,8 +7,9 @@
 use super::combat_stat_compiler::{
     classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
     classify_defeat_recover_pillz, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_pillz,
-    compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, compact_effect, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
@@ -39,6 +40,10 @@ const RIOTS_CLAN_ID: u32 = 49;
 const RIOTS_CATALOG_BONUS_ID: u32 = 47;
 const VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
 const VICTORY_OR_DEFEAT_RIOTS_BONUS_REGISTRY_ID: u32 = 1034;
+const VICTORY_OR_DEFEAT_GAIN_LIFE_ONE_DESCRIPTION: &str = "Victory Or Defeat : +1 Life";
+const VICTORY_OR_DEFEAT_GAIN_LIFE_TWO_DESCRIPTION: &str = "Victory Or Defeat : +2 Life";
+const VICTORY_OR_DEFEAT_REDUCE_OPPONENT_LIFE_DESCRIPTION: &str =
+    "Victory Or Defeat: - 1 Opp. Life Min 1";
 const KOMBOKA_CLAN_ID: u32 = 54;
 const KOMBOKA_CATALOG_BONUS_ID: u32 = 53;
 const KOMBOKA_VICTORY_PILLZ_AND_LIFE_DESCRIPTION: &str = "+1 Pillz And Life";
@@ -378,6 +383,7 @@ impl CatalogCombatStatMatchV1 {
                         registry,
                         player,
                         slot,
+                        card.key(),
                         CombatStatEffectSourceV1::Ability,
                         effective.effective_clan_id,
                         source.catalog_id,
@@ -391,6 +397,7 @@ impl CatalogCombatStatMatchV1 {
                         registry,
                         player,
                         slot,
+                        card.key(),
                         CombatStatEffectSourceV1::Bonus,
                         effective.effective_clan_id,
                         source.catalog_id,
@@ -707,6 +714,7 @@ fn prepare_catalog_source(
     registry: &EffectRegistryV1,
     player: PlayerId,
     hand_slot: HandSlot,
+    card_key: CardKey,
     source_kind: CombatStatEffectSourceV1,
     effective_clan_id: u32,
     catalog_id: Option<u32>,
@@ -880,6 +888,51 @@ fn prepare_catalog_source(
         }
         // The registry intentionally groups several same-text identities. Catalog execution
         // must not inherit an executable identity from a description collision.
+        let definition = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
+    // Victory Or Defeat Life is ability-only in canonical catalog data.  Captures can
+    // materialize the reviewed registry identities through Copy under either source
+    // kind, but a catalog-built hand must never synthesize that dynamic provenance.
+    if victory_or_defeat_life_description(description) {
+        if let Some(registry_definition_id) = victory_or_defeat_life_registry_definition_id(
+            card_key,
+            source_kind,
+            catalog_id,
+            description,
+        ) {
+            return prepare_victory_or_defeat_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                registry_definition_id,
+            );
+        }
         let definition = registry
             .lookup_description(description)
             .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
@@ -1560,6 +1613,148 @@ fn prepare_argos_defeat_capped_pillz_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
+        },
+    })
+}
+
+fn victory_or_defeat_life_description(description: &str) -> bool {
+    matches!(
+        description,
+        VICTORY_OR_DEFEAT_GAIN_LIFE_ONE_DESCRIPTION
+            | VICTORY_OR_DEFEAT_GAIN_LIFE_TWO_DESCRIPTION
+            | VICTORY_OR_DEFEAT_REDUCE_OPPONENT_LIFE_DESCRIPTION
+    )
+}
+
+/// Maps canonical card provenance to the exact captured definition which the cold
+/// compiler audits. Zerkov levels three and four have catalog-local ids 5800/5801 but
+/// their shared captured definition is 5799; no other same-text alias inherits it.
+fn victory_or_defeat_life_registry_definition_id(
+    card_key: CardKey,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Option<u32> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    match (card_key, catalog_id, description) {
+        (
+            CardKey {
+                id: 1586,
+                level: 2..=4,
+            },
+            Some(1396),
+            VICTORY_OR_DEFEAT_GAIN_LIFE_ONE_DESCRIPTION,
+        ) => Some(1396),
+        (
+            CardKey { id: 820, level: 3 },
+            Some(5835),
+            VICTORY_OR_DEFEAT_GAIN_LIFE_ONE_DESCRIPTION,
+        ) => Some(5835),
+        (
+            CardKey { id: 820, level: 4 },
+            Some(2992),
+            VICTORY_OR_DEFEAT_GAIN_LIFE_ONE_DESCRIPTION,
+        ) => Some(2992),
+        (
+            CardKey {
+                id: 2693,
+                level: 2..=4,
+            },
+            Some(5799 | 5800 | 5801),
+            VICTORY_OR_DEFEAT_GAIN_LIFE_ONE_DESCRIPTION,
+        ) => Some(5799),
+        (
+            CardKey { id: 2693, level: 5 },
+            Some(5802),
+            VICTORY_OR_DEFEAT_GAIN_LIFE_TWO_DESCRIPTION,
+        ) => Some(5802),
+        (
+            CardKey { id: 1676, level: 2 },
+            Some(2944),
+            VICTORY_OR_DEFEAT_GAIN_LIFE_TWO_DESCRIPTION,
+        ) => Some(2944),
+        (
+            CardKey { id: 1788, level: 2 },
+            Some(1628),
+            VICTORY_OR_DEFEAT_REDUCE_OPPONENT_LIFE_DESCRIPTION,
+        ) => Some(1628),
+        _ => None,
+    }
+}
+
+fn prepare_victory_or_defeat_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    let Some(effect) = classify_victory_or_defeat_life(definition, source_kind) else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    let (post_round_effect, compact_effect) = match effect {
+        VictoryOrDefeatLifeEffectV1::GainLife { life } => (
+            CombatStatPostRoundEffectV1::GainLifeOnVictoryOrDefeat { life },
+            CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life },
+        ),
+        VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum } => (
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
+            CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
+        ),
+    };
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: post_round_effect,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: compact_effect,
         },
     })
 }

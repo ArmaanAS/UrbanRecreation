@@ -128,6 +128,19 @@ Deno.test({
       compareRustSearches(openingFirst.search, openingFirst.rust),
       "rust match",
     );
+    const vodLifeOpeningFirst = await runDecision(
+      925719,
+      0,
+      "first",
+      SearchMode.FIRST,
+    );
+    while (vodLifeOpeningFirst.search.step()) {
+      /* complete the TypeScript VOD-Life opening matrix */
+    }
+    assertEquals(
+      compareRustSearches(vodLifeOpeningFirst.search, vodLifeOpeningFirst.rust),
+      "rust match",
+    );
     const reprisalOpeningFirst = await runDecision(
       1060199,
       0,

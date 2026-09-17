@@ -62,6 +62,36 @@ fn registry_with_malformed_komboka() -> EffectRegistryV1 {
     EffectRegistryV1::from_reader(effects.as_slice()).unwrap()
 }
 
+fn catalog_with_vod_life_lookalike(key: CardKey) -> EffectiveCardCatalog {
+    let mut rows: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("data/data.json")).unwrap()).unwrap();
+    let row = rows
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == key.id && row["level"] == key.level)
+        .unwrap();
+    row["ability_id"] = serde_json::json!(1396);
+    row["ability"] = serde_json::json!("Victory Or Defeat : +1 Life");
+    let rows = serde_json::to_vec(&rows).unwrap();
+    let overrides = fs::read(root_path("data/battle_card_overrides.json")).unwrap();
+    EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
+}
+
+fn catalog_with_vod_life_bonus() -> EffectiveCardCatalog {
+    let mut rows: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("data/data.json")).unwrap()).unwrap();
+    for row in rows.as_array_mut().unwrap() {
+        if row["clan_id"] == 38 {
+            row["bonus_id"] = serde_json::json!(1396);
+            row["bonus"] = serde_json::json!("Victory Or Defeat : +1 Life");
+        }
+    }
+    let rows = serde_json::to_vec(&rows).unwrap();
+    let overrides = fs::read(root_path("data/battle_card_overrides.json")).unwrap();
+    EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
+}
+
 fn player(hand: [CardKey; 4]) -> CatalogCombatStatPlayerInputV1 {
     CatalogCombatStatPlayerInputV1 {
         initial_life: 12,
@@ -1020,6 +1050,172 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
     assert_eq!(report.players[PlayerId::P1].pillz, 12);
     game.unmake(undo);
     assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_admits_only_card_key_locked_victory_or_defeat_life_sources() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    for (key, catalog_id, registry_definition_id, life, reduces_opponent) in [
+        (CardKey::new(1586, 2), 1396, 1396, 1, false), // Schumi L2
+        (CardKey::new(820, 3), 5835, 5835, 1, false),  // Scott Ld L3
+        (CardKey::new(820, 4), 2992, 2992, 1, false),  // Scott Ld L4
+        (CardKey::new(2693, 2), 5799, 5799, 1, false), // Zerkov L2
+        (CardKey::new(2693, 3), 5800, 5799, 1, false), // Zerkov L3 catalog alias
+        (CardKey::new(2693, 4), 5801, 5799, 1, false), // Zerkov L4 catalog alias
+        (CardKey::new(2693, 5), 5802, 5802, 2, false), // Zerkov L5
+        (CardKey::new(1676, 2), 2944, 2944, 2, false), // Kora Mail Ld L2
+        (CardKey::new(1788, 2), 1628, 1628, 1, true),  // Uuber L2
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?} was not catalog-executable: {error}"));
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+            &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as Victory Or Defeat Life")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert_eq!(identity.registry_definition_id, registry_definition_id);
+        assert!(identity
+            .registry_alias_ids
+            .contains(&registry_definition_id));
+        if reduces_opponent {
+            assert_eq!(
+                *effect,
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+                    life,
+                    minimum: 1,
+                }
+            );
+            assert!(matches!(
+                prepared.match_spec().cards[PlayerId::P1][0].ability,
+                CombatStatSourcePlanV1::Execute {
+                    source_id,
+                    predicate: CombatStatPredicateV1::Always,
+                    effect: urban_recreation_rust::engine::CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+                        life: 1,
+                        minimum: 1,
+                    },
+                } if source_id == registry_definition_id
+            ));
+        } else {
+            assert_eq!(
+                *effect,
+                CombatStatPostRoundEffectV1::GainLifeOnVictoryOrDefeat { life }
+            );
+            assert!(matches!(
+                prepared.match_spec().cards[PlayerId::P1][0].ability,
+                CombatStatSourcePlanV1::Execute {
+                    source_id,
+                    predicate: CombatStatPredicateV1::Always,
+                    effect: urban_recreation_rust::engine::CombatStatEffectV1::GainLifeOnVictoryOrDefeat {
+                        life: effect_life,
+                    },
+                } if source_id == registry_definition_id && effect_life == life
+            ));
+        }
+    }
+
+    // Scott L2 prints the same +1 Life text under catalog Ability:5834. It was never a
+    // captured execution authority, so source text cannot borrow Scott L3's 5835 id.
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(820, 2),
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(5834),
+            ref description,
+            ..
+        }) if hand_slot.get() == 0 && description == "Victory Or Defeat : +1 Life"
+    ));
+
+    // A different canonical card cannot claim Schumi's source id, even if its printed
+    // text and numeric source are both changed to look identical.
+    let lookalike = catalog_with_vod_life_lookalike(CardKey::new(1676, 2));
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(1676, 2),
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &lookalike,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(1396),
+            ref description,
+            ..
+        }) if hand_slot.get() == 0 && description == "Victory Or Defeat : +1 Life"
+    ));
+
+    // Captured Copy may carry the reviewed identities as a Bonus, but the catalog has no
+    // direct bonus authority for this family and must reject the synthetic source.
+    let bonus_lookalike = catalog_with_vod_life_bonus();
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(1586, 2),
+                    CardKey::new(1676, 1),
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &bonus_lookalike,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Bonus,
+            catalog_id: Some(1396),
+            ref description,
+            ..
+        }) if hand_slot.get() == 0 && description == "Victory Or Defeat : +1 Life"
+    ));
 }
 
 #[test]
@@ -1996,6 +2192,6 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
     assert_eq!(scanned, 328);
     assert_eq!(
         eligible,
-        BTreeSet::from([830285, 869944, 877636, 877950, 1024673, 1060199, 1081463])
+        BTreeSet::from([830285, 869944, 877636, 877950, 925719, 1024673, 1060199, 1081463,])
     );
 }

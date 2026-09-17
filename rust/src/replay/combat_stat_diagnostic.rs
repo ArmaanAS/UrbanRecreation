@@ -16,8 +16,9 @@ use crate::effect_registry::{
 use crate::engine::combat_stat_compiler::{
     classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
     classify_defeat_recover_pillz, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_pillz,
-    compact_effect, has_defeat_life_shape, has_reanimate_life_shape, has_victory_life_shape,
+    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
+    has_reanimate_life_shape, has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
@@ -639,6 +640,29 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some(effect) = classify_victory_or_defeat_life(definition, source_kind) {
+        let (post_round_effect, compact_effect) = match effect {
+            VictoryOrDefeatLifeEffectV1::GainLife { life } => (
+                CombatStatPostRoundEffectV1::GainLifeOnVictoryOrDefeat { life },
+                CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life },
+            ),
+            VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
+                CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
+            ),
+        };
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: post_round_effect,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: compact_effect,
+            },
+        });
+    }
     if classify_komboka_victory_pillz_and_life(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -730,6 +754,15 @@ fn prepare_combat_stat_source(
     let unadmitted_post_round_recovery =
         definition.structured_input().special_action == SpecialActionV1::RecoverPillz;
     let unadmitted_victory_or_defeat = source.description == "Victory Or Defeat : +1 Pillz";
+    // Victory Or Defeat Life is a closed identity-and-shape family.  Its aliases, malformed
+    // records, capped variants, and compound neighbours must all fail when selected rather
+    // than silently becoming a disabled no-op.
+    let unadmitted_victory_or_defeat_life =
+        matches!(source.id, 1396 | 2944 | 2992 | 5799 | 5802 | 5835 | 1628)
+            || (source.description.contains("Victory Or Defeat")
+                && (source.description.contains("Life")
+                    || definition.structured_input().attribute_affected
+                        == AttributeAffectedV1::Life));
     // A near-miss of the admitted family is a selected hazard: either the literal grammar
     // names Victory Life but its structure is wrong, or the complete reviewed structure
     // is present under malformed text. Other Life families keep the diagnostic's existing
@@ -771,6 +804,7 @@ fn prepare_combat_stat_source(
     } else if selected_hazard {
         CombatStatDisabledReasonV1::UnsupportedSelectedHazard { registry_reasons }
     } else if unadmitted_victory_or_defeat
+        || unadmitted_victory_or_defeat_life
         || unadmitted_victory_life
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
@@ -796,6 +830,7 @@ fn prepare_combat_stat_source(
         || unadmitted_combat_stat
         || unadmitted_post_round_recovery
         || unadmitted_victory_or_defeat
+        || unadmitted_victory_or_defeat_life
         || unadmitted_victory_life
         || unadmitted_defeat_life
         || unadmitted_reanimate_life

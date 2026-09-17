@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 16 for the current scope.
+Replay provenance records compiler/policy semantic revision 17 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 16.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 17.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -450,6 +450,34 @@ Keya's tied `876882/0` win is stopped by Courage Stop Bonus and ends 12/12; Adyt
 payment. Same-text `ability:3356`, Kubra `ability:1716`, malformed `1714`, and all other
 compound or capped variants remain selected hazards.
 
+Semantic revision 17 adds a closed Victory-or-Defeat Life family without widening generic
+Life-effect admission. Exact registry definitions `1396`, `2992`, `5835`, and `5799`
+produce `+1` own Life; `2944` and `5802` produce `+2`; definition `1628` produces
+`-1` opponent Life, Min 1. Description, magnitude, minimum, target, operation, neutral
+condition/link/permanence fields, and registry identity must all match. Captured Copy may
+materialize one of those reviewed definitions as either an Ability or Bonus, so replay
+preparation preserves that source kind for Stop Ability/Stop Bonus liveness. Strict catalog
+construction remains narrower: only the reviewed canonical card/level/catalog-id mappings
+are admitted, with Zerkov's catalog-local `5800`/`5801` levels explicitly resolving to the
+captured `5799` definition. Dynamic catalog Copy and Scott Ld level 2's uncaptured `5834`
+identity remain fail-closed.
+
+The typed END-phase plans run after damage in stable P1/P2, Bonus-before-Ability order. A
+living owner receives its own Life gain after either outcome, but ordinary Victory-or-Defeat
+Life is not Reanimate and cannot revive a KO. Opponent reduction can still run after its
+source owner was KO'd, skips a target already at zero, and clamps a living target at 1.
+Checked own-Life addition is atomic, and make/unmake restores the complete position without
+new latch state or hot-path allocation. Server captures independently cover own-Life wins,
+a clean Kora Mail Ld loss, Stop Opp. Ability suppression, opponent reduction on both
+outcomes, and reduction after the source owner's KO. The unobserved own-Life owner-KO and
+exact Min-1 boundary follow the stable TypeScript reference and are pinned synthetically
+rather than presented as live-server observations.
+
+Capture `925719/3` supplies a complete new sequential gate: Uuber loses round 0, takes
+Prince Jr's three damage, and still reduces the live opponent from 12 to 11; the following
+two rounds also remain exact. This raises the immutable diagnostic gate from 59 to 62
+rounds and makes `925719` the eighth strict complete draw.
+
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
@@ -457,8 +485,8 @@ retained as visible Disabled metadata but reject atomically if selected. The 33 
 ordinary Support combat-stat definitions are admitted only for an otherwise-neutral,
 unconditional basic Attack, Power, or Damage shape. Conditional, nested, life, pillz,
 Power-and-Damage, post-round, and permanent Support effects remain fail-closed; every capped
-increase except exact `ability:1158` remains deferred. Only the five exact audited
-Victory-or-Defeat ability identities are admitted; all other same-text sources remain
+increase except exact `ability:1158` remains deferred. Only the exact audited
+Victory-or-Defeat Pillz and Life identities are admitted; all other same-text sources remain
 rejected when selected, so this family does not widen the generic resource-effect boundary.
 Provenance records the model,
 explicit projection policy,
@@ -470,11 +498,11 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 16 records this semantic boundary together with the exact
+context. Compiler/policy revision 17 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
-exact-structured positive Victory Life plan.
+exact-structured positive Victory Life and Victory-or-Defeat Life plans.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -512,7 +540,7 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 16, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 17, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
@@ -523,11 +551,11 @@ Every one of the other 2,538 slots matches captured bonus presence and descripti
 On 2026-09-17, the deterministic strict-coverage regression scanned all 328 captured
 complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captured
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
-`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly seven capture ids
-are eligible: `830285`, `869944`, `877636`, `877950`, `1024673`, `1060199`, and `1081463`.
-Revision 16 leaves this strict coverage unchanged (no regression). Catalog eligibility is a strict
-whole-draw admission measurement, not proof of full engine or TypeScript solver parity;
-the 59-round immutable diagnostic gate supplies the separately checked sequential replay
+`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly eight capture ids
+are eligible: `830285`, `869944`, `877636`, `877950`, `925719`, `1024673`, `1060199`, and
+`1081463`. Revision 17 adds only `925719` to the previous seven. Catalog eligibility is a
+strict whole-draw admission measurement, not proof of full engine or TypeScript solver parity;
+the 62-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
 
 ### 4. Port current solver semantics
@@ -565,13 +593,13 @@ replaces that provisional ranking with the ordinary precise second-mover search.
 not add a Rust live-capture client or a Rust worker pool; its JSONL process boundary is used
 by the TypeScript-hosted integration below.
 
-The server-backed advisor path loads captures `877636` and `1024673` with `--replay`.
+The server-backed advisor path loads captures `877636`, `925719`, and `1024673` with `--replay`.
 It derives both exact hands, resources, night state, recording side, and each round's mover
 from the normalized capture; rejects any capture/catalog source-identity disagreement; and
 requires complete server card evidence. Before every recorded move it renders the same TUI
 and grades that move against the current ranking. It then commits the actual pair of moves
-and checks power, damage, attack, winner, life, and pillz before advancing. This covers all
-four rounds and both FIRST and SECOND information sets, while retaining the labelled round 1
+and checks power, damage, attack, winner, life, and pillz before advancing. Across these
+gates it covers complete matches up to all four rounds and both FIRST and SECOND information
 opening heuristic and exact rounds 2–4 policy. It is captured replay, not yet the live
 capture stream or full TypeScript opening policy.
 
@@ -614,7 +642,7 @@ complete engine parity. In-process FFI remains a later consideration only after 
 protocol and engine behavior have stayed stable.
 
 The real-process gate runs admissible requests from every rule-10 strict draw: `877636`,
-`877950`, `1024673`, and `1060199`. It pins complete TypeScript/Rust semantic matches for
+`877950`, `925719`, `1024673`, and `1060199`. It pins complete TypeScript/Rust semantic matches for
 opening and exact FIRST, opening SECOND, and exact blind-second decisions, including at
 least one match on every one of those draws. Each TypeScript
 comparison finishes before another `Game` is constructed because the reference still owns a

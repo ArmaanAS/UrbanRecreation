@@ -8,7 +8,8 @@ use urban_recreation_rust::engine::{
     CombatStatAttributeV1, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1,
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
     CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPlanErrorV1,
-    CombatStatPredicateV1, CombatStatSourcePlanV1, InvalidCombatStatPlanReasonV1, PlayerId,
+    CombatStatPredicateV1, CombatStatSourcePlanV1, InvalidCombatStatPlanReasonV1, MatchStatus,
+    PlayerId,
 };
 
 fn card(id: u32, power: u16, damage: u16) -> urban_recreation_rust::engine::BaseRulesCardSpec {
@@ -139,6 +140,249 @@ fn position_hash(position: &BaseRulesPosition) -> u64 {
     let mut hasher = DefaultHasher::new();
     position.hash(&mut hasher);
     hasher.finish()
+}
+
+fn vod_spec(
+    key: CardKey,
+    source_id: u32,
+    effect: CombatStatEffectV1,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].hand[0].key = key;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(source_id, CombatStatPredicateV1::Always, effect);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+#[test]
+fn vod_life_public_plans_are_exact_registry_effect_and_predicate_locks() {
+    let own_one = CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life: 1 };
+    let own_two = CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life: 2 };
+    let uuber = CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+        life: 1,
+        minimum: 1,
+    };
+    for (key, source_id, effect) in [
+        (CardKey::new(1586, 2), 1396, own_one),
+        (CardKey::new(1586, 3), 1396, own_one),
+        (CardKey::new(1586, 4), 1396, own_one),
+        (CardKey::new(1676, 2), 2944, own_two),
+        (CardKey::new(820, 3), 5835, own_one),
+        (CardKey::new(820, 4), 2992, own_one),
+        (CardKey::new(2693, 2), 5799, own_one),
+        (CardKey::new(2693, 4), 5799, own_one),
+        (CardKey::new(2693, 5), 5802, own_two),
+        (CardKey::new(1788, 2), 1628, uuber),
+    ] {
+        assert!(CombatStatDiagnosticV1::new(vod_spec(key, source_id, effect)).is_ok());
+    }
+
+    // The compact engine is also fed post-Copy capture results. It deliberately admits
+    // either source kind and a non-canonical owner key; catalog construction supplies the
+    // stricter printed-card boundary.
+    let mut copied_bonus = vod_spec(CardKey::new(9_999, 1), 1396, own_one);
+    copied_bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    copied_bonus.cards[PlayerId::P1][0].bonus =
+        execute(1396, CombatStatPredicateV1::Always, own_one);
+    copied_bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(CombatStatDiagnosticV1::new(copied_bonus).is_ok());
+
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(vod_spec(CardKey::new(9_999, 1), 999_1396, own_one)),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifeIdentity,
+            ..
+        })
+    ));
+
+    for effect in [
+        own_two,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+            life: 1,
+            minimum: 0,
+        },
+    ] {
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(vod_spec(CardKey::new(1586, 2), 1396, effect)),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifeEffect,
+                ..
+            })
+        ));
+    }
+
+    let mut conditional = vod_spec(CardKey::new(1586, 2), 1396, own_one);
+    conditional.cards[PlayerId::P1][0].ability =
+        execute(1396, CombatStatPredicateV1::OwnerWonPreviousRound, own_one);
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(conditional),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifePredicate,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn vod_own_life_handles_both_outcomes_koa_stop_and_undo() {
+    let effect = CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life: 1 };
+    let mut losing = vod_spec(CardKey::new(1586, 2), 1396, effect);
+    losing.base_rules.players[PlayerId::P1].initial_life = 7;
+    losing.base_rules.players[PlayerId::P2].hand[0].power = 7;
+    let mut losing = CombatStatDiagnosticV1::new(losing).unwrap();
+    let before = losing.position().clone();
+    let before_hash = position_hash(&before);
+    let (report, undo) = losing
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 5); // 7 - 3 + 1
+    losing.unmake(undo);
+    assert_eq!(losing.position(), &before);
+    assert_eq!(position_hash(losing.position()), before_hash);
+
+    let mut winning = vod_spec(CardKey::new(1586, 2), 1396, effect);
+    winning.base_rules.players[PlayerId::P1].initial_life = 7;
+    winning.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    let (report, _) = CombatStatDiagnosticV1::new(winning)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 8);
+
+    let mut ko = vod_spec(CardKey::new(1586, 2), 1396, effect);
+    ko.base_rules.players[PlayerId::P1].initial_life = 3;
+    ko.base_rules.players[PlayerId::P2].hand[0].power = 7;
+    let (report, _) = CombatStatDiagnosticV1::new(ko)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 0);
+    assert_eq!(report.status, MatchStatus::Won(PlayerId::P2));
+
+    let mut stopped = vod_spec(CardKey::new(1586, 2), 1396, effect);
+    stopped.base_rules.players[PlayerId::P1].initial_life = 7;
+    stopped.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    stopped.cards[PlayerId::P2][0].ability = execute(
+        1,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let (report, _) = CombatStatDiagnosticV1::new(stopped)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 7);
+
+    let mut sob = vod_spec(CardKey::new(1586, 2), 1396, effect);
+    sob.base_rules.players[PlayerId::P1].initial_life = 7;
+    sob.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    sob.cards[PlayerId::P2][0].ability = execute(
+        1,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    let (report, _) = CombatStatDiagnosticV1::new(sob)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 8);
+}
+
+#[test]
+fn vod_opponent_life_clamps_minimum_and_owner_ko_still_applies() {
+    let effect = CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+        life: 1,
+        minimum: 1,
+    };
+    let mut minimum = vod_spec(CardKey::new(1788, 2), 1628, effect);
+    minimum.base_rules.players[PlayerId::P1].initial_life = 7;
+    minimum.base_rules.players[PlayerId::P2].initial_life = 2;
+    minimum.base_rules.players[PlayerId::P2].hand[0].power = 7;
+    let (report, _) = CombatStatDiagnosticV1::new(minimum)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 4);
+    assert_eq!(report.players[PlayerId::P2].life, 1);
+
+    let mut owner_ko = vod_spec(CardKey::new(1788, 2), 1628, effect);
+    owner_ko.base_rules.players[PlayerId::P1].initial_life = 3;
+    owner_ko.base_rules.players[PlayerId::P2].hand[0].power = 7;
+    let (report, _) = CombatStatDiagnosticV1::new(owner_ko)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 0);
+    assert_eq!(report.players[PlayerId::P2].life, 19);
+
+    let mut target_ko = vod_spec(CardKey::new(1788, 2), 1628, effect);
+    target_ko.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    target_ko.base_rules.players[PlayerId::P2].initial_life = 3;
+    let (report, _) = CombatStatDiagnosticV1::new(target_ko)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 0);
+
+    // A copied VOD result can occupy the Bonus slot. SOB suppresses it, while SOA does
+    // not; this is the same liveness split used by ordinary post-round sources.
+    let mut copied_bonus = vod_spec(CardKey::new(9_999, 1), 1628, effect);
+    copied_bonus.base_rules.players[PlayerId::P1].hand[0].damage = 0;
+    copied_bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    copied_bonus.cards[PlayerId::P1][0].bonus =
+        execute(1628, CombatStatPredicateV1::Always, effect);
+    copied_bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    copied_bonus.cards[PlayerId::P2][0].ability = execute(
+        1,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    let (report, _) = CombatStatDiagnosticV1::new(copied_bonus)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 20);
+
+    let mut copied_bonus = vod_spec(CardKey::new(9_999, 1), 1628, effect);
+    copied_bonus.base_rules.players[PlayerId::P1].hand[0].damage = 0;
+    copied_bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    copied_bonus.cards[PlayerId::P1][0].bonus =
+        execute(1628, CombatStatPredicateV1::Always, effect);
+    copied_bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    copied_bonus.cards[PlayerId::P2][0].ability = execute(
+        1,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let (report, _) = CombatStatDiagnosticV1::new(copied_bonus)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 19);
+}
+
+#[test]
+fn vod_own_life_overflow_is_atomic() {
+    let effect = CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life: 2 };
+    let mut overflow = vod_spec(CardKey::new(1676, 2), 2944, effect);
+    overflow.base_rules.players[PlayerId::P1].initial_life = u16::MAX;
+    overflow.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    let mut overflow = CombatStatDiagnosticV1::new(overflow).unwrap();
+    let before = overflow.position().clone();
+    assert!(matches!(
+        overflow.make(input(PlayerId::P1, (0, 0, false), (0, 0, false))),
+        Err(CombatStatDiagnosticErrorV1::BaseRules(
+            BaseRulesError::LifeIncreaseOverflow {
+                player: PlayerId::P1
+            }
+        ))
+    ));
+    assert_eq!(overflow.position(), &before);
 }
 
 #[test]

@@ -82,6 +82,8 @@ pub enum CombatStatPostRoundEffectV1 {
     GainLifeOnVictory { life: u16 },
     GainLifeOnDefeat { life: u16 },
     ReanimateLife { life: u16 },
+    GainLifeOnVictoryOrDefeat { life: u16 },
+    ReduceOpponentLifeOnVictoryOrDefeat { life: u16, minimum: u16 },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -127,6 +129,15 @@ pub enum CombatStatEffectV1 {
     /// zero before terminal status is calculated.
     ReanimateLife {
         life: u16,
+    },
+    /// Gain the owner's life after either round outcome, provided they survived damage.
+    GainLifeOnVictoryOrDefeat {
+        life: u16,
+    },
+    /// Reduce the opposing player's life after either round outcome, bounded below by `minimum`.
+    ReduceOpponentLifeOnVictoryOrDefeat {
+        life: u16,
+        minimum: u16,
     },
 }
 
@@ -221,6 +232,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     ReanimateLifeSource,
     ReanimateLifeMagnitude,
     ReanimateLifePredicate,
+    VictoryOrDefeatLifeIdentity,
+    VictoryOrDefeatLifeEffect,
+    VictoryOrDefeatLifePredicate,
     ReprisalStopOpponentAbilityCard,
     ReprisalStopOpponentAbilityEffect,
     ReprisalStopOpponentAbilityIdentity,
@@ -570,6 +584,33 @@ fn effective_clan_character_count(
     count as u16
 }
 
+/// The VOD-Life slice is deliberately a closed set of reviewed registry results. These
+/// compact plans also represent server-observed post-Copy results, so source kind and card
+/// key are intentionally *not* part of this hot-plan boundary; the catalog constructor is
+/// responsible for keeping canonical printed cards narrower.
+fn victory_or_defeat_life_id_is_reserved(source_id: u32) -> bool {
+    matches!(source_id, 1396 | 1628 | 2944 | 2992 | 5799 | 5802 | 5835)
+}
+
+fn victory_or_defeat_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
+    matches!(
+        (source_id, effect),
+        (
+            1396 | 2992 | 5799 | 5835,
+            CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life: 1 }
+        ) | (
+            2944 | 5802,
+            CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life: 2 }
+        ) | (
+            1628,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+                life: 1,
+                minimum: 1
+            }
+        )
+    )
+}
+
 fn validate_combat_stat_source_plan(
     player: PlayerId,
     hand_slot: HandSlot,
@@ -586,6 +627,44 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
+    // Reserve every reviewed VOD-Life identity independently of its claimed source. A
+    // caller cannot turn Scott's +1 into Uuber's reduction or smuggle an otherwise
+    // plausible VOD-Life value through a generic plan. Captured Copy may legitimately
+    // materialise either an Ability or Bonus result, so source kind remains open here.
+    if victory_or_defeat_life_id_is_reserved(source_id) {
+        if !victory_or_defeat_life_effect_matches(source_id, effect) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifeEffect,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if matches!(
+        effect,
+        CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
+            | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
+    ) {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifeIdentity,
+        ));
+    }
     // These ids are reserved independently of the caller-provided source kind. They cannot
     // be repurposed as generic Bonus or numeric provenance tags to bypass Reprisal's strict
     // owner, effect, and defender-position contract.
@@ -1216,7 +1295,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven
         | CombatStatEffectV1::GainLifeOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
-        | CombatStatEffectV1::ReanimateLife { .. } => return None,
+        | CombatStatEffectV1::ReanimateLife { .. }
+        | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
+        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. } => return None,
     })
 }
 
@@ -1241,6 +1322,12 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffec
             Some(PostRoundEffect::GainLifeOnDefeat(life))
         }
         CombatStatEffectV1::ReanimateLife { life } => Some(PostRoundEffect::ReanimateLife(life)),
+        CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life } => {
+            Some(PostRoundEffect::GainLifeOnVictoryOrDefeat { life })
+        }
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum } => {
+            Some(PostRoundEffect::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum })
+        }
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentAbility
         | CombatStatEffectV1::StopOpponentBonus

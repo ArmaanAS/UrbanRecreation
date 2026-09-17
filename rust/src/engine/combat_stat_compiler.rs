@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 16;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 17;
 
 /// Recognize Komboka's exact clan-bonus composite Victory effect.  This remains outside
 /// the ordinary numeric compiler because its two checked post-round mutations must stay
@@ -194,6 +194,74 @@ pub(crate) fn victory_or_defeat_pillz_identity_matches(
     )
 }
 
+/// The deliberately small Victory Or Defeat Life slice which has been audited against
+/// canonical card provenance.  Its effects happen after round damage, so they must not
+/// be admitted through the ordinary numeric compiler.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum VictoryOrDefeatLifeEffectV1 {
+    GainLife { life: u16 },
+    ReduceOpponentLife { life: u16, minimum: u16 },
+}
+
+/// Recognize only the reviewed ability identities for Victory Or Defeat Life.  Printed
+/// descriptions recur in unrelated catalog rows, so source kind and capture identity are
+/// both part of the grammar.
+pub(crate) fn classify_victory_or_defeat_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<VictoryOrDefeatLifeEffectV1> {
+    let effect = match definition.id() {
+        1396 | 2992 | 5835 | 5799 => VictoryOrDefeatLifeEffectV1::GainLife { life: 1 },
+        5802 | 2944 => VictoryOrDefeatLifeEffectV1::GainLife { life: 2 },
+        1628 => VictoryOrDefeatLifeEffectV1::ReduceOpponentLife {
+            life: 1,
+            minimum: 1,
+        },
+        _ => return None,
+    };
+    if !victory_or_defeat_life_identity_matches(source_kind, definition.id()) {
+        return None;
+    }
+    let input = definition.structured_input();
+    match effect {
+        VictoryOrDefeatLifeEffectV1::GainLife { life } => (definition.description()
+            == format!("Victory Or Defeat : +{life} Life")
+            && victory_or_defeat_life_shape_matches(
+                input,
+                life,
+                1,
+                AffectedSideV1::Player,
+                AttributeActionV1::Increase,
+            ))
+        .then_some(effect),
+        VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum } => (definition
+            .description()
+            == format!("Victory Or Defeat: - {life} Opp. Life Min {minimum}")
+            && victory_or_defeat_life_shape_matches(
+                input,
+                life,
+                minimum,
+                AffectedSideV1::Opponent,
+                AttributeActionV1::Decrease,
+            ))
+        .then_some(effect),
+    }
+}
+
+/// Shared identity gate for the cold compiler and direct compact-plan validation.
+pub(crate) fn victory_or_defeat_life_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    matches!(
+        source_kind,
+        CombatStatEffectSourceV1::Ability | CombatStatEffectSourceV1::Bonus
+    ) && matches!(
+        definition_id,
+        1396 | 2992 | 5835 | 5799 | 5802 | 2944 | 1628
+    )
+}
+
 /// Strictly recognize Argos' printed Defeat Pillz effect. Its cap is applied after a
 /// live clan bonus in the shared END phase, so it requires a distinct typed path.
 pub(crate) fn classify_argos_defeat_capped_pillz(
@@ -240,6 +308,9 @@ pub(crate) fn classify_combat_stat_effect(
     // Keep it out of generic numeric classification in case the registry compiler later
     // broadens its Pillz support.
     if classify_victory_or_defeat_pillz(definition, source_kind) {
+        return None;
+    }
+    if classify_victory_or_defeat_life(definition, source_kind).is_some() {
         return None;
     }
     if classify_reprisal_stop_opponent_ability(definition, source_kind) {
@@ -692,6 +763,45 @@ fn victory_or_defeat_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
         && !input.is_immediate_permanent
 }
 
+fn victory_or_defeat_life_shape_matches(
+    input: &StructuredEffectV1,
+    life: u16,
+    minimum: u16,
+    side_affected: AffectedSideV1,
+    attribute_action: AttributeActionV1,
+) -> bool {
+    input.value == life
+        && input.value_min == minimum
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == side_affected
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == attribute_action
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
 fn argos_defeat_capped_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
     input.value == 2
         && input.value_min == 0
@@ -1118,6 +1228,121 @@ mod tests {
                 .unwrap(),
             CombatStatEffectSourceV1::Bonus,
         ));
+    }
+
+    #[test]
+    fn victory_or_defeat_life_is_identity_description_and_shape_locked() {
+        let registry = registry();
+        for (id, description, expected) in [
+            (
+                1396,
+                "Victory Or Defeat : +1 Life",
+                VictoryOrDefeatLifeEffectV1::GainLife { life: 1 },
+            ),
+            (
+                2992,
+                "Victory Or Defeat : +1 Life",
+                VictoryOrDefeatLifeEffectV1::GainLife { life: 1 },
+            ),
+            (
+                5835,
+                "Victory Or Defeat : +1 Life",
+                VictoryOrDefeatLifeEffectV1::GainLife { life: 1 },
+            ),
+            (
+                5799,
+                "Victory Or Defeat : +1 Life",
+                VictoryOrDefeatLifeEffectV1::GainLife { life: 1 },
+            ),
+            (
+                5802,
+                "Victory Or Defeat : +2 Life",
+                VictoryOrDefeatLifeEffectV1::GainLife { life: 2 },
+            ),
+            (
+                2944,
+                "Victory Or Defeat : +2 Life",
+                VictoryOrDefeatLifeEffectV1::GainLife { life: 2 },
+            ),
+            (
+                1628,
+                "Victory Or Defeat: - 1 Opp. Life Min 1",
+                VictoryOrDefeatLifeEffectV1::ReduceOpponentLife {
+                    life: 1,
+                    minimum: 1,
+                },
+            ),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            for source_kind in [
+                CombatStatEffectSourceV1::Ability,
+                CombatStatEffectSourceV1::Bonus,
+            ] {
+                assert_eq!(
+                    classify_victory_or_defeat_life(definition, source_kind),
+                    Some(expected),
+                    "id={id} source={source_kind:?}",
+                );
+            }
+        }
+
+        let same_text_non_authority = registry
+            .lookup_capture(5835, "Victory Or Defeat : +1 Life")
+            .unwrap();
+        assert!(!victory_or_defeat_life_identity_matches(
+            CombatStatEffectSourceV1::Ability,
+            5834,
+        ));
+        assert_eq!(
+            classify_victory_or_defeat_life(
+                same_text_non_authority,
+                CombatStatEffectSourceV1::Ability,
+            ),
+            Some(VictoryOrDefeatLifeEffectV1::GainLife { life: 1 }),
+        );
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("valueMin", serde_json::json!(0)),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("sideAffected", serde_json::json!("opponent")),
+            ("attributeAction", serde_json::json!("decrease")),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1396"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_victory_or_defeat_life(
+                    malformed
+                        .lookup_capture(1396, "Victory Or Defeat : +1 Life")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "mutated field {field}",
+            );
+        }
+
+        let mut malformed = source;
+        malformed["1628"]["description"] =
+            serde_json::json!("Victory Or Defeat : - 1 Opp. Life Min 1");
+        let malformed =
+            EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                .unwrap();
+        assert_eq!(
+            classify_victory_or_defeat_life(
+                malformed
+                    .lookup_capture(1628, "Victory Or Defeat : - 1 Opp. Life Min 1")
+                    .unwrap(),
+                CombatStatEffectSourceV1::Bonus,
+            ),
+            None,
+        );
     }
 
     #[test]
