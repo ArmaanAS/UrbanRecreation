@@ -61,6 +61,15 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1078906, 3),
     (1089346, 4),
     (1090607, 4),
+    // Revision 20 unconditional Victory opponent-Life. Mou wins with the complete -5 in
+    // 1091473/0 and with the Min-5 clamp in 926367/1; Berzerk wins in 877093/0 and
+    // 1080662/1, while 1025102 keeps three consecutive Berzerk defeats that must pay
+    // nothing at all.
+    (926367, 3),
+    (1091473, 2),
+    (877093, 1),
+    (1080662, 2),
+    (1025102, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -317,7 +326,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_eighty_seven_unique_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_ninety_eight_unique_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -353,24 +362,25 @@ fn fixed_server_backed_gate_is_exactly_eighty_seven_unique_sequential_prefix_rou
             }
         }
     }
-    assert_eq!(rounds, 87);
+    assert_eq!(rounds, 98);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
             6, 36, 37, 38, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 257, 266, 274,
-            292, 310, 333, 367, 368, 377, 391, 401, 412, 520, 536, 577, 578, 585, 612, 713, 741,
-            801, 844, 871, 883, 888, 916, 938, 980, 1034, 1047, 1158, 1163, 1241, 1310, 1335, 1338,
-            1342, 1359, 1372, 1375, 1415, 1418, 1420, 1518, 1536, 1578, 1628, 1634, 1688, 1694,
-            1714, 1770, 1806, 1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881, 2944, 2965,
-            3487, 3677, 3864, 3865, 3897, 4041, 4216, 4297, 4299, 4389, 4399, 4458, 4464, 4711,
-            4718, 4757, 4966, 5026, 5085, 5273, 5404, 5520, 5763, 5849, 5852,
+            292, 310, 333, 367, 368, 377, 391, 401, 412, 520, 536, 577, 578, 585, 612, 680, 713,
+            717, 727, 741, 801, 844, 871, 883, 888, 916, 938, 980, 1034, 1047, 1158, 1163, 1241,
+            1310, 1335, 1338, 1341, 1342, 1359, 1372, 1375, 1399, 1415, 1418, 1420, 1518, 1536,
+            1578, 1628, 1634, 1688, 1694, 1699, 1714, 1770, 1805, 1806, 1844, 1845, 1848, 1850,
+            2073, 2299, 2329, 2412, 2535, 2657, 2881, 2944, 2965, 3284, 3487, 3677, 3864, 3865,
+            3897, 4041, 4216, 4297, 4299, 4389, 4399, 4417, 4458, 4464, 4711, 4718, 4757, 4966,
+            5026, 5085, 5273, 5404, 5520, 5763, 5849, 5852, 5859,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([809, 854, 1399, 1852, 2317, 4303, 4459, 4657, 4695, 4747, 5283,])
+        BTreeSet::from([594, 682, 809, 854, 935, 1852, 2317, 4303, 4459, 4657, 4695, 4747, 5283,])
     );
-    assert_eq!(absent, 4);
+    assert_eq!(absent, 5);
 }
 
 #[test]
@@ -565,7 +575,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 19);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 20);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -621,7 +631,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        19
+        20
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2

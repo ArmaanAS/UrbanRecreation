@@ -2173,3 +2173,178 @@ fn make_unmake_isolates_siblings_and_simultaneous_games() {
     first.unmake(sibling);
     assert_eq!(first.position(), &initial);
 }
+
+fn victory_opponent_life_spec(
+    power: u16,
+    damage: u16,
+    opponent_life: u16,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(power, damage);
+    base.players[PlayerId::P2].initial_life = opponent_life;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1399,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 5,
+            minimum: 5,
+        },
+    );
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+#[test]
+fn victory_opponent_life_plan_is_identity_magnitude_and_predicate_locked() {
+    assert!(CombatStatDiagnosticV1::new(victory_opponent_life_spec(7, 3, 20)).is_ok());
+
+    // The Berzerk Bonus identity carries its own magnitude and may not borrow Mou's.
+    let mut berzerk = victory_opponent_life_spec(7, 3, 20);
+    berzerk.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    berzerk.cards[PlayerId::P1][0].bonus = execute(
+        680,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 2,
+            minimum: 2,
+        },
+    );
+    berzerk.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(CombatStatDiagnosticV1::new(berzerk).is_ok());
+
+    let mut swapped_magnitude = victory_opponent_life_spec(7, 3, 20);
+    swapped_magnitude.cards[PlayerId::P1][0].ability = execute(
+        1399,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 2,
+            minimum: 2,
+        },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(swapped_magnitude),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifeMagnitude,
+            ..
+        })
+    ));
+
+    // 1399 is only ever a printed Ability and 680 only ever the clan Bonus.
+    let mut wrong_slot = victory_opponent_life_spec(7, 3, 20);
+    wrong_slot.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    wrong_slot.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    wrong_slot.cards[PlayerId::P1][0].bonus = execute(
+        1399,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 5,
+            minimum: 5,
+        },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(wrong_slot),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity,
+            ..
+        })
+    ));
+
+    // No unreviewed id may carry the effect, and no reviewed id may carry a predicate.
+    let mut foreign_id = victory_opponent_life_spec(7, 3, 20);
+    foreign_id.cards[PlayerId::P1][0].ability = execute(
+        4708,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 4,
+            minimum: 0,
+        },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(foreign_id),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity,
+            ..
+        })
+    ));
+
+    let mut conditional = victory_opponent_life_spec(7, 3, 20);
+    conditional.cards[PlayerId::P1][0].ability = execute(
+        1399,
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 5,
+            minimum: 5,
+        },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(conditional),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifePredicate,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn victory_opponent_life_applies_after_damage_clamps_and_unmakes_exactly() {
+    // An unclamped win takes the printed damage and then the complete five.
+    let mut game = CombatStatDiagnosticV1::new(victory_opponent_life_spec(7, 2, 20)).unwrap();
+    let before = game.position().clone();
+    let before_hash = position_hash(&before);
+    let (report, undo) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 13);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+    assert_eq!(position_hash(game.position()), before_hash);
+
+    // Capture 1091473 round 0: 12 takes two damage and then the complete five, landing
+    // exactly on the bound.
+    let mut exact = CombatStatDiagnosticV1::new(victory_opponent_life_spec(7, 2, 12)).unwrap();
+    let (report, _) = exact
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 5);
+
+    // Capture 926367 round 1: post-damage life is above the bound but the complete five
+    // would cross it, so the result clamps at Min 5 rather than going lower.
+    let mut clamped = CombatStatDiagnosticV1::new(victory_opponent_life_spec(7, 2, 8)).unwrap();
+    let (report, _) = clamped
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 5);
+
+    // Capture 924257 round 3: a target already at or below the bound is left alone.
+    let mut at_bound = CombatStatDiagnosticV1::new(victory_opponent_life_spec(7, 2, 5)).unwrap();
+    let (report, _) = at_bound
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 3);
+
+    // 1025102 keeps three consecutive defeats: a loss pays nothing at all.
+    let mut losing_spec = victory_opponent_life_spec(4, 2, 20);
+    losing_spec.base_rules.players[PlayerId::P2].hand[0].power = 7;
+    let mut losing = CombatStatDiagnosticV1::new(losing_spec).unwrap();
+    let (report, _) = losing
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 20);
+
+    // Ordinary source liveness still applies.
+    let mut stopped_spec = victory_opponent_life_spec(7, 2, 12);
+    stopped_spec.cards[PlayerId::P2][0].ability = execute(
+        41,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut stopped = CombatStatDiagnosticV1::new(stopped_spec).unwrap();
+    let (report, _) = stopped
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 10);
+}

@@ -2537,8 +2537,103 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
     assert_eq!(
         eligible,
         BTreeSet::from([
-            830285, 869944, 877636, 877812, 877950, 925719, 1024673, 1060199, 1061897, 1069813,
-            1081463, 1089346,
+            830285, 869944, 877636, 877812, 877950, 925674, 925719, 970972, 1024673, 1060199,
+            1061897, 1069813, 1081463, 1089346,
         ])
+    );
+}
+
+/// Berzerk is a whole-clan bonus, so a strict hand needs four Berzerk characters to carry
+/// it. These are canonical clan-46 cards with no ability of their own.
+fn berzerk_hand() -> [CardKey; 4] {
+    [
+        CardKey::new(860, 1),
+        CardKey::new(861, 1),
+        CardKey::new(862, 1),
+        CardKey::new(869, 1),
+    ]
+}
+
+#[test]
+fn strict_catalog_match_admits_only_the_two_reviewed_victory_opponent_life_identities() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+
+    // Mou level three's printed Ability is the only catalog authority for `1399`.
+    let mou_hand = [
+        CardKey::new(1589, 3),
+        CardKey::new(123, 1),
+        CardKey::new(124, 1),
+        CardKey::new(138, 1),
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(mou_hand, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+        &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Mou L3 was not prepared as unconditional Victory opponent-Life")
+    };
+    assert_eq!(identity.catalog_id, Some(1399));
+    assert_eq!(identity.registry_definition_id, 1399);
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
+            life: 5,
+            minimum: 5
+        }
+    );
+
+    // Rakhan, Milovan and Fraser print exactly the same text under their own catalog ids,
+    // which have no registry definition at all. Description equality never transfers.
+    for key in [
+        CardKey::new(1151, 3), // Rakhan, catalog ability 978, "-5 Opp. Life Min 5".
+        CardKey::new(679, 3),  // Milovan, catalog ability 498, "-2 Opp. Life Min 2".
+        CardKey::new(1477, 4), // Fraser, catalog ability 1289, "-2 Opp. Life Min 2".
+    ] {
+        let hand = [
+            key,
+            CardKey::new(123, 1),
+            CardKey::new(124, 1),
+            CardKey::new(138, 1),
+        ];
+        assert!(
+            CatalogCombatStatMatchV1::new(
+                input(hand, opponent, false),
+                &catalog,
+                &registry,
+                PROJECTION,
+            )
+            .is_err(),
+            "same-text card {key:?} must stay fail-closed",
+        );
+    }
+
+    // The active Berzerk clan bonus bridges catalog bonus id 44 to registry `680`.
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(berzerk_hand(), opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+        &prepared.preparation()[PlayerId::P1][0].bonus
+    else {
+        panic!("the active Berzerk bonus was not prepared")
+    };
+    assert_eq!(identity.catalog_id, Some(44));
+    assert_eq!(identity.registry_definition_id, 680);
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
+            life: 2,
+            minimum: 2
+        }
     );
 }

@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 19;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 20;
 
 /// Recognize Anita's one reviewed Courage conversion only. It must stay outside the
 /// generic numeric compiler because its magnitude is final resolved round damage.
@@ -314,6 +314,78 @@ pub(crate) fn victory_or_defeat_life_identity_matches(
     )
 }
 
+/// Recognize the two reviewed unconditional Victory opponent-Life reductions. They are
+/// post-round resource work rather than combat-stat modifiers, so they stay out of the
+/// generic numeric compiler. Only the exact reviewed identities are admitted: Mou level
+/// three's printed `ability:1399` and the active Berzerk `bonus:680`. Conditional
+/// siblings (Symmetry `4708`, Courage `4533`, Confidence `3016`, Growth `1730`), every
+/// other magnitude/minimum pair, and the same-text catalog ids that have no registry
+/// definition at all (Rakhan `978`, Milovan `498`, Fraser `1289`) remain fail-closed.
+pub(crate) fn classify_victory_opponent_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let (life, minimum) = match definition.id() {
+        1399 => (5, 5),
+        680 => (2, 2),
+        _ => return None,
+    };
+    (victory_opponent_life_identity_matches(source_kind, definition.id())
+        && definition.description() == format!("-{life} Opp. Life Min {minimum}")
+        && victory_opponent_life_shape_matches(definition.structured_input(), life, minimum))
+    .then_some((life, minimum))
+}
+
+/// Shared identity gate for cold compilation and direct compact-plan validation. The
+/// source kind is authority: `1399` is only ever a printed Ability and `680` only ever
+/// the clan Bonus, so neither can be borrowed through the other slot.
+pub(crate) fn victory_opponent_life_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    matches!(
+        (source_kind, definition_id),
+        (CombatStatEffectSourceV1::Ability, 1399) | (CombatStatEffectSourceV1::Bonus, 680)
+    )
+}
+
+fn victory_opponent_life_shape_matches(
+    input: &StructuredEffectV1,
+    life: u16,
+    minimum: u16,
+) -> bool {
+    input.value == life
+        && input.value_min == minimum
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Opponent
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Decrease
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
 /// Recognize the two reviewed Equalizer opponent-Life effects.  This is a Victory-only
 /// post-round reduction whose magnitude is bound from the revealed opposing card's stars
 /// after source liveness is known, rather than a normal combat-stat modifier.
@@ -364,6 +436,11 @@ pub(crate) fn classify_combat_stat_effect(
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
     if classify_anita_courage_damage_to_life(definition, source_kind) {
+        return None;
+    }
+    // Unconditional Victory opponent-Life is post-round resource work with its own
+    // execution channel; generic numeric admission must never reinterpret it.
+    if classify_victory_opponent_life(definition, source_kind).is_some() {
         return None;
     }
     // Recovery has its own post-round execution channel. Keep it out of this combat-stat
@@ -1245,6 +1322,72 @@ mod tests {
                         .unwrap(),
                     CombatStatEffectSourceV1::Ability,
                 ),
+                "mutated field {field}",
+            );
+        }
+    }
+
+    #[test]
+    fn victory_opponent_life_is_identity_source_kind_and_shape_locked() {
+        let registry = registry();
+        let mou = registry.lookup_capture(1399, "-5 Opp. Life Min 5").unwrap();
+        let berzerk = registry.lookup_capture(680, "-2 Opp. Life Min 2").unwrap();
+        assert_eq!(
+            classify_victory_opponent_life(mou, CombatStatEffectSourceV1::Ability),
+            Some((5, 5))
+        );
+        assert_eq!(
+            classify_victory_opponent_life(berzerk, CombatStatEffectSourceV1::Bonus),
+            Some((2, 2))
+        );
+        // The source kind is authority in both directions.
+        assert_eq!(
+            classify_victory_opponent_life(mou, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        assert_eq!(
+            classify_victory_opponent_life(berzerk, CombatStatEffectSourceV1::Ability),
+            None
+        );
+        // The conditional siblings share the structure but never this admission.
+        for (id, description) in [
+            (4708, "Symmetry: - 4 Opp. Life Min 0"),
+            (4533, "Courage: - 3 Opp. Life Min 0"),
+            (3016, "Confidence: -3 Opp. Life, Min 0"),
+            (1730, "Growth: - 1 Opp. Life Min 4"),
+        ] {
+            let sibling = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_victory_opponent_life(sibling, CombatStatEffectSourceV1::Ability),
+                None,
+                "sibling {id}",
+            );
+        }
+        // A mutated record loses its exact identity even under the right id and text.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(4)),
+            ("valueMin", serde_json::json!(0)),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("indexRequirement", serde_json::json!("symmetry")),
+            ("sideAffected", serde_json::json!("player")),
+            ("isOverdrive", serde_json::json!(true)),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1399"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_victory_opponent_life(
+                    malformed
+                        .lookup_capture(1399, "-5 Opp. Life Min 5")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
                 "mutated field {field}",
             );
         }

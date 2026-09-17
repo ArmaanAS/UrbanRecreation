@@ -82,13 +82,14 @@ round-one replies captured as of 2026-09-13; rounds 2–4 use an exact conservat
 continuation policy that never conditions a reply on hidden pillz or Fury. `--replay` loads a captured battle through the
 strict catalog boundary, renders and grades every recorded decision, then verifies each
 committed round's power, damage, attack, winner, life, and pillz against the server record.
-Battles `877636`, `877812`, `925719`, `1024673`, `1060199`, `1061897`, `1069813`,
-`1081463`, and `1089346` are complete supported real draws.
+Battles `877636`, `877812`, `925674`, `925719`, `1024673`, `1060199`, `1061897`,
+`1069813`, `1081463`, and `1089346` are complete supported real draws.
 `877812` puts selected-opponent-star Equalizer Life through the real solver matrix and TUI;
 `925719` exercises Victory-or-Defeat opponent-Life work across a three-round match; and
 `1024673` exercises unconditional Stop Opp. Ability through the real solver/TUI and ends in
 a round-two KO. The three Anita additions exercise the exact Courage conversion from final
-resolved damage to Life, including a Fury win and an inactive losing branch.
+resolved damage to Life, including a Fury win and an inactive losing branch; `925674` adds
+Mou's unconditional `-5 Opp. Life Min 5` on victory.
 Rust does not yet ingest the live capture stream, refresh that fixed opening table, run
 searches across workers, or claim complete TypeScript policy parity.
 

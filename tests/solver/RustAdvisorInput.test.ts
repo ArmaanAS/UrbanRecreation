@@ -207,7 +207,7 @@ Deno.test("Rust V3 provenance includes exact inputs and semantic revisions", asy
     effectiveCatalogFingerprintFnv1a64: "95774366ab5ee807",
     effectRegistryFingerprintFnv1a64: "6e2ba7ed825a3f3f",
     effectRegistrySchemaVersion: 1,
-    compilerPolicySemanticRevision: 19,
+    compilerPolicySemanticRevision: 20,
     catalogContextPolicySemanticRevision: 3,
     advisorPolicySemanticRevision: 1,
   };

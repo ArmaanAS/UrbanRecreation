@@ -8,9 +8,9 @@ use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_combat_stat_effect, classify_defeat_life, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, compact_effect, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_reanimate_life, classify_victory_life, classify_victory_opponent_life,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
@@ -39,6 +39,13 @@ const ANITA_COURAGE_DAMAGE_TO_LIFE_REGISTRY_ID: u32 = 274;
 const ARGOS_DEFEAT_CAPPED_PILLZ_DESCRIPTION: &str = "Defeat: +2 Pillz Max. 11";
 const ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID: u32 = 1158;
 const LOBO_REANIMATE_REGISTRY_ID: u32 = 4951;
+const BERZERK_CLAN_ID: u32 = 46;
+const BERZERK_CATALOG_BONUS_ID: u32 = 44;
+const BERZERK_VICTORY_OPPONENT_LIFE_REGISTRY_ID: u32 = 680;
+const BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION: &str = "-2 Opp. Life Min 2";
+const MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID: u32 = 1399;
+const MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION: &str = "-5 Opp. Life Min 5";
+const MOU_CARD: CardKey = CardKey { id: 1589, level: 3 };
 const RIOTS_CLAN_ID: u32 = 49;
 const RIOTS_CATALOG_BONUS_ID: u32 = 47;
 const VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
@@ -891,6 +898,55 @@ fn prepare_catalog_source(
         }
         // Catalog execution is pinned to Argos' actual static ability id. Same text can
         // never inherit this identity, and dynamic Copy remains outside this constructor.
+        let definition = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
+    // Unconditional Victory opponent-Life has exactly two reviewed catalog identities:
+    // Mou level three's printed Ability and the active Berzerk clan Bonus. Same-text
+    // catalog ids (Rakhan 978, Milovan 498, Fraser 1289) carry no registry definition, and
+    // description equality never transfers this effect to another card or clan.
+    if description == MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION
+        || description == BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION
+    {
+        if let Some(registry_definition_id) = victory_opponent_life_registry_definition_id(
+            card_key,
+            source_kind,
+            effective_clan_id,
+            catalog_id,
+            description,
+        ) {
+            return prepare_victory_opponent_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                registry_definition_id,
+            );
+        }
         let definition = registry
             .lookup_description(description)
             .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
@@ -1941,6 +1997,97 @@ fn prepare_equalizer_opponent_life_source(
 /// Catalog clan-bonus id 47 is not a capture registry id. It maps to the reviewed Riots
 /// definition only after effective-clan activation. Printed ability ids map only to their
 /// exact same registry definitions; notably, no catalog card can synthesize dynamic 1034.
+/// Catalog authority for the two reviewed identities. Mou must be the exact card key and
+/// printed ability id; Berzerk must be the active effective clan with its catalog bonus id.
+/// Neither the registry's text lookup nor a card from another clan can substitute.
+fn victory_opponent_life_registry_definition_id(
+    card_key: CardKey,
+    source_kind: CombatStatEffectSourceV1,
+    effective_clan_id: u32,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Option<u32> {
+    match (source_kind, catalog_id) {
+        (CombatStatEffectSourceV1::Ability, Some(MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID))
+            if card_key == MOU_CARD && description == MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION =>
+        {
+            Some(MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID)
+        }
+        (CombatStatEffectSourceV1::Bonus, Some(BERZERK_CATALOG_BONUS_ID))
+            if effective_clan_id == BERZERK_CLAN_ID
+                && description == BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION =>
+        {
+            Some(BERZERK_VICTORY_OPPONENT_LIFE_REGISTRY_ID)
+        }
+        _ => None,
+    }
+}
+
+fn prepare_victory_opponent_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    let Some((life, minimum)) = classify_victory_opponent_life(definition, source_kind) else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+        },
+    })
+}
+
 fn victory_or_defeat_pillz_registry_definition_id(
     source_kind: CombatStatEffectSourceV1,
     effective_clan_id: u32,

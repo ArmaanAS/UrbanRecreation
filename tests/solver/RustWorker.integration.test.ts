@@ -182,6 +182,24 @@ Deno.test({
         "rust match",
       );
     }
+    // Mou's unconditional Victory opponent-Life adds strict rule-10 draw 925674. The
+    // recording side moved second in round 0, so this is an opening SECOND decision.
+    const victoryOpponentLifeOpening = await runDecision(
+      925674,
+      0,
+      "second",
+      SearchMode.SECOND,
+    );
+    while (victoryOpponentLifeOpening.search.step()) {
+      /* complete the TypeScript opening matrix for the new strict draw */
+    }
+    assertEquals(
+      compareRustSearches(
+        victoryOpponentLifeOpening.search,
+        victoryOpponentLifeOpening.rust,
+      ),
+      "rust match",
+    );
     const reprisalOpeningFirst = await runDecision(
       1060199,
       0,

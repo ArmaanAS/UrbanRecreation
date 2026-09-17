@@ -10,7 +10,8 @@ use super::combat_resolution::{
 use super::combat_stat_compiler::{
     anita_courage_damage_to_life_identity_matches, argos_defeat_capped_pillz_identity_matches,
     equalizer_opponent_life_on_victory_identity_matches,
-    komboka_victory_pillz_and_life_identity_matches, victory_or_defeat_pillz_identity_matches,
+    komboka_victory_pillz_and_life_identity_matches, victory_opponent_life_identity_matches,
+    victory_or_defeat_pillz_identity_matches,
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
@@ -104,6 +105,11 @@ pub enum CombatStatPostRoundEffectV1 {
         per_star: u16,
         minimum: u16,
     },
+    /// The two reviewed unconditional Victory opponent-Life reductions.
+    ReduceOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -166,6 +172,12 @@ pub enum CombatStatEffectV1 {
     /// opposing card's stars after Stop liveness has been resolved.
     ReduceOpponentLifeOnVictoryPerOpponentStars {
         per_star: u16,
+        minimum: u16,
+    },
+    /// Unconditional Victory-only opponent-Life reduction with a fixed magnitude and
+    /// lower bound, admitted solely for the two reviewed identities.
+    ReduceOpponentLifeOnVictory {
+        life: u16,
         minimum: u16,
     },
 }
@@ -257,6 +269,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     AnitaCourageDamageToLifeEffect,
     AnitaCourageDamageToLifeIdentity,
     AnitaCourageDamageToLifePredicate,
+    VictoryOpponentLifeIdentity,
+    VictoryOpponentLifeMagnitude,
+    VictoryOpponentLifePredicate,
     VictoryLifeMagnitude,
     VictoryLifePredicate,
     DefeatLifeSource,
@@ -632,6 +647,32 @@ fn equalizer_opponent_life_id_is_reserved(source_id: u32) -> bool {
     matches!(source_id, 1415 | 4458)
 }
 
+/// Both reviewed unconditional Victory opponent-Life identities are reserved whatever a
+/// caller claims, so neither magnitude can be smuggled onto the other id or onto a
+/// generic plan.
+fn victory_opponent_life_id_is_reserved(source_id: u32) -> bool {
+    matches!(source_id, 680 | 1399)
+}
+
+fn victory_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
+    matches!(
+        (source_id, effect),
+        (
+            1399,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 5,
+                minimum: 5
+            }
+        ) | (
+            680,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 2,
+                minimum: 2
+            }
+        )
+    )
+}
+
 const ANITA_COURAGE_DAMAGE_TO_LIFE_CARD: CardKey = CardKey { id: 448, level: 3 };
 
 fn equalizer_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
@@ -730,6 +771,51 @@ fn validate_combat_stat_source_plan(
             source,
             source_id,
             InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeIdentity,
+        ));
+    }
+    // Both unconditional Victory opponent-Life identities are source-kind and magnitude
+    // locked, and the effect itself may not appear under any other id. Conditional
+    // siblings never reach this plan, so no predicate but Always is accepted here.
+    if victory_opponent_life_id_is_reserved(source_id) {
+        if !victory_opponent_life_identity_matches(source, source_id) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity,
+            ));
+        }
+        if !victory_opponent_life_effect_matches(source_id, effect) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentLifeMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if matches!(
+        effect,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory { .. }
+    ) {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity,
         ));
     }
     // Reserve every reviewed VOD-Life identity independently of its claimed source. A
@@ -1434,6 +1520,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainOnePillzAndLifeOnVictory
         | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven
         | CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory
+        | CombatStatEffectV1::ReduceOpponentLifeOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
         | CombatStatEffectV1::ReanimateLife { .. }
@@ -1460,6 +1547,11 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory => {
             Some(PostRoundSourceEffect::Fixed(
                 PostRoundEffect::GainLifeEqualToFinalDamageOnCourageVictory,
+            ))
+        }
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::ReduceOpponentLifeOnVictory { life, minimum },
             ))
         }
         CombatStatEffectV1::GainLifeOnVictory { life } => Some(PostRoundSourceEffect::Fixed(

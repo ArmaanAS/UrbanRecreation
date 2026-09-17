@@ -34,7 +34,7 @@ const provenance = {
   effectiveCatalogFingerprintFnv1a64: "0000000000000000",
   effectRegistryFingerprintFnv1a64: "0000000000000000",
   effectRegistrySchemaVersion: 1,
-  compilerPolicySemanticRevision: 19,
+  compilerPolicySemanticRevision: 20,
   catalogContextPolicySemanticRevision: 3,
   advisorPolicySemanticRevision: 1,
 };
@@ -42,7 +42,7 @@ const wireProvenance = {
   effective_catalog_fingerprint_fnv1a64: "0000000000000000",
   effect_registry_fingerprint_fnv1a64: "0000000000000000",
   effect_registry_schema_version: 1,
-  compiler_policy_semantic_revision: 19,
+  compiler_policy_semantic_revision: 20,
   catalog_context_policy_semantic_revision: 3,
   advisor_policy_semantic_revision: 1,
 };

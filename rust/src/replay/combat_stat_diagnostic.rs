@@ -17,10 +17,10 @@ use crate::engine::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_combat_stat_effect, classify_defeat_life, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
-    has_reanimate_life_shape, has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_reanimate_life, classify_victory_life, classify_victory_opponent_life,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
+    has_defeat_life_shape, has_reanimate_life_shape, has_victory_life_shape,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -644,6 +644,22 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    // The two reviewed unconditional Victory opponent-Life reductions are a typed
+    // post-round plan, not a combat-stat modifier, so normal Stop liveness still applies
+    // but cancellation never reinterprets their magnitude.
+    if let Some((life, minimum)) = classify_victory_opponent_life(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+            },
+        });
+    }
     if classify_victory_or_defeat_pillz(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -845,6 +861,15 @@ fn prepare_combat_stat_source(
     let unadmitted_anita_courage_damage_to_life = source.id == 274
         || source.description == "Courage: +1 Life Per Dmg"
         || input.special_action == SpecialActionV1::ConvertDamageToLife;
+    // A wrong source slot, a malformed record, and the same-text catalog ids that carry
+    // no registry definition (Rakhan, Milovan, Fraser) stay selected hazards rather than
+    // inert no-ops. Conditional siblings such as Symmetry 4708, Courage 4533, Confidence
+    // 3016, and Growth 1730 belong to their own deferred families and keep their existing
+    // Disabled records, so this deliberately does not claim the whole structural shape.
+    let unadmitted_victory_opponent_life = source.id == 680
+        || source.id == 1399
+        || source.description == "-5 Opp. Life Min 5"
+        || source.description == "-2 Opp. Life Min 2";
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
@@ -862,6 +887,7 @@ fn prepare_combat_stat_source(
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
         || unadmitted_anita_courage_damage_to_life
+        || unadmitted_victory_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
@@ -890,6 +916,7 @@ fn prepare_combat_stat_source(
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
         || unadmitted_anita_courage_damage_to_life
+        || unadmitted_victory_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {
