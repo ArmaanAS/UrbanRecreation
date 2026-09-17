@@ -252,6 +252,14 @@ pub enum SupportedEffectV1 {
     CancelOpponentCombatStatModifiers {
         stat: CombatStatV1,
     },
+    /// The owner's own stat cannot be reduced by the opposing character.
+    ProtectOwnCombatStat {
+        stat: CombatStatV1,
+    },
+    /// The owner's own Ability cannot be stopped by the opposing character.
+    ProtectOwnAbility,
+    /// The owner's own Bonus cannot be stopped by the opposing character.
+    ProtectOwnBonus,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -1030,6 +1038,51 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
                 None
             }
         }
+        // Protection names the side it defends, always the owner's own. It carries no
+        // magnitude of its own: a non-zero value would be a different, unreviewed shape.
+        (AttributeActionV1::Protect, SpecialActionV1::None, Some(stat)) => {
+            if input.side_affected != AffectedSideV1::Player {
+                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
+                    side: input.side_affected,
+                });
+                None
+            } else if input.value == 0 && input.value_min == 0 && input.value_max == 0 {
+                Some(SupportedEffectV1::ProtectOwnCombatStat { stat })
+            } else {
+                reasons.insert(UnsupportedReasonV1::NonZeroControlValues);
+                None
+            }
+        }
+        (AttributeActionV1::None, SpecialActionV1::ProtectAbility, _)
+            if input.attribute_affected == AttributeAffectedV1::None =>
+        {
+            if input.side_affected != AffectedSideV1::Player {
+                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
+                    side: input.side_affected,
+                });
+                None
+            } else if input.value == 0 && input.value_min == 0 && input.value_max == 0 {
+                Some(SupportedEffectV1::ProtectOwnAbility)
+            } else {
+                reasons.insert(UnsupportedReasonV1::NonZeroControlValues);
+                None
+            }
+        }
+        (AttributeActionV1::None, SpecialActionV1::ProtectBonus, _)
+            if input.attribute_affected == AttributeAffectedV1::None =>
+        {
+            if input.side_affected != AffectedSideV1::Player {
+                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
+                    side: input.side_affected,
+                });
+                None
+            } else if input.value == 0 && input.value_min == 0 && input.value_max == 0 {
+                Some(SupportedEffectV1::ProtectOwnBonus)
+            } else {
+                reasons.insert(UnsupportedReasonV1::NonZeroControlValues);
+                None
+            }
+        }
         (AttributeActionV1::StopModifier, SpecialActionV1::None, Some(stat)) => {
             if input.side_affected == AffectedSideV1::Opponent {
                 Some(SupportedEffectV1::CancelOpponentCombatStatModifiers { stat })
@@ -1137,6 +1190,14 @@ fn unreviewed_description_context(
             };
             description == format!("Cancel Opp. {stat} Modif.")
         }
+        // Only the Power And Damage pairing has observed rounds. `Protection: Power`,
+        // `Protection : Damage` and `Protection: Attack` keep their own grammars, and the
+        // site's spaced punctuation is not accepted for any of them.
+        SupportedEffectV1::ProtectOwnCombatStat { stat } => {
+            stat == CombatStatV1::PowerAndDamage && description == "Protection: Power And Damage"
+        }
+        SupportedEffectV1::ProtectOwnAbility => description == "Protection: Ability",
+        SupportedEffectV1::ProtectOwnBonus => description == "Protection: Bonus",
     };
     (!reviewed).then_some(DescriptionContextV1::OtherUnreviewedGrammar)
 }
@@ -1588,6 +1649,45 @@ mod tests {
                 .compiled()
                 .unsupported_reasons()
                 .contains(&UnsupportedReasonV1::LinkedMagnitude { link }));
+        }
+    }
+
+    #[test]
+    fn protection_compiles_only_the_three_reviewed_printed_grammars() {
+        let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
+
+        // Like generic Victory Life, Protection is admitted by exact printed text and
+        // structured shape, not by an id list: the registry carries many structurally
+        // identical definitions of each.
+        for id in [759, 880, 1355, 1464, 1793, 2295, 3232, 3550, 5761] {
+            assert_eq!(
+                registry.get(id).unwrap().compiled().supported(),
+                Some(SupportedEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatV1::PowerAndDamage
+                }),
+                "effect {id}"
+            );
+        }
+        assert_eq!(
+            registry.get(461).unwrap().compiled().supported(),
+            Some(SupportedEffectV1::ProtectOwnAbility)
+        );
+        for id in [481, 1132, 1515, 1554, 2860, 4098, 4983, 5498] {
+            assert_eq!(
+                registry.get(id).unwrap().compiled().supported(),
+                Some(SupportedEffectV1::ProtectOwnBonus),
+                "effect {id}"
+            );
+        }
+
+        // Every other Protection grammar has no reviewed round behind it and stays out,
+        // including the site's spaced `Protection : Damage` and the clan-conditional one.
+        for id in [728, 940, 956, 1142, 1311, 2294, 2376, 2981, 4660, 5708] {
+            assert_eq!(
+                registry.get(id).unwrap().compiled().supported(),
+                None,
+                "effect {id}"
+            );
         }
     }
 

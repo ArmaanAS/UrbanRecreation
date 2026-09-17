@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 22 for the current scope.
+Replay provenance records compiler/policy semantic revision 23 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 22.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 23.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -711,7 +711,7 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 22 records this semantic boundary together with the exact
+context. Compiler/policy revision 23 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
@@ -757,7 +757,7 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Conditional Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 22, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 23, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
@@ -768,19 +768,60 @@ Every one of the other 2,538 slots matches captured bonus presence and descripti
 On 2026-09-17, the deterministic strict-coverage regression scanned all 359 captured
 complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captured
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
-`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 23 capture ids
-are eligible: `830285`, `869944`, `875098`, `875322`, `877636`, `877812`, `877950`,
-`878011`, `925254`, `925674`, `925719`, `970972`, `1011712`, `1024673`, `1059030`,
-`1059454`, `1060199`, `1061897`, `1069813`, `1078906`, `1081463`, `1089346`, and
-`1090607`. Revision 21 added `878011`, `925254`, and `1078906` to revision 20's fourteen;
-revision 22 then added `875098`, `875322`, `1011712`, `1059030`, `1059454`, and `1090607`.
+`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 27 capture ids
+are eligible: `830285`, `869944`, `875098`, `875322`, `877636`, `877687`, `877812`,
+`877950`, `878011`, `924257`, `925254`, `925674`, `925719`, `970972`, `1011712`, `1024673`,
+`1059030`, `1059454`, `1060199`, `1061897`, `1069813`, `1070207`, `1078906`, `1081463`,
+`1089346`, `1090607`, and `1091235`. Revision 21 added `878011`, `925254`, and `1078906` to
+revision 20's fourteen; revision 22 then added `875098`, `875322`, `1011712`, `1059030`,
+`1059454`, and `1090607`; revision 23 added `877687`, `924257`, `1070207` and `1091235`,
+the four the report had predicted for Protection.
 That is six for two families the report had predicted would unlock three each, because six
 draws were blocked by *both* families at once — which is exactly why reach and unlock are
 measured separately, and why the measurement has to be rerun rather than added up. Catalog
 eligibility is a strict whole-draw admission measurement, not proof of full engine or
 TypeScript solver parity;
-the 99-round immutable diagnostic gate supplies the separately checked sequential replay
+the 124-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
+
+Semantic revision 23 adds Protection, the projection's first defensive control channel.
+Three printed grammars are admitted by exact text and structured shape, like Copy and
+generic Victory Life rather than by an id list, because the registry carries many
+structurally identical records of each: `Protection: Power And Damage` (`759`, `880`,
+`1355`, `1464`, `1793`, `2295`, `3232`, `3550`, `5761`), `Protection: Ability` (`461`) and
+`Protection: Bonus` (`481`, `1132`, `1515`, `1554`, `2860`, `4098`, `4983`, `5498`). The
+structured record must name the owning player, carry no magnitude and be otherwise neutral.
+`Protection: Power`, `Protection: Attack`, the site's spaced `Protection : Damage` and the
+clan-conditional `After [clan:25]: Protection : Damage` all remain Disabled: each is a
+different grammar and none has a reviewed round behind it.
+
+The two halves are separate mechanisms. A protected stat refuses an opposing decrease: it
+removes nothing and reorders nothing, so the descending-Min ordering of the reductions that
+do apply is untouched. Nebula keeps 7 Power against Olga Cr's `-2 Opp Power, Min 5` in
+`949439/0`, keeps 4 Damage against Donald's `-3 Opp Damage, Min 2` in `924320/1` and against
+Henry's Support reduction in `942983/2`, and Miss Pandora keeps 7/4 against Sue's `-1 Opp
+Power And Damage, Min 3` in `1069506/0`. Only reductions are refused; nothing in the corpus
+has an opposing increase to refuse, and the projection does not admit one.
+
+A protected source survives an opposing Stop. In `926525/0` Lumia Cr's Stop Opp. Ability
+does not stop Andy Ld, whose `-20 Opp Attack, Min 5` takes Lumia Cr's own 36 Attack to the
+16 the server reported, because the Skeelz `Protection: Ability` bonus is live. Two further
+rounds outside the strict gate say the same for each half: `876752/0` has Lady Ametia Cr
+reach 13 Power through Mavi's Stop Opp. Ability, and `964088/1` has El Tortillo keep `+1
+Attack Per Life Left` through Miyo's Stop Opp. Bonus for an attack of 60.
+
+Protection resolves after the Stop graph, which is where TypeScript applies it too: cancels
+run at PRE4 and Protection at PRE3, and `blocked` is `cancel && !prot`. Two consequences are
+deliberate and pinned rather than inferred. A protecting source that was itself stopped
+protects nothing, which is what keeps a self-referential Protection inert. And a source that
+Protection restores keeps its combat effect but has already missed the Stop graph, so it
+does not retroactively stop anything. Neither has captured evidence; both are TypeScript
+parity, and `rust/tests/combat_stat_diagnostic_engine.rs` names them as such.
+
+The older `ClanBonusDiagnosticV1` projection is deliberately untouched. It has no liveness
+model, so a Protection source stays a disabled card-local source there exactly as exact
+`Stop Opp. Ability` does, now by an explicit branch rather than by the registry failing to
+compile it.
 
 ### Choosing the next slice
 
@@ -799,19 +840,26 @@ An id named in a candidate family must be a real registry definition, or the fam
 under-reports: an id no definition owns can never appear as a blocker. The list carried
 `990` for conditional Copy until 2026-09-17, so that family was only ever scored by `958`.
 
-On 2026-09-17 at revision 22 it scanned 359 complete draws: 23 eligible and 10 refused
+On 2026-09-18 at revision 23 it scanned 359 complete draws: 27 eligible and 10 refused
 structurally, by a Leader or a duplicate character rather than by a missing effect. The
-widest-reaching source is `759` `Protection: Power And Damage` in 53 draws, but reach is not
-value. After revision 22 the remaining candidates unlock: Protection
-(`759`/`461`/`481`/`1132`/`1355`) 4, stat-copying Copy 2, Asymmetry/Unison Copy 1, and the
-deferred half of conditional Victory opponent-Life (`4533`/`1730`) 1.
+remaining candidates unlock: stat-copying Copy 3, Asymmetry/Unison Copy 2, and the deferred
+half of conditional Victory opponent-Life (`4533`/`1730`) 1. Protection has been taken and
+is no longer scored; with it retired the widest-reaching remaining sources are `1852`
+`Symmetry: +1 Pillz Per Damage` in 25 draws, then `455` `+2 Pillz` and `2284` `+2 Attack Per
+Opp. Damage` in 20 each. None of those three is in a candidate family yet: reach is not
+value, and a source no draw depends on alone unlocks nothing.
 
-Protection is now the largest remaining slice as well as the widest-reaching source, which is
-unusual here and makes it the obvious next candidate — but it is a genuinely new control
-channel, not a predicate on an existing plan, so it is a real slice rather than a cheap one.
-The other three are small. `4533` has no selected observation in the corpus at all, so it
-cannot be admitted on evidence no matter how cheap the mechanism; `1730` needs round-scaled
-magnitude on a post-round plan, which is its own design step.
+The two Copy families are the obvious next slice, and taking them together is probably
+cheaper than either alone: both extend an adoption mechanism that already exists, and the
+revision-22 lesson was that families sharing blocked draws unlock more together than their
+separate counts suggest. `4533` still has no selected observation in the corpus at all, so
+it cannot be admitted on evidence no matter how cheap the mechanism; `1730` still needs
+round-scaled magnitude on a post-round plan, which is its own design step.
+
+`2284`/`1732` `+N Attack Per Opp. Damage` is worth a note even though it is not a candidate.
+The TypeScript engine's handling of it changed on 2026-09-17: the multiplier reads the
+opponent's Damage before Fury, not after. Any future Rust slice admitting that shape has to
+match, and `docs/replay-triage.md` records which of the two readings the evidence pins.
 
 The two families revision 22 took were cheaper than this section predicted. It claimed a
 post-round plan carries no predicate and that adding one was the shared change both needed;

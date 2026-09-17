@@ -2687,3 +2687,183 @@ fn a_copied_effect_keeps_its_own_predicate_against_the_copier() {
         .unwrap();
     assert_eq!(report.cards[PlayerId::P1].damage, 5);
 }
+
+/// Battle 949439 r0 in miniature: Nebula's `Protection: Power And Damage` against an
+/// opposing `-2 Opp Power, Min 5`. The server reported 7 Power, not 5.
+#[test]
+fn protection_refuses_an_opposing_reduction() {
+    let base = base_spec(7, 4);
+    let mut protected = plans(&base);
+    protected[PlayerId::P1][0].ability = execute(
+        1355,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ProtectOwnCombatStat {
+            stat: CombatStatAttributeV1::PowerAndDamage,
+        },
+    );
+    protected[PlayerId::P2][0].ability = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::PowerAndDamage, 1, 3),
+    );
+    let mut with_protection = game(base.clone(), protected.clone());
+    let (report, _) = with_protection
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 7);
+    assert_eq!(report.cards[PlayerId::P1].damage, 4);
+
+    // The same round without the Protection is the reduction the server did not report.
+    let mut plans = protected;
+    plans[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    let mut without_protection = game(base, plans);
+    let (report, _) = without_protection
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 6);
+    assert_eq!(report.cards[PlayerId::P1].damage, 3);
+}
+
+/// Protection defends against the opposing character only: the owner's own increase still
+/// lands, and the protected card's own reduction still reaches an unprotected opponent.
+#[test]
+fn protection_leaves_own_increases_and_its_own_reduction_alone() {
+    let base = base_spec(7, 4);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1355,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ProtectOwnCombatStat {
+            stat: CombatStatAttributeV1::PowerAndDamage,
+        },
+    );
+    cards[PlayerId::P1][0].bonus = execute(
+        43,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].ability = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Power, 1, 3),
+    );
+    cards[PlayerId::P2][0].bonus = execute(
+        1536,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 1),
+    );
+    cards[PlayerId::P2][0].source_bonus_support_count = 1;
+    let mut game = game(base, cards);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 9);
+    assert_eq!(report.cards[PlayerId::P2].power, 8);
+}
+
+/// A Protection whose own source was stopped protects nothing.
+#[test]
+fn a_stopped_protection_protects_nothing() {
+    let base = base_spec(7, 4);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1355,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ProtectOwnCombatStat {
+            stat: CombatStatAttributeV1::PowerAndDamage,
+        },
+    );
+    cards[PlayerId::P2][0].ability = execute(
+        40,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    cards[PlayerId::P2][0].bonus = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Power, 2, 1),
+    );
+    cards[PlayerId::P2][0].source_bonus_support_count = 1;
+    let mut game = game(base, cards);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 5);
+}
+
+/// Battle 926525 r0: Lumia Cr stops Andy Ld's Ability, the Skeelz `Protection: Ability`
+/// bonus keeps it alive, and its "-20 Opp Attack, Min 5" still takes Lumia Cr's own 36
+/// Attack to the 16 the server reported.
+#[test]
+fn a_protected_ability_survives_an_opposing_stop() {
+    let base = base_spec(6, 4);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        5462,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Attack, 20, 5),
+    );
+    cards[PlayerId::P1][0].bonus = execute(
+        461,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ProtectOwnAbility,
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].ability = execute(
+        40,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut with_protection = game(base.clone(), cards.clone());
+    let (report, _) = with_protection
+        .make(input(PlayerId::P1, (0, 5, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].attack, 16);
+
+    // Without the protecting bonus the Stop lands and the reduction never runs.
+    let mut plans = cards;
+    plans[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Absent;
+    plans[PlayerId::P1][0].source_bonus_support_count = 0;
+    let mut without_protection = game(base, plans);
+    let (report, _) = without_protection
+        .make(input(PlayerId::P1, (0, 5, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].attack, 36);
+}
+
+/// Protection restores a source after the Stop graph has run, which is where TypeScript
+/// applies it too (PRE3 after PRE4). A source that comes back therefore keeps its combat
+/// effect but has already missed its chance to stop anything.
+#[test]
+fn a_restored_source_does_not_fire_a_stop_of_its_own() {
+    let base = base_spec(6, 4);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1846,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    cards[PlayerId::P1][0].bonus = execute(
+        461,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ProtectOwnAbility,
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].ability = execute(
+        40,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    cards[PlayerId::P2][0].bonus = execute(
+        43,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 3),
+    );
+    cards[PlayerId::P2][0].source_bonus_support_count = 1;
+    let mut game = game(base, cards);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 9);
+}

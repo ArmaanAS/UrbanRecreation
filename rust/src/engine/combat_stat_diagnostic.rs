@@ -129,6 +129,16 @@ pub enum CombatStatEffectV1 {
     CancelOpponentCombatStatModifiers {
         stat: CombatStatAttributeV1,
     },
+    /// The owner's own stat cannot be reduced by the opposing selected card. It is not a
+    /// modifier: it removes nothing and adds nothing, it only refuses opposing decreases.
+    ProtectOwnCombatStat {
+        stat: CombatStatAttributeV1,
+    },
+    /// The owner's own Ability survives an opposing Stop, provided this source itself
+    /// survived the Stop resolution that round.
+    ProtectOwnAbility,
+    /// The owner's own Bonus survives an opposing Stop, under the same condition.
+    ProtectOwnBonus,
     /// Fixed non-stat post-round work. Identity and source are checked at plan
     /// construction; its values are intentionally not caller-configurable.
     RecoverPaidPillzOnDefeat,
@@ -1660,6 +1670,18 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         },
         CombatStatEffectV1::StopOpponentAbility => DiagnosticCombatEffectV1::StopOpponentAbility,
         CombatStatEffectV1::StopOpponentBonus => DiagnosticCombatEffectV1::StopOpponentBonus,
+        CombatStatEffectV1::ProtectOwnCombatStat { stat } => {
+            DiagnosticCombatEffectV1::ProtectOwnCombatStat {
+                stat: match stat {
+                    CombatStatAttributeV1::Attack => DiagnosticCombatStatV1::Attack,
+                    CombatStatAttributeV1::Damage => DiagnosticCombatStatV1::Damage,
+                    CombatStatAttributeV1::Power => DiagnosticCombatStatV1::Power,
+                    CombatStatAttributeV1::PowerAndDamage => DiagnosticCombatStatV1::PowerAndDamage,
+                },
+            }
+        }
+        CombatStatEffectV1::ProtectOwnAbility => DiagnosticCombatEffectV1::ProtectOwnAbility,
+        CombatStatEffectV1::ProtectOwnBonus => DiagnosticCombatEffectV1::ProtectOwnBonus,
         CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat } => {
             DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers {
                 stat: match stat {
@@ -1737,7 +1759,10 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentAbility
         | CombatStatEffectV1::StopOpponentBonus
-        | CombatStatEffectV1::CancelOpponentCombatStatModifiers { .. } => None,
+        | CombatStatEffectV1::CancelOpponentCombatStatModifiers { .. }
+        | CombatStatEffectV1::ProtectOwnCombatStat { .. }
+        | CombatStatEffectV1::ProtectOwnAbility
+        | CombatStatEffectV1::ProtectOwnBonus => None,
     }
 }
 

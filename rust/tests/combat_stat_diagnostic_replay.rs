@@ -76,6 +76,26 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Only this one round is a valid prefix - round 1 then selects Pride's deferred
     // `Protection: Attack`.
     (1011297, 1),
+    // Revision 23 Protection. Stat protection refuses an opposing reduction: Nebula keeps
+    // 7 Power against Olga Cr's "-2 Opp Power, Min 5" in 949439/0, keeps 4 Damage against
+    // Donald's "-3 Opp Damage, Min 2" in 924320/1 and against Henry's Support reduction in
+    // 942983/2, and Miss Pandora keeps 7/4 against Sue's "-1 Opp Power And Damage, Min 3"
+    // in 1069506/0. Source protection survives a Stop: in 926525/0 Lumia Cr's Stop Opp.
+    // Ability does not stop Andy Ld, whose "-20 Opp Attack, Min 5" takes Lumia Cr's own 36
+    // to the reported 16, while the Skeelz bonus carrying the Protection is untouched.
+    // 1091235/0 is the Bikini Joe Ld mirror for Protection: Bonus against Stop Opp. Bonus.
+    (949439, 1),
+    (924320, 3),
+    (942983, 3),
+    (1069506, 3),
+    (926525, 3),
+    (1091235, 3),
+    // The three remaining draws the same revision makes catalog-eligible. 1070207/0 is the
+    // only captured Buckler round and nothing there reduces it, so it pins that admitting
+    // Protection changes nothing when no opposing reduction exists.
+    (877687, 4),
+    (924257, 4),
+    (1070207, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -332,7 +352,8 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_ninety_nine_unique_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_one_hundred_and_twenty_four_unique_sequential_prefix_rounds()
+{
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -368,25 +389,30 @@ fn fixed_server_backed_gate_is_exactly_ninety_nine_unique_sequential_prefix_roun
             }
         }
     }
-    assert_eq!(rounds, 99);
+    assert_eq!(rounds, 124);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
             6, 36, 37, 38, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 257, 266, 274,
-            292, 310, 333, 367, 368, 377, 391, 401, 412, 520, 536, 577, 578, 585, 612, 680, 713,
-            717, 727, 741, 801, 844, 871, 883, 888, 916, 938, 980, 1034, 1047, 1158, 1163, 1241,
-            1310, 1335, 1338, 1341, 1342, 1359, 1372, 1375, 1399, 1415, 1418, 1420, 1518, 1536,
+            292, 310, 316, 333, 367, 368, 377, 391, 401, 412, 461, 469, 478, 520, 536, 577, 578,
+            585, 612, 680, 713, 717, 727, 741, 759, 801, 844, 862, 871, 883, 888, 916, 938, 980,
+            1034, 1047, 1131, 1158, 1163, 1241, 1293, 1303, 1310, 1330, 1335, 1338, 1341, 1342,
+            1355, 1359, 1372, 1375, 1388, 1396, 1399, 1415, 1418, 1420, 1464, 1518, 1534, 1536,
             1578, 1628, 1634, 1688, 1694, 1699, 1714, 1770, 1805, 1806, 1844, 1845, 1848, 1850,
-            2073, 2299, 2329, 2412, 2535, 2657, 2881, 2944, 2965, 3284, 3487, 3677, 3864, 3865,
-            3897, 4041, 4216, 4297, 4299, 4389, 4399, 4417, 4458, 4464, 4708, 4711, 4718, 4757,
-            4966, 5026, 5085, 5273, 5404, 5520, 5763, 5849, 5852, 5859,
+            2073, 2299, 2329, 2375, 2412, 2535, 2657, 2881, 2944, 2965, 3284, 3487, 3677, 3864,
+            3865, 3897, 4041, 4216, 4297, 4299, 4389, 4399, 4417, 4458, 4464, 4571, 4708, 4711,
+            4718, 4722, 4757, 4966, 5026, 5085, 5169, 5273, 5404, 5462, 5498, 5520, 5531, 5763,
+            5849, 5852, 5859,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([594, 682, 809, 854, 935, 1852, 2317, 4303, 4459, 4657, 4695, 4747, 5283,])
+        BTreeSet::from([
+            206, 594, 682, 809, 854, 935, 1501, 1508, 1852, 2222, 2317, 4303, 4459, 4657, 4695,
+            4747, 5283,
+        ])
     );
-    assert_eq!(absent, 5);
+    assert_eq!(absent, 6);
 }
 
 #[test]
@@ -581,7 +607,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 22);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 23);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -637,7 +663,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        22
+        23
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2

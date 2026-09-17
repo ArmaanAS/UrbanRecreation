@@ -63,7 +63,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 22;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 23;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -738,6 +738,12 @@ fn admitted_supported_effect(
         SupportedEffectV1::StopOpponentAbility
         | SupportedEffectV1::StopOpponentBonus
         | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. } => true,
+        // Protection is admitted from either slot: `Protection: Power And Damage` and
+        // `Protection: Bonus` are printed abilities, `Protection: Ability` is the Skeelz
+        // bonus. The registry's exact-description gate is what keeps the family narrow.
+        SupportedEffectV1::ProtectOwnCombatStat { .. }
+        | SupportedEffectV1::ProtectOwnAbility
+        | SupportedEffectV1::ProtectOwnBonus => true,
         SupportedEffectV1::ModifyCombatStat {
             side,
             stat,
@@ -1351,7 +1357,10 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         SupportedEffectV1::ModifyCombatStat { multiplier, .. } => multiplier,
         SupportedEffectV1::StopOpponentAbility
         | SupportedEffectV1::StopOpponentBonus
-        | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. } => return false,
+        | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. }
+        | SupportedEffectV1::ProtectOwnCombatStat { .. }
+        | SupportedEffectV1::ProtectOwnAbility
+        | SupportedEffectV1::ProtectOwnBonus => return false,
     };
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Growth => "Growth: ",
@@ -1476,6 +1485,13 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 stat: compact_stat(stat),
             })
         }
+        SupportedEffectV1::ProtectOwnCombatStat { stat } => {
+            Some(CombatStatEffectV1::ProtectOwnCombatStat {
+                stat: compact_stat(stat),
+            })
+        }
+        SupportedEffectV1::ProtectOwnAbility => Some(CombatStatEffectV1::ProtectOwnAbility),
+        SupportedEffectV1::ProtectOwnBonus => Some(CombatStatEffectV1::ProtectOwnBonus),
     }
 }
 

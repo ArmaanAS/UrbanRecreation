@@ -61,7 +61,6 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         ],
     ),
     ("conditional Victory opponent-Life", &[4533, 1730]),
-    ("Protection", &[759, 461, 481, 1132, 1355]),
 ];
 
 fn root_path(path: &str) -> PathBuf {

@@ -45,14 +45,17 @@ pub(super) struct PreparedCombatResolution {
     pub post_round: ByPlayer<PostRoundPlan>,
 }
 
+/// A set of combat stats. Used for two independent things: the stats whose opposing
+/// modifiers a `Cancel Opp. ... Modif.` source removes, and the stats a `Protection`
+/// source refuses to let the opposing card reduce.
 #[derive(Clone, Copy, Default)]
-struct CancellationMask {
+struct StatMask {
     attack: bool,
     damage: bool,
     power: bool,
 }
 
-impl CancellationMask {
+impl StatMask {
     fn insert(&mut self, stat: DiagnosticCombatStatV1) {
         match stat {
             DiagnosticCombatStatV1::Attack => self.attack = true,
@@ -200,6 +203,32 @@ fn source_liveness(selected_plans: ByPlayer<ResolutionCardPlan>) -> ByPlayer<Sou
         }
     }
 
+    // Protection resolves after the Stop graph, exactly as TypeScript applies PRE3 after
+    // PRE4: a source that survived the round's Stops restores its own card's protected
+    // source. A restored source does not get to fire a Stop of its own - by the time it
+    // comes back the Stop graph has already run - and a protecting source that was itself
+    // stopped protects nothing, which is what keeps a self-referential Protection inert.
+    // Battle 876752 r0 has Lady Ametia Cr keep "+1 Power Per Life Left" at 13 Power
+    // through Mavi's Stop Opp. Ability, and 964088 r1 has El Tortillo keep "+1 Attack Per
+    // Life Left" through Miyo's Stop Opp. Bonus.
+    let resolved = live;
+    for player in PlayerId::ALL {
+        for kind in SOURCE_ORDER {
+            if !resolved[player].get(kind) {
+                continue;
+            }
+            let protected = match source_for(selected_plans[player], kind).effect {
+                Some(DiagnosticCombatEffectV1::ProtectOwnAbility) => SourceKind::Ability,
+                Some(DiagnosticCombatEffectV1::ProtectOwnBonus) => SourceKind::Bonus,
+                _ => continue,
+            };
+            live[player].set(
+                protected,
+                source_is_live(source_for(selected_plans[player], protected)),
+            );
+        }
+    }
+
     live
 }
 
@@ -215,10 +244,16 @@ fn has_pending(pending: ByPlayer<[bool; 2]>) -> bool {
         || pending[PlayerId::P2].iter().any(|pending| *pending)
 }
 
-fn add_cancellation(mask: &mut CancellationMask, source: ResolutionSourcePlan) {
+fn add_cancellation(mask: &mut StatMask, source: ResolutionSourcePlan) {
     if let Some(DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers { stat }) =
         source.effect
     {
+        mask.insert(stat);
+    }
+}
+
+fn add_protection(mask: &mut StatMask, source: ResolutionSourcePlan) {
+    if let Some(DiagnosticCombatEffectV1::ProtectOwnCombatStat { stat }) = source.effect {
         mask.insert(stat);
     }
 }
@@ -245,13 +280,20 @@ pub(super) fn prepare_combat_resolution_with_post_round(
     );
     let live = source_liveness(selected_plans);
 
-    let mut cancellations = ByPlayer::new(CancellationMask::default(), CancellationMask::default());
+    let mut cancellations = ByPlayer::new(StatMask::default(), StatMask::default());
+    // Protection only ever refuses an opposing reduction. It removes nothing already
+    // applied, so it needs no ordering of its own: the opposing decrease simply does not
+    // happen. 949439 r0 keeps Nebula at 7 Power against Olga Cr's "-2 Opp Power, Min 5",
+    // and 924320 r1 keeps its 4 Damage against Donald's "-3 Opp Damage, Min 2".
+    let mut protections = ByPlayer::new(StatMask::default(), StatMask::default());
     for player in PlayerId::ALL {
         if live[player].ability {
             add_cancellation(&mut cancellations[player], selected_plans[player].ability);
+            add_protection(&mut protections[player], selected_plans[player].ability);
         }
         if live[player].bonus {
             add_cancellation(&mut cancellations[player], selected_plans[player].bonus);
+            add_protection(&mut protections[player], selected_plans[player].bonus);
         }
     }
 
@@ -273,6 +315,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 DiagnosticStatOperationV1::Increase,
                 selected_plans[origin].bonus,
                 cancellations[origin.other()],
+                StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
                 &mut power,
@@ -286,6 +329,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 DiagnosticStatOperationV1::Increase,
                 selected_plans[origin].ability,
                 cancellations[origin.other()],
+                StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
                 &mut power,
@@ -310,6 +354,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 .then_some(selected_plans[origin].ability)
                 .unwrap_or_default(),
             cancellations[origin.other()],
+            protections[origin.other()],
             rounds_played,
             opponent_stars[origin],
             &mut power,
@@ -349,6 +394,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 DiagnosticStatOperationV1::Increase,
                 selected_plans[origin].bonus,
                 cancellations[origin.other()],
+                StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
                 &mut attack,
@@ -361,6 +407,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 DiagnosticStatOperationV1::Increase,
                 selected_plans[origin].ability,
                 cancellations[origin.other()],
+                StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
                 &mut attack,
@@ -383,6 +430,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 .then_some(selected_plans[origin].ability)
                 .unwrap_or_default(),
             cancellations[origin.other()],
+            protections[origin.other()],
             rounds_played,
             opponent_stars[origin],
             &mut attack,
@@ -498,7 +546,8 @@ fn apply_ordered_power_damage_reductions(
     origin: PlayerId,
     bonus: ResolutionSourcePlan,
     ability: ResolutionSourcePlan,
-    opponent_cancellation: CancellationMask,
+    opponent_cancellation: StatMask,
+    target_protection: StatMask,
     rounds_played: u8,
     opponent_stars: u16,
     power: &mut ByPlayer<u16>,
@@ -513,6 +562,7 @@ fn apply_ordered_power_damage_reductions(
             DiagnosticStatOperationV1::Decrease,
             ability,
             opponent_cancellation,
+            target_protection,
             rounds_played,
             opponent_stars,
             power,
@@ -524,6 +574,7 @@ fn apply_ordered_power_damage_reductions(
             DiagnosticStatOperationV1::Decrease,
             bonus,
             opponent_cancellation,
+            target_protection,
             rounds_played,
             opponent_stars,
             power,
@@ -536,6 +587,7 @@ fn apply_ordered_power_damage_reductions(
             DiagnosticStatOperationV1::Decrease,
             bonus,
             opponent_cancellation,
+            target_protection,
             rounds_played,
             opponent_stars,
             power,
@@ -547,6 +599,7 @@ fn apply_ordered_power_damage_reductions(
             DiagnosticStatOperationV1::Decrease,
             ability,
             opponent_cancellation,
+            target_protection,
             rounds_played,
             opponent_stars,
             power,
@@ -559,7 +612,8 @@ fn apply_ordered_attack_reductions(
     origin: PlayerId,
     bonus: ResolutionSourcePlan,
     ability: ResolutionSourcePlan,
-    opponent_cancellation: CancellationMask,
+    opponent_cancellation: StatMask,
+    target_protection: StatMask,
     rounds_played: u8,
     opponent_stars: u16,
     attack: &mut ByPlayer<u32>,
@@ -573,6 +627,7 @@ fn apply_ordered_attack_reductions(
             DiagnosticStatOperationV1::Decrease,
             ability,
             opponent_cancellation,
+            target_protection,
             rounds_played,
             opponent_stars,
             attack,
@@ -583,6 +638,7 @@ fn apply_ordered_attack_reductions(
             DiagnosticStatOperationV1::Decrease,
             bonus,
             opponent_cancellation,
+            target_protection,
             rounds_played,
             opponent_stars,
             attack,
@@ -594,6 +650,7 @@ fn apply_ordered_attack_reductions(
             DiagnosticStatOperationV1::Decrease,
             bonus,
             opponent_cancellation,
+            target_protection,
             rounds_played,
             opponent_stars,
             attack,
@@ -604,6 +661,7 @@ fn apply_ordered_attack_reductions(
             DiagnosticStatOperationV1::Decrease,
             ability,
             opponent_cancellation,
+            target_protection,
             rounds_played,
             opponent_stars,
             attack,
@@ -646,7 +704,10 @@ fn apply_power_damage_effect(
     expected_side: DiagnosticAffectedSideV1,
     expected_operation: DiagnosticStatOperationV1,
     source: ResolutionSourcePlan,
-    opponent_cancellation: CancellationMask,
+    opponent_cancellation: StatMask,
+    // The stats the card being reduced refuses to have reduced. Empty for an own
+    // increase: Protection defends against the opposing character, not its owner.
+    target_protection: StatMask,
     rounds_played: u8,
     opponent_stars: u16,
     power: &mut ByPlayer<u16>,
@@ -691,7 +752,13 @@ fn apply_power_damage_effect(
         rounds_played,
         opponent_stars,
     )?;
-    if affects_power && !opponent_cancellation.contains(DiagnosticCombatStatV1::Power) {
+    let protected = |stat| {
+        expected_side == DiagnosticAffectedSideV1::Opponent && target_protection.contains(stat)
+    };
+    if affects_power
+        && !opponent_cancellation.contains(DiagnosticCombatStatV1::Power)
+        && !protected(DiagnosticCombatStatV1::Power)
+    {
         power[target] = apply_u16_modifier(
             origin,
             CombatResolutionArithmeticStage::Power,
@@ -702,7 +769,10 @@ fn apply_power_damage_effect(
             maximum,
         )?;
     }
-    if affects_damage && !opponent_cancellation.contains(DiagnosticCombatStatV1::Damage) {
+    if affects_damage
+        && !opponent_cancellation.contains(DiagnosticCombatStatV1::Damage)
+        && !protected(DiagnosticCombatStatV1::Damage)
+    {
         damage[target] = apply_u16_modifier(
             origin,
             CombatResolutionArithmeticStage::Damage,
@@ -722,7 +792,9 @@ fn apply_attack_effect(
     expected_side: DiagnosticAffectedSideV1,
     expected_operation: DiagnosticStatOperationV1,
     source: ResolutionSourcePlan,
-    opponent_cancellation: CancellationMask,
+    opponent_cancellation: StatMask,
+    // As above: consulted only for a reduction aimed at the opposing card.
+    target_protection: StatMask,
     rounds_played: u8,
     opponent_stars: u16,
     attack: &mut ByPlayer<u32>,
@@ -742,6 +814,8 @@ fn apply_attack_effect(
     if side != expected_side
         || operation != expected_operation
         || opponent_cancellation.contains(DiagnosticCombatStatV1::Attack)
+        || (expected_side == DiagnosticAffectedSideV1::Opponent
+            && target_protection.contains(DiagnosticCombatStatV1::Attack))
     {
         return Ok(());
     }

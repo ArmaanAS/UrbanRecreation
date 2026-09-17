@@ -73,6 +73,14 @@ pub enum DiagnosticCombatEffectV1 {
     CancelOpponentCombatStatModifiers {
         stat: DiagnosticCombatStatV1,
     },
+    /// The owner's own stat cannot be reduced by the opposing selected card.
+    ProtectOwnCombatStat {
+        stat: DiagnosticCombatStatV1,
+    },
+    /// The owner's own Ability survives an opposing Stop.
+    ProtectOwnAbility,
+    /// The owner's own Bonus survives an opposing Stop.
+    ProtectOwnBonus,
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and

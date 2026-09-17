@@ -504,8 +504,17 @@ fn prepare_diagnostic_source(
         CompiledEffectV1::Supported(effect) => {
             // Preserve this legacy projection's pre-SOA behavior. It has no ability-
             // liveness model, so exact SOA remains an ordinary disabled card-local source;
-            // the current combat-stat projection owns executable Stop Opp. Ability.
-            if *effect == SupportedEffectV1::StopOpponentAbility {
+            // the current combat-stat projection owns executable Stop Opp. Ability. The
+            // same holds for Protection, which needs both a liveness model and the
+            // refusal of an opposing reduction: here it stays a disabled card-local
+            // source, as it was before the registry learned to compile it.
+            if matches!(
+                effect,
+                SupportedEffectV1::StopOpponentAbility
+                    | SupportedEffectV1::ProtectOwnCombatStat { .. }
+                    | SupportedEffectV1::ProtectOwnAbility
+                    | SupportedEffectV1::ProtectOwnBonus
+            ) {
                 let reason = if source_kind == DiagnosticEffectSourceV1::Ability {
                     DiagnosticDisabledReasonV1::OrdinaryAbility {
                         registry_reasons: Box::new([]),
@@ -641,6 +650,11 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<DiagnosticCombatEffectV1>
         }),
         SupportedEffectV1::StopOpponentAbility => None,
         SupportedEffectV1::StopOpponentBonus => Some(DiagnosticCombatEffectV1::StopOpponentBonus),
+        // Protection belongs to the combat-stat projection and its gate. This older
+        // clan-bonus projection has never admitted a control channel of its own.
+        SupportedEffectV1::ProtectOwnCombatStat { .. }
+        | SupportedEffectV1::ProtectOwnAbility
+        | SupportedEffectV1::ProtectOwnBonus => None,
         SupportedEffectV1::CancelOpponentCombatStatModifiers { stat } => Some(
             DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers {
                 stat: compact_stat(stat),
