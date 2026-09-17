@@ -11,6 +11,7 @@ import { Turn } from "@/game/types/Types.ts";
 import { type HandOf } from "@/game/types/CardTypes.ts";
 import Analysis from "@/solver/Analysis.ts";
 import { GameResult, Node } from "@/solver/Minimax.ts";
+import Search, { SearchMode } from "@/solver/Search.ts";
 
 const quiet = <T>(f: () => T): T => {
   const log = console.log, info = console.info;
@@ -30,8 +31,14 @@ const doubleKo = () =>
   new Game(
     new Player(2, 12, 0),
     new Player(2, 12, 1),
-    HandGenerator.handOf(["Uchtul Cr", "Natrang", "Natrang", "Natrang"] as HandOf<string>, [4, 1, 1, 1] as HandOf<number | undefined>),
-    HandGenerator.handOf(["Natrang", "Natrang", "Natrang", "Natrang"] as HandOf<string>, [1, 1, 1, 1] as HandOf<number | undefined>),
+    HandGenerator.handOf(
+      ["Uchtul Cr", "Natrang", "Natrang", "Natrang"] as HandOf<string>,
+      [4, 1, 1, 1] as HandOf<number | undefined>,
+    ),
+    HandGenerator.handOf(
+      ["Natrang", "Natrang", "Natrang", "Natrang"] as HandOf<string>,
+      [1, 1, 1, 1] as HandOf<number | undefined>,
+    ),
     Turn.PLAYER_1,
     false,
   );
@@ -56,8 +63,14 @@ Deno.test("every node the solver builds has a finite rating", () => {
     const g = new Game(
       new Player(2, 5, 0),
       new Player(2, 5, 1),
-      HandGenerator.handOf(["Uchtul Cr", "Natrang", "Natrang", "Natrang"] as HandOf<string>, [4, 1, 1, 1] as HandOf<number | undefined>),
-      HandGenerator.handOf(["Natrang", "Natrang", "Natrang", "Natrang"] as HandOf<string>, [1, 1, 1, 1] as HandOf<number | undefined>),
+      HandGenerator.handOf(
+        ["Uchtul Cr", "Natrang", "Natrang", "Natrang"] as HandOf<string>,
+        [4, 1, 1, 1] as HandOf<number | undefined>,
+      ),
+      HandGenerator.handOf(
+        ["Natrang", "Natrang", "Natrang", "Natrang"] as HandOf<string>,
+        [1, 1, 1, 1] as HandOf<number | undefined>,
+      ),
       Turn.PLAYER_1,
       false,
     );
@@ -84,8 +97,14 @@ Deno.test("a permanent does not latch across sibling branches", () => {
     new Game(
       new Player(20, 12, 0),
       new Player(20, 12, 1),
-      HandGenerator.handOf(["Galactea", "Natrang", "Natrang", "Natrang"] as HandOf<string>, [4, 1, 1, 1] as HandOf<number | undefined>),
-      HandGenerator.handOf(["Sando", "Natrang", "Natrang", "Natrang"] as HandOf<string>, [3, 1, 1, 1] as HandOf<number | undefined>),
+      HandGenerator.handOf(
+        ["Galactea", "Natrang", "Natrang", "Natrang"] as HandOf<string>,
+        [4, 1, 1, 1] as HandOf<number | undefined>,
+      ),
+      HandGenerator.handOf(
+        ["Sando", "Natrang", "Natrang", "Natrang"] as HandOf<string>,
+        [3, 1, 1, 1] as HandOf<number | undefined>,
+      ),
       Turn.PLAYER_1,
       false,
     )
@@ -114,22 +133,60 @@ Deno.test("a permanent does not latch across sibling branches", () => {
   assertEquals(branch(0, 8).p2.life, 20);
 });
 
+Deno.test("a SECOND search does not deselect the source game's visible card", () => {
+  const game = new Game(
+    new Player(12, 3, 0),
+    new Player(12, 3, 1),
+    HandGenerator.handOf(["Natrang", "Natrang", "Natrang", "Natrang"]),
+    HandGenerator.handOf(["Natrang", "Natrang", "Natrang", "Natrang"]),
+    Turn.PLAYER_1,
+    false,
+  );
+  game.select(2, 0, false, false);
+
+  const search = new Search(game);
+
+  assertEquals(search.mode, SearchMode.SECOND);
+  assertEquals(search.oppIndex, 2);
+  assertEquals(game.firstHasSelected, true);
+  assertEquals(game.playedCardIndex, 2);
+  assertEquals(game.h1[2].played, true);
+});
+
 Deno.test("Node.toString reports on the mover's side, in [-1, 1]", () => {
   const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
   // A node's turn is who moves next, so its own move was made by the other player.
   const label = (turn: Turn, result: GameResult) => {
     const n = new Node("2 4 false", turn);
-    n.add(new Node("reply", turn === Turn.PLAYER_1 ? Turn.PLAYER_2 : Turn.PLAYER_1, result));
+    n.add(
+      new Node(
+        "reply",
+        turn === Turn.PLAYER_1 ? Turn.PLAYER_2 : Turn.PLAYER_1,
+        result,
+      ),
+    );
     return strip(n.toString());
   };
 
   // Mover is P1, and +1 is a P1 win.
-  assertEquals(label(Turn.PLAYER_2, GameResult.PLAYER_1_WIN), "[Win] 2 4 false");
+  assertEquals(
+    label(Turn.PLAYER_2, GameResult.PLAYER_1_WIN),
+    "[Win] 2 4 false",
+  );
   assertEquals(label(Turn.PLAYER_2, GameResult.TIE), "[Draw] 2 4 false");
-  assertEquals(label(Turn.PLAYER_2, GameResult.PLAYER_2_WIN), "[Loss] 2 4 false");
+  assertEquals(
+    label(Turn.PLAYER_2, GameResult.PLAYER_2_WIN),
+    "[Loss] 2 4 false",
+  );
 
   // Mover is P2, so the signs flip.
-  assertEquals(label(Turn.PLAYER_1, GameResult.PLAYER_2_WIN), "[Win] 2 4 false");
+  assertEquals(
+    label(Turn.PLAYER_1, GameResult.PLAYER_2_WIN),
+    "[Win] 2 4 false",
+  );
   assertEquals(label(Turn.PLAYER_1, GameResult.TIE), "[Draw] 2 4 false");
-  assertEquals(label(Turn.PLAYER_1, GameResult.PLAYER_1_WIN), "[Loss] 2 4 false");
+  assertEquals(
+    label(Turn.PLAYER_1, GameResult.PLAYER_1_WIN),
+    "[Loss] 2 4 false",
+  );
 });

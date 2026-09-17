@@ -9,9 +9,10 @@ import Game from "@/game/Game.ts";
 import { HandGenerator } from "@/game/Hand.ts";
 import Player from "@/game/Player.ts";
 import { Turn } from "@/game/types/Types.ts";
-import Search from "@/solver/Search.ts";
+import Search, { openingReplyWeight, SearchMode } from "@/solver/Search.ts";
 import { render } from "@/solver/SolverView.ts";
 import {
+  buildAdvisorRequest,
   buildFirstRequest,
   CompletedRustSearch,
   decodeRustJsonl,
@@ -21,6 +22,7 @@ import {
   RustAdvisorProtocolError,
   type RustAdvisorRunner,
   RustAdvisorTimeoutError,
+  type RustFirstInput,
   type RustFirstRequest,
 } from "@/solver/RustAdvisor.ts";
 
@@ -29,8 +31,10 @@ const actions = [
   { index: 1, pillz: 1, fury: false },
 ];
 const expectation = {
-  version: 1 as const,
+  version: 2 as const,
   requestId: "request-1",
+  mode: "first" as const,
+  opponentHandIndex: null,
   candidates: actions,
 };
 const row = (move = actions[0], score = 0.5) => ({
@@ -43,15 +47,18 @@ const row = (move = actions[0], score = 0.5) => ({
   samples: 2,
   ko_share: 0.5,
   loss_share: 0,
+  hidden_outcomes: null,
 });
 const line = (
   kind: "progress" | "final",
   sequence: number,
   ranked_moves: unknown[],
   complete = kind === "final",
+  mode: "first" | "second" | "blind_second" = "first",
+  opponent_hand_index: number | null = null,
 ) =>
   JSON.stringify({
-    protocol_version: 1,
+    protocol_version: 2,
     request_id: "request-1",
     sequence,
     kind,
@@ -61,6 +68,8 @@ const line = (
     units_done: complete ? 4 : 1,
     units_total: 4,
     elapsed_ms: sequence + 1,
+    mode,
+    opponent_hand_index,
     ranked_moves,
   });
 
@@ -129,6 +138,61 @@ Deno.test("Rust JSONL fails closed for duplicate candidates, score violations, a
   );
 });
 
+Deno.test("Rust V2 SECOND JSONL requires one exact outcome per hidden wager", () => {
+  const secondExpectation = {
+    ...expectation,
+    mode: "second" as const,
+    opponentHandIndex: 0,
+    opponentMoves: [{ pillz: 0, fury: false }],
+  };
+  const withOutcome = (move: typeof actions[number]) => ({
+    ...row(move, 0),
+    worst: 0,
+    best: 0,
+    samples: 1,
+    ko_share: 0,
+    hidden_outcomes: [[0, false, 0, 0]],
+  });
+  const valid = line(
+    "final",
+    0,
+    actions.map(withOutcome),
+    true,
+    "second",
+    0,
+  );
+  assertEquals(
+    decodeRustJsonl(`${valid}\n`, secondExpectation).final.ranked[0]
+      .hiddenOutcomes?.length,
+    1,
+  );
+  const duplicate = JSON.parse(valid) as Record<string, unknown>;
+  const moves = duplicate.ranked_moves as { hidden_outcomes: unknown[] }[];
+  moves[0].hidden_outcomes.push([0, false, 0, 0]);
+  assertThrows(
+    () => decodeRustJsonl(`${JSON.stringify(duplicate)}\n`, secondExpectation),
+    RustAdvisorProtocolError,
+  );
+  assertThrows(
+    () =>
+      decodeRustJsonl(
+        `${
+          line("progress", 0, actions.map(withOutcome), false, "second", 0)
+        }\n`,
+        secondExpectation,
+      ),
+    RustAdvisorProtocolError,
+  );
+  assertThrows(
+    () =>
+      decodeRustJsonl(
+        `${line("final", 0, actions.map(withOutcome))}\n`,
+        secondExpectation,
+      ),
+    RustAdvisorProtocolError,
+  );
+});
+
 const card = (id: number) => ({
   id,
   level: 1,
@@ -138,7 +202,7 @@ const card = (id: number) => ({
   bonus: "",
 });
 
-const firstInput = () => ({
+const firstInput = (): RustFirstInput => ({
   requestId: "request-1",
   us: "p1",
   firstMover: "p1",
@@ -168,8 +232,9 @@ const firstInput = () => ({
 });
 const request = (): RustFirstRequest => buildFirstRequest(firstInput());
 
-Deno.test("Rust V1 request builder emits only the strict worker shape", () => {
+Deno.test("Rust V2 request builder emits only the strict worker shape", () => {
   const built = request();
+  assertEquals(built.protocol_version, 2);
   assertEquals(built.battle_rule_id, 10);
   assertEquals(built.players.p1.hand.length, 4);
   assertEquals(Object.keys(built.players.p1.hand[0]).sort(), [
@@ -195,6 +260,31 @@ Deno.test("Rust V1 request builder emits only the strict worker shape", () => {
       }),
     RustAdvisorProtocolError,
   );
+});
+
+Deno.test("Rust V2 builder makes mode and visible card explicit", () => {
+  const second = buildAdvisorRequest({
+    ...firstInput(),
+    mode: "second",
+    us: "p2",
+    firstMover: "p1",
+    opponentHandIndex: 2,
+  });
+  assertEquals(second.mode, "second");
+  assertEquals(second.mode === "second" && second.opponent_hand_index, 2);
+  const blind = buildAdvisorRequest({
+    ...firstInput(),
+    mode: "blind_second",
+    us: "p1",
+    firstMover: "p2",
+    history: [{
+      firstMover: "p1",
+      p1: { handIndex: 0, pillz: 0, fury: false },
+      p2: { handIndex: 0, pillz: 0, fury: false },
+    }],
+  });
+  assertEquals(blind.mode, "blind_second");
+  assertEquals("opponent_hand_index" in blind, false);
 });
 
 class CleanupRunner implements RustAdvisorRunner {
@@ -282,6 +372,7 @@ Deno.test("completed Rust FIRST adapter flips requester P2 scores into the TS P1
     samples: ts.samples,
     kos: 0,
     koed: 0,
+    hiddenOutcomes: null,
   }));
   const final: RustAdvisorFinal = {
     kind: "final",
@@ -291,6 +382,8 @@ Deno.test("completed Rust FIRST adapter flips requester P2 scores into the TS P1
     unitsDone: ts.units,
     unitsTotal: ts.units,
     elapsedMs: 3,
+    mode: "first",
+    opponentHandIndex: null,
     ranked,
   };
   const adapter = new CompletedRustSearch(game, final);
@@ -316,6 +409,7 @@ Deno.test("completed adapter rejects malformed direct finals and the wrong evalu
     samples: ts.samples,
     kos: 0,
     koed: 0,
+    hiddenOutcomes: null,
   }));
   const base: RustAdvisorFinal = {
     kind: "final",
@@ -325,6 +419,8 @@ Deno.test("completed adapter rejects malformed direct finals and the wrong evalu
     unitsDone: ts.units,
     unitsTotal: ts.units,
     elapsedMs: 0,
+    mode: "first",
+    opponentHandIndex: null,
     ranked,
   };
   assertThrows(
@@ -342,5 +438,131 @@ Deno.test("completed adapter rejects malformed direct finals and the wrong evalu
         ranked: [{ ...ranked[0], score: Number.NaN }, ...ranked.slice(1)],
       }),
     RustAdvisorProtocolError,
+  );
+});
+
+function secondGame() {
+  const game = new Game(
+    new Player(12, 3, 0),
+    new Player(12, 3, 1),
+    HandGenerator.handOf(["Genmaicha", "Orka", "Sando", "Deborah"]),
+    HandGenerator.handOf(["Nathan", "El Kuzco", "Noon Steevens", "Strygia"]),
+    Turn.PLAYER_1,
+    false,
+  );
+  game.select(0, 0, false, false);
+  return game;
+}
+
+Deno.test("completed Rust SECOND adapter restores hidden-wager outcomes for the read panel", () => {
+  const game = secondGame();
+  const ts = new Search(game);
+  assertEquals(ts.mode, SearchMode.SECOND);
+  assertEquals(ts.us, Turn.PLAYER_2);
+  const hiddenOutcomes = ts.opponentMoves.map((move, index) => ({
+    pillz: move.pillz,
+    fury: move.fury,
+    score: [-1, 0, 1][index % 3]!,
+    flags: index === 0 ? 1 : index === 1 ? 2 : 0,
+  }));
+  const totalWeight = hiddenOutcomes.reduce(
+    (sum, outcome) =>
+      sum + openingReplyWeight({
+        index: 0,
+        pillz: outcome.pillz,
+        fury: outcome.fury,
+      }),
+    0,
+  );
+  const average = hiddenOutcomes.reduce(
+    (sum, outcome) =>
+      sum + outcome.score * openingReplyWeight({
+          index: 0,
+          pillz: outcome.pillz,
+          fury: outcome.fury,
+        }),
+    0,
+  ) / totalWeight;
+  const ranked = ts.candidates.map((candidate) => ({
+    handIndex: candidate.index,
+    pillz: candidate.pillz,
+    fury: candidate.fury,
+    score: average,
+    worst: Math.min(...hiddenOutcomes.map((outcome) => outcome.score)),
+    best: Math.max(...hiddenOutcomes.map((outcome) => outcome.score)),
+    samples: ts.samples,
+    kos: hiddenOutcomes.filter((outcome) => (outcome.flags & 1) !== 0).length,
+    koed: hiddenOutcomes.filter((outcome) => (outcome.flags & 2) !== 0).length,
+    hiddenOutcomes,
+  }));
+  const final: RustAdvisorFinal = {
+    kind: "final",
+    sequence: 0,
+    evaluationKind: "opening_estimate",
+    complete: true,
+    unitsDone: ts.units,
+    unitsTotal: ts.units,
+    elapsedMs: 1,
+    mode: "second",
+    opponentHandIndex: 0,
+    ranked,
+  };
+  const adapter = new CompletedRustSearch(game, final);
+  const outcome = adapter.outcome(
+    adapter.candidates[0],
+    adapter.opponentMoves[0],
+  );
+  assertEquals(outcome, { value: 1, ko: true, koed: false });
+  assertStringIncludes(
+    render(game, adapter, { size: { columns: 100, rows: 30 } }),
+    "answering",
+  );
+  assertThrows(
+    () =>
+      new CompletedRustSearch(game, {
+        ...final,
+        ranked: [{
+          ...final.ranked[0],
+          hiddenOutcomes: [{
+            ...final.ranked[0].hiddenOutcomes![0],
+            score: 1,
+          }, ...final.ranked[0].hiddenOutcomes!.slice(1)],
+        }, ...final.ranked.slice(1)],
+      }),
+    RustAdvisorProtocolError,
+  );
+});
+
+Deno.test("completed Rust BLIND_SECOND adapter keeps the provisional view shape", () => {
+  const game = p2FirstGame();
+  const ts = new Search(game, 1, 0, true);
+  assertEquals(ts.mode, SearchMode.BLIND_SECOND);
+  const adapter = new CompletedRustSearch(game, {
+    kind: "final",
+    sequence: 0,
+    evaluationKind: "opening_estimate",
+    complete: true,
+    unitsDone: ts.units,
+    unitsTotal: ts.units,
+    elapsedMs: 1,
+    mode: "blind_second",
+    opponentHandIndex: null,
+    ranked: ts.candidates.map((candidate) => ({
+      handIndex: candidate.index,
+      pillz: candidate.pillz,
+      fury: candidate.fury,
+      score: 0,
+      worst: 0,
+      best: 0,
+      samples: ts.samples,
+      kos: 0,
+      koed: 0,
+      hiddenOutcomes: null,
+    })),
+  });
+  assertEquals(adapter.mode, SearchMode.BLIND_SECOND);
+  assertStringIncludes(
+    render(game, adapter, { size: { columns: 100, rows: 30 } }),
+    "opponent choosing",
   );
 });

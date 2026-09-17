@@ -1,7 +1,7 @@
 // Strict, one-request-per-process bridge for the experimental Rust advisor.
 //
 // This module deliberately knows nothing about Advisor.Reconstructed.  Callers build a
-// fully-normalised DTO from their public snapshot, then hand it to buildFirstRequest().
+// fully-normalised DTO from their public snapshot, then hand it to buildAdvisorRequest().
 // Keeping that boundary here makes the wire format reviewable and avoids accidentally
 // serialising a private live-site reconstruction into a child process.
 import Game from "../game/Game.ts";
@@ -9,6 +9,7 @@ import { Turn } from "../game/types/Types.ts";
 import Search, {
   type Candidate,
   type Move,
+  openingReplyWeight,
   SearchMode,
   type SearchStats,
 } from "./Search.ts";
@@ -61,7 +62,9 @@ export interface RustHistoryRound {
   readonly p2: RustHistoryMove;
 }
 
-export interface RustFirstInput {
+export type RustAdvisorMode = "first" | "second" | "blind_second";
+
+interface RustAdvisorInputBase {
   readonly requestId: string;
   readonly us: RustWirePlayer;
   readonly firstMover: RustWirePlayer;
@@ -77,10 +80,20 @@ export interface RustFirstInput {
   readonly budgetMs: number;
 }
 
-export interface RustFirstRequest {
-  readonly protocol_version: 1;
+export type RustAdvisorInput =
+  | (RustAdvisorInputBase & { readonly mode: "first" })
+  | (RustAdvisorInputBase & {
+    readonly mode: "second";
+    readonly opponentHandIndex: number;
+  })
+  | (RustAdvisorInputBase & { readonly mode: "blind_second" });
+
+/** Backwards-compatible first-mover DTO; V1 callers did not need to spell out `mode`. */
+export type RustFirstInput = RustAdvisorInputBase;
+
+interface RustAdvisorRequestBase {
+  readonly protocol_version: 2;
   readonly request_id: string;
-  readonly mode: "first";
   readonly us: RustWirePlayer;
   readonly first_mover: RustWirePlayer;
   readonly battle_rule_id: number;
@@ -110,6 +123,20 @@ export interface RustFirstRequest {
   readonly budget_ms: number;
 }
 
+export type RustAdvisorRequest =
+  | (RustAdvisorRequestBase & { readonly mode: "first" })
+  | (RustAdvisorRequestBase & {
+    readonly mode: "second";
+    readonly opponent_hand_index: number;
+  })
+  | (RustAdvisorRequestBase & { readonly mode: "blind_second" });
+
+/** Backwards-compatible first-mode wire alias. */
+export type RustFirstRequest = Extract<
+  RustAdvisorRequest,
+  { mode: "first" }
+>;
+
 export interface RustWirePlayerState {
   readonly initial: RustResources;
   readonly current: RustResources;
@@ -124,9 +151,9 @@ export interface RustWirePlayerState {
   }[];
 }
 
-export const RUST_ADVISOR_VERSION = 1 as const;
-/** Rust permits 32 progress records plus one final, 65,536 bytes each including newlines. */
-export const DEFAULT_MAX_JSONL_BYTES = 2_162_721;
+export const RUST_ADVISOR_VERSION = 2 as const;
+/** V2 permits 32 progress records plus a detailed SECOND-mode final. */
+export const DEFAULT_MAX_JSONL_BYTES = 3_145_761;
 export const DEFAULT_MAX_STDERR_BYTES = 64_000;
 export const DEFAULT_MAX_JSONL_LINES = 1_024;
 export const DEFAULT_MAX_REQUEST_BYTES = 65_536;
@@ -255,10 +282,16 @@ function json(value: JsonValue, where: string): JsonValue {
 }
 
 /**
- * The V1 request builder.  It validates and copies the supplied DTO but makes no attempt
+ * The V2 request builder. It validates and copies the supplied DTO but makes no attempt
  * to infer its contents from a capture or the private Advisor reconstruction.
  */
-export function buildFirstRequest(input: RustFirstInput): RustFirstRequest {
+export function buildAdvisorRequest(
+  input: RustAdvisorInput,
+): RustAdvisorRequest {
+  if (
+    input.mode !== "first" && input.mode !== "second" &&
+    input.mode !== "blind_second"
+  ) fail("mode is unsupported");
   const requestId = string(input.requestId, "requestId");
   if (requestId.length > 128 || !/^[\x20-\x7e]+$/.test(requestId)) {
     fail("requestId must be 1..=128 printable ASCII bytes");
@@ -322,10 +355,16 @@ export function buildFirstRequest(input: RustFirstInput): RustFirstRequest {
   if (input.firstMover !== "p1" && input.firstMover !== "p2") {
     fail("firstMover must be p1 or p2");
   }
-  if (input.us !== input.firstMover) {
-    fail("V1 first mode requires us and firstMover to match");
+  if (input.mode === "first" && input.us !== input.firstMover) {
+    fail("first mode requires us and firstMover to match");
   }
-  if (input.battleRuleId !== 10) fail("V1 supports battleRuleId 10 only");
+  if (input.mode === "second" && input.us === input.firstMover) {
+    fail("second mode requires us to be the second mover");
+  }
+  if (input.mode === "blind_second" && input.us === input.firstMover) {
+    fail("blind_second mode requires us to be the second mover");
+  }
+  if (input.battleRuleId !== 10) fail("V2 supports battleRuleId 10 only");
   if (typeof input.night !== "boolean") fail("night must be boolean");
   keys(object(input.provenance, "provenance"), [
     "effectiveCatalogFingerprintFnv1a64",
@@ -372,10 +411,12 @@ export function buildFirstRequest(input: RustFirstInput): RustFirstRequest {
     expectedHistoryFirst !== undefined &&
     expectedHistoryFirst !== input.firstMover
   ) fail("firstMover must follow history alternation");
-  return {
+  if (input.mode === "blind_second" && history.length === 0) {
+    fail("blind_second mode requires at least one completed history round");
+  }
+  const base: RustAdvisorRequestBase = {
     protocol_version: RUST_ADVISOR_VERSION,
     request_id: requestId,
-    mode: "first",
     us: input.us,
     first_mover: input.firstMover,
     battle_rule_id: 10,
@@ -403,6 +444,24 @@ export function buildFirstRequest(input: RustFirstInput): RustFirstRequest {
     history,
     budget_ms: boundedInteger(input.budgetMs, "budgetMs", 1, 30_000),
   };
+  if (input.mode === "second") {
+    return {
+      ...base,
+      mode: "second",
+      opponent_hand_index: boundedInteger(
+        input.opponentHandIndex,
+        "opponentHandIndex",
+        0,
+        3,
+      ),
+    };
+  }
+  return { ...base, mode: input.mode };
+}
+
+/** Compatibility helper for existing first-mover normalisers. */
+export function buildFirstRequest(input: RustFirstInput): RustFirstRequest {
+  return buildAdvisorRequest({ ...input, mode: "first" }) as RustFirstRequest;
 }
 
 export interface RustRankedEntry {
@@ -416,6 +475,17 @@ export interface RustRankedEntry {
   readonly samples: number;
   readonly kos: number;
   readonly koed: number;
+  /** Exact hidden-wager lines. Required only by a complete SECOND final. */
+  readonly hiddenOutcomes: readonly RustHiddenOutcome[] | null;
+}
+
+export interface RustHiddenOutcome {
+  readonly pillz: number;
+  readonly fury: boolean;
+  /** Value in Rust's requester frame. */
+  readonly score: number;
+  /** Bit 0 = requester KOs now; bit 1 = requester is KO'd now. */
+  readonly flags: number;
 }
 
 export interface RustAdvisorUpdate {
@@ -426,6 +496,9 @@ export interface RustAdvisorUpdate {
   readonly unitsDone: number;
   readonly unitsTotal: number;
   readonly elapsedMs: number;
+  readonly mode: RustAdvisorMode;
+  /** Echoed so a stale SECOND reply can never be mistaken for another card. */
+  readonly opponentHandIndex: number | null;
   readonly ranked: readonly RustRankedEntry[];
 }
 
@@ -439,10 +512,37 @@ export interface RustAdvisorTranscript {
 }
 
 export interface ResponseExpectation {
-  readonly version: 1;
+  readonly version: 2;
   readonly requestId: string;
+  readonly mode: RustAdvisorMode;
+  readonly opponentHandIndex: number | null;
   /** Every update must describe this exact action set, once each. */
   readonly candidates?: readonly Pick<Move, "index" | "pillz" | "fury">[];
+  /** Exact legal wagers for the visible opponent card in SECOND mode. */
+  readonly opponentMoves?: readonly Pick<Move, "pillz" | "fury">[];
+}
+
+function normaliseHiddenOutcomes(
+  value: unknown,
+  where: string,
+): readonly RustHiddenOutcome[] | null {
+  if (value === null) return null;
+  if (!Array.isArray(value)) fail(`${where} must be null or an array`);
+  return value.map((outcome, index) => {
+    if (!Array.isArray(outcome) || outcome.length !== 4) {
+      fail(`${where}[${index}] must be a four-item tuple`);
+    }
+    const [pillz, fury, value, flags] = outcome;
+    if (typeof fury !== "boolean") {
+      fail(`${where}[${index}][1] must be boolean`);
+    }
+    return {
+      pillz: boundedInteger(pillz, `${where}[${index}][0]`, 0, 30),
+      fury,
+      score: score(value, `${where}[${index}][2]`),
+      flags: boundedInteger(flags, `${where}[${index}][3]`, 0, 3),
+    };
+  });
 }
 
 function normaliseRanked(value: unknown, where: string): RustRankedEntry {
@@ -456,7 +556,7 @@ function normaliseRanked(value: unknown, where: string): RustRankedEntry {
     "best",
     "samples",
   ];
-  keys(entry, [...base, "ko_share", "loss_share"], where);
+  keys(entry, [...base, "ko_share", "loss_share", "hidden_outcomes"], where);
   const samples = integer(entry.samples, `${where}.samples`, 1);
   const scoreValue = score(entry.score, `${where}.score`);
   const worst = score(entry.worst, `${where}.worst`);
@@ -489,6 +589,10 @@ function normaliseRanked(value: unknown, where: string): RustRankedEntry {
     samples,
     kos,
     koed,
+    hiddenOutcomes: normaliseHiddenOutcomes(
+      entry.hidden_outcomes,
+      `${where}.hidden_outcomes`,
+    ),
   };
 }
 
@@ -525,6 +629,65 @@ function checkCandidates(
   }
 }
 
+function expectedSecondWagers(
+  expectation: ResponseExpectation,
+): readonly Pick<Move, "pillz" | "fury">[] {
+  if (expectation.mode !== "second") return [];
+  // The public request has no Game, but wager legality depends only on the opponent's
+  // current resources. `decodeRustJsonl` receives this exact set from runRustAdvisor.
+  return expectation.opponentMoves ?? [];
+}
+
+function checkHiddenOutcomes(
+  ranked: readonly RustRankedEntry[],
+  expectation: ResponseExpectation,
+  complete: boolean,
+  where: string,
+) {
+  const requireOutcomes = complete && expectation.mode === "second";
+  const expected = expectedSecondWagers(expectation);
+  if (requireOutcomes && expected.length === 0) {
+    fail(`${where} SECOND response lacks an expected wager set`);
+  }
+  const expectedKeys = new Set(
+    expected.map((move) => `${move.pillz}:${move.fury}`),
+  );
+  if (expectedKeys.size !== expected.length) {
+    fail(`${where} expected SECOND wager set is not unique`);
+  }
+  for (const [index, entry] of ranked.entries()) {
+    const outcomes = entry.hiddenOutcomes;
+    if (!requireOutcomes) {
+      if (outcomes !== null) {
+        fail(`${where}.ranked[${index}] hidden_outcomes must be null`);
+      }
+      continue;
+    }
+    if (outcomes === null) {
+      fail(`${where}.ranked[${index}] hidden_outcomes are required`);
+    }
+    const seen = new Set<string>();
+    for (const outcome of outcomes) {
+      const key = `${outcome.pillz}:${outcome.fury}`;
+      if (!expectedKeys.has(key)) {
+        fail(`${where}.ranked[${index}] has an unexpected hidden wager ${key}`);
+      }
+      if (seen.has(key)) {
+        fail(`${where}.ranked[${index}] has a duplicate hidden wager ${key}`);
+      }
+      seen.add(key);
+    }
+    if (seen.size !== expectedKeys.size) {
+      fail(
+        `${where}.ranked[${index}] hidden outcomes do not match every wager`,
+      );
+    }
+    if (entry.samples !== outcomes.length) {
+      fail(`${where}.ranked[${index}] samples do not match hidden outcomes`);
+    }
+  }
+}
+
 function decodeLine(
   line: string,
   expectation: ResponseExpectation,
@@ -550,6 +713,8 @@ function decodeLine(
     "units_done",
     "units_total",
     "elapsed_ms",
+    "mode",
+    "opponent_hand_index",
     "ranked_moves",
   ], `line ${lineNumber}`);
   if (
@@ -560,6 +725,28 @@ function decodeLine(
   }
   if (message.score_frame !== "requester") {
     fail(`line ${lineNumber} has unsupported score frame`);
+  }
+  if (
+    message.mode !== "first" && message.mode !== "second" &&
+    message.mode !== "blind_second"
+  ) {
+    fail(`line ${lineNumber} has unsupported mode`);
+  }
+  const opponentHandIndex = message.mode === "second"
+    ? boundedInteger(
+      message.opponent_hand_index,
+      `line ${lineNumber}.opponent_hand_index`,
+      0,
+      3,
+    )
+    : message.opponent_hand_index === null
+    ? null
+    : fail(`line ${lineNumber}.opponent_hand_index must be null`);
+  if (message.mode !== expectation.mode) {
+    fail(`line ${lineNumber} mode does not echo this request`);
+  }
+  if (opponentHandIndex !== expectation.opponentHandIndex) {
+    fail(`line ${lineNumber} opponent_hand_index does not echo this request`);
   }
   integer(message.sequence, `line ${lineNumber}.sequence`, 0);
   if (typeof message.complete !== "boolean") {
@@ -578,6 +765,12 @@ function decodeLine(
     ranked,
     expectation.candidates,
     kind === "final" && message.complete === true,
+  );
+  checkHiddenOutcomes(
+    ranked,
+    expectation,
+    kind === "final" && message.complete === true,
+    `line ${lineNumber}`,
   );
   const unitsDone = integer(
     message.units_done,
@@ -606,6 +799,8 @@ function decodeLine(
     unitsDone,
     unitsTotal,
     elapsedMs: integer(message.elapsed_ms, `line ${lineNumber}.elapsed_ms`, 0),
+    mode: message.mode as RustAdvisorMode,
+    opponentHandIndex,
     ranked,
   };
   return update;
@@ -828,7 +1023,7 @@ export interface RunRustAdvisorOptions {
 /** Runs one disposable worker and accepts only a clean exit plus one valid final response. */
 export async function runRustAdvisor(
   runner: RustAdvisorRunner,
-  request: RustFirstRequest,
+  request: RustAdvisorRequest,
   expectedCandidates: readonly Pick<Move, "index" | "pillz" | "fury">[],
   options: RunRustAdvisorOptions = {},
 ): Promise<RustAdvisorTranscript> {
@@ -882,7 +1077,16 @@ export async function runRustAdvisor(
     return decodeRustJsonl(output.stdout, {
       version: request.protocol_version,
       requestId: request.request_id,
+      mode: request.mode,
+      opponentHandIndex: request.mode === "second"
+        ? request.opponent_hand_index
+        : null,
       candidates: expectedCandidates,
+      opponentMoves: request.mode === "second"
+        ? legalWagers(
+          request.players[request.us === "p1" ? "p2" : "p1"].current.pillz,
+        )
+        : undefined,
     }, { maxBytes: options.maxStdoutBytes, maxLines: options.maxLines });
   } finally {
     clearTimeout(timer);
@@ -890,11 +1094,17 @@ export async function runRustAdvisor(
   }
 }
 
-/**
- * A completed FIRST-mode Search backed by a Rust final response.  Search's view API stays
- * authoritative: action identity is checked against the TS legal move set before values
- * are copied, and only the score frame is translated (Rust `ours` -> TS P1).
- */
+/** The visible-card SECOND matrix has one hypothesis for each legal hidden wager. */
+function legalWagers(pillz: number): Pick<Move, "pillz" | "fury">[] {
+  const result: Pick<Move, "pillz" | "fury">[] = [];
+  for (let wager = 0; wager <= pillz; wager++) {
+    if (wager <= pillz - 3) result.push({ pillz: wager, fury: true });
+    result.push({ pillz: wager, fury: false });
+  }
+  return result;
+}
+
+/** A completed Rust result backed by the normal TS Search view API. */
 function validateCompletedFinal(final: RustAdvisorFinal) {
   const value = object(final, "final");
   keys(value, [
@@ -905,10 +1115,21 @@ function validateCompletedFinal(final: RustAdvisorFinal) {
     "unitsDone",
     "unitsTotal",
     "elapsedMs",
+    "mode",
+    "opponentHandIndex",
     "ranked",
   ], "final");
   if (value.kind !== "final" || value.complete !== true) {
     fail("final must be a complete final update");
+  }
+  if (
+    value.mode !== "first" && value.mode !== "second" &&
+    value.mode !== "blind_second"
+  ) fail("final.mode is unsupported");
+  if (value.mode === "second") {
+    boundedInteger(value.opponentHandIndex, "final.opponentHandIndex", 0, 3);
+  } else if (value.opponentHandIndex !== null) {
+    fail("final.opponentHandIndex must be null outside SECOND mode");
   }
   integer(value.sequence, "final.sequence", 0);
   evaluationKind(value.evaluationKind, "final.evaluationKind");
@@ -931,6 +1152,7 @@ function validateCompletedFinal(final: RustAdvisorFinal) {
       "samples",
       "kos",
       "koed",
+      "hiddenOutcomes",
     ], where);
     boundedInteger(row.handIndex, `${where}.handIndex`, 0, 3);
     boundedInteger(row.pillz, `${where}.pillz`, 0, 30);
@@ -947,6 +1169,39 @@ function validateCompletedFinal(final: RustAdvisorFinal) {
     if (kos > samples || koed > samples) {
       fail(`${where} KO count exceeds samples`);
     }
+    if (row.hiddenOutcomes !== null && !Array.isArray(row.hiddenOutcomes)) {
+      fail(`${where}.hiddenOutcomes must be null or an array`);
+    }
+    if (Array.isArray(row.hiddenOutcomes)) {
+      for (const [outcomeIndex, outcome] of row.hiddenOutcomes.entries()) {
+        const outcomeWhere = `${where}.hiddenOutcomes[${outcomeIndex}]`;
+        const value = object(outcome, outcomeWhere);
+        keys(value, ["pillz", "fury", "score", "flags"], outcomeWhere);
+        boundedInteger(value.pillz, `${outcomeWhere}.pillz`, 0, 30);
+        if (typeof value.fury !== "boolean") {
+          fail(`${outcomeWhere}.fury must be boolean`);
+        }
+        score(value.score, `${outcomeWhere}.score`);
+        boundedInteger(value.flags, `${outcomeWhere}.flags`, 0, 3);
+      }
+    }
+  }
+}
+
+const CLOSE_ENOUGH = 0.005;
+
+function closeEnough(actual: number, expected: number) {
+  return Math.abs(actual - expected) <= CLOSE_ENOUGH;
+}
+
+function wireMode(mode: SearchMode): RustAdvisorMode {
+  switch (mode) {
+    case SearchMode.FIRST:
+      return "first";
+    case SearchMode.SECOND:
+      return "second";
+    case SearchMode.BLIND_SECOND:
+      return "blind_second";
   }
 }
 
@@ -955,11 +1210,16 @@ export class CompletedRustSearch extends Search {
   readonly #ceilings = new Map<string, number>();
 
   constructor(game: Game, final: RustAdvisorFinal) {
-    super(game);
+    super(game, 1, 0, final.mode === "blind_second");
     validateCompletedFinal(final);
-    if (this.mode !== SearchMode.FIRST) {
+    if (final.mode !== wireMode(this.mode)) {
       throw new RustAdvisorProtocolError(
-        "completed Rust adapter only supports FIRST mode",
+        "final mode does not match the TS search mode",
+      );
+    }
+    if (final.opponentHandIndex !== (this.oppIndex ?? null)) {
+      throw new RustAdvisorProtocolError(
+        "final opponent_hand_index does not match the visible TS card",
       );
     }
     if (!final.complete || final.unitsDone !== final.unitsTotal) {
@@ -979,7 +1239,7 @@ export class CompletedRustSearch extends Search {
     }
     if (final.unitsTotal !== this.units) {
       throw new RustAdvisorProtocolError(
-        "final unit count does not match the TS FIRST-mode matrix",
+        "final unit count does not match the TS mode matrix",
       );
     }
     const byAction = new Map(
@@ -994,12 +1254,76 @@ export class CompletedRustSearch extends Search {
       )!;
       if (entry.samples !== this.samples) {
         throw new RustAdvisorProtocolError(
-          `candidate ${candidate.key} samples do not match TS FIRST-mode replies`,
+          `candidate ${candidate.key} samples do not match TS mode replies`,
         );
       }
       const p1 = (value: number) => this.us === Turn.PLAYER_1 ? value : -value;
-      candidate.values = [p1(entry.score)];
-      candidate.weights = [1];
+      if (this.mode === SearchMode.SECOND) {
+        const outcomes = entry.hiddenOutcomes;
+        if (outcomes === null) {
+          throw new RustAdvisorProtocolError(
+            `candidate ${candidate.key} has no hidden outcomes`,
+          );
+        }
+        const seen = new Set<number>();
+        for (const outcome of outcomes) {
+          const sampleIndex = this.opponentMoves.findIndex((move) =>
+            move.pillz === outcome.pillz && move.fury === outcome.fury
+          );
+          if (sampleIndex < 0 || seen.has(sampleIndex)) {
+            throw new RustAdvisorProtocolError(
+              `candidate ${candidate.key} has invalid hidden outcomes`,
+            );
+          }
+          seen.add(sampleIndex);
+          candidate.values.push(p1(outcome.score));
+          candidate.sampleIndexes.push(sampleIndex);
+          candidate.sampleFlags.push(outcome.flags);
+          candidate.weights.push(
+            this.openingEstimate
+              ? openingReplyWeight(this.opponentMoves[sampleIndex])
+              : 1,
+          );
+        }
+        if (seen.size !== this.opponentMoves.length) {
+          throw new RustAdvisorProtocolError(
+            `candidate ${candidate.key} hidden outcomes do not cover every wager`,
+          );
+        }
+        // Cross-check in the worker's requester frame. For requester P2, converting first
+        // would reverse the minimum/maximum and make a valid Worst look like a Best.
+        let weight = 0, total = 0;
+        let worst = Infinity, best = -Infinity, kos = 0, koed = 0;
+        for (const [index, outcome] of outcomes.entries()) {
+          const value = outcome.score;
+          const sampleWeight = candidate.weights[index];
+          weight += sampleWeight;
+          total += value * sampleWeight;
+          worst = Math.min(worst, value);
+          best = Math.max(best, value);
+          const flags = candidate.sampleFlags[index];
+          if ((flags & 1) !== 0) kos++;
+          if ((flags & 2) !== 0) koed++;
+        }
+        if (
+          !closeEnough(total / weight, entry.score) ||
+          !closeEnough(worst, entry.worst) ||
+          !closeEnough(best, entry.best) ||
+          kos !== entry.kos || koed !== entry.koed
+        ) {
+          throw new RustAdvisorProtocolError(
+            `candidate ${candidate.key} aggregate contradicts hidden outcomes`,
+          );
+        }
+      } else {
+        if (entry.hiddenOutcomes !== null) {
+          throw new RustAdvisorProtocolError(
+            `candidate ${candidate.key} has unexpected hidden outcomes`,
+          );
+        }
+        candidate.values = [p1(entry.score)];
+        candidate.weights = [1];
+      }
       candidate.average = p1(entry.score);
       candidate.minimax = p1(entry.worst);
       candidate.done = entry.samples;

@@ -13,8 +13,8 @@ import Player from "@/game/Player.ts";
 import { HandGenerator } from "@/game/Hand.ts";
 import { Turn } from "@/game/types/Types.ts";
 import type {
+  RustAdvisorRequest,
   RustAdvisorRunner,
-  RustFirstRequest,
 } from "@/solver/RustAdvisor.ts";
 import type { RustAdvisorInputResult } from "@/solver/RustAdvisorInput.ts";
 import { SearchMode } from "@/solver/Search.ts";
@@ -31,10 +31,14 @@ const rustJobGame = () =>
 
 const workerFinal = (requestId: string, search: Search) =>
   JSON.stringify({
-    protocol_version: 1,
+    protocol_version: 2,
     request_id: requestId,
     sequence: 0,
     kind: "final",
+    mode: search.mode === SearchMode.BLIND_SECOND
+      ? "blind_second"
+      : search.mode,
+    opponent_hand_index: search.oppIndex ?? null,
     score_frame: "requester",
     evaluation_kind: "opening_estimate",
     complete: true,
@@ -51,6 +55,7 @@ const workerFinal = (requestId: string, search: Search) =>
       samples: search.samples,
       ko_share: 0,
       loss_share: 0,
+      hidden_outcomes: null,
     })),
   });
 
@@ -98,9 +103,10 @@ function supportedRequest() {
   return {
     supported: true as const,
     request: {
-      protocol_version: 1,
+      protocol_version: 2,
       request_id: "advisor-test",
-    } as RustFirstRequest,
+      mode: "first",
+    } as RustAdvisorRequest,
   };
 }
 
@@ -158,10 +164,11 @@ Deno.test("Rust advisor mode is explicit and fails closed on unknown values", ()
   }
 });
 
-Deno.test("Rust worker eligibility is off by default and first-mover only", () => {
+Deno.test("Rust worker eligibility is off by default and covers every search mode", () => {
   assertEquals(rustDecisionEnabled("off", SearchMode.FIRST), false);
-  assertEquals(rustDecisionEnabled("compare", SearchMode.SECOND), false);
-  assertEquals(rustDecisionEnabled("use", SearchMode.BLIND_SECOND), false);
+  assertEquals(rustDecisionEnabled("off", SearchMode.SECOND), false);
+  assertEquals(rustDecisionEnabled("compare", SearchMode.SECOND), true);
+  assertEquals(rustDecisionEnabled("use", SearchMode.BLIND_SECOND), true);
   assertEquals(rustDecisionEnabled("compare", SearchMode.FIRST), true);
 });
 

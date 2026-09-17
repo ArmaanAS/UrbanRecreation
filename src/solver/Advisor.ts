@@ -5,8 +5,8 @@
 //   deno task advise --replay 901613 # review a captured battle, decision by decision
 //   deno task advise --replay 901613 --budget 5
 //   deno task advise --workers 1     # leave solving on the main thread
-//   deno task advise --rust=compare  # keep TS authoritative and compare supported FIRST decisions
-//   deno task advise --rust=use      # show protocol-validated Rust results for supported FIRST decisions
+//   deno task advise --rust=compare  # keep TS authoritative and compare supported decisions
+//   deno task advise --rust=use      # show protocol-validated Rust results when supported
 //   deno task advise --preview-safe  # inspect the zero-risk shortlist without a live game
 //   deno task advise --preview-results # compare the available game-over banner styles
 //
@@ -587,9 +587,9 @@ function cancelPosition(pos: Position) {
 
 export function rustDecisionEnabled(
   rust: AdvisorOptions["rust"],
-  mode: SearchMode,
+  _mode: SearchMode,
 ): rust is Exclude<AdvisorOptions["rust"], "off"> {
-  return rust !== "off" && mode === SearchMode.FIRST;
+  return rust !== "off";
 }
 
 function startRustForPosition(
@@ -600,17 +600,18 @@ function startRustForPosition(
   runner: RustAdvisorRunner | (() => Promise<RustAdvisorRunner>) = async () =>
     new DenoCommandRunner({ command: await rustWorkerCommand() }),
 ) {
-  // Off must be observationally identical, and V1 deliberately has no SECOND/blind mode.
+  // Off must remain observationally identical. Every enabled mode still passes through
+  // the strict capture normaliser and worker protocol before it can replace TypeScript.
   if (!rustDecisionEnabled(opts.rust, pos.search.mode)) return;
   const mode: "compare" | "use" = opts.rust;
-  const job = new RustDecisionJob({
+  const job: RustDecisionJob = new RustDecisionJob({
     mode,
     key: pos.key,
     requestId: `rust:${pos.key}`,
     game: pos.game,
     getSearch: () => pos.search,
     replaceSearch: (search) => pos.search = search,
-    isCurrent: () => pos.rust === job,
+    isCurrent: (): boolean => pos.rust === job,
     normalise: () =>
       normaliseRustAdvisorInput({
         rec,

@@ -1,4 +1,4 @@
-import { CardJSON, ClanNames, HandOf } from "./types/CardTypes.ts";
+import { CardJSON, HandOf } from "./types/CardTypes.ts";
 import Card, { CardGenerator } from "./Card.ts";
 import type { Clan } from "@/game/types/CardTypes.ts";
 
@@ -21,7 +21,9 @@ export default class Hand extends Array<Card> {
   // }
 
   /**
-   * A played card can never change again, so only the live ones are copied.
+   * A resolved card can never change again, so only cards without a round result are
+   * copied. A currently selected first card is already `played` but has no `won` result;
+   * it must remain private to the clone because SECOND search deselects its cloned root.
    *
    * Built by index assignment rather than `Object.setPrototypeOf(array, Hand.prototype)`:
    * re-prototyping an array literal is ~345x dearer (tests/CardAccess.bench.ts) and showed
@@ -30,10 +32,10 @@ export default class Hand extends Array<Card> {
    */
   clone(): Hand {
     const h = new Hand();
-    h[0] = this[0].won === undefined && !this[0].played ? this[0].clone() : this[0];
-    h[1] = this[1].won === undefined && !this[1].played ? this[1].clone() : this[1];
-    h[2] = this[2].won === undefined && !this[2].played ? this[2].clone() : this[2];
-    h[3] = this[3].won === undefined && !this[3].played ? this[3].clone() : this[3];
+    h[0] = this[0].won === undefined ? this[0].clone() : this[0];
+    h[1] = this[1].won === undefined ? this[1].clone() : this[1];
+    h[2] = this[2].won === undefined ? this[2].clone() : this[2];
+    h[3] = this[3].won === undefined ? this[3].clone() : this[3];
     return h;
   }
 
@@ -187,14 +189,21 @@ export class HandGenerator {
   }
 
   /** Build a hand from ids / names; `levels[i]` picks the evolution of card i (default: max). */
-  static handOf(cards: HandOf<number | string>, levels?: HandOf<number | undefined>) {
+  static handOf(
+    cards: HandOf<number | string>,
+    levels?: HandOf<number | undefined>,
+  ) {
     return this.from(cards.map((c, i) => {
       const level = levels?.[i];
       const card = CardGenerator.get(c, level);
       if (card !== undefined) {
         return card;
       } else {
-        throw new Error(`Invalid card ID or Name: ${c}${level !== undefined ? ` at level ${level}` : ""}`);
+        throw new Error(
+          `Invalid card ID or Name: ${c}${
+            level !== undefined ? ` at level ${level}` : ""
+          }`,
+        );
       }
     }) as HandOf<Card>);
   }

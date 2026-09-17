@@ -542,6 +542,7 @@ mod tests {
                     samples: 12,
                     kos: 3,
                     koed: 1,
+                    hidden_outcomes: Vec::new(),
                 },
                 RankedMove {
                     move_: AdvisorMove {
@@ -555,6 +556,7 @@ mod tests {
                     samples: 4,
                     kos: 0,
                     koed: 2,
+                    hidden_outcomes: Vec::new(),
                 },
             ],
             units_done: if complete { 16 } else { 4 },

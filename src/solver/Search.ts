@@ -166,7 +166,7 @@ const OPENING_REPLY_COUNTS: Readonly<Record<string, number>> = {
   "9 true": 2,
 };
 
-const openingReplyWeight = (move: Move) =>
+export const openingReplyWeight = (move: Move) =>
   (OPENING_REPLY_COUNTS[`${move.pillz} ${move.fury}`] ?? 0) + 1;
 
 export interface SearchStats {

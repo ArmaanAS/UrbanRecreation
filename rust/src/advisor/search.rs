@@ -77,6 +77,20 @@ pub struct RankedMove {
     pub samples: usize,
     pub kos: usize,
     pub koed: usize,
+    /// Per-hidden-wager values are retained only for a precise second-mover root.  The
+    /// JSONL boundary publishes them only in a complete final response; progress and the
+    /// other information sets deliberately expose no speculative per-wager panel.
+    pub hidden_outcomes: Vec<HiddenOutcome>,
+}
+
+/// One precise second-mover result for a hidden opponent wager, in the requester's frame.
+/// `flags` uses bit 1 for an immediate KO and bit 2 for being KO'd immediately.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HiddenOutcome {
+    pub opponent_pillz: u16,
+    pub opponent_fury: bool,
+    pub value: f64,
+    pub flags: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -106,6 +120,7 @@ struct Candidate {
     samples: usize,
     kos: usize,
     koed: usize,
+    hidden_outcomes: Vec<HiddenOutcome>,
 }
 
 impl Candidate {
@@ -119,6 +134,7 @@ impl Candidate {
             samples: 0,
             kos: 0,
             koed: 0,
+            hidden_outcomes: Vec::new(),
         }
     }
 
@@ -153,7 +169,17 @@ impl Candidate {
             samples: self.samples,
             kos: self.kos,
             koed: self.koed,
+            hidden_outcomes: self.hidden_outcomes.clone(),
         }
+    }
+
+    fn push_hidden_outcome(&mut self, opponent_move: AdvisorMove, sample: Sample) {
+        self.hidden_outcomes.push(HiddenOutcome {
+            opponent_pillz: opponent_move.pillz,
+            opponent_fury: opponent_move.fury,
+            value: sample.value,
+            flags: u8::from(sample.ko) | (u8::from(sample.koed) << 1),
+        });
     }
 }
 
@@ -339,6 +365,7 @@ fn search_with_control(
             }
         }
         SearchMode::Second { .. } | SearchMode::BlindSecond => {
+            let retain_hidden_outcomes = matches!(config.mode, SearchMode::Second { .. });
             'matrix: for &opponent_move in &opponent_moves {
                 let mut column = Vec::with_capacity(candidates.len());
                 for candidate in &candidates {
@@ -361,6 +388,9 @@ fn search_with_control(
                 }
                 for (candidate, (sample, weight)) in candidates.iter_mut().zip(column) {
                     candidate.push(sample, weight);
+                    if retain_hidden_outcomes {
+                        candidate.push_hidden_outcome(opponent_move, sample);
+                    }
                 }
                 units_done += candidates.len();
                 // This exact hidden wager (and, in blind mode, its card) has now been
@@ -819,6 +849,10 @@ mod tests {
         assert_eq!(first_updates, 20);
         assert_eq!(first.evaluation, EvaluationKind::OpeningEstimate);
         assert!(first.ranked.iter().all(|candidate| candidate.samples == 20));
+        assert!(first
+            .ranked
+            .iter()
+            .all(|candidate| candidate.hidden_outcomes.is_empty()));
 
         let mut second_updates = 0;
         let second = search(
@@ -835,6 +869,12 @@ mod tests {
         assert_eq!(second.units_total, 100);
         assert_eq!(second_updates, 5);
         assert!(second.ranked.iter().all(|candidate| candidate.samples == 5));
+        assert!(second.ranked.iter().all(|candidate| {
+            candidate.hidden_outcomes.len() == 5
+                && candidate.hidden_outcomes.iter().all(|outcome| {
+                    outcome.opponent_pillz <= 3 && outcome.flags <= 3 && outcome.value.is_finite()
+                })
+        }));
     }
 
     #[test]
@@ -859,6 +899,10 @@ mod tests {
         );
         assert_eq!(updates, 4);
         assert!(result.ranked.iter().all(|candidate| candidate.samples == 4));
+        assert!(result
+            .ranked
+            .iter()
+            .all(|candidate| candidate.hidden_outcomes.is_empty()));
         assert_eq!(game, before);
     }
 
@@ -1274,6 +1318,7 @@ mod tests {
             samples: 1,
             kos: 0,
             koed: 0,
+            hidden_outcomes: Vec::new(),
         };
         let cheap = RankedMove {
             move_: AdvisorMove {
@@ -1287,6 +1332,7 @@ mod tests {
             samples: 1,
             kos: 0,
             koed: 0,
+            hidden_outcomes: Vec::new(),
         };
         assert_eq!(
             displayed_percent(expensive.average),
@@ -1326,6 +1372,7 @@ mod tests {
             samples: 2,
             kos: 0,
             koed: 0,
+            hidden_outcomes: Vec::new(),
         };
         let knockout = RankedMove {
             move_: AdvisorMove {
@@ -1339,6 +1386,7 @@ mod tests {
             samples: 2,
             kos: 1,
             koed: 0,
+            hidden_outcomes: Vec::new(),
         };
         let mut opening = vec![higher_floor.clone(), knockout.clone()];
         opening.sort_by(|left, right| compare_ranked(left, right, EvaluationKind::OpeningEstimate));

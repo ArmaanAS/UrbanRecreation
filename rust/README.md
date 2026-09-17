@@ -70,13 +70,15 @@ Opp. Ability, server verification, move grading, and the round-two knockout path
 
 Build the release worker from the repository root with `deno task rust:worker`. The normal
 advisor keeps Rust off. `deno task advise --rust=compare` keeps the TypeScript result
-authoritative and compares supported FIRST decisions; `--rust=use` replaces it only with a
-structurally validated complete Rust FIRST result in the existing TypeScript TUI, with automatic
-TypeScript fallback on any worker failure or rejection. V1 is one JSONL request per process
-and strictly checks provenance, replayed history, the legal action set, and response bounds;
-that structural validation is not a per-invocation proof of semantic equivalence. Integrated
-SECOND and blind-second decisions remain TypeScript-only; the manual Rust advisor above still
-supports them. This is a narrow backend integration, not a full policy-parity claim.
+authoritative and compares supported FIRST, SECOND, and blind-second decisions; `--rust=use`
+replaces it only with a structurally validated complete Rust result in the existing TypeScript
+TUI, with automatic TypeScript fallback on any worker failure or rejection. V2 is one JSONL
+request per process and strictly checks provenance, replayed history, information mode, the
+revealed opposing slot, legal action sets, bounded per-wager SECOND outcomes, and response
+bounds. The per-wager detail preserves the TUI's opponent-read panel. That structural
+validation is not a per-invocation proof of semantic equivalence, and the fail-closed engine
+subset still limits which draws are admitted. This is a narrow backend integration, not a
+full engine-parity claim.
 
 ## Historical engine usage
 

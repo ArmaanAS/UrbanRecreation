@@ -1,9 +1,10 @@
 //! Strict, one-shot JSONL protocol for embedding the current Rust advisor.
 //!
-//! V1 is intentionally only the first-mover search.  It keeps the wire boundary small,
-//! validates observed card identities against the prepared catalog/registry sources, and
-//! reconstructs the supplied history through the same fully-executable catalog projection
-//! as the terminal advisor.  Nothing on stdout is ever a diagnostic or a terminal frame.
+//! V2 carries first, revealed-card second, and blind-second information sets. It validates
+//! observed card identities against the prepared catalog/registry sources, reconstructs
+//! supplied resolved history through the same fully-executable catalog projection as the
+//! terminal advisor, and binds SECOND results to the revealed slot. Nothing on stdout is
+//! ever a diagnostic or a terminal frame.
 
 use std::error::Error;
 use std::fmt;
@@ -24,7 +25,7 @@ use crate::engine::{
     CatalogCombatStatSourceDispositionV1, MatchStatus, PlayerId, HAND_SIZE,
 };
 
-pub const PROTOCOL_VERSION: u8 = 1;
+pub const PROTOCOL_VERSION: u8 = 2;
 pub const MAX_REQUEST_BYTES: usize = 65_536;
 const MAX_REQUEST_ID_BYTES: usize = 128;
 const MAX_BUDGET_MS: u64 = 30_000;
@@ -33,9 +34,11 @@ const MAX_LIFE: u16 = 255;
 const MAX_WORKER_PILLZ: u16 = 30;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_PROGRESS_RECORDS: usize = 32;
-const MAX_RESPONSE_BYTES: usize = 65_536;
-// `MAX_PROGRESS_RECORDS` progress records plus one final record are each capped by
-// `MAX_RESPONSE_BYTES` (and one newline), so stdout is bounded at 2,162,721 bytes.
+const MAX_PROGRESS_RESPONSE_BYTES: usize = 65_536;
+const MAX_FINAL_RESPONSE_BYTES: usize = 1_048_576;
+// Progress records are capped at 64 KiB and final records at 1 MiB so a complete SECOND
+// result can include its compact per-hidden-wager panel.  With 32 progress records and a
+// final newline for every record, stdout is bounded at 3,145,761 bytes.
 
 #[derive(Debug)]
 pub enum JsonlWorkerError {
@@ -79,14 +82,25 @@ pub fn run(
     let mut sequence = 0_u64;
     let mut emit =
         |kind: ResponseKind, snapshot: &SearchSnapshot| -> Result<(), JsonlWorkerError> {
-            let response = Response::from_snapshot(request_id.clone(), sequence, kind, snapshot);
+            let response = Response::from_snapshot(
+                request_id.clone(),
+                sequence,
+                kind,
+                request.mode,
+                request.opponent_hand_index,
+                snapshot,
+            );
             sequence = sequence.checked_add(1).ok_or_else(|| {
                 JsonlWorkerError::Protocol("response sequence overflow".to_owned())
             })?;
             let encoded = serde_json::to_vec(&response).map_err(JsonlWorkerError::Output)?;
-            if encoded.len() > MAX_RESPONSE_BYTES {
+            let maximum = match kind {
+                ResponseKind::Progress => MAX_PROGRESS_RESPONSE_BYTES,
+                ResponseKind::Final => MAX_FINAL_RESPONSE_BYTES,
+            };
+            if encoded.len() > maximum {
                 return Err(JsonlWorkerError::Protocol(format!(
-                    "response exceeds {MAX_RESPONSE_BYTES} bytes"
+                    "response exceeds {maximum} bytes"
                 )));
             }
             output.write_all(&encoded)?;
@@ -96,10 +110,11 @@ pub fn run(
         };
 
     let mut game = prepare_game(&request)?;
+    request.validate_prepared(&game)?;
     let config = SearchConfig {
         us: request.us.engine(),
         first_mover: request.first_mover.engine(),
-        mode: SearchMode::First,
+        mode: request.search_mode(),
         budget: Duration::from_millis(request.budget_ms),
     };
     let mut write_failed = None;
@@ -161,10 +176,12 @@ fn read_request(mut input: impl Read) -> Result<Request, JsonlWorkerError> {
 struct Request {
     protocol_version: u8,
     request_id: String,
-    /// V1 accepts exactly this literal; retaining it on the wire makes expansion explicit.
-    mode: String,
-    /// V1 admits only requester-first searches. Named sides avoid an ambiguous boolean
-    /// integration contract while allowing either P1 or P2 to be the requester.
+    /// The requester's information set for the current round.
+    mode: WireSearchMode,
+    /// Required only when the opponent's card is visible but its wager remains hidden.
+    opponent_hand_index: Option<u8>,
+    /// Named sides avoid an ambiguous boolean contract while allowing either P1 or P2 to
+    /// be the requester.
     us: WirePlayer,
     first_mover: WirePlayer,
     battle_rule_id: u32,
@@ -192,12 +209,9 @@ impl Request {
         {
             return Err(protocol("request_id must be 1..=128 printable ASCII bytes"));
         }
-        if self.mode != "first" {
-            return Err(protocol("V1 supports mode \"first\" only"));
-        }
         if self.battle_rule_id != BATTLE_RULE_ID {
             return Err(protocol(&format!(
-                "unsupported battle_rule_id {}; V1 supports {BATTLE_RULE_ID}",
+                "unsupported battle_rule_id {}; V2 supports {BATTLE_RULE_ID}",
                 self.battle_rule_id
             )));
         }
@@ -208,10 +222,50 @@ impl Request {
                 "provenance fingerprints must be exactly 16 lowercase hexadecimal characters",
             ));
         }
-        if self.us != self.first_mover {
-            return Err(protocol(
-                "V1 first mode requires us and first_mover to name the same player",
-            ));
+        match self.mode {
+            WireSearchMode::First => {
+                if self.us != self.first_mover {
+                    return Err(protocol(
+                        "first mode requires us and first_mover to name the same player",
+                    ));
+                }
+                if self.opponent_hand_index.is_some() {
+                    return Err(protocol("first mode must not include opponent_hand_index"));
+                }
+            }
+            WireSearchMode::Second => {
+                if self.us == self.first_mover {
+                    return Err(protocol(
+                        "second mode requires us and first_mover to name different players",
+                    ));
+                }
+                if self.opponent_hand_index.is_none() {
+                    return Err(protocol("second mode requires opponent_hand_index"));
+                }
+                if self
+                    .opponent_hand_index
+                    .is_some_and(|index| index >= HAND_SIZE as u8)
+                {
+                    return Err(protocol("opponent_hand_index must be in 0..3"));
+                }
+            }
+            WireSearchMode::BlindSecond => {
+                if self.us == self.first_mover {
+                    return Err(protocol(
+                        "blind_second mode requires us and first_mover to name different players",
+                    ));
+                }
+                if self.opponent_hand_index.is_some() {
+                    return Err(protocol(
+                        "blind_second mode must not include opponent_hand_index",
+                    ));
+                }
+                if self.history.is_empty() {
+                    return Err(protocol(
+                        "blind_second mode requires at least one completed history round",
+                    ));
+                }
+            }
         }
         if self.budget_ms == 0 || self.budget_ms > MAX_BUDGET_MS {
             return Err(protocol(&format!(
@@ -229,6 +283,47 @@ impl Request {
         }
         Ok(())
     }
+
+    /// Checks the constraints which only become meaningful after the strict history
+    /// replay has reconstructed the root position.
+    fn validate_prepared(
+        &self,
+        game: &crate::engine::CombatStatDiagnosticV1,
+    ) -> Result<(), JsonlWorkerError> {
+        if let WireSearchMode::Second = self.mode {
+            let opponent = self.first_mover.engine();
+            let index = self
+                .opponent_hand_index
+                .expect("validated second mode has opponent_hand_index")
+                as usize;
+            if game.position().played[opponent][index] {
+                return Err(protocol(
+                    "second mode opponent_hand_index must name an unplayed card",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn search_mode(&self) -> SearchMode {
+        match self.mode {
+            WireSearchMode::First => SearchMode::First,
+            WireSearchMode::Second => SearchMode::Second {
+                opponent_hand_index: self
+                    .opponent_hand_index
+                    .expect("validated second mode has opponent_hand_index"),
+            },
+            WireSearchMode::BlindSecond => SearchMode::BlindSecond,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum WireSearchMode {
+    First,
+    Second,
+    BlindSecond,
 }
 
 #[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
@@ -617,6 +712,9 @@ struct Response {
     request_id: String,
     sequence: u64,
     kind: ResponseKind,
+    mode: WireSearchMode,
+    /// Echoes the revealed card binding for SECOND and is null for the other modes.
+    opponent_hand_index: Option<u8>,
     /// Scores, extrema, and KO/loss shares are all measured in the requester's frame.
     score_frame: &'static str,
     evaluation_kind: &'static str,
@@ -632,13 +730,20 @@ impl Response {
         request_id: String,
         sequence: u64,
         kind: ResponseKind,
+        mode: WireSearchMode,
+        opponent_hand_index: Option<u8>,
         snapshot: &SearchSnapshot,
     ) -> Self {
+        let include_hidden_outcomes = matches!(kind, ResponseKind::Final)
+            && snapshot.complete
+            && matches!(mode, WireSearchMode::Second);
         Self {
             protocol_version: PROTOCOL_VERSION,
             request_id,
             sequence,
             kind,
+            mode,
+            opponent_hand_index,
             score_frame: "requester",
             evaluation_kind: match snapshot.evaluation {
                 EvaluationKind::OpeningEstimate => "opening_estimate",
@@ -655,7 +760,7 @@ impl Response {
                 .ranked
                 .iter()
                 .filter(|row| row.samples != 0)
-                .map(ResponseMove::from)
+                .map(|row| ResponseMove::from_ranked(row, include_hidden_outcomes))
                 .collect(),
         }
     }
@@ -672,10 +777,13 @@ struct ResponseMove {
     samples: usize,
     ko_share: f64,
     loss_share: f64,
+    /// Compact `[opponent_pillz, opponent_fury, requester_score, flags]` tuples for a
+    /// complete final SECOND response; null in all other records and modes.
+    hidden_outcomes: Option<Vec<(u16, bool, f64, u8)>>,
 }
 
-impl From<&RankedMove> for ResponseMove {
-    fn from(row: &RankedMove) -> Self {
+impl ResponseMove {
+    fn from_ranked(row: &RankedMove, include_hidden_outcomes: bool) -> Self {
         debug_assert!(row.samples != 0);
         debug_assert!(row.average.is_finite() && row.worst.is_finite() && row.best.is_finite());
         let denominator = row.samples as f64;
@@ -689,6 +797,19 @@ impl From<&RankedMove> for ResponseMove {
             samples: row.samples,
             ko_share: row.kos as f64 / denominator,
             loss_share: row.koed as f64 / denominator,
+            hidden_outcomes: include_hidden_outcomes.then(|| {
+                row.hidden_outcomes
+                    .iter()
+                    .map(|outcome| {
+                        (
+                            outcome.opponent_pillz,
+                            outcome.opponent_fury,
+                            outcome.value,
+                            outcome.flags,
+                        )
+                    })
+                    .collect()
+            }),
         }
     }
 }
@@ -794,7 +915,7 @@ mod tests {
             .map(|slot| prepared_wire_card(&catalog, &prepared, PlayerId::P2, slot))
             .collect::<Vec<_>>();
         json!({
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "fixture-1",
             "mode": "first",
             "us": "p1",
@@ -824,7 +945,7 @@ mod tests {
         .unwrap();
         let registry = EffectRegistryV1::load(root.join("captures/abilities.json")).unwrap();
         json!({
-            "protocol_version": 1,
+            "protocol_version": 2,
             "request_id": "capture-1024673-opening",
             "mode": "first",
             "us": "p1",
@@ -905,6 +1026,21 @@ mod tests {
         request
     }
 
+    fn valid_second_request() -> Value {
+        let mut request = valid_one_round_request();
+        request["mode"] = json!("second");
+        request["us"] = json!("p1");
+        request["opponent_hand_index"] = json!(1);
+        request
+    }
+
+    fn valid_blind_second_request() -> Value {
+        let mut request = valid_one_round_request();
+        request["mode"] = json!("blind_second");
+        request["us"] = json!("p1");
+        request
+    }
+
     #[test]
     fn deterministic_fixture_emits_only_versioned_jsonl_progress_and_final() {
         let (result, stdout, stderr) = invoke(valid_request());
@@ -916,9 +1052,11 @@ mod tests {
             .collect();
         assert!(!lines.is_empty(), "expected a final record: {stdout}");
         for (index, line) in lines.iter().enumerate() {
-            assert_eq!(line["protocol_version"], 1);
+            assert_eq!(line["protocol_version"], 2);
             assert_eq!(line["request_id"], "fixture-1");
             assert_eq!(line["sequence"], index as u64);
+            assert_eq!(line["mode"], "first");
+            assert!(line["opponent_hand_index"].is_null());
             assert_eq!(line["evaluation_kind"], "opening_estimate");
             assert_eq!(line["score_frame"], "requester");
             assert!(line["ranked_moves"].is_array());
@@ -928,6 +1066,7 @@ mod tests {
                 assert!(move_["best"].is_number());
                 assert!(move_["ko_share"].is_number());
                 assert!(move_["loss_share"].is_number());
+                assert!(move_["hidden_outcomes"].is_null());
             }
         }
         assert_eq!(lines.last().unwrap()["kind"], "final");
@@ -979,6 +1118,97 @@ mod tests {
     }
 
     #[test]
+    fn second_mode_echoes_the_revealed_card_and_returns_compact_final_outcomes() {
+        let (result, stdout, _) = invoke(valid_second_request());
+        result.unwrap();
+        let lines: Vec<Value> = stdout
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        for line in &lines {
+            assert_eq!(line["mode"], "second");
+            assert_eq!(line["opponent_hand_index"], 1);
+            if line["kind"] == "progress" {
+                assert!(line["ranked_moves"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|move_| move_["hidden_outcomes"].is_null()));
+            }
+        }
+        let final_record = lines.last().unwrap();
+        assert_eq!(final_record["kind"], "final");
+        assert_eq!(final_record["complete"], true);
+        for move_ in final_record["ranked_moves"].as_array().unwrap() {
+            let outcomes = move_["hidden_outcomes"].as_array().unwrap();
+            assert_eq!(outcomes.len(), move_["samples"].as_u64().unwrap() as usize);
+            for outcome in outcomes {
+                let tuple = outcome.as_array().unwrap();
+                assert_eq!(tuple.len(), 4);
+                assert!(tuple[0].is_number());
+                assert!(tuple[1].is_boolean());
+                assert!(tuple[2].is_number());
+                assert!(tuple[3].is_number());
+                assert!(tuple[3].as_u64().unwrap() <= 3);
+            }
+        }
+    }
+
+    #[test]
+    fn blind_second_echoes_mode_without_a_revealed_card_or_hidden_outcomes() {
+        let (result, stdout, _) = invoke(valid_blind_second_request());
+        result.unwrap();
+        let final_record: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+        assert_eq!(final_record["mode"], "blind_second");
+        assert!(final_record["opponent_hand_index"].is_null());
+        assert!(final_record["ranked_moves"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|move_| move_["hidden_outcomes"].is_null()));
+    }
+
+    #[test]
+    fn v2_mode_contract_rejects_wrong_roles_slots_and_blind_opening() {
+        let mut first_with_slot = valid_request();
+        first_with_slot["opponent_hand_index"] = json!(0);
+        assert_rejected(first_with_slot);
+
+        let mut second_same_side = valid_second_request();
+        second_same_side["us"] = json!("p2");
+        assert_rejected(second_same_side);
+
+        let mut second_missing_slot = valid_second_request();
+        second_missing_slot
+            .as_object_mut()
+            .unwrap()
+            .remove("opponent_hand_index");
+        assert_rejected(second_missing_slot);
+
+        let mut second_bad_slot = valid_second_request();
+        second_bad_slot["opponent_hand_index"] = json!(4);
+        assert_rejected(second_bad_slot);
+
+        let mut second_played_slot = valid_second_request();
+        second_played_slot["opponent_hand_index"] = json!(0);
+        assert_rejected(second_played_slot);
+
+        let mut blind_same_side = valid_blind_second_request();
+        blind_same_side["us"] = json!("p2");
+        assert_rejected(blind_same_side);
+
+        let mut blind_with_slot = valid_blind_second_request();
+        blind_with_slot["opponent_hand_index"] = json!(1);
+        assert_rejected(blind_with_slot);
+
+        let mut blind_opening = valid_request();
+        blind_opening["mode"] = json!("blind_second");
+        blind_opening["us"] = json!("p2");
+        blind_opening["first_mover"] = json!("p1");
+        assert_rejected(blind_opening);
+    }
+
+    #[test]
     fn rejects_malformed_oversize_version_mode_and_card_identity_without_stdout() {
         let mut output = Vec::new();
         let mut diagnostics = Vec::new();
@@ -990,7 +1220,7 @@ mod tests {
         assert!(output.is_empty());
 
         for (field, value) in [
-            ("protocol_version", json!(2)),
+            ("protocol_version", json!(1)),
             ("mode", json!("second")),
             ("battle_rule_id", json!(11)),
         ] {
@@ -1017,6 +1247,10 @@ mod tests {
     fn rejects_provenance_unknown_fields_roles_and_inconsistent_history() {
         let mut request = valid_request();
         request["provenance"]["effective_catalog_fingerprint_fnv1a64"] = json!("0000000000000000");
+        assert_rejected(request);
+
+        let mut request = valid_second_request();
+        request["opponent_hand_index"] = json!(0);
         assert_rejected(request);
 
         let mut request = valid_request();

@@ -496,8 +496,8 @@ opponent chooses, every unplayed opponent card and hidden wager is a hypothesis 
 row remains one fixed reply. A full hypothesis column is committed transactionally, so a
 deadline or policy cancellation never publishes incomparable rows. The visible card then
 replaces that provisional ranking with the ordinary precise second-mover search. This does
-not add live capture or a worker pool; its JSONL process boundary is used only by the
-TypeScript-hosted FIRST-mode integration below.
+not add a Rust live-capture client or a Rust worker pool; its JSONL process boundary is used
+by the TypeScript-hosted integration below.
 
 The server-backed advisor path loads captures `877636` and `1024673` with `--replay`.
 It derives both exact hands, resources, night state, recording side, and each round's mover
@@ -522,23 +522,27 @@ the current TypeScript behavior deliberately:
 Keep the old Rust solver available as a historical reference until equivalence tests cover
 the intended replacement.
 
-### 5. TypeScript-hosted Rust worker (V1)
+### 5. TypeScript-hosted Rust worker (V2)
 
-V1 now uses a versioned, one-request-per-process JSONL worker. Build it with
+V2 uses a versioned, one-request-per-process JSONL worker. Build it with
 `deno task rust:worker`. The TypeScript advisor remains the owner of live capture state,
 policy selection, cancellation, and terminal rendering. Rust is off by default;
 `deno task advise --rust=compare` keeps TypeScript authoritative while comparing supported
-FIRST decisions, and `--rust=use` installs only a structurally validated complete Rust FIRST result
-in the existing TypeScript TUI. A launch, protocol, provenance, history, action, completion,
-or result-validation failure automatically leaves or returns the decision to TypeScript.
+FIRST, SECOND, and blind-second decisions, and `--rust=use` installs only a structurally
+validated complete Rust result in the existing TypeScript TUI. A launch, protocol,
+provenance, history, information-set, action, completion, or result-validation failure
+automatically leaves or returns the decision to TypeScript.
 
 The narrow boundary is intentional: the worker strictly validates canonical-input
-provenance, replays supplied history, and checks the legal action set and response bounds
-against TypeScript's FIRST matrix. This does not prove semantic equivalence on each request.
-Integrated live SECOND and blind-second decisions remain TypeScript-only,
-although the manual Rust advisor supports both. This is neither a full replay-parity nor a
-complete TypeScript-policy-parity claim. In-process FFI remains a later consideration only
-after this protocol and engine behavior have stayed stable.
+provenance, replays supplied resolved history, binds SECOND to the revealed opposing slot,
+and checks the legal action matrix and response bounds against TypeScript's corresponding
+mode. Compact per-hidden-wager SECOND outcomes are validated against their aggregates and
+rebuild the existing opponent-read panel rather than degrading the TUI. `--rust=compare`
+reported `rust match` for all five decisions in capture `877636`: opening SECOND, exact
+round-two FIRST, round-three blind-second, revealed-card SECOND, and round-four FIRST. This
+does not prove semantic equivalence on every request and is neither full replay parity nor
+complete engine parity. In-process FFI remains a later consideration only after this
+protocol and engine behavior have stayed stable.
 
 ## Performance measurement
 

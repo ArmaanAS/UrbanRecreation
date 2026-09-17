@@ -1,4 +1,4 @@
-// Strict capture-to-Rust-advisor V1 request normalisation.
+// Strict capture-to-Rust-advisor V2 request normalisation.
 //
 // This is intentionally separate from both Advisor's private live loop and RustAdvisor's
 // process protocol.  It is the one place which is allowed to translate the site-side
@@ -7,9 +7,9 @@ import { reconstruct } from "../../scripts/ExtractBattle.ts";
 import Game from "../game/Game.ts";
 import { Turn } from "../game/types/Types.ts";
 import {
-  buildFirstRequest,
+  buildAdvisorRequest,
+  type RustAdvisorRequest,
   type RustCardIdentity,
-  type RustFirstRequest,
   type RustHistoryRound,
   type RustProvenance,
 } from "./RustAdvisor.ts";
@@ -44,7 +44,7 @@ export interface RustAdvisorInputContext {
  * capture when its executable model proves the supplied current state inconsistent.
  */
 export type RustAdvisorInputResult =
-  | { readonly supported: true; readonly request: RustFirstRequest }
+  | { readonly supported: true; readonly request: RustAdvisorRequest }
   | { readonly supported: false; readonly reason: string };
 
 const encoder = new TextEncoder();
@@ -133,7 +133,7 @@ export function rustV1Provenance(): ReturnType<typeof readRustV1Provenance> {
 }
 
 function unsupported(reason: string): RustAdvisorInputResult {
-  return { supported: false, reason: `Rust advisor V1 unsupported: ${reason}` };
+  return { supported: false, reason: `Rust advisor V2 unsupported: ${reason}` };
 }
 
 function integer(value: unknown, where: string, min = 0): number | string {
@@ -166,7 +166,7 @@ function resources(
   const validPillz = integer(pillz, `${where}.pillz`);
   if (typeof validLife === "string") return validLife;
   if (typeof validPillz === "string") return validPillz;
-  if (validPillz > 30) return `${where}.pillz exceeds Rust V1's limit of 30`;
+  if (validPillz > 30) return `${where}.pillz exceeds Rust V2's limit of 30`;
   return { life: validLife, pillz: validPillz };
 }
 
@@ -247,11 +247,25 @@ function cards(
   return result;
 }
 
-/** Strictly transform one completed site round into Rust's engine-oriented history. */
+type CurrentRound =
+  | { readonly kind: "empty"; readonly round: number }
+  | {
+    readonly kind: "first-selected";
+    readonly round: number;
+    readonly index: number;
+  }
+  | undefined;
+
+interface CaptureHistory {
+  readonly completed: readonly RustHistoryRound[];
+  readonly current: CurrentRound;
+}
+
+/** Strictly transform completed site rounds into Rust's engine-oriented history. */
 function history(
   rec: Reconstructed,
   first: Side,
-): readonly RustHistoryRound[] | string {
+): CaptureHistory | string {
   const result: RustHistoryRound[] = [];
   let expectedFirst = first;
   for (const [roundIndex, round] of rec.rounds.entries()) {
@@ -267,7 +281,51 @@ function history(
       ) {
         return `round ${roundIndex} is empty but a later round is populated`;
       }
-      break;
+      return {
+        completed: result,
+        current: { kind: "empty", round: roundIndex },
+      };
+    }
+    if (round.moves.length === 1) {
+      if (round.first === null || round.round !== roundIndex) {
+        return `round ${roundIndex} first mover does not follow capture alternation`;
+      }
+      if (round.first !== expectedFirst) {
+        return `round ${roundIndex} first mover does not follow capture alternation`;
+      }
+      if (
+        rec.rounds.slice(roundIndex + 1).some((tail) => tail.moves.length !== 0)
+      ) {
+        return `round ${roundIndex} is partial but a later round is populated`;
+      }
+      const move = round.moves[0]!;
+      const moveSide = side(move.side, `round ${roundIndex}.move.side`);
+      if (typeof moveSide === "string") return moveSide;
+      if (moveSide !== expectedFirst) {
+        return `round ${roundIndex} partial move is not from the scheduled first mover`;
+      }
+      const index = integer(move.index, `round ${roundIndex}.move.index`);
+      const pillz = integer(move.pillz, `round ${roundIndex}.move.pillz`);
+      if (typeof index === "string" || index > 3) {
+        return typeof index === "string"
+          ? index
+          : `round ${roundIndex}.move.index must be 0..3`;
+      }
+      if (typeof pillz === "string" || pillz > 30) {
+        return typeof pillz === "string"
+          ? pillz
+          : `round ${roundIndex}.move.pillz exceeds Rust V2's limit of 30`;
+      }
+      if (typeof move.fury !== "boolean") {
+        return `round ${roundIndex}.move.fury must be boolean`;
+      }
+      if (rec.players[moveSide]?.hand[index]?.id !== move.cardId) {
+        return `round ${roundIndex}.move card identity does not match its hand slot`;
+      }
+      return {
+        completed: result,
+        current: { kind: "first-selected", round: roundIndex, index },
+      };
     }
     if (round.moves.length !== 2 || round.first === null) {
       return `round ${roundIndex} is not a completely resolved two-player round`;
@@ -304,7 +362,7 @@ function history(
       if (typeof pillz === "string" || pillz > 30) {
         return typeof pillz === "string"
           ? pillz
-          : `round ${roundIndex}.move.pillz exceeds Rust V1's limit of 30`;
+          : `round ${roundIndex}.move.pillz exceeds Rust V2's limit of 30`;
       }
       if (typeof move.fury !== "boolean") {
         return `round ${roundIndex}.move.fury must be boolean`;
@@ -327,21 +385,28 @@ function history(
     });
     expectedFirst = opposite(expectedFirst);
   }
-  if (result.length > 3) return "V1 accepts at most three resolved rounds";
-  return result;
+  if (result.length > 3) return "Rust V2 accepts at most three resolved rounds";
+  return { completed: result, current: undefined };
 }
 
 /**
- * Return a request only for an ordinary first-mover decision.  Server resources are read
- * directly from the latest resolved capture round; the potentially reconciled TS Game is
- * used solely to establish decision orientation and independently check card/mask state.
+ * Return a V2 request for the exact live information set. Server resources are read directly
+ * from the latest resolved capture round; the potentially reconciled TS Game is used solely
+ * to establish decision orientation and independently check card/mask state.
  */
 export async function normaliseRustAdvisorInput(
   context: RustAdvisorInputContext,
 ): Promise<RustAdvisorInputResult> {
   const { rec, game, decision } = context;
-  if (decision.mode !== SearchMode.FIRST) {
-    return unsupported(`TS Search mode is ${decision.mode}, not first`);
+  const mode = decision.mode === SearchMode.FIRST
+    ? "first"
+    : decision.mode === SearchMode.SECOND
+    ? "second"
+    : decision.mode === SearchMode.BLIND_SECOND
+    ? "blind_second"
+    : undefined;
+  if (mode === undefined) {
+    return unsupported(`unknown TS Search mode ${decision.mode}`);
   }
   if (rec.testcase == null) return unsupported("capture has no testcase");
   const first = side(rec.firstPlayer, "firstPlayer");
@@ -351,33 +416,106 @@ export async function normaliseRustAdvisorInput(
   if (rec.result !== null || !game.isPlaying) {
     return unsupported("battle is already complete");
   }
-  if (game.firstHasSelected) {
-    return unsupported("a first-moving card is already selected");
+  const captureHistory = history(rec, first);
+  if (typeof captureHistory === "string") return unsupported(captureHistory);
+  const completed = captureHistory.completed;
+  // These state bits are the authoritative distinction between a blind snapshot and a
+  // revealed-card snapshot. Check them before turn orientation so contradictions report the
+  // actual missing/extra commitment rather than its downstream turn consequence.
+  if (mode === "second" && !game.firstHasSelected) {
+    return unsupported("second mode requires a selected first-moving card");
   }
-  if (decision.us !== game.turn) {
+  if (mode === "blind_second" && game.firstHasSelected) {
     return unsupported(
-      "decision requester does not equal the engine's current first mover",
+      "blind-second mode cannot have a selected first-moving card",
     );
   }
-
-  const completed = history(rec, first);
-  if (typeof completed === "string") return unsupported(completed);
-  const expectedTurn = completed.length % 2 === 0
+  if (mode === "blind_second" && completed.length === 0) {
+    return unsupported(
+      "blind-second mode requires at least one completed round",
+    );
+  }
+  const expectedFirstTurn = completed.length % 2 === 0
     ? Turn.PLAYER_1
     : Turn.PLAYER_2;
-  if (game.round !== completed.length + 1 || game.turn !== expectedTurn) {
+  if (game.round !== completed.length + 1) {
     return unsupported(
-      "engine round/first mover does not match the completed capture history",
+      "engine round does not match the completed capture history",
     );
   }
-  if (mine !== (expectedTurn === Turn.PLAYER_1 ? first : opposite(first))) {
-    return unsupported("our server side is not the current first mover");
+  const expectedRequester = mode === "first"
+    ? expectedFirstTurn
+    : expectedFirstTurn === Turn.PLAYER_1
+    ? Turn.PLAYER_2
+    : Turn.PLAYER_1;
+  const expectedGameTurn = mode === "blind_second"
+    ? expectedFirstTurn
+    : expectedRequester;
+  if (decision.us !== expectedRequester || game.turn !== expectedGameTurn) {
+    return unsupported(
+      mode === "first"
+        ? "decision requester does not equal the engine's current first mover"
+        : "decision requester does not equal the scheduled first mover's opponent",
+    );
+  }
+  const expectedMine = expectedRequester === Turn.PLAYER_1
+    ? first
+    : opposite(first);
+  if (mine !== expectedMine) {
+    return unsupported(
+      mode === "first"
+        ? "our server side is not the current first mover"
+        : "our server side is not the scheduled first mover's opponent",
+    );
+  }
+  let opponentHandIndex: number | undefined;
+  if (mode === "first") {
+    if (game.firstHasSelected) {
+      return unsupported("a first-moving card is already selected");
+    }
+    if (captureHistory.current?.kind === "first-selected") {
+      return unsupported(
+        "first-mode capture has a selected current-round card",
+      );
+    }
+  } else if (mode === "second") {
+    if (!game.firstHasSelected) {
+      return unsupported("second mode requires a selected first-moving card");
+    }
+    if (captureHistory.current?.kind !== "first-selected") {
+      return unsupported(
+        "second-mode capture requires exactly one current first-side move",
+      );
+    }
+    opponentHandIndex = captureHistory.current.index;
+    let selected: number;
+    try {
+      selected = game.playedCardIndex;
+    } catch {
+      return unsupported("engine has no readable selected first-moving card");
+    }
+    if (selected !== opponentHandIndex) {
+      return unsupported(
+        "engine selected card does not match the capture first-side move",
+      );
+    }
+  } else {
+    if (game.firstHasSelected) {
+      return unsupported(
+        "blind-second mode cannot have a selected first-moving card",
+      );
+    }
+    if (captureHistory.current?.kind === "first-selected") {
+      return unsupported(
+        "blind-second capture cannot have a selected current-round card",
+      );
+    }
   }
   const battleRuleId = integer(rec.battleRuleId, "battleRuleId", 0);
   if (typeof battleRuleId === "string") return unsupported(battleRuleId);
   if (battleRuleId !== RUST_V1_BATTLE_RULE_ID) {
     return unsupported(
-      `battle rule ${battleRuleId} is not Rust V1 rule ${RUST_V1_BATTLE_RULE_ID}`,
+      `battle rule ${battleRuleId} is not Rust V2 rule ${RUST_V1_BATTLE_RULE_ID}`,
     );
   }
   if (typeof rec.night !== "boolean") {
@@ -388,7 +526,7 @@ export async function normaliseRustAdvisorInput(
     return unsupported(
       typeof budget === "string"
         ? budget
-        : "budgetMs exceeds Rust V1's limit of 30000",
+        : "budgetMs exceeds Rust V2's limit of 30000",
     );
   }
   if (!/^[ -~]{1,128}$/.test(context.requestId)) {
@@ -433,40 +571,66 @@ export async function normaliseRustAdvisorInput(
     return marks;
   };
   const p1Played = played(first), p2Played = played(opposite(first));
+  // The worker replays only completed rounds, so its wire masks must describe that clean
+  // root.  The live TS Game additionally marks the currently revealed first card; account
+  // for that transient mark only while cross-checking the host state, never on the wire.
+  const p1EnginePlayed = [...p1Played], p2EnginePlayed = [...p2Played];
+  if (mode === "second") {
+    const marks = expectedFirstTurn === Turn.PLAYER_1
+      ? p1EnginePlayed
+      : p2EnginePlayed;
+    marks[opponentHandIndex!] = true;
+  }
   const masksMatch = (hand: Game["h1"], expected: readonly boolean[]) =>
     expected.every((value, index) => hand[index]?.played === value);
-  if (!masksMatch(game.h1, p1Played) || !masksMatch(game.h2, p2Played)) {
+  if (
+    !masksMatch(game.h1, p1EnginePlayed) ||
+    !masksMatch(game.h2, p2EnginePlayed)
+  ) {
     return unsupported(
-      "engine played masks do not match explicit capture history",
+      `engine played masks ${
+        game.h1.map((card) => Number(card.played)).join("")
+      }/` +
+        `${game.h2.map((card) => Number(card.played)).join("")} do not match ` +
+        `capture ${p1EnginePlayed.map(Number).join("")}/${
+          p2EnginePlayed.map(Number).join("")
+        }`,
     );
   }
   const provenance = await rustV1Provenance();
+  const input = {
+    requestId: context.requestId,
+    us: wire(decision.us),
+    firstMover: wire(expectedFirstTurn),
+    battleRuleId,
+    night: rec.night,
+    provenance,
+    players: {
+      p1: {
+        initial: p1Initial,
+        current: p1Current,
+        played: p1Played,
+        hand: p1Cards,
+      },
+      p2: {
+        initial: p2Initial,
+        current: p2Current,
+        played: p2Played,
+        hand: p2Cards,
+      },
+    },
+    history: completed,
+    budgetMs: budget,
+  };
   return {
     supported: true,
-    request: buildFirstRequest({
-      requestId: context.requestId,
-      us: wire(decision.us),
-      firstMover: wire(expectedTurn),
-      battleRuleId,
-      night: rec.night,
-      provenance,
-      players: {
-        p1: {
-          initial: p1Initial,
-          current: p1Current,
-          played: p1Played,
-          hand: p1Cards,
-        },
-        p2: {
-          initial: p2Initial,
-          current: p2Current,
-          played: p2Played,
-          hand: p2Cards,
-        },
-      },
-      history: completed,
-      budgetMs: budget,
-    }),
+    request: mode === "second"
+      ? buildAdvisorRequest({
+        ...input,
+        mode,
+        opponentHandIndex: opponentHandIndex!,
+      })
+      : buildAdvisorRequest({ ...input, mode }),
   };
 }
 
