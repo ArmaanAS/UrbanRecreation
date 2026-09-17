@@ -351,6 +351,7 @@ pub(super) struct PostRoundPlan {
 pub(super) enum PostRoundEffect {
     RecoverPaidPillzOnDefeat,
     GainOnePillzOnVictoryOrDefeat,
+    GainOnePillzAndLifeOnVictory,
     GainTwoPillzOnDefeatMaxEleven,
     GainLifeOnVictory(u16),
     GainLifeOnDefeat(u16),
@@ -471,6 +472,23 @@ impl BaseRulesGame {
                             .checked_add(1)
                             .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
                     }
+                    // Komboka's Bonus-only composite Victory effect pays a living winner,
+                    // including after the opponent is KO'd.  Keep its checked mutations in
+                    // TypeScript order (Pillz, then Life); `position` is still a private
+                    // replacement, so a second-step overflow remains fully atomic.
+                    PostRoundEffect::GainOnePillzAndLifeOnVictory
+                        if owner == winner && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(1)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(1)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainOnePillzAndLifeOnVictory => {}
                     // Argos is ordinary post-round Pillz work: unlike the audited VOD
                     // sources, it only pays on a surviving defeat. Its Max belongs to this
                     // modifier, after the clan bonus has already run; never lower a value

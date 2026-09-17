@@ -40,6 +40,28 @@ fn registry() -> EffectRegistryV1 {
     EffectRegistryV1::load(root_path("captures/abilities.json")).unwrap()
 }
 
+fn catalog_with_komboka_context(clan_id: u32, bonus_id: u32) -> EffectiveCardCatalog {
+    let mut rows: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("data/data.json")).unwrap()).unwrap();
+    for row in rows.as_array_mut().unwrap() {
+        if row["clan_id"] == 54 {
+            row["clan_id"] = serde_json::json!(clan_id);
+            row["bonus_id"] = serde_json::json!(bonus_id);
+        }
+    }
+    let rows = serde_json::to_vec(&rows).unwrap();
+    let overrides = fs::read(root_path("data/battle_card_overrides.json")).unwrap();
+    EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
+}
+
+fn registry_with_malformed_komboka() -> EffectRegistryV1 {
+    let mut effects: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("captures/abilities.json")).unwrap()).unwrap();
+    effects["1714"]["abilityData"]["value"] = serde_json::json!(2);
+    let effects = serde_json::to_vec(&effects).unwrap();
+    EffectRegistryV1::from_reader(effects.as_slice()).unwrap()
+}
+
 fn player(hand: [CardKey; 4]) -> CatalogCombatStatPlayerInputV1 {
     CatalogCombatStatPlayerInputV1 {
         initial_life: 12,
@@ -1284,6 +1306,141 @@ fn strict_catalog_match_bridges_only_active_roots_and_gheist_soa_bonuses() {
         game.unmake(undo);
         assert_eq!(game.position(), &before);
         assert_eq!(position_hash(game.position()), before_hash);
+    }
+}
+
+#[test]
+fn strict_catalog_match_bridges_only_the_active_komboka_victory_pillz_and_life_bonus() {
+    let base_catalog = catalog();
+    let base_registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    let komboka = [
+        CardKey::new(1868, 1), // Kubra: no ability
+        CardKey::new(1870, 1), // Pavam Cr: no ability
+        CardKey::new(1875, 1), // Duygu: no ability
+        CardKey::new(1876, 2), // Seta: no ability
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(komboka, rescue, false),
+        &base_catalog,
+        &base_registry,
+        PROJECTION,
+    )
+    .unwrap();
+
+    for slot in 0..4 {
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+        } = &prepared.preparation()[PlayerId::P1][slot].bonus
+        else {
+            panic!("active Komboka bonus in slot {slot} was not executable")
+        };
+        assert_eq!(identity.catalog_id, Some(53));
+        assert_eq!(identity.registry_definition_id, 1714);
+        // Carnibox Ability:3356 is a structural alias, never catalog execution authority.
+        assert_eq!(identity.registry_alias_ids.as_ref(), [1714, 3356]);
+        assert!(matches!(
+            prepared.match_spec().cards[PlayerId::P1][slot].bonus,
+            CombatStatSourcePlanV1::Execute {
+                source_id: 1714,
+                predicate: CombatStatPredicateV1::Always,
+                effect:
+                    urban_recreation_rust::engine::CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
+            }
+        ));
+    }
+
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 12, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 13);
+    assert_eq!(report.players[PlayerId::P1].pillz, 1);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+
+    let inactive = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(1868, 1), // singleton Komboka: no active clan bonus
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            rescue,
+            false,
+        ),
+        &base_catalog,
+        &base_registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        inactive.preparation()[PlayerId::P1][0].bonus,
+        CatalogCombatStatSourceDispositionV1::Absent
+    ));
+
+    // The same text and structural alias carried by Carnibox's Ability:3356 must stay
+    // outside the bonus-only clan bridge.
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(2344, 2), // Carnibox Ability:3356
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &base_catalog,
+            &base_registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(3356),
+            ref description,
+            registry_definition_id: 1714,
+            ..
+        }) if hand_slot.get() == 0 && description == "+1 Pillz And Life"
+    ));
+
+    for (catalog, registry, expected_catalog_id) in [
+        (catalog_with_komboka_context(54, 999), registry(), Some(999)),
+        (catalog_with_komboka_context(61, 53), registry(), Some(53)),
+        (catalog(), registry_with_malformed_komboka(), Some(53)),
+    ] {
+        assert!(matches!(
+            CatalogCombatStatMatchV1::new(
+                input(komboka, rescue, false),
+                &catalog,
+                &registry,
+                PROJECTION,
+            ),
+            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                player: PlayerId::P1,
+                hand_slot,
+                source_kind: CombatStatEffectSourceV1::Bonus,
+                catalog_id,
+                ref description,
+                registry_definition_id: 1714,
+                ..
+            }) if hand_slot.get() == 0 && catalog_id == expected_catalog_id
+                && description == "+1 Pillz And Life"
+        ));
     }
 }
 

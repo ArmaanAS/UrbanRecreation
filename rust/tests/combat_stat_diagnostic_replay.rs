@@ -26,6 +26,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1024673, 2),
     (1060199, 3),
     (1081463, 4),
+    (1069193, 1),
     (1089513, 2),
     (901400, 2),
     (874837, 2),
@@ -138,6 +139,15 @@ fn victory_or_defeat_entry(id: u32) -> serde_json::Value {
     let mut entry = numeric_entry(id, "Victory Or Defeat : +1 Pillz", "both", 1, 0);
     entry["abilityData"]["sideAffected"] = serde_json::json!("player");
     entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry
+}
+
+fn komboka_victory_pillz_and_life_entry(id: u32) -> serde_json::Value {
+    let mut entry = numeric_entry(id, "+1 Pillz And Life", "both", 1, 0);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life&pillz");
     entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
     entry
 }
@@ -262,7 +272,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_fifty_eight_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_fifty_nine_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -298,16 +308,16 @@ fn fixed_server_backed_gate_is_exactly_fifty_eight_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 58);
+    assert_eq!(rounds, 59);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
             6, 36, 37, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 257, 266, 292, 310, 333, 377,
             401, 412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980, 1034, 1047,
             1158, 1163, 1241, 1310, 1335, 1338, 1342, 1359, 1372, 1375, 1418, 1420, 1518, 1536,
-            1578, 1688, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881, 2965,
-            3677, 3864, 3865, 3897, 4041, 4216, 4297, 4299, 4399, 4464, 4711, 4718, 4757, 4966,
-            5026, 5085, 5273, 5520, 5763, 5852,
+            1578, 1688, 1694, 1714, 1770, 1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881,
+            2965, 3677, 3864, 3865, 3897, 4041, 4216, 4297, 4299, 4399, 4464, 4711, 4718, 4757,
+            4966, 5026, 5085, 5273, 5520, 5763, 5852,
         ])
     );
     assert_eq!(
@@ -509,7 +519,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 15);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 16);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -565,7 +575,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        15
+        16
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -661,33 +671,251 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
 }
 
 #[test]
-fn reprisal_soa_capture_is_not_an_exact_prefix_gate_before_kombokas_pillz_and_life() {
+fn kombokas_exact_pillz_and_life_bonus_unlocks_1069193_round_zero() {
     let catalog = catalog();
     let registry = registry();
-    let error = diagnostic(1069193, &catalog, &registry)
-        .execute_combat_stat_diagnostic_v1_prefix(4)
-        .expect_err("Komboka's unimplemented +1 Pillz And Life blocks 1069193/r0");
-    let CombatStatDiagnosticReplayErrorV1::Mismatch {
-        context,
-        selected,
-        field,
-        expected,
-        actual,
-    } = error
-    else {
-        panic!("1069193 must stop at the known round-zero server mismatch");
-    };
-    assert_eq!(context.round, 0);
-    assert_eq!(field, "players.P2.life");
-    assert_eq!(expected, "16");
-    assert_eq!(actual, "15");
+    let report = diagnostic(1069193, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .expect("1069193/r0 must execute Komboka's exact Victory bonus");
+    let round = &report.rounds[0];
     assert!(matches!(
-        selected[PlayerId::P2].bonus,
-        CombatStatProjectionDispositionV1::Disabled {
+        round.selected[PlayerId::P2].bonus,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
             ref identity,
-            ..
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
         } if identity.id == 1714
     ));
+    // Pantherine pays five, then atomically gains Pillz before Life: 12 - 5 + 1 = 8.
+    // Her winning +3 Life reaches 15 first; the Komboka bonus supplies the final 16.
+    assert!(round.round.cards[PlayerId::P2].won);
+    assert_eq!(round.round.players[PlayerId::P2].pillz, 8);
+    assert_eq!(round.round.players[PlayerId::P2].life, 16);
+}
+
+#[test]
+fn kombokas_pillz_and_life_admission_is_exact_to_bonus_1714_and_its_full_shape() {
+    let catalog = catalog();
+    let cases = [
+        (1714, false, "+1 Pillz And Life", false, true),
+        (3356, true, "+1 Pillz And Life", false, false),
+        (1716, true, "Defeat: +1 Pillz And Life", false, false),
+        (1714, false, "+1 Pillz And Life", true, false),
+        (900_1714, false, "+1 Pillz And Life", true, false),
+    ];
+    for (id, ability, description, malformed, admitted) in cases {
+        let mut source = replay(1069193, &catalog);
+        clear_sources(&mut source);
+        source.rounds.clear();
+        let player = PlayerId::P2;
+        let selected_slot = 3_usize;
+        if ability {
+            source.players[player.index()].hand[selected_slot].source_ability =
+                Some(SourceModifier {
+                    id,
+                    description: description.to_owned(),
+                });
+        } else {
+            source.players[player.index()].hand[selected_slot].source_bonus =
+                Some(SourceModifier {
+                    id,
+                    description: description.to_owned(),
+                });
+        }
+        let mut entry = komboka_victory_pillz_and_life_entry(id);
+        entry["description"] = serde_json::json!(description);
+        entry["longDescription"] = serde_json::json!(description);
+        if id == 1716 {
+            entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
+        }
+        if malformed {
+            entry["abilityData"]["valueMax"] = serde_json::json!(12);
+        }
+        let prepared = CombatStatDiagnosticReplayV1::new(
+            source,
+            &catalog,
+            &one_entry_registry(entry),
+            PROJECTION,
+        )
+        .unwrap();
+        let disposition = if ability {
+            &prepared.preparation()[player][selected_slot].ability
+        } else {
+            &prepared.preparation()[player][selected_slot].bonus
+        };
+        assert_eq!(
+            matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    identity,
+                    effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+                } if identity.id == 1714
+            ),
+            admitted,
+            "id={id} ability={ability} malformed={malformed}"
+        );
+        let game = prepared.new_game();
+        let plan = if ability {
+            &game.card_plans()[player][selected_slot].ability
+        } else {
+            &game.card_plans()[player][selected_slot].bonus
+        };
+        if admitted {
+            assert!(matches!(
+                plan,
+                CombatStatSourcePlanV1::Execute {
+                    source_id: 1714,
+                    predicate: CombatStatPredicateV1::Always,
+                    effect: urban_recreation_rust::engine::CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
+                }
+            ));
+        } else {
+            assert!(matches!(
+                plan,
+                CombatStatSourcePlanV1::RejectIfSelected { source_id } if *source_id == id
+            ));
+        }
+    }
+}
+
+#[test]
+fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
+    let catalog = catalog();
+    let registry = registry();
+
+    let win = diagnostic(866431, &catalog, &registry);
+    // Hewa Cr's server win is evidence for the coupled amount, but the same round selects
+    // deferred Support: -1 Opp. Life and so is not an executable prefix.
+    assert!(matches!(
+        win.preparation()[PlayerId::P2][1].bonus,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+        } if identity.id == 1714
+    ));
+    assert_eq!(
+        win.replay().rounds[0].expected_player_states[PlayerId::P2.index()].life,
+        13
+    );
+    assert_eq!(
+        win.replay().rounds[0].expected_player_states[PlayerId::P2.index()].pillz,
+        6
+    );
+
+    let stop_bonus = diagnostic(876882, &catalog, &registry);
+    // The exact bonus is visible on Keya, while the opponent's selected Courage Stop Bonus
+    // remains a rejected control hazard. This capture is source/liveness evidence only, not
+    // an executable prefix.
+    assert!(matches!(
+        stop_bonus.preparation()[PlayerId::P2][1].bonus,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+        } if identity.id == 1714
+    ));
+    assert!(matches!(
+        stop_bonus.preparation()[PlayerId::P1][0].ability,
+        CombatStatProjectionDispositionV1::Disabled { ref identity, .. } if identity.id == 287
+    ));
+    assert!(
+        stop_bonus.replay().rounds[0].expected_card_results[PlayerId::P2.index()]
+            .expect("Keya has a server result")
+            .won
+    );
+    assert_eq!(
+        stop_bonus.replay().rounds[0].expected_player_states[PlayerId::P2.index()].life,
+        12
+    );
+    assert_eq!(
+        stop_bonus.replay().rounds[0].expected_player_states[PlayerId::P2.index()].pillz,
+        12
+    );
+
+    let soa_not_sob = diagnostic(1066077, &catalog, &registry);
+    // Spidee's active Reprisal is SOA rather than SOB. Adytia's selected bonus remains
+    // live in the compact plan and the server records its 8 Life / 5 Pillz win; Adytia's
+    // deferred own ability prevents this round from becoming an executable prefix.
+    let round = &soa_not_sob.replay().rounds[1];
+    let adytia = round
+        .plays
+        .iter()
+        .find(|play| play.card.id == 1867)
+        .expect("1066077/r1 selects Adytia");
+    let owner = match adytia.engine_player {
+        EnginePlayer::P1 => PlayerId::P1,
+        EnginePlayer::P2 => PlayerId::P2,
+    };
+    assert!(matches!(
+        soa_not_sob.preparation()[owner][usize::from(adytia.hand_index)].bonus,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+        } if identity.id == 1714
+    ));
+    assert!(
+        round.expected_card_results[owner.index()]
+            .expect("Adytia has a server result")
+            .won
+    );
+    assert_eq!(round.expected_player_states[owner.index()].life, 8);
+    assert_eq!(round.expected_player_states[owner.index()].pillz, 5);
+
+    // Kunglaba's KO win is not an executable prefix because Hilal's deferred compound
+    // opponent reduction was selected earlier. The source plan and server endpoint still
+    // pin that the coupled Victory gain is paid after a KO.
+    let ko_win = diagnostic(1023608, &catalog, &registry);
+    let round = &ko_win.replay().rounds[3];
+    let play = round
+        .plays
+        .iter()
+        .find(|play| play.card.id == 2302)
+        .expect("1023608/r3 selects Kunglaba");
+    let owner = match play.engine_player {
+        EnginePlayer::P1 => PlayerId::P1,
+        EnginePlayer::P2 => PlayerId::P2,
+    };
+    assert!(matches!(
+        ko_win.preparation()[owner][usize::from(play.hand_index)].bonus,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+        } if identity.id == 1714
+    ));
+    assert!(
+        round.expected_card_results[owner.index()]
+            .expect("Kunglaba has a server result")
+            .won
+    );
+    assert_eq!(round.expected_player_states[owner.index()].life, 12);
+    assert_eq!(round.expected_player_states[owner.index()].pillz, 1);
+
+    // A losing Kubra does not receive either part of the Victory-only pair, including at
+    // zero Life. `876712/r1` remains outside the executable prefix because it contains
+    // other deferred effects, so this is deliberately disposition-and-server evidence.
+    let lethal_loss = diagnostic(876712, &catalog, &registry);
+    let round = &lethal_loss.replay().rounds[1];
+    let play = round
+        .plays
+        .iter()
+        .find(|play| play.card.id == 1868)
+        .expect("876712/r1 selects Kubra");
+    let owner = match play.engine_player {
+        EnginePlayer::P1 => PlayerId::P1,
+        EnginePlayer::P2 => PlayerId::P2,
+    };
+    assert!(matches!(
+        lethal_loss.preparation()[owner][usize::from(play.hand_index)].bonus,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+        } if identity.id == 1714
+    ));
+    assert!(
+        !round.expected_card_results[owner.index()]
+            .expect("Kubra has a server result")
+            .won
+    );
+    assert_eq!(round.expected_player_states[owner.index()].life, 0);
+    assert_eq!(round.expected_player_states[owner.index()].pillz, 9);
 }
 
 #[test]

@@ -14,7 +14,27 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 15;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 16;
+
+/// Recognize Komboka's exact clan-bonus composite Victory effect.  This remains outside
+/// the ordinary numeric compiler because its two checked post-round mutations must stay
+/// coupled, ordered, and identity-locked.
+pub(crate) fn classify_komboka_victory_pillz_and_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> bool {
+    komboka_victory_pillz_and_life_identity_matches(source_kind, definition.id())
+        && definition.description() == "+1 Pillz And Life"
+        && komboka_victory_pillz_and_life_shape_matches(definition.structured_input())
+}
+
+/// Shared identity gate for the cold compiler and direct compact-plan validation.
+pub(crate) fn komboka_victory_pillz_and_life_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    (source_kind, definition_id) == (CombatStatEffectSourceV1::Bonus, 1714)
+}
 
 /// Recognize the two server-observed Reprisal Stop Opp. Ability definitions.  This is
 /// deliberately separate from generic Stop Opp. Ability admission: only the exact
@@ -203,6 +223,9 @@ pub(crate) fn classify_combat_stat_effect(
         return None;
     }
     if classify_argos_defeat_capped_pillz(definition, source_kind) {
+        return None;
+    }
+    if classify_komboka_victory_pillz_and_life(definition, source_kind) {
         return None;
     }
     if classify_victory_life(definition, source_kind).is_some() {
@@ -684,6 +707,39 @@ fn argos_defeat_capped_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
         && input.bet_pillz_link == BetPillzLinkV1::No
         && input.side_affected == AffectedSideV1::Player
         && input.attribute_affected == AttributeAffectedV1::Pillz
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+fn komboka_victory_pillz_and_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value == 1
+        && input.value_min == 0
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::LifeAndPillz
         && input.attribute_action == AttributeActionV1::Increase
         && input.special_action == SpecialActionV1::None
         && !input.is_inverted
@@ -1320,5 +1376,59 @@ mod tests {
                 "mutated field {field}"
             );
         }
+    }
+
+    #[test]
+    fn komboka_victory_pillz_and_life_is_bonus_1714_with_the_complete_reviewed_shape() {
+        let registry = registry();
+        let komboka = registry.lookup_capture(1714, "+1 Pillz And Life").unwrap();
+        assert!(classify_komboka_victory_pillz_and_life(
+            komboka,
+            CombatStatEffectSourceV1::Bonus,
+        ));
+        assert!(!classify_komboka_victory_pillz_and_life(
+            komboka,
+            CombatStatEffectSourceV1::Ability,
+        ));
+        assert_eq!(
+            classify_combat_stat_effect(komboka, CombatStatEffectSourceV1::Bonus),
+            None,
+        );
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("valueMin", serde_json::json!(1)),
+            ("positionRequirement", serde_json::json!("attacker")),
+            ("previousRoundRequirement", serde_json::json!("win")),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("attributeAffected", serde_json::json!("life")),
+            ("attributeAction", serde_json::json!("decrease")),
+            ("isPillzLinked", serde_json::json!(true)),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1714"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert!(
+                !classify_komboka_victory_pillz_and_life(
+                    malformed.lookup_capture(1714, "+1 Pillz And Life").unwrap(),
+                    CombatStatEffectSourceV1::Bonus,
+                ),
+                "mutated field {field}",
+            );
+        }
+        let mut malformed = source;
+        malformed["1714"]["description"] = serde_json::json!("+1 Life And Pillz");
+        let malformed =
+            EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                .unwrap();
+        assert!(!classify_komboka_victory_pillz_and_life(
+            malformed.lookup_capture(1714, "+1 Life And Pillz").unwrap(),
+            CombatStatEffectSourceV1::Bonus,
+        ));
     }
 }

@@ -8,7 +8,8 @@ use super::combat_resolution::{
     CombatResolutionError, PreparedCombatResolution, ResolutionCardPlan, ResolutionSourcePlan,
 };
 use super::combat_stat_compiler::{
-    argos_defeat_capped_pillz_identity_matches, victory_or_defeat_pillz_identity_matches,
+    argos_defeat_capped_pillz_identity_matches, komboka_victory_pillz_and_life_identity_matches,
+    victory_or_defeat_pillz_identity_matches,
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
@@ -76,6 +77,7 @@ pub enum CombatStatPredicateV1 {
 pub enum CombatStatPostRoundEffectV1 {
     RecoverPaidPillzOnDefeat,
     GainOnePillzOnVictoryOrDefeat,
+    GainOnePillzAndLifeOnVictory,
     GainTwoPillzOnDefeatMaxEleven,
     GainLifeOnVictory { life: u16 },
     GainLifeOnDefeat { life: u16 },
@@ -105,6 +107,9 @@ pub enum CombatStatEffectV1 {
     /// Fixed end-of-round resource work. It is neither a combat modifier nor configurable
     /// public data: a direct plan must use one exact audited source/id pair.
     GainOnePillzOnVictoryOrDefeat,
+    /// Komboka's exact composite clan-bonus Victory work.  The two additions are coupled
+    /// in the private commit plan so direct callers cannot split or reconfigure them.
+    GainOnePillzAndLifeOnVictory,
     /// Argos' fixed surviving-Defeat gain, applied after the clan bonus and capped at 11
     /// without lowering a value which is already at or above that cap.
     GainTwoPillzOnDefeatMaxEleven,
@@ -202,6 +207,10 @@ pub enum InvalidCombatStatPlanReasonV1 {
     DefeatRecoveryPredicate,
     VictoryOrDefeatIdentity,
     VictoryOrDefeatPredicate,
+    KombokaVictoryPillzAndLifeClan,
+    KombokaVictoryPillzAndLifeEffect,
+    KombokaVictoryPillzAndLifeIdentity,
+    KombokaVictoryPillzAndLifePredicate,
     ArgosDefeatCappedPillzIdentity,
     ArgosDefeatCappedPillzPredicate,
     VictoryLifeMagnitude,
@@ -398,6 +407,7 @@ impl CombatStatDiagnosticV1 {
                     player,
                     slot,
                     spec.cards[player][slot.index()].key,
+                    spec.cards[player][slot.index()].effective_clan_id,
                     CombatStatEffectSourceV1::Ability,
                     spec.cards[player][slot.index()].ability,
                 )?;
@@ -405,6 +415,7 @@ impl CombatStatDiagnosticV1 {
                     player,
                     slot,
                     spec.cards[player][slot.index()].key,
+                    spec.cards[player][slot.index()].effective_clan_id,
                     CombatStatEffectSourceV1::Bonus,
                     spec.cards[player][slot.index()].bonus,
                 )?;
@@ -563,6 +574,7 @@ fn validate_combat_stat_source_plan(
     player: PlayerId,
     hand_slot: HandSlot,
     card_key: CardKey,
+    effective_clan_id: u32,
     source: CombatStatEffectSourceV1,
     plan: CombatStatSourcePlanV1,
 ) -> Result<(), CombatStatPlanErrorV1> {
@@ -612,6 +624,48 @@ fn validate_combat_stat_source_plan(
                 source,
                 source_id,
                 InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityPredicate,
+            ));
+        }
+        return Ok(());
+    }
+    // Komboka's registry id is likewise reserved independently of the claimed source.
+    // It denotes one composite Bonus-only Victory operation, never a generic numeric or
+    // ordinary Life/Pillz provenance tag.
+    if komboka_victory_pillz_and_life_id_is_reserved(source_id) {
+        if source != CombatStatEffectSourceV1::Bonus {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeIdentity,
+            ));
+        }
+        if effect != CombatStatEffectV1::GainOnePillzAndLifeOnVictory {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeEffect,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifePredicate,
+            ));
+        }
+        if effective_clan_id != KOMBOKA_EFFECTIVE_CLAN_ID {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeClan,
             ));
         }
         return Ok(());
@@ -669,6 +723,27 @@ fn validate_combat_stat_source_plan(
                 source,
                 source_id,
                 InvalidCombatStatPlanReasonV1::VictoryOrDefeatPredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if effect == CombatStatEffectV1::GainOnePillzAndLifeOnVictory {
+        if !komboka_victory_pillz_and_life_identity_matches(source, source_id) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeIdentity,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifePredicate,
             ));
         }
         return Ok(());
@@ -901,6 +976,12 @@ const fn reprisal_stop_opponent_ability_id_is_reserved(source_id: u32) -> bool {
     matches!(source_id, 1310 | 2073)
 }
 
+const fn komboka_victory_pillz_and_life_id_is_reserved(source_id: u32) -> bool {
+    source_id == 1714
+}
+
+const KOMBOKA_EFFECTIVE_CLAN_ID: u32 = 54;
+
 fn reprisal_stop_opponent_ability_card_matches(source_id: u32, key: CardKey) -> bool {
     matches!(
         (source_id, key),
@@ -1131,6 +1212,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         }
         CombatStatEffectV1::RecoverPaidPillzOnDefeat
         | CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat
+        | CombatStatEffectV1::GainOnePillzAndLifeOnVictory
         | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven
         | CombatStatEffectV1::GainLifeOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
@@ -1145,6 +1227,9 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffec
         }
         CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat => {
             Some(PostRoundEffect::GainOnePillzOnVictoryOrDefeat)
+        }
+        CombatStatEffectV1::GainOnePillzAndLifeOnVictory => {
+            Some(PostRoundEffect::GainOnePillzAndLifeOnVictory)
         }
         CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven => {
             Some(PostRoundEffect::GainTwoPillzOnDefeatMaxEleven)
@@ -1251,6 +1336,10 @@ mod tests {
     fn set_p1_card_key(spec: &mut CombatStatDiagnosticMatchSpecV1, key: CardKey) {
         spec.base_rules.players[PlayerId::P1].hand[0].key = key;
         spec.cards[PlayerId::P1][0].key = key;
+    }
+
+    fn set_p1_effective_clan_id(spec: &mut CombatStatDiagnosticMatchSpecV1, clan_id: u32) {
+        spec.cards[PlayerId::P1][0].effective_clan_id = clan_id;
     }
 
     fn input(p1_pillz: u16, fury: bool) -> BaseRulesRoundInput {
@@ -1903,6 +1992,209 @@ mod tests {
             ))
         ));
         assert_eq!(overflow.position(), &before);
+    }
+
+    #[test]
+    fn komboka_composite_bonus_is_exact_winner_only_ko_safe_and_undo_atomic() {
+        let komboka = CombatStatEffectV1::GainOnePillzAndLifeOnVictory;
+        let mut winner_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, 3);
+        set_p1_effective_clan_id(&mut winner_spec, KOMBOKA_EFFECTIVE_CLAN_ID);
+        winner_spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        // A winning Komboka bonus still pays after it KOs the opposing player.
+        winner_spec.base_rules.players[PlayerId::P2].initial_life = 3;
+        let mut winner = CombatStatDiagnosticV1::new(winner_spec).unwrap();
+        let before = winner.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let (report, undo) = winner.make(input(3, false)).unwrap();
+        assert_eq!(report.status, MatchStatus::Won(PlayerId::P1));
+        assert_eq!(report.players[PlayerId::P1].pillz, 1);
+        assert_eq!(report.players[PlayerId::P1].life, 21);
+        assert_eq!(report.players[PlayerId::P2].life, 0);
+        winner.unmake(undo);
+        assert_eq!(winner.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        winner.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
+
+        let mut losing_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, 3);
+        set_p1_effective_clan_id(&mut losing_spec, KOMBOKA_EFFECTIVE_CLAN_ID);
+        let mut losing = CombatStatDiagnosticV1::new(losing_spec).unwrap();
+        let (report, _) = losing.make(input(0, false)).unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].life, 17);
+        assert_eq!(report.players[PlayerId::P1].pillz, 3);
+
+        let mut losing_ko_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, 0);
+        set_p1_effective_clan_id(&mut losing_ko_spec, KOMBOKA_EFFECTIVE_CLAN_ID);
+        losing_ko_spec.base_rules.players[PlayerId::P1].initial_life = 2;
+        let mut losing_ko = CombatStatDiagnosticV1::new(losing_ko_spec).unwrap();
+        let (report, _) = losing_ko.make(input(0, false)).unwrap();
+        assert_eq!(report.status, MatchStatus::Won(PlayerId::P2));
+        assert_eq!(report.players[PlayerId::P1].life, 0);
+        assert_eq!(report.players[PlayerId::P1].pillz, 0);
+
+        let mut pillz_overflow_spec =
+            spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, u16::MAX);
+        set_p1_effective_clan_id(&mut pillz_overflow_spec, KOMBOKA_EFFECTIVE_CLAN_ID);
+        pillz_overflow_spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        let mut pillz_overflow = CombatStatDiagnosticV1::new(pillz_overflow_spec).unwrap();
+        let before = pillz_overflow.position().clone();
+        assert!(matches!(
+            pillz_overflow.make(input(0, false)),
+            Err(CombatStatDiagnosticErrorV1::BaseRules(
+                BaseRulesError::PillzIncreaseOverflow {
+                    player: PlayerId::P1
+                }
+            ))
+        ));
+        assert_eq!(pillz_overflow.position(), &before);
+
+        let mut life_overflow_spec =
+            spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, 0);
+        set_p1_effective_clan_id(&mut life_overflow_spec, KOMBOKA_EFFECTIVE_CLAN_ID);
+        life_overflow_spec.base_rules.players[PlayerId::P1].initial_life = u16::MAX;
+        life_overflow_spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        let mut life_overflow = CombatStatDiagnosticV1::new(life_overflow_spec).unwrap();
+        let before = life_overflow.position().clone();
+        assert!(matches!(
+            life_overflow.make(input(0, false)),
+            Err(CombatStatDiagnosticErrorV1::BaseRules(
+                BaseRulesError::LifeIncreaseOverflow {
+                    player: PlayerId::P1
+                }
+            ))
+        ));
+        // Pillz was checked and tentatively added before Life, but neither part can leak
+        // from the replacement position when the second checked addition overflows.
+        assert_eq!(life_overflow.position(), &before);
+    }
+
+    #[test]
+    fn komboka_public_plan_reserves_1714_for_its_exact_bonus_effect_and_predicate() {
+        let komboka = CombatStatEffectV1::GainOnePillzAndLifeOnVictory;
+        let mut valid = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, 3);
+        set_p1_effective_clan_id(&mut valid, KOMBOKA_EFFECTIVE_CLAN_ID);
+        assert!(CombatStatDiagnosticV1::new(valid).is_ok());
+
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(spec_with_p1(
+                CombatStatEffectSourceV1::Bonus,
+                1714,
+                komboka,
+                3,
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeClan,
+                ..
+            })
+        ));
+
+        for effect in [
+            CombatStatEffectV1::GainLifeOnVictory { life: 1 },
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Player,
+                stat: CombatStatAttributeV1::Power,
+                operation: CombatStatOperationV1::Increase,
+                value: 1,
+                minimum: None,
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+        ] {
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(spec_with_p1(
+                    CombatStatEffectSourceV1::Bonus,
+                    1714,
+                    effect,
+                    3,
+                )),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeEffect,
+                    ..
+                })
+            ));
+        }
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(spec_with_p1(
+                CombatStatEffectSourceV1::Ability,
+                1714,
+                komboka,
+                3,
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeIdentity,
+                ..
+            })
+        ));
+        let mut wrong_predicate = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, 3);
+        set_p1_effective_clan_id(&mut wrong_predicate, KOMBOKA_EFFECTIVE_CLAN_ID);
+        wrong_predicate.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+            source_id: 1714,
+            predicate: CombatStatPredicateV1::OwnerWonPreviousRound,
+            effect: komboka,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_predicate),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifePredicate,
+                ..
+            })
+        ));
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(spec_with_p1(
+                CombatStatEffectSourceV1::Bonus,
+                1,
+                komboka,
+                3,
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeIdentity,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn komboka_bonus_obeys_stop_bonus_but_not_stop_opponent_ability() {
+        let komboka = CombatStatEffectV1::GainOnePillzAndLifeOnVictory;
+        let mut stopped_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, 3);
+        set_p1_effective_clan_id(&mut stopped_spec, KOMBOKA_EFFECTIVE_CLAN_ID);
+        stopped_spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        stopped_spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::StopOpponentBonus,
+        };
+        let mut stopped = CombatStatDiagnosticV1::new(stopped_spec).unwrap();
+        let before = stopped.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let (report, undo) = stopped.make(input(3, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 0);
+        assert_eq!(report.players[PlayerId::P1].life, 20);
+        stopped.unmake(undo);
+        assert_eq!(stopped.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        stopped.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
+
+        let mut soa_spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 1714, komboka, 3);
+        set_p1_effective_clan_id(&mut soa_spec, KOMBOKA_EFFECTIVE_CLAN_ID);
+        soa_spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        soa_spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        let mut soa = CombatStatDiagnosticV1::new(soa_spec).unwrap();
+        let (report, _) = soa.make(input(3, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 1);
+        assert_eq!(report.players[PlayerId::P1].life, 21);
     }
 
     #[test]

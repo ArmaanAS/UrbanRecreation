@@ -6,9 +6,9 @@
 
 use super::combat_stat_compiler::{
     classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
-    classify_defeat_recover_pillz, classify_reanimate_life, classify_victory_life,
-    classify_victory_or_defeat_pillz, compact_effect,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_defeat_recover_pillz, classify_komboka_victory_pillz_and_life,
+    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_pillz,
+    compact_effect, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
@@ -39,6 +39,10 @@ const RIOTS_CLAN_ID: u32 = 49;
 const RIOTS_CATALOG_BONUS_ID: u32 = 47;
 const VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
 const VICTORY_OR_DEFEAT_RIOTS_BONUS_REGISTRY_ID: u32 = 1034;
+const KOMBOKA_CLAN_ID: u32 = 54;
+const KOMBOKA_CATALOG_BONUS_ID: u32 = 53;
+const KOMBOKA_VICTORY_PILLZ_AND_LIFE_DESCRIPTION: &str = "+1 Pillz And Life";
+const KOMBOKA_VICTORY_PILLZ_AND_LIFE_REGISTRY_ID: u32 = 1714;
 const JUNGO_CLAN_ID: u32 = 43;
 const JUNGO_CATALOG_BONUS_ID: u32 = 41;
 const JUNGO_VICTORY_LIFE_BONUS_REGISTRY_ID: u32 = 401;
@@ -901,6 +905,48 @@ fn prepare_catalog_source(
                 .into_boxed_slice(),
         });
     }
+    // Komboka's clan bonus is a catalog namespace source.  Its same-text Carnibox
+    // Ability:3356 alias is provenance only: it must never lend execution authority to
+    // a card ability, another clan, or a different catalog bonus id.
+    if description == KOMBOKA_VICTORY_PILLZ_AND_LIFE_DESCRIPTION {
+        if source_kind == CombatStatEffectSourceV1::Bonus
+            && effective_clan_id == KOMBOKA_CLAN_ID
+            && catalog_id == Some(KOMBOKA_CATALOG_BONUS_ID)
+        {
+            return prepare_komboka_victory_pillz_and_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+            );
+        }
+        let definition = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
     // Jungo's catalog bonus id is not a capture-registry id. Bridge only its active
     // effective clan and exact printed source to the independently captured definition.
     if description == JUNGO_VICTORY_LIFE_DESCRIPTION
@@ -1598,6 +1644,70 @@ fn prepare_victory_or_defeat_pillz_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
+        },
+    })
+}
+
+fn prepare_komboka_victory_pillz_and_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(KOMBOKA_VICTORY_PILLZ_AND_LIFE_REGISTRY_ID, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    if !classify_komboka_victory_pillz_and_life(definition, source_kind) {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
         },
     })
 }

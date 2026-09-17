@@ -15,9 +15,9 @@ use crate::effect_registry::{
 };
 use crate::engine::combat_stat_compiler::{
     classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
-    classify_defeat_recover_pillz, classify_reanimate_life, classify_victory_life,
-    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
-    has_reanimate_life_shape, has_victory_life_shape,
+    classify_defeat_recover_pillz, classify_komboka_victory_pillz_and_life,
+    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_pillz,
+    compact_effect, has_defeat_life_shape, has_reanimate_life_shape, has_victory_life_shape,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
@@ -639,6 +639,19 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if classify_komboka_victory_pillz_and_life(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
+            },
+        });
+    }
     if let Some(life) = classify_victory_life(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -748,6 +761,11 @@ fn prepare_combat_stat_source(
     // a selected hazard instead of quietly becoming a disabled no-op.
     let unadmitted_argos_defeat_capped_pillz =
         source.id == 1158 || source.description == "Defeat: +2 Pillz Max. 11";
+    let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
+        || source.description == "+1 Pillz And Life"
+        || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
+            && input.attribute_affected == AttributeAffectedV1::LifeAndPillz
+            && input.attribute_action == AttributeActionV1::Increase);
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {
@@ -757,6 +775,7 @@ fn prepare_combat_stat_source(
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
+        || unadmitted_komboka_victory_pillz_and_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
     } else if unadmitted_post_round_recovery {
@@ -781,6 +800,7 @@ fn prepare_combat_stat_source(
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
+        || unadmitted_komboka_victory_pillz_and_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {
             source_id: source.id,

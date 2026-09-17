@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 15 for the current scope.
+Replay provenance records compiler/policy semantic revision 16 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 15.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 16.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -431,6 +431,25 @@ from 52 to 58 rounds. This is stronger replay evidence, but not a claim that eve
 catalog-eligible draw is solver-safe beyond the narrow projection. Provenance records
 compiler/policy semantic revision 15.
 
+Semantic revision 16 admits only Komboka's exact Bonus `1714`, `+1 Pillz And Life`, on an
+active effective Komboka clan (`54`) card: `value=1`, zero bounds/condition,
+`position=both`, `currentRoundRequirement=win`, player-targeted `life&pillz` increase, no
+special action, link, Support, permanence, or other context. The compact plan is a single
+typed post-round effect. Its TypeScript-compatible
+commit is atomic and ordered Pillz then Life; it runs only for a live winning source, while a
+loss (including a lethal loss) receives neither payment nor revival. `1069193/0` now exactly
+verifies Pantherine's 16 Life and 8 Pillz endpoint and raises the immutable gate from 58 to
+59 rounds. `1069193/1` next selects Hilal's deferred `ability:5355`, `-1 Opp. Pillz And
+Life, Min 0`, so no longer prefix is claimed.
+
+Server arithmetic supplies additional bounded evidence without claiming unsupported prefixes:
+Hewa Cr's `866431/0` win ends 13 Life/6 Pillz but also selects deferred Support Life;
+Keya's tied `876882/0` win is stopped by Courage Stop Bonus and ends 12/12; Adytia's
+`1066077/1` win ends 8/5 while Spidee's SOA leaves the Bonus live; Kunglaba's KO win in
+`1023608/3` ends 12/1 after payment; and Kubra's lethal `876712/1` loss ends 0/9 with no
+payment. Same-text `ability:3356`, Kubra `ability:1716`, malformed `1714`, and all other
+compound or capped variants remain selected hazards.
+
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
@@ -451,7 +470,7 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 15 records this semantic boundary together with the exact
+context. Compiler/policy revision 16 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
@@ -493,7 +512,7 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 15, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 16, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
@@ -506,9 +525,9 @@ complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captu
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
 `CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly seven capture ids
 are eligible: `830285`, `869944`, `877636`, `877950`, `1024673`, `1060199`, and `1081463`.
-The revision-15 aliases add the latter two (no regression). Catalog eligibility is a strict
+Revision 16 leaves this strict coverage unchanged (no regression). Catalog eligibility is a strict
 whole-draw admission measurement, not proof of full engine or TypeScript solver parity;
-the 58-round immutable diagnostic gate supplies the separately checked sequential replay
+the 59-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
 
 ### 4. Port current solver semantics
