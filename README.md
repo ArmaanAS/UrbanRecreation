@@ -63,6 +63,7 @@ deno task rust:test
 deno task rust:advise --plain
 deno task rust:advise --interactive --plain
 deno task rust:advise --replay 877636 --plain
+deno task rust:advise --replay 1024673 --plain
 ```
 
 `rust:advise` defaults to a deterministic supported demo and accepts exact `id:level`
@@ -75,8 +76,10 @@ position heuristics; rounds 3–4 use an exact conservative continuation policy 
 conditions a reply on hidden pillz or Fury. `--replay` loads a captured battle through the
 strict catalog boundary, renders and grades every recorded decision, then verifies each
 committed round's power, damage, attack, winner, life, and pillz against the server record.
-Battle `877636` is the first complete supported real draw. Rust does not yet ingest the live
-capture stream, use captured opening weights, or claim complete TypeScript policy parity.
+Battles `877636` and `1024673` are complete supported real draws; the latter exercises
+unconditional Stop Opp. Ability through the real solver/TUI and ends in a round-two KO.
+Rust does not yet ingest the live capture stream, use captured opening weights, or claim
+complete TypeScript policy parity.
 
 To inspect the old advisor explicitly:
 

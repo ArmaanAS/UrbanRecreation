@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 12 for the current scope.
+Replay provenance records compiler/policy semantic revision 13 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,29 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 12.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 13.
+
+Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
+must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
+no condition, link, Support, inversion, or permanence, and the literal description. The
+malformed same-text id `877` and every Courage/Reprisal/Confidence/Revenge/Unison variant
+remain unsupported and reject if selected. The hot resolver now tracks Ability and Bonus
+liveness independently and resolves SOA/SOB dependencies in the TypeScript PRE4 order:
+discard stopped controls, execute a control with no pending opposing blocker, and use stable
+P1/Bonus-first order only for a true cycle. A stopped source contributes no stat modifier,
+cancellation, control, or post-round work; liveness stays stack-local and make/unmake remains
+allocation-free.
+
+Strict catalog construction pins active Roots `(clan 29, catalog bonus 28)` to captured
+registry definition `41` and GHEIST `(clan 32, catalog bonus 32)` to definition `94`; static
+abilities retain their own exact catalog/registry id. The same context revision also pins
+active Piranas `(clan 42, catalog bonus 40)` to captured Stop Bonus definition `333`, which
+keeps replay source identity strict rather than treating a structural alias as execution
+authority. Catalog-context policy is revision 3. Server prefixes `1088323/2` and
+`1089001/1` independently pin Ability- and bonus-origin SOA arithmetic, while complete
+capture `1024673` adds two sequential verified rounds. The immutable combat-stat gate is now
+52 rounds. `deno task rust:advise --replay 1024673 --plain` grades both recorded decisions,
+verifies both server rounds, and completes the round-two KO through the release TUI.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
@@ -386,7 +408,7 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 12 records this semantic boundary together with the exact
+context. Compiler/policy revision 13 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
@@ -428,19 +450,19 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 12, and catalog-context
-policy revision 2.
+registry schema and source fingerprint, compiler/policy revision 13, and catalog-context
+policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
 were derived using only catalog clans, explicit night state, and these Oculus rules. There
 are 38 Oblivion slots; all 18 description mismatches are captures where the server had
 already replaced printed `Copy: Opp. Ability` with the opponent-dependent copied result.
 Every one of the other 2,538 slots matches captured bonus presence and description exactly.
-Capture `877636` is the first current eight-card draw wholly executable by this deliberately
-narrow projection. Its complete four-round server record now pins strict end-to-end catalog
-construction, engine execution, and advisor replay; synthetic catalog hands continue to pin
-the individual construction boundaries. This is solver-ready input construction, not full
-TypeScript search-policy parity.
+Captures `877636` and `1024673` are current eight-card draws wholly executable by this
+deliberately narrow projection. Their four-round and two-round server records pin strict
+end-to-end catalog construction, engine execution, and advisor replay; synthetic catalog
+hands continue to pin the individual construction boundaries. This is solver-ready input
+construction, not full TypeScript search-policy parity.
 
 ### 4. Port current solver semantics
 
@@ -469,7 +491,7 @@ bounded heuristic by design; an effect-free twelve-pill upper count is roughly 6
 paired histories from round 2 versus about 210 thousand from round 3, before effect-driven
 resource growth.
 
-The first server-backed advisor path now loads capture `877636` with `--replay 877636`.
+The server-backed advisor path loads captures `877636` and `1024673` with `--replay`.
 It derives both exact hands, resources, night state, recording side, and each round's mover
 from the normalized capture; rejects any capture/catalog source-identity disagreement; and
 requires complete server card evidence. Before every recorded move it renders the same TUI

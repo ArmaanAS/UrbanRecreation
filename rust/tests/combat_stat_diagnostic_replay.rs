@@ -21,7 +21,9 @@ use urban_recreation_rust::replay::{
 const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (875032, 2),
     (875155, 1),
-    (1088323, 1),
+    (1088323, 2),
+    (1089001, 1),
+    (1024673, 2),
     (1081463, 1),
     (1089513, 2),
     (901400, 2),
@@ -232,7 +234,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_forty_eight_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_fifty_two_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -268,20 +270,20 @@ fn fixed_server_backed_gate_is_exactly_forty_eight_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 48);
+    assert_eq!(rounds, 52);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 36, 37, 39, 40, 42, 56, 57, 90, 93, 130, 156, 257, 266, 310, 333, 377, 401, 412,
-            520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980, 1034, 1047, 1158,
+            6, 36, 37, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 257, 266, 310, 333, 377, 401,
+            412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980, 1034, 1047, 1158,
             1163, 1241, 1335, 1338, 1342, 1359, 1372, 1375, 1418, 1536, 1578, 1688, 1694, 1770,
-            1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881, 3677, 3864, 3865, 3897, 4041,
-            4216, 4297, 4399, 4711, 4718, 4757, 5026, 5085, 5273, 5520, 5763, 5852,
+            1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881, 2965, 3677, 3864, 3865, 3897,
+            4041, 4216, 4297, 4299, 4399, 4711, 4718, 4757, 5026, 5085, 5273, 5520, 5763, 5852,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([274, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459, 5283,])
+        BTreeSet::from([274, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459, 4695, 5283,])
     );
     assert_eq!(absent, 2);
 }
@@ -327,6 +329,88 @@ fn gate_pins_stop_bonus_cancellation_and_sequential_fury() {
         .0
         .iter()
         .any(|card| card.damage == 5));
+}
+
+#[test]
+fn server_replays_pin_unconditional_soa_from_ability_and_gheist_bonus() {
+    let catalog = catalog();
+    let registry = registry();
+    let cases = [
+        // Alexei's ability leaves Lothar's -3 Power inert.
+        (1088323, 2, 1, true, 2965, (6, 4, 24), (1, 5, 14)),
+        // An active GHEIST bonus suppresses -1 Opp Power And Damage.
+        (1089001, 1, 0, false, 94, (8, 3, 24), (6, 5, 42)),
+    ];
+    for (battle_id, prefix, round_index, ability_source, source_id, owner_stats, opponent_stats) in
+        cases
+    {
+        let report = diagnostic(battle_id, &catalog, &registry)
+            .execute_combat_stat_diagnostic_v1_prefix(prefix)
+            .unwrap_or_else(|error| panic!("SOA fixture {battle_id}/{prefix}: {error}"));
+        let round = &report.rounds[round_index];
+        let owner = PlayerId::ALL
+            .into_iter()
+            .find(|player| {
+                let source = if ability_source {
+                    &round.selected[*player].ability
+                } else {
+                    &round.selected[*player].bonus
+                };
+                matches!(
+                    source,
+                    CombatStatProjectionDispositionV1::Execute {
+                        identity,
+                        effect: SupportedEffectV1::StopOpponentAbility,
+                        predicate: CombatStatPredicateV1::Always,
+                    } if identity.id == source_id
+                )
+            })
+            .unwrap_or_else(|| panic!("battle {battle_id} did not select SOA source {source_id}"));
+        let opponent = owner.other();
+        let stats = |player| {
+            let card = &round.round.cards[player];
+            (card.power, card.damage, card.attack)
+        };
+        assert_eq!(stats(owner), owner_stats, "battle {battle_id} SOA owner");
+        assert_eq!(
+            stats(opponent),
+            opponent_stats,
+            "battle {battle_id} SOA opponent"
+        );
+    }
+}
+
+#[test]
+fn lyse_teria_soa_unlocks_the_complete_two_round_server_replay() {
+    let catalog = catalog();
+    let registry = registry();
+    let report = diagnostic(1024673, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1()
+        .unwrap();
+    assert_eq!(report.rounds.len(), 2);
+    let round = &report.rounds[0];
+    let owner = PlayerId::ALL
+        .into_iter()
+        .find(|player| {
+            matches!(
+                round.selected[*player].ability,
+                CombatStatProjectionDispositionV1::Execute {
+                    identity: ref id,
+                    effect: SupportedEffectV1::StopOpponentAbility,
+                    ..
+                } if id.id == 73
+            )
+        })
+        .expect("Lyse Teria Cr's exact SOA must execute");
+    assert_eq!(
+        (
+            round.round.cards[owner].power,
+            round.round.cards[owner].damage,
+            round.round.cards[owner].attack,
+        ),
+        (7, 2, 28)
+    );
+    assert_eq!(round.round.cards[owner.other()].attack, 8);
 }
 
 #[test]
@@ -396,7 +480,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 12);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 13);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -687,8 +771,8 @@ fn selected_stop_ability_is_visible_and_rejected_fail_closed() {
             .hand_index,
     );
     source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
-        id: 41,
-        description: "Stop Opp. Ability".to_owned(),
+        id: 425,
+        description: "Courage: Stop Opp. Ability".to_owned(),
     });
     let prepared =
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();

@@ -68,6 +68,7 @@ pub enum DiagnosticCombatEffectV1 {
         maximum: Option<u16>,
         multiplier: DiagnosticMagnitudeV1,
     },
+    StopOpponentAbility,
     StopOpponentBonus,
     CancelOpponentCombatStatModifiers {
         stat: DiagnosticCombatStatV1,

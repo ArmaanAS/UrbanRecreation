@@ -787,6 +787,45 @@ mod tests {
     }
 
     #[test]
+    fn soa_capture_runs_through_the_tui_and_verifies_the_round_two_knockout() {
+        let AdvisorCommand::Run(options) = parse_args(
+            [
+                "--replay",
+                "1024673",
+                "--plain",
+                "--budget-ms",
+                "1",
+                "--width",
+                "100",
+                "--height",
+                "18",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap() else {
+            panic!("the replay invocation must run");
+        };
+        let prepared = prepare(options).expect("the SOA capture must be a strict real draw");
+        assert_eq!(prepared.options.us, PlayerId::P1);
+        assert_eq!(prepared.replay.as_ref().unwrap().rounds.len(), 2);
+
+        let mut output = Vec::new();
+        run_replay(&prepared, &mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("MODE REPLAY 1024673"));
+        assert!(output.contains("ROUND 1"));
+        assert!(output.contains("ROUND 2"));
+        assert!(output.contains("ONE-ROUND HEURISTIC"));
+        assert!(output.contains("SECOND"));
+        assert!(output.contains("OPP CARD 1"));
+        assert!(output.contains("SERVER ROUND 2 VERIFIED"));
+        assert!(output.contains("REPLAY 1024673 COMPLETE"));
+        assert!(output.contains("2 decisions graded"));
+        assert!(output.contains("Won(P1)"));
+    }
+
+    #[test]
     fn terminal_error_text_is_single_line_and_bounded() {
         let unsafe_text = format!("bad\u{1b}[31m\r\n{}", "x".repeat(2_000));
         let safe = safe_terminal_error(&unsafe_text);

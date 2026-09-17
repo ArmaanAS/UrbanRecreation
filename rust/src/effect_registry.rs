@@ -247,6 +247,7 @@ pub enum SupportedEffectV1 {
         maximum: Option<u16>,
         multiplier: MagnitudeMultiplierV1,
     },
+    StopOpponentAbility,
     StopOpponentBonus,
     CancelOpponentCombatStatModifiers {
         stat: CombatStatV1,
@@ -999,6 +1000,21 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
                 })
             }
         }
+        (AttributeActionV1::None, SpecialActionV1::StopAbility, _)
+            if input.attribute_affected == AttributeAffectedV1::None =>
+        {
+            if input.side_affected != AffectedSideV1::Player {
+                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
+                    side: input.side_affected,
+                });
+                None
+            } else if input.value == 0 && input.value_min == 0 && input.value_max == 0 {
+                Some(SupportedEffectV1::StopOpponentAbility)
+            } else {
+                reasons.insert(UnsupportedReasonV1::NonZeroControlValues);
+                None
+            }
+        }
         (AttributeActionV1::None, SpecialActionV1::StopBonus, _)
             if input.attribute_affected == AttributeAffectedV1::None =>
         {
@@ -1110,6 +1126,7 @@ fn unreviewed_description_context(
             maximum,
             multiplier,
         ),
+        SupportedEffectV1::StopOpponentAbility => description == "Stop Opp. Ability",
         SupportedEffectV1::StopOpponentBonus => description == "Stop Opp. Bonus",
         SupportedEffectV1::CancelOpponentCombatStatModifiers { stat } => {
             let stat = match stat {
@@ -1523,6 +1540,10 @@ mod tests {
             Some(SupportedEffectV1::StopOpponentBonus)
         );
         assert_eq!(
+            registry.get(41).unwrap().compiled().supported(),
+            Some(SupportedEffectV1::StopOpponentAbility)
+        );
+        assert_eq!(
             registry.get(1163).unwrap().compiled().supported(),
             Some(SupportedEffectV1::CancelOpponentCombatStatModifiers {
                 stat: CombatStatV1::Attack
@@ -1546,8 +1567,16 @@ mod tests {
             })
         ));
         assert!(matches!(
-            registry.get(41).unwrap().compiled(),
-            CompiledEffectV1::Unsupported(reasons) if !reasons.is_empty()
+            registry.get(877).unwrap().compiled(),
+            CompiledEffectV1::Unsupported(reasons)
+                if reasons.contains(&UnsupportedReasonV1::NonZeroControlValues)
+        ));
+        assert!(matches!(
+            registry.get(425).unwrap().compiled(),
+            CompiledEffectV1::Unsupported(reasons)
+                if reasons.contains(&UnsupportedReasonV1::Conditional {
+                    feature: ConditionalFeatureV1::Position,
+                })
         ));
         for (id, link) in [
             (1241, LinkedMagnitudeV1::Overdrive),
@@ -1698,7 +1727,7 @@ mod tests {
     fn unsupported_effects_remain_explicit_at_the_registry_boundary() {
         let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
         assert!(matches!(
-            registry.get(41).unwrap().compiled(),
+            registry.get(877).unwrap().compiled(),
             CompiledEffectV1::Unsupported(_)
         ));
     }

@@ -1036,6 +1036,141 @@ fn stop_bonus_suppresses_existing_support_bonus() {
 }
 
 #[test]
+fn stop_opponent_ability_preserves_bonus_and_stops_ability_stats() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        11,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    cards[PlayerId::P1][0].bonus = execute(
+        12,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 2),
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].ability = execute(
+        41,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+
+    let mut game = game(base, cards);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 6);
+    assert_eq!(report.cards[PlayerId::P1].damage, 5);
+}
+
+#[test]
+fn stop_opponent_ability_suppresses_ability_post_round_and_unmake_is_exact() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1034,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
+    );
+    cards[PlayerId::P2][0].ability = execute(
+        41,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+
+    let mut game = game(base, cards);
+    let before = game.position().clone();
+    let before_hash = position_hash(&before);
+    let (report, undo) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].pillz, 20);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+    assert_eq!(position_hash(game.position()), before_hash);
+}
+
+#[test]
+fn soa_and_sob_resolve_by_source_dependency_and_cycles_restore_exactly() {
+    // An SOA kills the opposing ability-origin SOB before it can stop the bonus.
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        41,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    cards[PlayerId::P2][0].ability = execute(
+        2299,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    cards[PlayerId::P2][0].bonus = execute(
+        12,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 2),
+    );
+    cards[PlayerId::P2][0].source_bonus_support_count = 1;
+    let mut soa_first = game(base, cards);
+    let (report, _) = soa_first
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].damage, 5);
+
+    // Conversely, SOA wins over an ability-origin SOB because the SOB is its target;
+    // that SOB cannot then suppress the SOA owner's bonus.
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        2299,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    cards[PlayerId::P1][0].bonus = execute(
+        12,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 2),
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].ability = execute(
+        41,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut soa_second = game(base, cards);
+    let (report, _) = soa_second
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].damage, 5);
+
+    // Cross-source mutual stops are a real PRE4 cycle.  The fixed P1/bonus-first
+    // fallback must terminate and must leave no mutable state outside BaseRulesUndo.
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].bonus = execute(
+        41,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].ability = execute(
+        2299,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    let mut cycle = game(base, cards);
+    let before = cycle.position().clone();
+    let before_hash = position_hash(&before);
+    let (_, undo) = cycle
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    cycle.unmake(undo);
+    assert_eq!(cycle.position(), &before);
+    assert_eq!(position_hash(cycle.position()), before_hash);
+}
+
+#[test]
 fn impossible_execute_plans_fail_at_construction() {
     let base = base_spec(6, 2);
     let cases = [
@@ -1060,6 +1195,14 @@ fn impossible_execute_plans_fail_at_construction() {
                 3,
                 CombatStatPredicateV1::OwnerMovesFirst,
                 CombatStatEffectV1::StopOpponentBonus,
+            ),
+            InvalidCombatStatPlanReasonV1::ConditionalControl,
+        ),
+        (
+            execute(
+                42,
+                CombatStatPredicateV1::OwnerMovesFirst,
+                CombatStatEffectV1::StopOpponentAbility,
             ),
             InvalidCombatStatPlanReasonV1::ConditionalControl,
         ),

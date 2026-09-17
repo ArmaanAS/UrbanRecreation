@@ -36,6 +36,7 @@ From the repository root, run the strict supported demo:
 ```sh
 deno task rust:advise --plain
 deno task rust:advise --interactive --plain
+deno task rust:advise --replay 1024673 --plain
 ```
 
 The same executable accepts exact card identities and levels:
@@ -59,6 +60,8 @@ Rounds 1–2 use the bounded position heuristic. Rounds 3–4 recursively solve 
 win/draw/loss values with the conservative pure policy: one response may depend on the
 opponent's visible card, but never on hidden pillz or Fury. Live capture, captured opening
 weights, blind-second work, and round-2 continuation search remain to be ported.
+Replay `1024673` is a short end-to-end smoke for the strict catalog, unconditional Stop
+Opp. Ability, server verification, move grading, and the round-two knockout path.
 
 ## Historical engine usage
 

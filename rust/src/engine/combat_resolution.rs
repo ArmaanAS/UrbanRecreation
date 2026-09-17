@@ -75,11 +75,144 @@ impl CancellationMask {
     }
 }
 
-fn is_stop_bonus(source: ResolutionSourcePlan) -> bool {
-    matches!(
-        source.effect,
-        Some(DiagnosticCombatEffectV1::StopOpponentBonus)
-    )
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum SourceKind {
+    Bonus,
+    Ability,
+}
+
+const SOURCE_ORDER: [SourceKind; 2] = [SourceKind::Bonus, SourceKind::Ability];
+
+#[derive(Clone, Copy, Default)]
+struct SourceLiveness {
+    ability: bool,
+    bonus: bool,
+}
+
+impl SourceLiveness {
+    fn get(self, kind: SourceKind) -> bool {
+        match kind {
+            SourceKind::Ability => self.ability,
+            SourceKind::Bonus => self.bonus,
+        }
+    }
+
+    fn set(&mut self, kind: SourceKind, live: bool) {
+        match kind {
+            SourceKind::Ability => self.ability = live,
+            SourceKind::Bonus => self.bonus = live,
+        }
+    }
+}
+
+fn source_for(card: ResolutionCardPlan, kind: SourceKind) -> ResolutionSourcePlan {
+    match kind {
+        SourceKind::Ability => card.ability,
+        SourceKind::Bonus => card.bonus,
+    }
+}
+
+fn stop_target(source: ResolutionSourcePlan) -> Option<SourceKind> {
+    match source.effect {
+        Some(DiagnosticCombatEffectV1::StopOpponentAbility) => Some(SourceKind::Ability),
+        Some(DiagnosticCombatEffectV1::StopOpponentBonus) => Some(SourceKind::Bonus),
+        _ => None,
+    }
+}
+
+fn source_liveness(selected_plans: ByPlayer<ResolutionCardPlan>) -> ByPlayer<SourceLiveness> {
+    let mut live = ByPlayer::new(
+        SourceLiveness {
+            ability: source_is_live(selected_plans[PlayerId::P1].ability),
+            bonus: source_is_live(selected_plans[PlayerId::P1].bonus),
+        },
+        SourceLiveness {
+            ability: source_is_live(selected_plans[PlayerId::P2].ability),
+            bonus: source_is_live(selected_plans[PlayerId::P2].bonus),
+        },
+    );
+    // PRE4 is a dependency resolution, not an arbitrary player-order application.  A
+    // pending Stop waits for any opposing pending Stop which can cancel its own source;
+    // after a source becomes dead its pending Stop is discarded.  This mirrors
+    // TypeScript Events.executeCancels exactly for the compact one-effect-per-source
+    // projection.  Four source slots keep the algorithm allocation-free.
+    let mut pending = ByPlayer::new([false; 2], [false; 2]);
+    for player in PlayerId::ALL {
+        for kind in SOURCE_ORDER {
+            pending[player][kind_index(kind)] = live[player].get(kind)
+                && stop_target(source_for(selected_plans[player], kind)).is_some();
+        }
+    }
+
+    while has_pending(pending) {
+        // A resolved Stop can make a later node inert.  Drop it before considering
+        // dependencies, which also releases any source it looked able to block.
+        for player in PlayerId::ALL {
+            for kind in SOURCE_ORDER {
+                let index = kind_index(kind);
+                if pending[player][index] && !live[player].get(kind) {
+                    pending[player][index] = false;
+                }
+            }
+        }
+        if !has_pending(pending) {
+            break;
+        }
+
+        let mut chosen = None;
+        for player in PlayerId::ALL {
+            for kind in SOURCE_ORDER {
+                let index = kind_index(kind);
+                if !pending[player][index] {
+                    continue;
+                }
+                let opponent = player.other();
+                let blocked = SOURCE_ORDER.into_iter().any(|blocker_kind| {
+                    pending[opponent][kind_index(blocker_kind)]
+                        && stop_target(source_for(selected_plans[opponent], blocker_kind))
+                            == Some(kind)
+                });
+                if !blocked {
+                    chosen = Some((player, kind));
+                    break;
+                }
+            }
+            if chosen.is_some() {
+                break;
+            }
+        }
+
+        // A true mutual-stop cycle has no dependency-free source.  Preserve the
+        // TypeScript fallback: internal P1 first, Bonus before Ability.
+        let (player, kind) = chosen.unwrap_or_else(|| {
+            for player in PlayerId::ALL {
+                for kind in SOURCE_ORDER {
+                    if pending[player][kind_index(kind)] {
+                        return (player, kind);
+                    }
+                }
+            }
+            unreachable!("a pending control must exist")
+        });
+        pending[player][kind_index(kind)] = false;
+        if let Some(target) = stop_target(source_for(selected_plans[player], kind)) {
+            live[player.other()].set(target, false);
+        }
+    }
+
+    live
+}
+
+const fn kind_index(kind: SourceKind) -> usize {
+    match kind {
+        SourceKind::Bonus => 0,
+        SourceKind::Ability => 1,
+    }
+}
+
+fn has_pending(pending: ByPlayer<[bool; 2]>) -> bool {
+    pending[PlayerId::P1].iter().any(|pending| *pending)
+        || pending[PlayerId::P2].iter().any(|pending| *pending)
 }
 
 fn add_cancellation(mask: &mut CancellationMask, source: ResolutionSourcePlan) {
@@ -110,35 +243,14 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         u16::from(validated[PlayerId::P2].card.key.level),
         u16::from(validated[PlayerId::P1].card.key.level),
     );
-    let mut bonus_live = ByPlayer::new(
-        source_is_live(selected_plans[PlayerId::P1].bonus),
-        source_is_live(selected_plans[PlayerId::P2].bonus),
-    );
-
-    // Ability-origin Stop Bonus resolves before the bonus-vs-bonus dependency.
-    for player in PlayerId::ALL {
-        if is_stop_bonus(selected_plans[player].ability) {
-            bonus_live[player.other()] = false;
-        }
-    }
-
-    // Surviving bonus-origin Stop Bonus is simultaneous. Snapshot both results before
-    // mutating either side so player iteration order cannot affect mutual Stop Bonus.
-    let bonus_stops = ByPlayer::new(
-        bonus_live[PlayerId::P1] && is_stop_bonus(selected_plans[PlayerId::P1].bonus),
-        bonus_live[PlayerId::P2] && is_stop_bonus(selected_plans[PlayerId::P2].bonus),
-    );
-    if bonus_stops[PlayerId::P1] {
-        bonus_live[PlayerId::P2] = false;
-    }
-    if bonus_stops[PlayerId::P2] {
-        bonus_live[PlayerId::P1] = false;
-    }
+    let live = source_liveness(selected_plans);
 
     let mut cancellations = ByPlayer::new(CancellationMask::default(), CancellationMask::default());
     for player in PlayerId::ALL {
-        add_cancellation(&mut cancellations[player], selected_plans[player].ability);
-        if bonus_live[player] {
+        if live[player].ability {
+            add_cancellation(&mut cancellations[player], selected_plans[player].ability);
+        }
+        if live[player].bonus {
             add_cancellation(&mut cancellations[player], selected_plans[player].bonus);
         }
     }
@@ -154,7 +266,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
 
     // Source compilation is Bonus then Ability. Own increases retain that stable order.
     for origin in PlayerId::ALL {
-        if bonus_live[origin] {
+        if live[origin].bonus {
             apply_power_damage_effect(
                 origin,
                 DiagnosticAffectedSideV1::Player,
@@ -167,23 +279,25 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 &mut damage,
             )?;
         }
-        apply_power_damage_effect(
-            origin,
-            DiagnosticAffectedSideV1::Player,
-            DiagnosticStatOperationV1::Increase,
-            selected_plans[origin].ability,
-            cancellations[origin.other()],
-            rounds_played,
-            opponent_stars[origin],
-            &mut power,
-            &mut damage,
-        )?;
+        if live[origin].ability {
+            apply_power_damage_effect(
+                origin,
+                DiagnosticAffectedSideV1::Player,
+                DiagnosticStatOperationV1::Increase,
+                selected_plans[origin].ability,
+                cancellations[origin.other()],
+                rounds_played,
+                opponent_stars[origin],
+                &mut power,
+                &mut damage,
+            )?;
+        }
     }
 
     // Server-backed TypeScript semantics stable-sort opponent reductions by descending
     // Min. Equal-Min effects retain source compilation order (Bonus then Ability).
     for origin in PlayerId::ALL {
-        let bonus = if bonus_live[origin] {
+        let bonus = if live[origin].bonus {
             selected_plans[origin].bonus
         } else {
             ResolutionSourcePlan::default()
@@ -191,7 +305,10 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         apply_ordered_power_damage_reductions(
             origin,
             bonus,
-            selected_plans[origin].ability,
+            live[origin]
+                .ability
+                .then_some(selected_plans[origin].ability)
+                .unwrap_or_default(),
             cancellations[origin.other()],
             rounds_played,
             opponent_stars[origin],
@@ -225,7 +342,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
 
     // Own Attack increases retain Bonus then Ability source order.
     for origin in PlayerId::ALL {
-        if bonus_live[origin] {
+        if live[origin].bonus {
             apply_attack_effect(
                 origin,
                 DiagnosticAffectedSideV1::Player,
@@ -237,21 +354,23 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 &mut attack,
             )?;
         }
-        apply_attack_effect(
-            origin,
-            DiagnosticAffectedSideV1::Player,
-            DiagnosticStatOperationV1::Increase,
-            selected_plans[origin].ability,
-            cancellations[origin.other()],
-            rounds_played,
-            opponent_stars[origin],
-            &mut attack,
-        )?;
+        if live[origin].ability {
+            apply_attack_effect(
+                origin,
+                DiagnosticAffectedSideV1::Player,
+                DiagnosticStatOperationV1::Increase,
+                selected_plans[origin].ability,
+                cancellations[origin.other()],
+                rounds_played,
+                opponent_stars[origin],
+                &mut attack,
+            )?;
+        }
     }
 
     // Opponent Attack reductions use the same stable descending-Min ordering.
     for origin in PlayerId::ALL {
-        let bonus = if bonus_live[origin] {
+        let bonus = if live[origin].bonus {
             selected_plans[origin].bonus
         } else {
             ResolutionSourcePlan::default()
@@ -259,7 +378,10 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         apply_ordered_attack_reductions(
             origin,
             bonus,
-            selected_plans[origin].ability,
+            live[origin]
+                .ability
+                .then_some(selected_plans[origin].ability)
+                .unwrap_or_default(),
             cancellations[origin.other()],
             rounds_played,
             opponent_stars[origin],
@@ -283,14 +405,22 @@ pub(super) fn prepare_combat_resolution_with_post_round(
     );
     let post_round = ByPlayer::new(
         PostRoundPlan {
-            ability: selected_plans[PlayerId::P1].ability.post_round,
-            bonus: bonus_live[PlayerId::P1]
+            ability: live[PlayerId::P1]
+                .ability
+                .then_some(selected_plans[PlayerId::P1].ability.post_round)
+                .flatten(),
+            bonus: live[PlayerId::P1]
+                .bonus
                 .then_some(selected_plans[PlayerId::P1].bonus.post_round)
                 .flatten(),
         },
         PostRoundPlan {
-            ability: selected_plans[PlayerId::P2].ability.post_round,
-            bonus: bonus_live[PlayerId::P2]
+            ability: live[PlayerId::P2]
+                .ability
+                .then_some(selected_plans[PlayerId::P2].ability.post_round)
+                .flatten(),
+            bonus: live[PlayerId::P2]
+                .bonus
                 .then_some(selected_plans[PlayerId::P2].bonus.post_round)
                 .flatten(),
         },

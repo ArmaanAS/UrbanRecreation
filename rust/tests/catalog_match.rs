@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use urban_recreation_rust::catalog::{CardKey, EffectiveCardCatalog};
 use urban_recreation_rust::effect_registry::{
-    EffectLookupError, EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
+    EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
 };
 use urban_recreation_rust::engine::{
     derive_catalog_hand, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
@@ -1111,6 +1111,123 @@ fn strict_catalog_match_bridges_only_the_active_jungo_victory_life_bonus() {
 }
 
 #[test]
+fn strict_catalog_match_bridges_only_active_roots_and_gheist_soa_bonuses() {
+    let catalog = catalog();
+    let registry = registry();
+    let rescue = [
+        CardKey::new(1089, 2), // Sue: -1 Opp Power And Damage, Min 3
+        CardKey::new(441, 1),
+        CardKey::new(444, 1),
+        CardKey::new(445, 1),
+    ];
+    let cases = [
+        (
+            [
+                CardKey::new(141, 1), // Ataoualpet, active Roots bonus
+                CardKey::new(171, 1),
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+            ],
+            41,
+            (2, 4),
+        ),
+        (
+            [
+                CardKey::new(240, 1), // Lilith, active GHEIST bonus
+                CardKey::new(241, 1),
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+            ],
+            94,
+            (5, 1),
+        ),
+    ];
+
+    for (soa_hand, registry_definition_id, expected_stats) in cases {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(soa_hand, rescue, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap();
+        let CatalogCombatStatSourceDispositionV1::Execute {
+            identity,
+            effect: SupportedEffectV1::StopOpponentAbility,
+            predicate: CombatStatPredicateV1::Always,
+        } = &prepared.preparation()[PlayerId::P1][0].bonus
+        else {
+            panic!("active SOA clan bonus was not executable")
+        };
+        assert_eq!(identity.registry_definition_id, registry_definition_id);
+        assert!(identity
+            .registry_alias_ids
+            .contains(&registry_definition_id));
+
+        let mut game = prepared.new_game();
+        let before = game.position().clone();
+        let before_hash = position_hash(&before);
+        let (round, undo) = game
+            .make(BaseRulesRoundInput {
+                first_mover: PlayerId::P1,
+                selections: ByPlayer::new(
+                    BaseRulesSelection::new(0, 0, false),
+                    BaseRulesSelection::new(0, 0, false),
+                ),
+            })
+            .unwrap();
+        assert_eq!(
+            (
+                round.cards[PlayerId::P1].power,
+                round.cards[PlayerId::P1].damage,
+            ),
+            expected_stats
+        );
+        // SOA leaves the opposing Rescue bonus intact.
+        assert_eq!(round.cards[PlayerId::P2].attack, 18);
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+        assert_eq!(position_hash(game.position()), before_hash);
+    }
+}
+
+#[test]
+fn strict_catalog_match_pins_the_active_piranas_stop_bonus_identity() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(2349, 3), // Baldassare
+                CardKey::new(1962, 2), // Sooko Cr: activates the Piranas bonus
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+            ],
+            opponent,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    for slot in 0..2 {
+        let CatalogCombatStatSourceDispositionV1::Execute {
+            identity,
+            effect: SupportedEffectV1::StopOpponentBonus,
+            predicate: CombatStatPredicateV1::Always,
+        } = &prepared.preparation()[PlayerId::P1][slot].bonus
+        else {
+            panic!("active Piranas Stop Bonus in slot {slot} was not executable")
+        };
+        assert_eq!(identity.catalog_id, Some(40));
+        assert_eq!(identity.registry_definition_id, 333);
+        assert!(identity.registry_alias_ids.contains(&333));
+    }
+}
+
+#[test]
 fn strict_catalog_match_rejects_dynamic_copy_before_it_can_synthesize_vod_1034() {
     let catalog = catalog();
     let registry = registry();
@@ -1258,7 +1375,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 2);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 3);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -1378,15 +1495,20 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
         })
     ));
 
-    let mut ambiguous = p1;
-    ambiguous[0] = CardKey::new(137, 3);
+    let mut malformed_control = p1;
+    malformed_control[0] = CardKey::new(1051, 2); // Angelo: non-zero SOA control value.
     assert!(matches!(
-        CatalogCombatStatMatchV1::new(input(ambiguous, p2, false), &catalog, &registry, PROJECTION),
-        Err(CatalogCombatStatMatchErrorV1::Lookup {
+        CatalogCombatStatMatchV1::new(
+            input(malformed_control, p2, false),
+            &catalog,
+            &registry,
+            PROJECTION
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player: PlayerId::P1,
             hand_slot,
             source_kind: CombatStatEffectSourceV1::Ability,
-            source: EffectLookupError::AmbiguousDescription { .. },
+            registry_definition_id: 877,
             ..
         }) if hand_slot.get() == 0
     ));

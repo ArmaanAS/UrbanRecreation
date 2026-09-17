@@ -92,6 +92,7 @@ pub enum CombatStatEffectV1 {
         maximum: Option<u16>,
         multiplier: CombatStatMagnitudeV1,
     },
+    StopOpponentAbility,
     StopOpponentBonus,
     CancelOpponentCombatStatModifiers {
         stat: CombatStatAttributeV1,
@@ -967,6 +968,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 CombatStatMagnitudeV1::OpponentStars => DiagnosticMagnitudeV1::OpponentStars,
             },
         },
+        CombatStatEffectV1::StopOpponentAbility => DiagnosticCombatEffectV1::StopOpponentAbility,
         CombatStatEffectV1::StopOpponentBonus => DiagnosticCombatEffectV1::StopOpponentBonus,
         CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat } => {
             DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers {
@@ -1000,6 +1002,7 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffec
             Some(PostRoundEffect::GainLifeOnVictory(life))
         }
         CombatStatEffectV1::ModifyCombatStat { .. }
+        | CombatStatEffectV1::StopOpponentAbility
         | CombatStatEffectV1::StopOpponentBonus
         | CombatStatEffectV1::CancelOpponentCombatStatModifiers { .. } => None,
     }

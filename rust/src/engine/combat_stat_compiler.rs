@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 12;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 13;
 
 /// Recognize only the literal, immediate end-of-round Victory Life grammar.  Unlike the
 /// identity-locked Pillz slices below, this is deliberately generic: any registry
@@ -155,7 +155,8 @@ fn admitted_supported_effect(
     source_kind: CombatStatEffectSourceV1,
 ) -> bool {
     match effect {
-        SupportedEffectV1::StopOpponentBonus
+        SupportedEffectV1::StopOpponentAbility
+        | SupportedEffectV1::StopOpponentBonus
         | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. } => true,
         SupportedEffectV1::ModifyCombatStat {
             side,
@@ -631,7 +632,8 @@ fn previous_round_description_matches(
 fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1) -> bool {
     let multiplier = match effect {
         SupportedEffectV1::ModifyCombatStat { multiplier, .. } => multiplier,
-        SupportedEffectV1::StopOpponentBonus
+        SupportedEffectV1::StopOpponentAbility
+        | SupportedEffectV1::StopOpponentBonus
         | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. } => return false,
     };
     let prefix = match multiplier {
@@ -750,6 +752,7 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 MagnitudeMultiplierV1::OpponentStars => CombatStatMagnitudeV1::OpponentStars,
             },
         }),
+        SupportedEffectV1::StopOpponentAbility => Some(CombatStatEffectV1::StopOpponentAbility),
         SupportedEffectV1::StopOpponentBonus => Some(CombatStatEffectV1::StopOpponentBonus),
         SupportedEffectV1::CancelOpponentCombatStatModifiers { stat } => {
             Some(CombatStatEffectV1::CancelOpponentCombatStatModifiers {

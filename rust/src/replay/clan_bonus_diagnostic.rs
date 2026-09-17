@@ -502,6 +502,26 @@ fn prepare_diagnostic_source(
     };
     match definition.compiled() {
         CompiledEffectV1::Supported(effect) => {
+            // Preserve this legacy projection's pre-SOA behavior. It has no ability-
+            // liveness model, so exact SOA remains an ordinary disabled card-local source;
+            // the current combat-stat projection owns executable Stop Opp. Ability.
+            if *effect == SupportedEffectV1::StopOpponentAbility {
+                let reason = if source_kind == DiagnosticEffectSourceV1::Ability {
+                    DiagnosticDisabledReasonV1::OrdinaryAbility {
+                        registry_reasons: Box::new([]),
+                    }
+                } else {
+                    DiagnosticDisabledReasonV1::OutOfSliceBonus {
+                        registry_reasons: Box::new([]),
+                    }
+                };
+                return Ok(PreparedDiagnosticSourceV1 {
+                    disposition: DiagnosticProjectionDispositionV1::Disabled { identity, reason },
+                    compact_plan: DiagnosticSourcePlanV1::Disabled {
+                        source_id: source.id,
+                    },
+                });
+            }
             let execute = source_kind == DiagnosticEffectSourceV1::Bonus
                 || matches!(
                     effect,
@@ -619,6 +639,7 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<DiagnosticCombatEffectV1>
                 | MagnitudeMultiplierV1::OpponentStars => return None,
             },
         }),
+        SupportedEffectV1::StopOpponentAbility => None,
         SupportedEffectV1::StopOpponentBonus => Some(DiagnosticCombatEffectV1::StopOpponentBonus),
         SupportedEffectV1::CancelOpponentCombatStatModifiers { stat } => Some(
             DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers {

@@ -41,7 +41,18 @@ const JUNGO_CLAN_ID: u32 = 43;
 const JUNGO_CATALOG_BONUS_ID: u32 = 41;
 const JUNGO_VICTORY_LIFE_BONUS_REGISTRY_ID: u32 = 401;
 const JUNGO_VICTORY_LIFE_DESCRIPTION: &str = "+2 Life";
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 2;
+const ROOTS_CLAN_ID: u32 = 29;
+const ROOTS_CATALOG_BONUS_ID: u32 = 28;
+const ROOTS_STOP_ABILITY_BONUS_REGISTRY_ID: u32 = 41;
+const GHEIST_CLAN_ID: u32 = 32;
+const GHEIST_CATALOG_BONUS_ID: u32 = 32;
+const GHEIST_STOP_ABILITY_BONUS_REGISTRY_ID: u32 = 94;
+const STOP_OPPONENT_ABILITY_DESCRIPTION: &str = "Stop Opp. Ability";
+const PIRANAS_CLAN_ID: u32 = 42;
+const PIRANAS_CATALOG_BONUS_ID: u32 = 40;
+const PIRANAS_STOP_BONUS_REGISTRY_ID: u32 = 333;
+const STOP_OPPONENT_BONUS_DESCRIPTION: &str = "Stop Opp. Bonus";
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -697,6 +708,51 @@ fn prepare_catalog_source(
     if matches!(description, "No Ability" | "No Bonus") {
         return Ok(absent_source());
     }
+    if description == STOP_OPPONENT_ABILITY_DESCRIPTION {
+        let registry_definition_id = match (source_kind, effective_clan_id, catalog_id) {
+            // Static card abilities carry capture-registry identities in the catalog.
+            (CombatStatEffectSourceV1::Ability, _, Some(id)) => Some(id),
+            // Clan bonus ids are a separate namespace. Bridge only these exact active
+            // effective-clan sources to independently captured unconditional SOA records.
+            (CombatStatEffectSourceV1::Bonus, ROOTS_CLAN_ID, Some(ROOTS_CATALOG_BONUS_ID)) => {
+                Some(ROOTS_STOP_ABILITY_BONUS_REGISTRY_ID)
+            }
+            (CombatStatEffectSourceV1::Bonus, GHEIST_CLAN_ID, Some(GHEIST_CATALOG_BONUS_ID)) => {
+                Some(GHEIST_STOP_ABILITY_BONUS_REGISTRY_ID)
+            }
+            _ => None,
+        };
+        if let Some(registry_definition_id) = registry_definition_id {
+            return prepare_control_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                registry_definition_id,
+                SupportedEffectV1::StopOpponentAbility,
+            );
+        }
+    }
+    // The Piranas catalog bonus id is also from a separate namespace. Pin its active
+    // clan source to the independently captured registry identity used by real battles.
+    if description == STOP_OPPONENT_BONUS_DESCRIPTION
+        && source_kind == CombatStatEffectSourceV1::Bonus
+        && effective_clan_id == PIRANAS_CLAN_ID
+        && catalog_id == Some(PIRANAS_CATALOG_BONUS_ID)
+    {
+        return prepare_control_source(
+            registry,
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description,
+            PIRANAS_STOP_BONUS_REGISTRY_ID,
+            SupportedEffectV1::StopOpponentBonus,
+        );
+    }
     if let Some(registry_definition_id) = defeat_recover_registry_definition_id(
         source_kind,
         effective_clan_id,
@@ -885,6 +941,94 @@ fn prepare_catalog_source(
                 description: description.to_owned(),
                 registry_definition_id: definition.id(),
                 registry_alias_ids: match_.alias_ids().to_vec().into_boxed_slice(),
+            },
+            effect,
+            predicate,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate,
+            effect: compact_effect,
+        },
+    })
+}
+
+fn prepare_control_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+    expected_effect: SupportedEffectV1,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    if effect != expected_effect {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
+    let compact_effect =
+        compact_effect(effect).ok_or(CatalogCombatStatMatchErrorV1::UnsupportedCompiledShape {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            registry_definition_id: definition.id(),
+        })?;
+    // Same-text control records are provenance only after their complete structured shape
+    // compiles to this exact effect; malformed aliases never inherit execution authority.
+    let registry_alias_ids = registry
+        .iter()
+        .filter_map(|(id, candidate)| {
+            (candidate.description() == description
+                && candidate.compiled().supported() == Some(expected_effect))
+            .then_some(id)
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::Execute {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
             },
             effect,
             predicate,
