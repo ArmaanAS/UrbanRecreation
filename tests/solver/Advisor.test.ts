@@ -33,7 +33,7 @@ const wireProvenance = {
   effective_catalog_fingerprint_fnv1a64: "0000000000000000",
   effect_registry_fingerprint_fnv1a64: "0000000000000000",
   effect_registry_schema_version: 1,
-  compiler_policy_semantic_revision: 20,
+  compiler_policy_semantic_revision: 21,
   catalog_context_policy_semantic_revision: 3,
   advisor_policy_semantic_revision: 1,
 };
@@ -208,7 +208,7 @@ Deno.test("use atomically replaces TypeScript only after a valid complete Rust r
   assertEquals(state.search.done, true);
   assertEquals(
     state.job.status,
-    "rust active · v3:20/3/1",
+    "rust active · v3:21/3/1",
   );
 });
 
@@ -249,7 +249,7 @@ Deno.test("a Rust semantic-provenance mismatch leaves the TypeScript fallback li
   await waitFor(() => !state.job.waiting);
   assertEquals(state.search, ts);
   assert(state.job.status.includes("TS fallback"));
-  assert(state.job.status.includes("v3:20/3/1"));
+  assert(state.job.status.includes("v3:21/3/1"));
 });
 
 Deno.test("a cancelled position ignores a late Rust result", async () => {

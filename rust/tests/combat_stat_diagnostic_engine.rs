@@ -8,8 +8,8 @@ use urban_recreation_rust::engine::{
     CombatStatAttributeV1, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1,
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
     CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPlanErrorV1,
-    CombatStatPredicateV1, CombatStatSourcePlanV1, InvalidCombatStatPlanReasonV1, MatchStatus,
-    PlayerId,
+    CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1,
+    InvalidCombatStatPlanReasonV1, MatchStatus, PlayerId,
 };
 
 fn card(id: u32, power: u16, damage: u16) -> urban_recreation_rust::engine::BaseRulesCardSpec {
@@ -2347,4 +2347,162 @@ fn victory_opponent_life_applies_after_damage_clamps_and_unmakes_exactly() {
         .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
         .unwrap();
     assert_eq!(report.players[PlayerId::P2].life, 10);
+}
+
+fn copy(source_id: u32, copied: CopiedSourceKindV1) -> CombatStatSourcePlanV1 {
+    CombatStatSourcePlanV1::CopyOpponentSource { source_id, copied }
+}
+
+/// P1 slot 0 copies the opposing card's named source. Every opposing card carries a
+/// concrete plan, which is what makes the Copy admissible at all.
+fn copy_spec(
+    copied: CopiedSourceKindV1,
+    opposing: CombatStatSourcePlanV1,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let base = base_spec(7, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = copy(846, copied);
+    cards[PlayerId::P1][0].source_ability_support_count = 1;
+    for slot in 0..4 {
+        match copied {
+            CopiedSourceKindV1::Ability => cards[PlayerId::P2][slot].ability = opposing,
+            CopiedSourceKindV1::Bonus => {
+                cards[PlayerId::P2][slot].bonus = opposing;
+                cards[PlayerId::P2][slot].source_bonus_support_count = 1;
+            }
+        }
+    }
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+#[test]
+fn unconditional_copy_adopts_the_selected_opposing_source_and_unmakes_exactly() {
+    // Copying an opposing Damage increase gives the copier that increase, not the opponent.
+    let mut game = CombatStatDiagnosticV1::new(copy_spec(
+        CopiedSourceKindV1::Bonus,
+        execute(
+            202,
+            CombatStatPredicateV1::Always,
+            own(CombatStatAttributeV1::Damage, 2),
+        ),
+    ))
+    .unwrap();
+    let before = game.position().clone();
+    let before_hash = position_hash(&before);
+    let (report, undo) = game
+        .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.cards[PlayerId::P1].damage, 5);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+    assert_eq!(position_hash(game.position()), before_hash);
+}
+
+#[test]
+fn unconditional_copy_takes_its_own_support_context_and_stays_stoppable() {
+    // Capture 1078906 round 1: the copied Rescue Support counts the copier's own clan,
+    // not the original owner's. Four clan-mates give Attack +12 over base 5 x 5.
+    let base = {
+        let mut base = base_spec(5, 3);
+        for slot in 0..4 {
+            base.players[PlayerId::P1].hand[slot].clan_id = 49;
+        }
+        base
+    };
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = copy(846, CopiedSourceKindV1::Bonus);
+    cards[PlayerId::P1][0].source_ability_support_count = 4;
+    for slot in 0..4 {
+        cards[PlayerId::P2][slot].bonus = execute(
+            266,
+            CombatStatPredicateV1::Always,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Attack,
+                CombatStatOperationV1::Increase,
+                3,
+                None,
+                None,
+                CombatStatMagnitudeV1::SourceBonusSupport,
+            ),
+        );
+        cards[PlayerId::P2][slot].source_bonus_support_count = 1;
+    }
+    let spec = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    };
+    let mut game = CombatStatDiagnosticV1::new(spec.clone()).unwrap();
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 4, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 25 + 12);
+
+    // Capture 874590: the copied effect lives in the copier's own Ability slot, so an
+    // opposing Stop Opp. Ability suppresses it entirely.
+    let mut stopped_spec = spec;
+    for slot in 0..4 {
+        stopped_spec.cards[PlayerId::P2][slot].ability = execute(
+            41,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::StopOpponentAbility,
+        );
+    }
+    let mut stopped = CombatStatDiagnosticV1::new(stopped_spec).unwrap();
+    let (report, _) = stopped
+        .make(input(PlayerId::P1, (0, 4, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 25);
+}
+
+#[test]
+fn copy_is_rejected_unless_every_opposing_target_is_already_concrete() {
+    // A solver must be total, so one unresolvable opposing card closes the whole match.
+    for hazard in [
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 999 },
+        CombatStatSourcePlanV1::Disabled { source_id: 999 },
+        copy(846, CopiedSourceKindV1::Bonus),
+    ] {
+        let mut spec = copy_spec(
+            CopiedSourceKindV1::Bonus,
+            execute(
+                202,
+                CombatStatPredicateV1::Always,
+                own(CombatStatAttributeV1::Damage, 2),
+            ),
+        );
+        spec.cards[PlayerId::P2][2].bonus = hazard;
+        spec.cards[PlayerId::P2][2].source_bonus_support_count = if matches!(
+            hazard,
+            CombatStatSourcePlanV1::Disabled { .. }
+                | CombatStatSourcePlanV1::RejectIfSelected { .. }
+                | CombatStatSourcePlanV1::CopyOpponentSource { .. }
+        ) {
+            1
+        } else {
+            0
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(spec),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::CopyOpponentSourceTarget,
+                ..
+            })
+        ));
+    }
+
+    // An absent opposing source is concrete: the Copy simply adopts nothing.
+    let mut game = CombatStatDiagnosticV1::new(copy_spec(
+        CopiedSourceKindV1::Ability,
+        CombatStatSourcePlanV1::Absent,
+    ))
+    .unwrap();
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].damage, 3);
 }

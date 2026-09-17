@@ -642,6 +642,21 @@ fn validate_replay_source(
             }
             return Ok(());
         }
+        // A Copy card's captured static block records what the Copy resolved to, never the
+        // printed Copy itself, so capture and catalog identity cannot agree here. Refuse the
+        // replay rather than preferring either side.
+        CatalogCombatStatSourceDispositionV1::CopyOpponentSource { identity, .. } => {
+            return Err(replay_source_mismatch(
+                battle_id,
+                player,
+                hand_slot,
+                source_kind,
+                format!(
+                    "catalog has unconditional Copy id {} ({:?}); a capture records only its resolved result",
+                    identity.registry_definition_id, identity.description,
+                ),
+            ));
+        }
         CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
         | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => identity,
     };

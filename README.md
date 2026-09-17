@@ -89,7 +89,9 @@ Battles `877636`, `877812`, `925674`, `925719`, `1024673`, `1060199`, `1061897`,
 `1024673` exercises unconditional Stop Opp. Ability through the real solver/TUI and ends in
 a round-two KO. The three Anita additions exercise the exact Courage conversion from final
 resolved damage to Life, including a Fury win and an inactive losing branch; `925674` adds
-Mou's unconditional `-5 Opp. Life Min 5` on victory.
+Mou's unconditional `-5 Opp. Life Min 5` on victory. Unconditional Copy is modelled for the
+strict solver catalog but is deliberately not replayable: a capture records only what a Copy
+resolved to, never the printed Copy.
 Rust does not yet ingest the live capture stream, refresh that fixed opening table, run
 searches across workers, or claim complete TypeScript policy parity.
 

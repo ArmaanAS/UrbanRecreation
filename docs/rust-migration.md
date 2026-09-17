@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 20 for the current scope.
+Replay provenance records compiler/policy semantic revision 21 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 20.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 21.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -565,6 +565,50 @@ structure — Symmetry `4708`, Courage `4533`, Confidence `3016` and Growth `173
 explicitly deferred, because a post-round plan carries no predicate today and admitting them
 would need that separate design step rather than a wider grammar.
 
+Semantic revision 21 adds unconditional Copy to the strict catalog constructor. Only the
+exact texts `Copy: Opp. Ability` and `Copy: Opp. Bonus` are admitted, and like generic
+Victory Life they are admitted by grammar rather than a fixed identity list, because the
+registry carries many structurally identical Copy definitions. The structured record must be
+completely neutral apart from `copy_ability` or `copy_bonus`. The printed catalog id must
+itself be a registry definition of that exact text and shape, so a printed Copy whose catalog
+id is not a definition — Lorna's `752`, for instance — stays fail-closed, and description
+alone never admits. Every conditional variant (Reprisal, Revenge, Asymmetry, Unison,
+Confidence, `Bet > N`) and every stat-copying variant (`Copy: Opp. Power`, `Copy: Opp.
+Damage`, `Copy: Power And Damage Opp.`) keeps its own deferred grammar.
+
+The capture format establishes the rule directly. Ability identity lives only in a battle's
+static block, and the capture writer emits a new one whenever the server rewrites it, so a
+Copy card's resolution is recorded exactly once, at the round it fires: 53 unconditional
+resolutions are visible across the corpus. `Copy: Opp. Bonus` adopts the opposing selected
+card's bonus and `Copy: Opp. Ability` its ability, and a single card may carry both
+(`1025470` round 1).
+
+Three semantics are server-established rather than assumed. The adopted effect belongs to the
+copier: eight rounds copying Rescue's `Support: Attack +3` all scale by the copier's own
+effective-clan count, including `1078906` round 1 at four Riots for Attack +12 and
+`1080007` round 0 at two for +6. `1081688` round 0 confirms the count is the effective clan
+rather than the printed one: Dark Dalhia infiltrates the singleton Komboka, giving two and
++6. The adopted effect also keeps the copier's own slot kind, so `874590` round 1 shows an
+opposing Reprisal Stop Opp. Ability suppressing a copied bonus entirely. A bonus-origin
+effect therefore executes as the copier's ability, which `1093500` round 0 already proves
+for Riots' Victory-or-Defeat Pillz.
+
+Because a solver must be total over every legal selection, a Copy is admitted only when every
+opposing card it could face already carries a concrete adoptable plan. A Copy of a Copy, of a
+disabled source, or of a selected hazard closes the whole match at construction rather than
+deferring failure to the round that would have to resolve it. An absent opposing source is
+concrete: the Copy adopts nothing. Resolution stays allocation-free and string-free, because
+the opposing plan is already materialized and adopting it is a plain index; make/unmake is
+unchanged.
+
+Strict catalog coverage rises from 14 to 17 of 328, adding `878011`, `925254`, and
+`1078906`. None of the three is advisor-replayable, and that is deliberate: a Copy card's
+captured static block records what the Copy resolved to rather than the printed Copy, so
+capture and catalog identity cannot agree. `--replay` and the hosted worker both refuse those
+draws with that exact reason instead of preferring either side. The 98-round sequential gate
+is unchanged, because replay preparation continues to consume each capture's recorded
+resolved source and never emits a Copy plan.
+
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
@@ -585,7 +629,7 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 20 records this semantic boundary together with the exact
+context. Compiler/policy revision 21 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
@@ -618,18 +662,20 @@ catalog id, registry id, description, and exact structured shape all agree or st
 construction rejects the draw. The Riots bridge applies the same rule: active effective
 Riots clan `49`, catalog bonus id `47`, and the exact Victory-or-Defeat description resolve
 only to registry definition `1034`. Printed catalog abilities `1375`, `4111`, `5085`, and
-`5520` resolve only to their identically numbered registry definitions. A captured
-`ability:1034` is executable replay evidence for a concrete post-Copy result, but no printed
-catalog ability owns that id and strict construction never synthesizes it. Same-text aliases
-therefore remain distinct provenance and cannot enter through description matching.
+`5520` resolve only to their identically numbered registry definitions. No printed catalog ability owns id `1034`, so strict construction never
+materializes it as a card's own printed source. Since revision 21 it can still reach a card
+through an unconditional Copy, which adopts the opposing selected card's actual plan rather
+than synthesizing an identity; capture `1093500` round 0 is the server evidence for exactly
+that. Same-text aliases remain distinct provenance and cannot enter through description
+matching.
 Argos follows the same fail-closed rule without an alias bridge: only catalog ability id
 `1158`, exact description, and exact registry definition `1158` produce its typed capped
 post-round plan; level 1 remains absent. A selected night variant has no catalog numeric id
 unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
-Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
+Conditional Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 20, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 21, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
@@ -640,10 +686,11 @@ Every one of the other 2,538 slots matches captured bonus presence and descripti
 On 2026-09-17, the deterministic strict-coverage regression scanned all 328 captured
 complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captured
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
-`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 14 capture ids
-are eligible: `830285`, `869944`, `877636`, `877812`, `877950`, `925674`, `925719`,
-`970972`, `1024673`, `1060199`, `1061897`, `1069813`, `1081463`, and `1089346`. Revision 20
-adds `925674` and `970972` to revision 19's twelve. Catalog
+`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 17 capture ids
+are eligible: `830285`, `869944`, `877636`, `877812`, `877950`, `878011`, `925254`,
+`925674`, `925719`, `970972`, `1024673`, `1060199`, `1061897`, `1069813`, `1078906`,
+`1081463`, and `1089346`. Revision 21 adds `878011`, `925254`, and `1078906` to revision
+20's fourteen. Catalog
 eligibility is a strict whole-draw admission measurement, not proof of full engine or
 TypeScript solver parity;
 the 98-round immutable diagnostic gate supplies the separately checked sequential replay

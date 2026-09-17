@@ -680,6 +680,12 @@ fn validate_observed_source(
             }
             return Err(mismatch());
         }
+        // A Copy card's captured static block records what the Copy resolved to, never the
+        // printed Copy itself, so capture and catalog identity cannot agree here. Refuse the
+        // replay rather than preferring either side.
+        CatalogCombatStatSourceDispositionV1::CopyOpponentSource { .. } => {
+            return Err(mismatch());
+        }
         CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
         | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => identity,
     };
@@ -856,7 +862,8 @@ mod tests {
                 return (0, absent_description.to_owned());
             }
             CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
-            | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => identity,
+            | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. }
+            | CatalogCombatStatSourceDispositionV1::CopyOpponentSource { identity, .. } => identity,
         };
         let id = if require_catalog_identity {
             identity

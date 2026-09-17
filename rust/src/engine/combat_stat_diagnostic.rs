@@ -194,12 +194,27 @@ pub enum CombatStatSourcePlanV1 {
         predicate: CombatStatPredicateV1,
         effect: CombatStatEffectV1,
     },
+    /// Unconditional Copy. The source has no effect of its own: at round resolution it
+    /// adopts the opposing selected card's corresponding immutable source plan, keeping
+    /// this card's own slot kind for Stop liveness and its own Support context. The
+    /// opposing plan is already materialized, so resolution stays a plain index.
+    CopyOpponentSource {
+        source_id: u32,
+        copied: CopiedSourceKindV1,
+    },
     Disabled {
         source_id: u32,
     },
     RejectIfSelected {
         source_id: u32,
     },
+}
+
+/// Which of the opposing selected card's two sources an unconditional Copy adopts.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum CopiedSourceKindV1 {
+    Ability,
+    Bonus,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -269,6 +284,8 @@ pub enum InvalidCombatStatPlanReasonV1 {
     AnitaCourageDamageToLifeEffect,
     AnitaCourageDamageToLifeIdentity,
     AnitaCourageDamageToLifePredicate,
+    CopyOpponentSourceIdentity,
+    CopyOpponentSourceTarget,
     VictoryOpponentLifeIdentity,
     VictoryOpponentLifeMagnitude,
     VictoryOpponentLifePredicate,
@@ -486,6 +503,12 @@ impl CombatStatDiagnosticV1 {
                 )?;
                 validate_source_bonus_context(player, slot, &spec.cards[player])?;
                 validate_ability_support_context(player, slot, &spec.cards[player])?;
+                validate_copy_targets(
+                    player,
+                    slot,
+                    &spec.cards[player],
+                    &spec.cards[player.other()],
+                )?;
             }
         }
         let base_rules = BaseRulesGame::new(spec.base_rules.clone());
@@ -571,6 +594,14 @@ fn validate_ability_support_context(
     )
     .then(|| effective_clan_character_count(hand_slot, cards))
     .unwrap_or(0);
+    // A Copy ability cannot know which opposing source it will adopt, and that source may
+    // carry Support magnitude. It therefore always carries this card's own effective-clan
+    // context; an adopted effect without Support magnitude simply ignores the count.
+    let expected = if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+        effective_clan_character_count(hand_slot, cards)
+    } else {
+        expected
+    };
     let actual = cards[hand_slot.index()].source_ability_support_count;
     if actual == expected {
         Ok(())
@@ -585,10 +616,56 @@ fn validate_ability_support_context(
     }
 }
 
+/// A solver must be total over every legal selection, so a Copy is admissible only when
+/// every opposing card it could face already carries a concrete adoptable plan. A Copy of
+/// a Copy, of a disabled source, or of a selected hazard is rejected for the whole match
+/// rather than deferred to the round that would have to resolve it.
+fn validate_copy_targets(
+    player: PlayerId,
+    hand_slot: HandSlot,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> Result<(), CombatStatPlanErrorV1> {
+    for (source, plan) in [
+        (
+            CombatStatEffectSourceV1::Ability,
+            own[hand_slot.index()].ability,
+        ),
+        (
+            CombatStatEffectSourceV1::Bonus,
+            own[hand_slot.index()].bonus,
+        ),
+    ] {
+        let CombatStatSourcePlanV1::CopyOpponentSource { source_id, copied } = plan else {
+            continue;
+        };
+        for opposing in opponent.iter() {
+            let target = match copied {
+                CopiedSourceKindV1::Ability => opposing.ability,
+                CopiedSourceKindV1::Bonus => opposing.bonus,
+            };
+            if !matches!(
+                target,
+                CombatStatSourcePlanV1::Absent | CombatStatSourcePlanV1::Execute { .. }
+            ) {
+                return Err(invalid_combat_stat_execute(
+                    player,
+                    hand_slot,
+                    source,
+                    source_id,
+                    InvalidCombatStatPlanReasonV1::CopyOpponentSourceTarget,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn source_plan_id(plan: CombatStatSourcePlanV1) -> Option<u32> {
     match plan {
         CombatStatSourcePlanV1::Absent => None,
         CombatStatSourcePlanV1::Execute { source_id, .. }
+        | CombatStatSourcePlanV1::CopyOpponentSource { source_id, .. }
         | CombatStatSourcePlanV1::Disabled { source_id }
         | CombatStatSourcePlanV1::RejectIfSelected { source_id } => Some(source_id),
     }
@@ -715,6 +792,25 @@ fn validate_combat_stat_source_plan(
     source: CombatStatEffectSourceV1,
     plan: CombatStatSourcePlanV1,
 ) -> Result<(), CombatStatPlanErrorV1> {
+    // Only the two reviewed unconditional Copy identities exist, and each is locked to the
+    // opposing source it adopts: 764 takes the Bonus, 2918 takes the Ability.
+    // Copy is generic-by-grammar, like Victory Life: exact description and structured
+    // shape are the cold compiler's authority, so the string-free plan can only require a
+    // real source identity here. Totality against every opposing card is checked
+    // separately, once both hands are known.
+    if let CombatStatSourcePlanV1::CopyOpponentSource { source_id, .. } = plan {
+        return if source_id == 0 {
+            Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::CopyOpponentSourceIdentity,
+            ))
+        } else {
+            Ok(())
+        };
+    }
     let CombatStatSourcePlanV1::Execute {
         source_id,
         predicate,
@@ -1350,7 +1446,10 @@ fn active_effect(
         {
             Some(effect)
         }
-        CombatStatSourcePlanV1::Absent
+        // Copy is substituted for the adopted opposing plan before this point, so an
+        // unresolved Copy contributes nothing rather than silently acting as itself.
+        CombatStatSourcePlanV1::CopyOpponentSource { .. }
+        | CombatStatSourcePlanV1::Absent
         | CombatStatSourcePlanV1::Disabled { .. }
         | CombatStatSourcePlanV1::RejectIfSelected { .. }
         | CombatStatSourcePlanV1::Execute { .. } => None,
@@ -1392,6 +1491,7 @@ fn prepare_combat_stat_diagnostic(
     let plans = ByPlayer::new(
         resolution_card_plan(
             selected[PlayerId::P1],
+            selected[PlayerId::P2],
             PlayerId::P1,
             first_mover,
             validated[PlayerId::P1].slot,
@@ -1400,6 +1500,7 @@ fn prepare_combat_stat_diagnostic(
         ),
         resolution_card_plan(
             selected[PlayerId::P2],
+            selected[PlayerId::P1],
             PlayerId::P2,
             first_mover,
             validated[PlayerId::P2].slot,
@@ -1411,8 +1512,25 @@ fn prepare_combat_stat_diagnostic(
         .map_err(map_resolution_error)
 }
 
+/// Resolve one source against the opposing selected card. An unconditional Copy adopts
+/// that card's corresponding immutable plan; everything else is already concrete. The
+/// adopted plan is never itself a Copy, which construction has already guaranteed.
+fn resolved_source_plan(
+    plan: CombatStatSourcePlanV1,
+    opponent: CombatStatCardPlanV1,
+) -> CombatStatSourcePlanV1 {
+    match plan {
+        CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } => match copied {
+            CopiedSourceKindV1::Ability => opponent.ability,
+            CopiedSourceKindV1::Bonus => opponent.bonus,
+        },
+        other => other,
+    }
+}
+
 fn resolution_card_plan(
     plan: CombatStatCardPlanV1,
+    opponent_plan: CombatStatCardPlanV1,
     owner: PlayerId,
     first_mover: PlayerId,
     owner_slot: HandSlot,
@@ -1422,7 +1540,7 @@ fn resolution_card_plan(
     ResolutionCardPlan {
         ability: ResolutionSourcePlan {
             effect: active_effect(
-                plan.ability,
+                resolved_source_plan(plan.ability, opponent_plan),
                 owner,
                 first_mover,
                 owner_slot,
@@ -1431,7 +1549,7 @@ fn resolution_card_plan(
             )
             .and_then(shared_effect),
             post_round: active_effect(
-                plan.ability,
+                resolved_source_plan(plan.ability, opponent_plan),
                 owner,
                 first_mover,
                 owner_slot,
@@ -1443,7 +1561,7 @@ fn resolution_card_plan(
         },
         bonus: ResolutionSourcePlan {
             effect: active_effect(
-                plan.bonus,
+                resolved_source_plan(plan.bonus, opponent_plan),
                 owner,
                 first_mover,
                 owner_slot,
@@ -1452,7 +1570,7 @@ fn resolution_card_plan(
             )
             .and_then(shared_effect),
             post_round: active_effect(
-                plan.bonus,
+                resolved_source_plan(plan.bonus, opponent_plan),
                 owner,
                 first_mover,
                 owner_slot,

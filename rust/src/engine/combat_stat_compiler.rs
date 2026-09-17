@@ -3,6 +3,7 @@
 //! Replay captures and catalog-built matches use different identity lookups, but both must
 //! apply exactly the same reviewed semantic policy before producing hot-path plans.
 
+use super::CopiedSourceKindV1;
 use super::{
     CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatEffectSourceV1, CombatStatEffectV1,
     CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPredicateV1,
@@ -14,7 +15,56 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 20;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 21;
+
+/// Recognize the two unconditional Copy grammars. Like generic Victory Life this is
+/// admitted by exact description and structured shape rather than a fixed id list,
+/// because the registry carries many structurally identical Copy definitions. Every
+/// conditional variant (Reprisal, Revenge, Asymmetry, Unison, Confidence, Bet) has extra
+/// context and is therefore not matched here.
+pub(crate) fn classify_copy_opponent_source(
+    definition: &EffectDefinitionV1,
+) -> Option<CopiedSourceKindV1> {
+    let (copied, action) = match definition.description() {
+        "Copy: Opp. Ability" => (CopiedSourceKindV1::Ability, SpecialActionV1::CopyAbility),
+        "Copy: Opp. Bonus" => (CopiedSourceKindV1::Bonus, SpecialActionV1::CopyBonus),
+        _ => return None,
+    };
+    copy_opponent_source_shape_matches(definition.structured_input(), action).then_some(copied)
+}
+
+fn copy_opponent_source_shape_matches(input: &StructuredEffectV1, action: SpecialActionV1) -> bool {
+    input.value == 0
+        && input.value_min == 0
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::None
+        && input.attribute_action == AttributeActionV1::None
+        && input.special_action == action
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
 
 /// Recognize Anita's one reviewed Courage conversion only. It must stay outside the
 /// generic numeric compiler because its magnitude is final resolved round damage.
@@ -436,6 +486,9 @@ pub(crate) fn classify_combat_stat_effect(
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
     if classify_anita_courage_damage_to_life(definition, source_kind) {
+        return None;
+    }
+    if classify_copy_opponent_source(definition).is_some() {
         return None;
     }
     // Unconditional Victory opponent-Life is post-round resource work with its own
@@ -1322,6 +1375,73 @@ mod tests {
                         .unwrap(),
                     CombatStatEffectSourceV1::Ability,
                 ),
+                "mutated field {field}",
+            );
+        }
+    }
+
+    #[test]
+    fn unconditional_copy_is_admitted_by_grammar_and_excludes_every_variant() {
+        let registry = registry();
+        assert_eq!(
+            classify_copy_opponent_source(
+                registry.lookup_capture(764, "Copy: Opp. Bonus").unwrap()
+            ),
+            Some(CopiedSourceKindV1::Bonus)
+        );
+        assert_eq!(
+            classify_copy_opponent_source(
+                registry.lookup_capture(2918, "Copy: Opp. Ability").unwrap()
+            ),
+            Some(CopiedSourceKindV1::Ability)
+        );
+        // The registry holds many structurally identical Copy definitions; each is admitted
+        // on its own grammar rather than through a fixed identity list.
+        for (id, description, expected) in [
+            (846, "Copy: Opp. Bonus", CopiedSourceKindV1::Bonus),
+            (4774, "Copy: Opp. Bonus", CopiedSourceKindV1::Bonus),
+            (4497, "Copy: Opp. Ability", CopiedSourceKindV1::Ability),
+        ] {
+            assert_eq!(
+                classify_copy_opponent_source(registry.lookup_capture(id, description).unwrap()),
+                Some(expected),
+                "alias {id}",
+            );
+        }
+        // Conditional and stat-copying variants keep their own deferred grammars.
+        for (id, description) in [
+            (958, "Reprisal: Copy Opp. Bonus"),
+            (2482, "Asymmetry: Copy: Opp. Bonus"),
+            (315, "Copy: Opp. Power"),
+        ] {
+            assert_eq!(
+                classify_copy_opponent_source(registry.lookup_capture(id, description).unwrap()),
+                None,
+                "variant {id}",
+            );
+        }
+        // An otherwise-exact record with any extra context is not this grammar.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("specialAction", serde_json::json!("copy_bonus")),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("indexRequirement", serde_json::json!("symmetry")),
+            ("isPermanent", serde_json::json!(true)),
+            ("value", serde_json::json!(1)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["2918"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_copy_opponent_source(
+                    malformed
+                        .lookup_capture(2918, "Copy: Opp. Ability")
+                        .unwrap()
+                ),
+                None,
                 "mutated field {field}",
             );
         }

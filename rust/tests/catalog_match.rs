@@ -12,8 +12,8 @@ use urban_recreation_rust::engine::{
     CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1, CatalogCombatStatMatchV1,
     CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
     CatalogCombatStatSourceDispositionV1, CombatStatEffectSourceV1, CombatStatPostRoundEffectV1,
-    CombatStatPredicateV1, CombatStatSourcePlanV1, EffectiveCatalogHandErrorV1, MatchStatus,
-    PlayerId, CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
+    CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1, EffectiveCatalogHandErrorV1,
+    MatchStatus, PlayerId, CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
 };
 use urban_recreation_rust::replay::{
     load_corpus, COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -2095,37 +2095,73 @@ fn strict_catalog_match_pins_the_active_piranas_stop_bonus_identity() {
 }
 
 #[test]
-fn strict_catalog_match_rejects_dynamic_copy_before_it_can_synthesize_vod_1034() {
+fn strict_catalog_match_admits_unconditional_copy_and_rejects_conditional_variants() {
     let catalog = catalog();
     let registry = registry();
     let (_, p2) = fully_supported_hands();
+    let with = |key: CardKey| {
+        [
+            key,
+            CardKey::new(123, 1),
+            CardKey::new(124, 1),
+            CardKey::new(138, 1),
+        ]
+    };
+
+    // Saki level three prints `Copy: Opp. Bonus` under catalog id 846, which is itself a
+    // registry definition of that exact text and shape. It carries no effect of its own:
+    // the plan only names which opposing source it adopts.
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(with(CardKey::new(1020, 3)), p2, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::CopyOpponentSource { identity, copied } =
+        &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Saki L3 was not prepared as an unconditional Copy")
+    };
+    assert_eq!(identity.catalog_id, Some(846));
+    assert_eq!(identity.registry_definition_id, 846);
+    assert_eq!(*copied, CopiedSourceKindV1::Bonus);
+    assert!(matches!(
+        prepared.match_spec().cards[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 846,
+            copied: CopiedSourceKindV1::Bonus,
+        }
+    ));
+
+    // Every conditional Copy keeps its own deferred grammar and stays fail-closed.
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
-            input(
-                [
-                    CardKey::new(1020, 3), // Saki: Copy: Opp. Bonus
-                    CardKey::new(123, 1),
-                    CardKey::new(124, 1),
-                    CardKey::new(138, 1),
-                ],
-                p2,
-                false,
-            ),
+            input(with(CardKey::new(1134, 3)), p2, false), // Reprisal: Copy Opp. Bonus.
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { ref description, .. })
+            if description == "Reprisal: Copy Opp. Bonus"
+    ));
+
+    // A printed Copy whose catalog id is not itself a registry definition of that text
+    // cannot borrow one by description alone.
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(with(CardKey::new(930, 3)), p2, false), // Lorna, catalog ability 752.
             &catalog,
             &registry,
             PROJECTION,
         ),
         Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player: PlayerId::P1,
-            hand_slot,
-            source_kind: CombatStatEffectSourceV1::Ability,
-            catalog_id: Some(846),
+            catalog_id: Some(752),
             ref description,
             ..
-        }) if hand_slot.get() == 0 && description == "Copy: Opp. Bonus"
+        }) if description == "Copy: Opp. Bonus"
     ));
 }
-
 #[test]
 fn strict_catalog_match_defers_sasl_recovery_alias() {
     let catalog = catalog();
@@ -2348,7 +2384,7 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
     ));
 
     let mut unsupported = p1;
-    unsupported[0] = CardKey::new(1020, 3); // Saki: Copy: Opp. Bonus.
+    unsupported[0] = CardKey::new(1134, 3); // Noctezuma Cr: Reprisal: Copy Opp. Bonus.
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(unsupported, p2, false),
@@ -2537,8 +2573,8 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
     assert_eq!(
         eligible,
         BTreeSet::from([
-            830285, 869944, 877636, 877812, 877950, 925674, 925719, 970972, 1024673, 1060199,
-            1061897, 1069813, 1081463, 1089346,
+            830285, 869944, 877636, 877812, 877950, 878011, 925254, 925674, 925719, 970972,
+            1024673, 1060199, 1061897, 1069813, 1078906, 1081463, 1089346,
         ])
     );
 }

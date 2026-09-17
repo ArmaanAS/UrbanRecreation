@@ -6,12 +6,14 @@
 
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_combat_stat_effect, classify_defeat_life, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_opponent_life,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_combat_stat_effect, classify_copy_opponent_source, classify_defeat_life,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
+    classify_victory_opponent_life, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, compact_effect, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
+use super::CopiedSourceKindV1;
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
@@ -163,6 +165,13 @@ pub enum CatalogCombatStatSourceDispositionV1 {
     ExecutePostRound {
         identity: CatalogCombatStatModifierIdentityV1,
         effect: CombatStatPostRoundEffectV1,
+    },
+    /// The card carries an unconditional Copy. It has no effect of its own: at round time
+    /// it adopts the opposing selected card's named source, keeping this slot's kind for
+    /// Stop liveness and this card's own Support context.
+    CopyOpponentSource {
+        identity: CatalogCombatStatModifierIdentityV1,
+        copied: CopiedSourceKindV1,
     },
 }
 
@@ -662,6 +671,8 @@ fn executable_ability_support_count(
     plan: CombatStatSourcePlanV1,
     effective_clan_character_count: u16,
 ) -> u16 {
+    // A Copy ability may adopt an opposing Support effect, and Support is then counted in
+    // this card's own effective clan, so it always carries that context.
     matches!(
         plan,
         CombatStatSourcePlanV1::Execute {
@@ -670,7 +681,7 @@ fn executable_ability_support_count(
                 ..
             },
             ..
-        }
+        } | CombatStatSourcePlanV1::CopyOpponentSource { .. }
     )
     .then_some(effective_clan_character_count)
     .unwrap_or(0)
@@ -733,6 +744,69 @@ fn prepare_catalog_source(
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
     if matches!(description, "No Ability" | "No Bonus") {
         return Ok(absent_source());
+    }
+    // Unconditional Copy. The registry holds many structurally identical Copy definitions,
+    // so the printed catalog id must itself be one of them: an id that is not a definition
+    // of this exact text and shape stays fail-closed, and description alone never admits.
+    if matches!(description, "Copy: Opp. Ability" | "Copy: Opp. Bonus") {
+        let definition = catalog_id
+            .and_then(|id| registry.lookup_capture(id, description).ok())
+            .filter(|definition| classify_copy_opponent_source(definition).is_some());
+        let Some(definition) = definition else {
+            let fallback = registry
+                .lookup_description(description)
+                .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description: description.to_owned(),
+                    source,
+                })?
+                .definition();
+            return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: fallback.id(),
+                registry_reasons: fallback
+                    .compiled()
+                    .unsupported_reasons()
+                    .to_vec()
+                    .into_boxed_slice(),
+            });
+        };
+        let copied = classify_copy_opponent_source(definition).expect("checked above");
+        let registry_alias_ids = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .alias_ids()
+            .to_vec()
+            .into_boxed_slice();
+        return Ok(PreparedCatalogSourceV1 {
+            metadata: CatalogCombatStatSourceDispositionV1::CopyOpponentSource {
+                identity: CatalogCombatStatModifierIdentityV1 {
+                    catalog_id,
+                    description: description.to_owned(),
+                    registry_definition_id: definition.id(),
+                    registry_alias_ids,
+                },
+                copied,
+            },
+            compact: CombatStatSourcePlanV1::CopyOpponentSource {
+                source_id: definition.id(),
+                copied,
+            },
+        });
     }
     if description == STOP_OPPONENT_ABILITY_DESCRIPTION {
         let registry_definition_id = match (source_kind, effective_clan_id, catalog_id) {
