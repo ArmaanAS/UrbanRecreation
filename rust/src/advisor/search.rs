@@ -1,8 +1,8 @@
 //! Responsive current-round search for the replay-grounded advisor.
 //!
 //! Every current-round pairing is resolved by the real [`CombatStatDiagnosticV1`] engine.
-//! Rounds one and two fold in a bounded position heuristic; rounds three and four use the
-//! exact information-aware continuation in `policy`. The split is explicit so the UI never
+//! Round one folds in a bounded opening heuristic; rounds two through four use the exact
+//! information-aware continuation in `policy`. The split is explicit so the UI never
 //! presents an opening estimate as a solved future game.
 
 use std::cmp::Ordering;
@@ -53,19 +53,23 @@ pub struct SearchConfig {
 /// How nonterminal current-round samples are evaluated.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EvaluationKind {
-    /// Responsive position score used while two or more rounds remain after this one.
-    OneRoundHeuristic,
-    /// Exact conservative continuation policy for roots in rounds three and four.
-    ExactLatePolicy,
+    /// Captured-reply-weighted position estimate used for the opening round only.
+    OpeningEstimate,
+    /// Exact conservative continuation policy for roots in rounds two through four.
+    ExactContinuationPolicy,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RankedMove {
     pub move_: AdvisorMove,
-    /// Uniform mean in our frame: +1 is our win, 0 a draw, -1 our loss.
+    /// Mean in our frame: captured-reply weighted in the opening, uniform afterwards.
     pub average: f64,
-    /// The worst complete opposing sample seen for this move, also in our frame.
+    /// Lowest complete opposing sample seen for this move, also in our frame.
+    /// This is a game-theoretic Worst only for exact-continuation rows.
     pub worst: f64,
+    /// Highest complete opposing sample seen for this move, also in our frame.
+    /// Together with `worst`, opening rows show the observed floor-to-ceiling Range.
+    pub best: f64,
     /// Complete opposing samples folded into this result.
     pub samples: usize,
     pub kos: usize,
@@ -92,8 +96,10 @@ struct Sample {
 #[derive(Clone, Debug)]
 struct Candidate {
     move_: AdvisorMove,
-    sum: f64,
+    weighted_sum: f64,
+    total_weight: u32,
     worst: f64,
+    best: f64,
     samples: usize,
     kos: usize,
     koed: usize,
@@ -103,20 +109,28 @@ impl Candidate {
     fn new(move_: AdvisorMove) -> Self {
         Self {
             move_,
-            sum: 0.0,
+            weighted_sum: 0.0,
+            total_weight: 0,
             worst: f64::NAN,
+            best: f64::NAN,
             samples: 0,
             kos: 0,
             koed: 0,
         }
     }
 
-    fn push(&mut self, sample: Sample) {
-        self.sum += sample.value;
+    fn push(&mut self, sample: Sample, weight: u16) {
+        self.weighted_sum += sample.value * f64::from(weight);
+        self.total_weight += u32::from(weight);
         self.worst = if self.samples == 0 {
             sample.value
         } else {
             self.worst.min(sample.value)
+        };
+        self.best = if self.samples == 0 {
+            sample.value
+        } else {
+            self.best.max(sample.value)
         };
         self.samples += 1;
         self.kos += usize::from(sample.ko);
@@ -129,14 +143,43 @@ impl Candidate {
             average: if self.samples == 0 {
                 f64::NAN
             } else {
-                self.sum / self.samples as f64
+                self.weighted_sum / f64::from(self.total_weight)
             },
             worst: self.worst,
+            best: self.best,
             samples: self.samples,
             kos: self.kos,
             koed: self.koed,
         }
     }
+}
+
+// 198 captured round-one plays as of 2026-09-13. This is intentionally a literal
+// historical table, copied from the TypeScript advisor rather than regenerated from the
+// current capture corpus. Add one Laplace observation to every legal reply so an unseen
+// wager remains possible.
+const OPENING_REPLY_COUNTS: &[((u16, bool), u16)] = &[
+    ((0, false), 38),
+    ((1, false), 7),
+    ((2, false), 20),
+    ((3, false), 28),
+    ((4, false), 53),
+    ((4, true), 1),
+    ((5, false), 29),
+    ((6, false), 12),
+    ((7, false), 7),
+    ((8, false), 1),
+    ((9, true), 2),
+];
+
+fn opening_reply_weight(move_: AdvisorMove) -> u16 {
+    OPENING_REPLY_COUNTS
+        .iter()
+        .find_map(|&((pillz, fury), count)| {
+            (pillz == move_.pillz && fury == move_.fury).then_some(count)
+        })
+        .unwrap_or(0)
+        + 1
 }
 
 /// Enumerates every legal card/wager action in the same useful probe order as the
@@ -199,15 +242,35 @@ fn ordered_bets(available: u16) -> Vec<(u16, bool)> {
 pub fn search(
     game: &mut CombatStatDiagnosticV1,
     config: SearchConfig,
-    mut progress: impl FnMut(&SearchSnapshot),
+    progress: impl FnMut(&SearchSnapshot),
 ) -> SearchSnapshot {
     let started = Instant::now();
-    let evaluation = if game.position().rounds_played >= 2 {
-        EvaluationKind::ExactLatePolicy
-    } else {
-        EvaluationKind::OneRoundHeuristic
-    };
     let mut policy_control = PolicyControl::for_budget(started, config.budget);
+    search_with_control(game, config, started, &mut policy_control, progress)
+}
+
+#[cfg(test)]
+fn search_with_test_control(
+    game: &mut CombatStatDiagnosticV1,
+    config: SearchConfig,
+    policy_control: &mut PolicyControl,
+    progress: impl FnMut(&SearchSnapshot),
+) -> SearchSnapshot {
+    search_with_control(game, config, Instant::now(), policy_control, progress)
+}
+
+fn search_with_control(
+    game: &mut CombatStatDiagnosticV1,
+    config: SearchConfig,
+    started: Instant,
+    policy_control: &mut PolicyControl,
+    mut progress: impl FnMut(&SearchSnapshot),
+) -> SearchSnapshot {
+    let evaluation = if game.position().rounds_played >= 1 {
+        EvaluationKind::ExactContinuationPolicy
+    } else {
+        EvaluationKind::OpeningEstimate
+    };
     let opponent = config.us.other();
     let our_moves = legal_moves(game, config.us);
     let opponent_moves = match config.mode {
@@ -225,11 +288,14 @@ pub fn search(
     let mut expired = false;
     let mut last_publication: Option<(usize, bool)> = None;
 
-    // Iterate the matrix directly: materialising the cross-product would make the time
-    // budget useless for a caller-supplied position with an unusually large pillz pool.
+    // A publication is transactional. First mode commits a whole reply row; Second mode
+    // commits a whole hidden-wager column. A deadline or policy cancellation inside either
+    // block discards its buffered samples, so ranked candidates never contain incomparable
+    // partial blocks and `units_done` always counts published work.
     match config.mode {
         SearchMode::First => {
             'matrix: for candidate_index in 0..candidates.len() {
+                let mut row = Vec::with_capacity(opponent_moves.len());
                 for &opponent_move in &opponent_moves {
                     if started.elapsed() >= config.budget {
                         expired = true;
@@ -241,14 +307,17 @@ pub fn search(
                         candidates[candidate_index].move_,
                         opponent_move,
                         evaluation,
-                        &mut policy_control,
+                        policy_control,
                     ) else {
                         expired = true;
                         break 'matrix;
                     };
-                    candidates[candidate_index].push(sample);
-                    units_done += 1;
+                    row.push((sample, sample_weight(evaluation, opponent_move)));
                 }
+                for (sample, weight) in row {
+                    candidates[candidate_index].push(sample, weight);
+                }
+                units_done += opponent_moves.len();
                 // This recommendation is now comparable across its complete reply set.
                 publish(
                     &candidates,
@@ -263,7 +332,8 @@ pub fn search(
         }
         SearchMode::Second { .. } => {
             'matrix: for &opponent_move in &opponent_moves {
-                for candidate in &mut candidates {
+                let mut column = Vec::with_capacity(candidates.len());
+                for candidate in &candidates {
                     if started.elapsed() >= config.budget {
                         expired = true;
                         break 'matrix;
@@ -274,14 +344,17 @@ pub fn search(
                         candidate.move_,
                         opponent_move,
                         evaluation,
-                        &mut policy_control,
+                        policy_control,
                     ) else {
                         expired = true;
                         break 'matrix;
                     };
-                    candidate.push(sample);
-                    units_done += 1;
+                    column.push((sample, sample_weight(evaluation, opponent_move)));
                 }
+                for (candidate, (sample, weight)) in candidates.iter_mut().zip(column) {
+                    candidate.push(sample, weight);
+                }
+                units_done += candidates.len();
                 // This hidden wager has now been tested against every possible response.
                 publish(
                     &candidates,
@@ -390,8 +463,8 @@ fn evaluate(
         MatchStatus::Won(_) => -1.0,
         MatchStatus::Draw => 0.0,
         MatchStatus::Playing => match evaluation {
-            EvaluationKind::OneRoundHeuristic => position_heuristic(game, us),
-            EvaluationKind::ExactLatePolicy => exact_score(continuation_value(
+            EvaluationKind::OpeningEstimate => position_heuristic(game, us),
+            EvaluationKind::ExactContinuationPolicy => exact_score(continuation_value(
                 game,
                 us,
                 next_first_mover,
@@ -412,6 +485,13 @@ const fn exact_score(value: ExactValue) -> f64 {
         ExactValue::Loss => -1.0,
         ExactValue::Draw => 0.0,
         ExactValue::Win => 1.0,
+    }
+}
+
+fn sample_weight(evaluation: EvaluationKind, opponent_move: AdvisorMove) -> u16 {
+    match evaluation {
+        EvaluationKind::OpeningEstimate => opening_reply_weight(opponent_move),
+        EvaluationKind::ExactContinuationPolicy => 1,
     }
 }
 
@@ -450,7 +530,7 @@ fn snapshot(
     evaluation: EvaluationKind,
 ) -> SearchSnapshot {
     let mut ranked: Vec<_> = candidates.iter().map(Candidate::ranked).collect();
-    ranked.sort_by(compare_ranked);
+    ranked.sort_by(|left, right| compare_ranked(left, right, evaluation));
     SearchSnapshot {
         ranked,
         units_done,
@@ -475,12 +555,19 @@ fn displayed_percent(value: f64) -> i32 {
     }
 }
 
-fn compare_ranked(left: &RankedMove, right: &RankedMove) -> Ordering {
-    // Higher displayed average and guarantee first. Deliberately ignore sub-percent raw
-    // differences: equal-looking rows should be ordered by the visible tie-breaks.
-    displayed_percent(right.average)
-        .cmp(&displayed_percent(left.average))
-        .then_with(|| displayed_percent(right.worst).cmp(&displayed_percent(left.worst)))
+fn compare_ranked(left: &RankedMove, right: &RankedMove, evaluation: EvaluationKind) -> Ordering {
+    // Higher displayed average first. Deliberately ignore sub-percent raw differences:
+    // equal-looking rows should be ordered by the visible tie-breaks. Exact policy rows
+    // then use their game-theoretic Worst; opening rows expose a descriptive Range, never
+    // a guarantee, so deliberately skip that floor.
+    let average = displayed_percent(right.average).cmp(&displayed_percent(left.average));
+    let worst = if evaluation == EvaluationKind::ExactContinuationPolicy {
+        displayed_percent(right.worst).cmp(&displayed_percent(left.worst))
+    } else {
+        Ordering::Equal
+    };
+    average
+        .then(worst)
         .then_with(|| share(right.kos, right.samples).total_cmp(&share(left.kos, left.samples)))
         .then_with(|| share(left.koed, left.samples).total_cmp(&share(right.koed, right.samples)))
         .then_with(|| left.move_.cost().cmp(&right.move_.cost()))
@@ -564,7 +651,7 @@ mod tests {
         evaluate(
             game,
             us,
-            EvaluationKind::OneRoundHeuristic,
+            EvaluationKind::OpeningEstimate,
             PlayerId::P1,
             &mut control,
         )
@@ -599,6 +686,70 @@ mod tests {
         let moves = legal_moves(&two, PlayerId::P1);
         assert_eq!(moves.len(), 4 * 3);
         assert!(moves.iter().all(|move_| !move_.fury));
+    }
+
+    #[test]
+    fn opening_reply_table_is_literal_and_laplace_smooths_unknown_wagers() {
+        assert_eq!(
+            OPENING_REPLY_COUNTS
+                .iter()
+                .map(|(_, count)| u32::from(*count))
+                .sum::<u32>(),
+            198,
+        );
+        assert_eq!(
+            opening_reply_weight(AdvisorMove {
+                hand_index: 0,
+                pillz: 4,
+                fury: false,
+            }),
+            54,
+        );
+        assert_eq!(
+            opening_reply_weight(AdvisorMove {
+                hand_index: 0,
+                pillz: 9,
+                fury: true,
+            }),
+            3,
+        );
+        assert_eq!(
+            opening_reply_weight(AdvisorMove {
+                hand_index: 0,
+                pillz: 12,
+                fury: false,
+            }),
+            1,
+        );
+    }
+
+    #[test]
+    fn opening_weighted_mean_preserves_unweighted_samples_and_range() {
+        let mut candidate = Candidate::new(AdvisorMove {
+            hand_index: 0,
+            pillz: 0,
+            fury: false,
+        });
+        candidate.push(
+            Sample {
+                value: -1.0,
+                ko: true,
+                koed: false,
+            },
+            54,
+        );
+        candidate.push(
+            Sample {
+                value: 1.0,
+                ko: false,
+                koed: true,
+            },
+            1,
+        );
+        let ranked = candidate.ranked();
+        assert_eq!(ranked.average, -53.0 / 55.0);
+        assert_eq!((ranked.worst, ranked.best), (-1.0, 1.0));
+        assert_eq!((ranked.samples, ranked.kos, ranked.koed), (2, 1, 1));
     }
 
     #[test]
@@ -648,7 +799,7 @@ mod tests {
         assert_eq!(first.ranked.len(), 20);
         assert_eq!(first.units_total, 400);
         assert_eq!(first_updates, 20);
-        assert_eq!(first.evaluation, EvaluationKind::OneRoundHeuristic);
+        assert_eq!(first.evaluation, EvaluationKind::OpeningEstimate);
         assert!(first.ranked.iter().all(|candidate| candidate.samples == 20));
 
         let mut second_updates = 0;
@@ -669,7 +820,51 @@ mod tests {
     }
 
     #[test]
-    fn evaluation_uses_exact_terminal_values_and_a_symmetric_bounded_heuristic() {
+    fn opening_search_weights_opponent_wagers_in_both_modes_and_keeps_a_fixed_top() {
+        // With one pill, the observed 0-pill reply (weight 39) dominates the observed
+        // 1-pill reply (weight 8). The stronger P1 cards make saving the pill the stable
+        // opening recommendation in either visible-information mode.
+        let mut game = test_game(20, 1, (8, 4), (5, 2));
+        let expected_top = AdvisorMove {
+            hand_index: 0,
+            pillz: 0,
+            fury: false,
+        };
+        let first = search(
+            &mut game,
+            config(SearchMode::First, Duration::from_secs(1)),
+            |_| {},
+        );
+        let second = search(
+            &mut game,
+            config(
+                SearchMode::Second {
+                    opponent_hand_index: 0,
+                },
+                Duration::from_secs(1),
+            ),
+            |_| {},
+        );
+        assert_eq!(first.evaluation, EvaluationKind::OpeningEstimate);
+        assert_eq!(second.evaluation, EvaluationKind::OpeningEstimate);
+        assert_eq!(first.ranked[0].move_, expected_top);
+        assert_eq!(second.ranked[0].move_, expected_top);
+        let first_top = first
+            .ranked
+            .iter()
+            .find(|candidate| candidate.move_ == expected_top)
+            .unwrap();
+        let second_top = second
+            .ranked
+            .iter()
+            .find(|candidate| candidate.move_ == expected_top)
+            .unwrap();
+        assert!(first_top.average > 0.4 && second_top.average > 0.4);
+        assert_eq!((first_top.samples, second_top.samples), (8, 2));
+    }
+
+    #[test]
+    fn evaluation_uses_exact_terminal_values_and_a_symmetric_opening_estimate() {
         let mut knockout = test_game(1, 0, (10, 2), (1, 1));
         let (_, undo) = knockout
             .make(round_input(
@@ -718,6 +913,95 @@ mod tests {
     }
 
     #[test]
+    fn round_two_uses_exact_categorical_continuations_and_restores_root() {
+        // With no paid pillz and strictly stronger P1 cards, every current-round sample
+        // and every exact continuation is a P1 win. This keeps the round-two policy test
+        // small while proving the search does not fall back to a fractional heuristic.
+        let mut game = test_game(20, 0, (7, 3), (6, 2));
+        game.make(round_input(
+            PlayerId::P1,
+            PlayerId::P1,
+            AdvisorMove {
+                hand_index: 0,
+                pillz: 0,
+                fury: false,
+            },
+            AdvisorMove {
+                hand_index: 0,
+                pillz: 0,
+                fury: false,
+            },
+        ))
+        .unwrap();
+        let before = game.clone();
+        let result = search(
+            &mut game,
+            config(SearchMode::First, Duration::from_secs(1)),
+            |_| {},
+        );
+        assert!(result.complete);
+        assert_eq!(result.evaluation, EvaluationKind::ExactContinuationPolicy);
+        assert_eq!((result.units_done, result.units_total), (9, 9));
+        assert!(result.ranked.iter().all(|candidate| {
+            (
+                candidate.average,
+                candidate.worst,
+                candidate.best,
+                candidate.samples,
+            ) == (1.0, 1.0, 1.0, 3)
+        }));
+        assert_eq!(game, before);
+    }
+
+    #[test]
+    fn round_two_deadline_cancels_exact_policy_work_and_restores_root() {
+        let mut game = test_game(20, 0, (7, 3), (6, 2));
+        game.make(round_input(
+            PlayerId::P1,
+            PlayerId::P1,
+            AdvisorMove {
+                hand_index: 0,
+                pillz: 0,
+                fury: false,
+            },
+            AdvisorMove {
+                hand_index: 0,
+                pillz: 0,
+                fury: false,
+            },
+        ))
+        .unwrap();
+        let before = game.clone();
+        // An already-expired policy deadline is reached after `evaluate_pair` has made
+        // the current round. The pair must still unmake it before propagating `None`.
+        let mut expired_policy = PolicyControl::until(Instant::now());
+        assert!(evaluate_pair(
+            &mut game,
+            config(SearchMode::First, Duration::from_secs(1)),
+            AdvisorMove {
+                hand_index: 1,
+                pillz: 0,
+                fury: false,
+            },
+            AdvisorMove {
+                hand_index: 1,
+                pillz: 0,
+                fury: false,
+            },
+            EvaluationKind::ExactContinuationPolicy,
+            &mut expired_policy,
+        )
+        .is_none(),);
+        assert_eq!(game, before);
+
+        let stopped = search(&mut game, config(SearchMode::First, Duration::ZERO), |_| {});
+        assert_eq!(stopped.evaluation, EvaluationKind::ExactContinuationPolicy);
+        assert!(!stopped.complete);
+        assert_eq!(stopped.units_done, 0);
+        assert_eq!(game, before);
+    }
+
+    #[test]
     fn round_three_uses_exact_information_aware_continuations_and_restores_root() {
         let mut game = test_game(20, 0, (7, 3), (6, 2));
         for (slot, first_mover) in [(0, PlayerId::P1), (1, PlayerId::P2)] {
@@ -744,11 +1028,119 @@ mod tests {
             |_| {},
         );
         assert!(result.complete);
-        assert_eq!(result.evaluation, EvaluationKind::ExactLatePolicy);
+        assert_eq!(result.evaluation, EvaluationKind::ExactContinuationPolicy);
         assert_eq!((result.units_done, result.units_total), (4, 4));
         assert!(result.ranked.iter().all(|candidate| {
             (-1.0..=1.0).contains(&candidate.average) && [-1.0, 0.0, 1.0].contains(&candidate.worst)
         }));
+        assert_eq!(game, before);
+    }
+
+    fn round_three_game(pillz: u16) -> CombatStatDiagnosticV1 {
+        let mut game = test_game(20, pillz, (7, 3), (6, 2));
+        for (slot, first_mover) in [(0, PlayerId::P1), (1, PlayerId::P2)] {
+            game.make(round_input(
+                first_mover,
+                PlayerId::P1,
+                AdvisorMove {
+                    hand_index: slot,
+                    pillz: 0,
+                    fury: false,
+                },
+                AdvisorMove {
+                    hand_index: slot,
+                    pillz: 0,
+                    fury: false,
+                },
+            ))
+            .unwrap();
+        }
+        game
+    }
+
+    #[test]
+    fn first_mode_discards_a_cancelled_reply_row_before_publishing() {
+        let mut game = round_three_game(0);
+        let before = game.clone();
+        // Each completed zero-pill line needs one policy node here. The third node lands
+        // in the next row, whose second reply then observes cancellation.
+        let mut control = PolicyControl::for_nodes(3);
+        let mut callbacks = Vec::new();
+        let result = search_with_test_control(
+            &mut game,
+            config(SearchMode::First, Duration::from_secs(1)),
+            &mut control,
+            |snapshot| callbacks.push(snapshot.clone()),
+        );
+        assert_eq!(control.nodes(), 3);
+        assert!(!result.complete);
+        assert_eq!((result.units_done, result.units_total), (2, 4));
+        assert_eq!(
+            result
+                .ranked
+                .iter()
+                .map(|candidate| candidate.samples)
+                .collect::<Vec<_>>(),
+            vec![2, 0],
+        );
+        assert_eq!(callbacks.len(), 1);
+        assert_eq!(callbacks[0].evaluation, result.evaluation);
+        assert_eq!(
+            (
+                callbacks[0].units_done,
+                callbacks[0].units_total,
+                callbacks[0].complete
+            ),
+            (result.units_done, result.units_total, result.complete),
+        );
+        assert_eq!(
+            callbacks[0]
+                .ranked
+                .iter()
+                .map(|candidate| candidate.samples)
+                .collect::<Vec<_>>(),
+            vec![2, 0],
+        );
+        assert_eq!(game, before);
+    }
+
+    #[test]
+    fn second_mode_discards_a_cancelled_hidden_wager_column_before_publishing() {
+        let mut game = round_three_game(1);
+        let before = game.clone();
+        // The first four nodes fill one hidden-wager column. The fifth starts the next
+        // column, then cancellation prevents its second candidate and drops the column.
+        let mut control = PolicyControl::for_nodes(5);
+        let mut callbacks = Vec::new();
+        let result = search_with_test_control(
+            &mut game,
+            config(
+                SearchMode::Second {
+                    opponent_hand_index: 2,
+                },
+                Duration::from_secs(1),
+            ),
+            &mut control,
+            |snapshot| callbacks.push(snapshot.clone()),
+        );
+        assert_eq!(control.nodes(), 5);
+        assert!(!result.complete);
+        assert_eq!((result.units_done, result.units_total), (4, 8));
+        assert!(result.ranked.iter().all(|candidate| candidate.samples == 1));
+        assert_eq!(callbacks.len(), 1);
+        assert_eq!(callbacks[0].evaluation, result.evaluation);
+        assert_eq!(
+            (
+                callbacks[0].units_done,
+                callbacks[0].units_total,
+                callbacks[0].complete
+            ),
+            (result.units_done, result.units_total, result.complete),
+        );
+        assert!(callbacks[0]
+            .ranked
+            .iter()
+            .all(|candidate| candidate.samples == 1));
         assert_eq!(game, before);
     }
 
@@ -762,6 +1154,7 @@ mod tests {
             },
             average: 0.104,
             worst: 0.0,
+            best: 0.0,
             samples: 1,
             kos: 0,
             koed: 0,
@@ -774,6 +1167,7 @@ mod tests {
             },
             average: 0.100,
             worst: 0.0,
+            best: 0.0,
             samples: 1,
             kos: 0,
             koed: 0,
@@ -783,7 +1177,9 @@ mod tests {
             displayed_percent(cheap.average)
         );
         let mut ranked = vec![expensive, cheap.clone()];
-        ranked.sort_by(compare_ranked);
+        ranked.sort_by(|left, right| {
+            compare_ranked(left, right, EvaluationKind::ExactContinuationPolicy)
+        });
         assert_eq!(ranked[0], cheap);
 
         let mut game = test_game(20, 0, (7, 3), (6, 2));
@@ -798,5 +1194,44 @@ mod tests {
             |_| {},
         );
         assert_eq!(first.ranked, second.ranked);
+    }
+
+    #[test]
+    fn opening_ranking_ignores_the_observed_floor_but_exact_ranking_keeps_worst() {
+        let higher_floor = RankedMove {
+            move_: AdvisorMove {
+                hand_index: 0,
+                pillz: 2,
+                fury: false,
+            },
+            average: 0.2,
+            worst: 0.0,
+            best: 0.8,
+            samples: 2,
+            kos: 0,
+            koed: 0,
+        };
+        let knockout = RankedMove {
+            move_: AdvisorMove {
+                hand_index: 1,
+                pillz: 2,
+                fury: false,
+            },
+            average: 0.2,
+            worst: -1.0,
+            best: 1.0,
+            samples: 2,
+            kos: 1,
+            koed: 0,
+        };
+        let mut opening = vec![higher_floor.clone(), knockout.clone()];
+        opening.sort_by(|left, right| compare_ranked(left, right, EvaluationKind::OpeningEstimate));
+        assert_eq!(opening[0], knockout);
+
+        let mut exact = vec![higher_floor.clone(), knockout];
+        exact.sort_by(|left, right| {
+            compare_ranked(left, right, EvaluationKind::ExactContinuationPolicy)
+        });
+        assert_eq!(exact[0], higher_floor);
     }
 }

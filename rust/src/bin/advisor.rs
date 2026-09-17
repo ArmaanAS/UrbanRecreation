@@ -220,7 +220,7 @@ fn write_replay_grade(
         .ranked
         .iter()
         .find(|candidate| candidate.samples > 0 && candidate.average.is_finite())
-        .map(|candidate| displayed_percent(candidate.average))
+        .map(|candidate| displayed_score(candidate.average, snapshot.evaluation))
         .unwrap_or_else(|| "--".to_owned());
     writeln!(
         output,
@@ -230,7 +230,7 @@ fn write_replay_grade(
         wager,
         index + 1,
         snapshot.ranked.len(),
-        displayed_percent(row.average),
+        displayed_score(row.average, snapshot.evaluation),
         best,
         if snapshot.complete { "" } else { " · partial" },
     )
@@ -305,6 +305,17 @@ fn displayed_percent(value: f64) -> String {
         percent
     };
     format!("{percent}%")
+}
+
+fn displayed_score(value: f64, evaluation: EvaluationKind) -> String {
+    if evaluation == EvaluationKind::OpeningEstimate {
+        if !value.is_finite() {
+            return "--".to_owned();
+        }
+        (((value.clamp(-1.0, 1.0) + 1.0) * 50.0).round() as i32).to_string()
+    } else {
+        displayed_percent(value)
+    }
 }
 
 fn invalid_replay(message: String) -> io::Error {
@@ -595,22 +606,22 @@ fn view_model(
     mode: SearchMode,
 ) -> AdvisorViewModel {
     let phase = match snapshot.evaluation {
-        EvaluationKind::OneRoundHeuristic => "ONE-ROUND HEURISTIC",
-        EvaluationKind::ExactLatePolicy => "EXACT LATE POLICY",
+        EvaluationKind::OpeningEstimate => "OPENING ESTIMATE",
+        EvaluationKind::ExactContinuationPolicy => "EXACT CONTINUATION POLICY",
     };
     let limitation = match snapshot.evaluation {
-        EvaluationKind::OneRoundHeuristic => {
+        EvaluationKind::OpeningEstimate => {
             if prepared.replay.is_some() {
-                "server-backed strict replay; future rounds use a position heuristic; current choices uniform"
+                "server-backed strict replay; weighted opening estimate from 198 historical replies"
             } else {
-                "strict supported draw; future rounds use a position heuristic; current choices uniform"
+                "strict supported draw; weighted opening estimate from 198 historical replies"
             }
         }
-        EvaluationKind::ExactLatePolicy => {
+        EvaluationKind::ExactContinuationPolicy => {
             if prepared.replay.is_some() {
-                "server-backed strict replay; exact rounds 3-4 policy; current hidden choices uniform"
+                "server-backed strict replay; exact rounds 2-4 policy; current hidden choices uniform"
             } else {
-                "strict supported draw; exact rounds 3-4 policy; current hidden choices uniform"
+                "strict supported draw; exact rounds 2-4 policy; current hidden choices uniform"
             }
         }
     };
@@ -676,12 +687,12 @@ fn view_side(
 #[cfg(test)]
 mod tests {
     use super::{
-        read_bounded_line, run_interactive, run_replay, safe_terminal_error, search_config,
-        AdvisorCommand, PromptLine,
+        displayed_score, read_bounded_line, run_interactive, run_replay, safe_terminal_error,
+        search_config, AdvisorCommand, PromptLine,
     };
     use std::io::Cursor;
     use urban_recreation_rust::advisor::input::{parse_args, prepare, AdvisorOptions};
-    use urban_recreation_rust::advisor::search::SearchMode;
+    use urban_recreation_rust::advisor::search::{EvaluationKind, SearchMode};
     use urban_recreation_rust::engine::PlayerId;
 
     #[test]
@@ -740,9 +751,9 @@ mod tests {
         let mut output = Vec::new();
         run_interactive(&prepared, &mut input, &mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("ONE-ROUND HEURISTIC · FIRST"));
-        assert!(output.contains("ONE-ROUND HEURISTIC · SECOND · OPP CARD 1"));
-        assert!(output.contains("EXACT LATE POLICY · FIRST"));
+        assert!(output.contains("OPENING ESTIMATE · FIRST"));
+        assert!(output.contains("EXACT CONTINUATION POLICY · SECOND · OPP CARD 1"));
+        assert!(output.contains("EXACT CONTINUATION POLICY · FIRST"));
         assert!(output.contains("ROUND 4 RESOLVED"));
         assert!(output.contains("MATCH COMPLETE · Won(P2)"));
     }
@@ -777,9 +788,9 @@ mod tests {
         let mut output = Vec::new();
         run_replay(&prepared, &mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("ROUND 1 · ONE-ROUND HEURISTIC · SECOND · OPP CARD 2"));
-        assert!(output.contains("ROUND 2 · ONE-ROUND HEURISTIC · FIRST"));
-        assert!(output.contains("ROUND 3 · EXACT LATE POLICY · SECOND · OPP CARD 1"));
+        assert!(output.contains("ROUND 1 · OPENING ESTIMATE · SECOND · OPP CARD 2"));
+        assert!(output.contains("ROUND 2 · EXACT CONTINUATION POLICY · FIRST"));
+        assert!(output.contains("ROUND 3 · EXACT CONTINUATION POLICY · SECOND · OPP CARD 1"));
         assert!(output.contains("SERVER ROUND 4 VERIFIED"));
         assert!(output.contains("REPLAY 877636 COMPLETE · 4 decisions graded · Won(P1)"));
         assert!(!output.contains('\u{1b}'));
@@ -816,7 +827,7 @@ mod tests {
         assert!(output.contains("MODE REPLAY 1024673"));
         assert!(output.contains("ROUND 1"));
         assert!(output.contains("ROUND 2"));
-        assert!(output.contains("ONE-ROUND HEURISTIC"));
+        assert!(output.contains("EXACT CONTINUATION POLICY"));
         assert!(output.contains("SECOND"));
         assert!(output.contains("OPP CARD 1"));
         assert!(output.contains("SERVER ROUND 2 VERIFIED"));
@@ -833,5 +844,30 @@ mod tests {
         assert!(!safe.contains('\r'));
         assert!(!safe.contains('\n'));
         assert_eq!(safe.chars().count(), 1_024);
+    }
+
+    #[test]
+    fn opening_replay_grades_are_scores_not_percentages() {
+        assert_eq!(displayed_score(0.18, EvaluationKind::OpeningEstimate), "59");
+        assert_eq!(
+            displayed_score(0.18, EvaluationKind::ExactContinuationPolicy),
+            "59%"
+        );
+        assert_eq!(
+            displayed_score(0.999, EvaluationKind::OpeningEstimate),
+            "100"
+        );
+        assert_eq!(
+            displayed_score(-0.999, EvaluationKind::OpeningEstimate),
+            "0"
+        );
+        assert_eq!(
+            displayed_score(0.999, EvaluationKind::ExactContinuationPolicy),
+            "99%"
+        );
+        assert_eq!(
+            displayed_score(-0.999, EvaluationKind::ExactContinuationPolicy),
+            "1%"
+        );
     }
 }

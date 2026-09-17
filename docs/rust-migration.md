@@ -481,15 +481,17 @@ the engine's current fail-closed effect subset. Do not compare its displayed sco
 runtime with the TypeScript continuation-policy solver as though they were the same
 algorithm.
 
-The second vertical slice adds a manual four-round session and exact late-game policy.
+The second vertical slice adds a manual four-round session and exact continuation policy.
 `--interactive` retains committed rounds in the real engine, alternates the explicit first
-mover, and requests the revealed opposing card before second-mover advice. From round 3,
+mover, and requests the revealed opposing card before second-mover advice. From round 2,
 nonterminal samples recurse to exact win/draw/loss values with the same essential
 information-set rule as `Policy.ts`: our response can vary by visible card but not by hidden
-pillz or Fury. Cancellation unwinds every made round before returning. Rounds 1–2 keep the
-bounded heuristic by design; an effect-free twelve-pill upper count is roughly 69 million
-paired histories from round 2 versus about 210 thousand from round 3, before effect-driven
-resource growth.
+pillz or Fury. Cancellation unwinds every made round before returning. Round 1 keeps the
+captured-reply-weighted opening estimate; rounds 2–4 use the conservative exact continuation
+policy. The opening prior is the literal 198-play `OPENING_REPLY_COUNTS` table from the
+TypeScript advisor, captured as of 2026-09-13, with Laplace +1 for unseen wagers. It is
+historical provenance, not a table regenerated from the current corpus. The round-two slice
+does not add blind-second work, workers, or new engine semantics.
 
 The server-backed advisor path loads captures `877636` and `1024673` with `--replay`.
 It derives both exact hands, resources, night state, recording side, and each round's mover
@@ -497,9 +499,9 @@ from the normalized capture; rejects any capture/catalog source-identity disagre
 requires complete server card evidence. Before every recorded move it renders the same TUI
 and grades that move against the current ranking. It then commits the actual pair of moves
 and checks power, damage, attack, winner, life, and pillz before advancing. This covers all
-four rounds and both FIRST and SECOND information sets, while retaining the labelled
-rounds 1–2 heuristic and exact rounds 3–4 policy. It is captured replay, not yet the live
-capture stream or full TypeScript opening/round-2 policy.
+four rounds and both FIRST and SECOND information sets, while retaining the labelled round 1
+opening heuristic and exact rounds 2–4 policy. It is captured replay, not yet the live
+capture stream or full TypeScript opening policy.
 
 Do not revive the old perfect-information recommendation model as the live advisor. Port
 the current TypeScript behavior deliberately:
@@ -507,7 +509,7 @@ the current TypeScript behavior deliberately:
 - allocation-free make/unmake search;
 - depth-2 work units and cancellation;
 - the conservative information-aware policy for hidden pillz and Fury;
-- opening heuristic and captured-move weighting;
+- opening-prior refresh from later captures;
 - blind-second handling;
 - visible-percent, knockout, safety, then cost ranking.
 

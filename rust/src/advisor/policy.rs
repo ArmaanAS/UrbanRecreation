@@ -80,7 +80,7 @@ impl PolicyControl {
     }
 
     #[cfg(test)]
-    fn for_nodes(node_limit: u64) -> Self {
+    pub(crate) fn for_nodes(node_limit: u64) -> Self {
         Self {
             deadline: Instant::now().checked_add(Duration::from_secs(60)),
             nodes: 0,

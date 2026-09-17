@@ -56,10 +56,11 @@ pairing and the TUI shows both the average and worst sampled result.
 
 Interactive mode records resolved moves as `SLOT:PILLZ` or `SLOT:PILLZ:F`, alternates the
 explicit first mover, and asks for the visible opposing card before second-mover searches.
-Rounds 1–2 use the bounded position heuristic. Rounds 3–4 recursively solve exact terminal
-win/draw/loss values with the conservative pure policy: one response may depend on the
+Round 1 uses a bounded opening estimate, weighted by the TypeScript advisor's literal table
+of 198 round-one replies captured as of 2026-09-13 (with Laplace +1 for unseen wagers).
+Rounds 2–4 recursively solve exact terminal win/draw/loss values with the conservative pure policy: one response may depend on the
 opponent's visible card, but never on hidden pillz or Fury. Live capture, captured opening
-weights, blind-second work, and round-2 continuation search remain to be ported.
+weights refresh, and blind-second work remain to be ported.
 Replay `1024673` is a short end-to-end smoke for the strict catalog, unconditional Stop
 Opp. Ability, server verification, move grading, and the round-two knockout path.
 

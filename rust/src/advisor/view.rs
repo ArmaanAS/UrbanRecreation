@@ -3,7 +3,7 @@
 //! This module deliberately has no terminal I/O. The binary supplies explicit dimensions
 //! and chooses whether to emit ANSI; tests and non-interactive callers render the same frame.
 
-use super::search::{RankedMove, SearchSnapshot};
+use super::search::{EvaluationKind, RankedMove, SearchSnapshot};
 use crate::engine::PlayerId;
 
 /// One visible card in an advisor hand.  This is presentation data, not an engine card.
@@ -36,7 +36,7 @@ pub struct AdvisorViewModel {
     pub p1: AdvisorSide,
     pub p2: AdvisorSide,
     pub us: PlayerId,
-    /// Such as `ONE-ROUND HEURISTIC` or `EXACT LATE POLICY`; supplied by the caller so
+    /// Such as `OPENING ESTIMATE` or `EXACT CONTINUATION POLICY`; supplied by the caller so
     /// solver modes do not have to fork the renderer.
     pub mode: String,
     /// A short, visible statement of what this solver does not yet model.
@@ -88,7 +88,7 @@ pub fn render(model: &AdvisorViewModel, width: usize, height: usize, colour: Col
 
     lines.push(style("RUST ADVISOR · COMBAT-STAT V1", CYAN, true, colour));
     let mode = if model.mode.trim().is_empty() {
-        "ONE-ROUND HEURISTIC".to_owned()
+        "OPENING ESTIMATE".to_owned()
     } else {
         display_text(model.mode.trim())
     };
@@ -115,7 +115,7 @@ pub fn render(model: &AdvisorViewModel, width: usize, height: usize, colour: Col
         lines.push(String::new());
     }
 
-    lines.push(table_heading(width, colour));
+    lines.push(table_heading(width, model.snapshot.evaluation, colour));
     let reserve = 2; // progress and provenance stay visible at every practical height.
     let available_rows = height.saturating_sub(lines.len() + reserve);
     let desired_rows = if compact { 2 } else { 8 };
@@ -126,7 +126,14 @@ pub fn render(model: &AdvisorViewModel, width: usize, height: usize, colour: Col
         lines.push(style("  no legal moves evaluated", GREY, false, colour));
     } else {
         for (rank, move_) in model.snapshot.ranked.iter().take(rows).enumerate() {
-            lines.push(move_row(rank + 1, move_, us, width, colour));
+            lines.push(move_row(
+                rank + 1,
+                move_,
+                us,
+                width,
+                model.snapshot.evaluation,
+                colour,
+            ));
         }
     }
 
@@ -222,11 +229,18 @@ fn cards_compact(side: &AdvisorSide, colour: ColourMode) -> String {
         .join("  ")
 }
 
-fn table_heading(width: usize, colour: ColourMode) -> String {
-    let text = if width >= 104 {
+fn table_heading(width: usize, evaluation: EvaluationKind, colour: ColourMode) -> String {
+    let opening = evaluation == EvaluationKind::OpeningEstimate;
+    let text = if width >= 104 && opening {
+        " #  CARD                       BET     SCORE    RANGE    KO  RISK  SAMPLES"
+    } else if width >= 104 {
         " #  CARD                         BET       AVG  WORST    KO  RISK  SAMPLES"
+    } else if width >= 72 && opening {
+        " #  CARD                   BET     SCORE    RANGE  KO/RISK  SAMPLES"
     } else if width >= 72 {
         " #  CARD                     BET       AVG  WORST    KO/RISK  SAMPLES"
+    } else if opening {
+        " #  CARD               BET   SCORE   RANGE  PROGRESS"
     } else {
         " #  CARD                 BET     AVG  WORST  PROGRESS"
     };
@@ -238,6 +252,7 @@ fn move_row(
     move_: &RankedMove,
     side: &AdvisorSide,
     width: usize,
+    evaluation: EvaluationKind,
     colour: ColourMode,
 ) -> String {
     let slot = usize::from(move_.move_.hand_index);
@@ -245,10 +260,19 @@ fn move_row(
     let raw_name = card
         .map(|card| card.name.as_str())
         .unwrap_or("invalid hand slot");
+    let opening = evaluation == EvaluationKind::OpeningEstimate;
     let name_width = if width >= 104 {
-        28
+        if opening {
+            26
+        } else {
+            28
+        }
     } else if width >= 72 {
-        22
+        if opening {
+            20
+        } else {
+            22
+        }
     } else {
         18
     };
@@ -258,8 +282,10 @@ fn move_row(
     } else {
         move_.move_.pillz.to_string()
     };
-    let avg = percent(move_.average);
-    let worst = percent(move_.worst);
+    let avg = displayed_score(move_.average, !opening);
+    let worst = displayed_score(move_.worst, !opening);
+    let best = displayed_score(move_.best, !opening);
+    let range = format!("{worst}–{best}");
     let risk = if move_.samples == 0 {
         "-".to_string()
     } else {
@@ -274,7 +300,20 @@ fn move_row(
     let worst_colour = score_colour(move_.worst);
     let bet_colour = if move_.move_.fury { MAGENTA } else { CYAN };
 
-    if width >= 104 {
+    if width >= 104 && opening {
+        let bet = pad_left(&bet, 7);
+        let score = pad_left(&avg, 5);
+        let range = pad_left(&range, 8);
+        format!(
+            " {rank:>1}.  {card_name:<26} {}  {}  {}  {:>4}  {:>4}  {:>7}",
+            style(&bet, bet_colour, move_.move_.fury, colour),
+            style(&score, average_colour, true, colour),
+            style(&range, worst_colour, false, colour),
+            move_.kos,
+            move_.koed,
+            move_.samples,
+        )
+    } else if width >= 104 {
         let bet = pad_left(&bet, 7);
         let avg = pad_left(&avg, 4);
         let worst = pad_left(&worst, 5);
@@ -285,6 +324,18 @@ fn move_row(
             style(&worst, worst_colour, false, colour),
             move_.kos,
             move_.koed,
+            move_.samples,
+        )
+    } else if width >= 72 && opening {
+        let bet = pad_left(&bet, 7);
+        let score = pad_left(&avg, 5);
+        let range = pad_left(&range, 8);
+        format!(
+            " {rank:>1}.  {card_name:<20} {}  {}  {}  {:>7}  {:>7}",
+            style(&bet, bet_colour, move_.move_.fury, colour),
+            style(&score, average_colour, true, colour),
+            style(&range, worst_colour, false, colour),
+            risk,
             move_.samples,
         )
     } else if width >= 72 {
@@ -298,6 +349,17 @@ fn move_row(
             style(&worst, worst_colour, false, colour),
             risk,
             move_.samples,
+        )
+    } else if opening {
+        let bet = pad_left(&bet, 5);
+        let score = pad_left(&avg, 5);
+        let range = pad_left(&range, 8);
+        format!(
+            " {rank:>1}.  {card_name:<18} {}  {}  {}  {}",
+            style(&bet, bet_colour, move_.move_.fury, colour),
+            style(&score, average_colour, true, colour),
+            style(&range, worst_colour, false, colour),
+            progress,
         )
     } else {
         let bet = pad_left(&bet, 5);
@@ -335,12 +397,26 @@ fn progress_line(snapshot: &SearchSnapshot, colour: ColourMode) -> String {
 }
 
 /// The solver's values are outcomes in the asking player's frame in [-1, 1].
-fn percent(value: f64) -> String {
+///
+/// Opening values intentionally omit the percent sign: they are weighted position scores,
+/// not probabilities. Exact-continuation rows retain the percentage suffix.
+fn displayed_score(value: f64, percentage: bool) -> String {
     if !value.is_finite() {
         return "--".to_owned();
     }
     let percent = ((value.clamp(-1.0, 1.0) + 1.0) * 50.0).round() as i16;
-    format!("{percent}%")
+    if percentage {
+        let percent = if percent >= 100 && value < 1.0 {
+            99
+        } else if percent <= 0 && value > -1.0 {
+            1
+        } else {
+            percent
+        };
+        format!("{percent}%")
+    } else {
+        percent.to_string()
+    }
 }
 
 fn score_colour(value: f64) -> u8 {
@@ -462,6 +538,7 @@ mod tests {
                     },
                     average: 0.6,
                     worst: -1.0,
+                    best: 1.0,
                     samples: 12,
                     kos: 3,
                     koed: 1,
@@ -474,6 +551,7 @@ mod tests {
                     },
                     average: 0.0,
                     worst: -0.2,
+                    best: 0.4,
                     samples: 4,
                     kos: 0,
                     koed: 2,
@@ -483,7 +561,7 @@ mod tests {
             units_total: 16,
             elapsed: Duration::from_millis(12),
             complete,
-            evaluation: EvaluationKind::OneRoundHeuristic,
+            evaluation: EvaluationKind::OpeningEstimate,
         }
     }
 
@@ -512,8 +590,8 @@ mod tests {
                 ],
             },
             us: PlayerId::P1,
-            mode: "ONE-ROUND HEURISTIC".to_string(),
-            limitation: "supported effects only; no hidden-bet policy".to_string(),
+            mode: "OPENING ESTIMATE".to_string(),
+            limitation: "weighted historical replies; supported effects only".to_string(),
             snapshot: snapshot(complete),
             supported_cards: 8,
             provenance_revision: 10,
@@ -543,7 +621,7 @@ mod tests {
         let view = render(&model(true), 80, 24, ColourMode::Never);
         assert_eq!(
             view,
-            "RUST ADVISOR · COMBAT-STAT V1\nMODE ONE-ROUND HEURISTIC\nLIMIT supported effects only; no hidden-bet policy\n\nYOU P1 · Alice  LIFE 12  PILLZ 8\n  0:Alpha 7/4·  1:Bravo 7/4·  2:Cobra 7/4×  3:Delta 7/4·\nTHEM P2 · Bob  LIFE 9  PILLZ 5\n  0:Echo 7/4·  1:Foxtrot 7/4×  2:Gamma 7/4·  3:Hotel 7/4·\n\n #  CARD                     BET       AVG  WORST    KO/RISK  SAMPLES\n 1.  Alpha                        4   80%     0%      3/1       12\n 2.  Cobra                     1 +F   50%    40%      0/2        4\nSEARCH COMPLETE  16/16 units · 12ms\nPROVENANCE 8/8 · rev 10"
+            "RUST ADVISOR · COMBAT-STAT V1\nMODE OPENING ESTIMATE\nLIMIT weighted historical replies; supported effects only\n\nYOU P1 · Alice  LIFE 12  PILLZ 8\n  0:Alpha 7/4·  1:Bravo 7/4·  2:Cobra 7/4×  3:Delta 7/4·\nTHEM P2 · Bob  LIFE 9  PILLZ 5\n  0:Echo 7/4·  1:Foxtrot 7/4×  2:Gamma 7/4·  3:Hotel 7/4·\n\n #  CARD                   BET     SCORE    RANGE  KO/RISK  SAMPLES\n 1.  Alpha                      4     80     0–100      3/1       12\n 2.  Cobra                   1 +F     50     40–70      0/2        4\nSEARCH COMPLETE  16/16 units · 12ms\nPROVENANCE 8/8 · rev 10"
         );
     }
 
@@ -583,6 +661,7 @@ mod tests {
         let mut model = model(false);
         model.snapshot.ranked[0].average = f64::NAN;
         model.snapshot.ranked[0].worst = f64::NAN;
+        model.snapshot.ranked[0].best = f64::NAN;
         model.snapshot.ranked[0].samples = 0;
         let frame = render(&model, 80, 24, ColourMode::Never);
         let line = frame
@@ -591,6 +670,32 @@ mod tests {
             .expect("the unevaluated move remains visible");
         assert!(line.matches("--").count() >= 2);
         assert!(!line.contains("0%"));
+    }
+
+    #[test]
+    fn opening_scores_omit_percent_signs_but_exact_values_keep_them() {
+        let opening = render(&model(true), 80, 24, ColourMode::Never);
+        assert!(opening.contains("SCORE    RANGE"));
+        assert!(opening.contains("80     0–100"));
+        assert!(!opening.contains("80%"));
+
+        let mut exact = model(true);
+        exact.snapshot.evaluation = EvaluationKind::ExactContinuationPolicy;
+        exact.mode = "EXACT CONTINUATION POLICY".to_owned();
+        let exact = render(&exact, 80, 24, ColourMode::Never);
+        assert!(exact.contains("AVG  WORST"));
+        assert!(exact.contains("80%"));
+        assert!(exact.contains("0%"));
+    }
+
+    #[test]
+    fn exact_percentages_clamp_nonterminal_endpoints_but_opening_scores_do_not() {
+        assert_eq!(displayed_score(0.999, true), "99%");
+        assert_eq!(displayed_score(-0.999, true), "1%");
+        assert_eq!(displayed_score(1.0, true), "100%");
+        assert_eq!(displayed_score(-1.0, true), "0%");
+        assert_eq!(displayed_score(0.999, false), "100");
+        assert_eq!(displayed_score(-0.999, false), "0");
     }
 
     #[test]
