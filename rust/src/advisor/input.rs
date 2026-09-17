@@ -39,7 +39,7 @@ const DEMO_P2: [CardKey; HAND_SIZE] = [
     CardKey::new(447, 1),
 ];
 
-pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,...] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3] [--budget-ms N] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw.  --second-card is only valid when --us is the second mover.";
+pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,...] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match; one-shot second-mover advice requires --second-card.";
 
 /// All non-card controls are explicit, while the two hands remain fixed-size card keys.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,6 +57,7 @@ pub struct AdvisorOptions {
     pub width: u16,
     pub height: u16,
     pub plain: bool,
+    pub interactive: bool,
     pub using_demo_draw: bool,
 }
 
@@ -75,6 +76,7 @@ impl Default for AdvisorOptions {
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
             plain: false,
+            interactive: false,
             using_demo_draw: true,
         }
     }
@@ -230,6 +232,10 @@ where
                 mark_once(&mut seen, flag)?;
                 options.plain = true;
             }
+            "--interactive" => {
+                mark_once(&mut seen, flag)?;
+                options.interactive = true;
+            }
             _ if flag.starts_with("--") => {
                 return Err(argument_error(&format!("unknown flag {flag:?}")));
             }
@@ -254,12 +260,17 @@ where
         }
         _ => return Err(argument_error("--p1 and --p2 must be supplied together")),
     }
-    if options.second_card.is_some() && options.us == options.first_mover {
+    if options.interactive && options.second_card.is_some() {
+        return Err(argument_error(
+            "--interactive prompts for each revealed card and conflicts with --second-card",
+        ));
+    }
+    if !options.interactive && options.second_card.is_some() && options.us == options.first_mover {
         return Err(argument_error(
             "--second-card requires --us to be the second mover",
         ));
     }
-    if options.second_card.is_none() && options.us != options.first_mover {
+    if !options.interactive && options.second_card.is_none() && options.us != options.first_mover {
         return Err(argument_error(
             "--us is the second mover; provide the revealed opponent card with --second-card 0..3",
         ));
@@ -546,6 +557,22 @@ mod tests {
             panic!("zero pillz is a valid current position");
         };
         assert_eq!(options.pillz, 0);
+    }
+
+    #[test]
+    fn interactive_mode_prompts_for_second_mover_information() {
+        let AdvisorCommand::Run(options) = parse(&["--interactive", "--us", "p2", "--first", "p1"])
+        else {
+            panic!("interactive second-mover mode must not need a one-shot revealed card");
+        };
+        assert!(options.interactive);
+        assert_eq!(options.second_card, None);
+        assert!(parse_args(
+            ["--interactive", "--second-card", "0"]
+                .into_iter()
+                .map(str::to_owned)
+        )
+        .is_err());
     }
 
     #[test]

@@ -1,10 +1,9 @@
-//! Responsive one-round search for the replay-grounded advisor.
+//! Responsive current-round search for the replay-grounded advisor.
 //!
-//! This is deliberately a shallow vertical slice: every current-round pairing is resolved
-//! by the real [`CombatStatDiagnosticV1`] engine, then a terminal result or bounded position
-//! heuristic is folded into the recommendation. It does not claim the continuation-policy
-//! semantics of the TypeScript advisor yet. Keeping that boundary explicit lets the first
-//! Rust UI be useful without presenting a heuristic as a solved future game.
+//! Every current-round pairing is resolved by the real [`CombatStatDiagnosticV1`] engine.
+//! Rounds one and two fold in a bounded position heuristic; rounds three and four use the
+//! exact information-aware continuation in `policy`. The split is explicit so the UI never
+//! presents an opening estimate as a solved future game.
 
 use std::cmp::Ordering;
 use std::time::{Duration, Instant};
@@ -13,6 +12,8 @@ use crate::engine::{
     BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CombatStatDiagnosticV1, MatchStatus,
     PlayerId, FURY_COST,
 };
+
+use super::policy::{continuation_value, ExactValue, PolicyControl};
 
 /// A wager in engine notation. `pillz` excludes the free attack pill and the Fury cost.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -49,6 +50,15 @@ pub struct SearchConfig {
     pub budget: Duration,
 }
 
+/// How nonterminal current-round samples are evaluated.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EvaluationKind {
+    /// Responsive position score used while two or more rounds remain after this one.
+    OneRoundHeuristic,
+    /// Exact conservative continuation policy for roots in rounds three and four.
+    ExactLatePolicy,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RankedMove {
     pub move_: AdvisorMove,
@@ -69,6 +79,7 @@ pub struct SearchSnapshot {
     pub units_total: usize,
     pub elapsed: Duration,
     pub complete: bool,
+    pub evaluation: EvaluationKind,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -191,6 +202,12 @@ pub fn search(
     mut progress: impl FnMut(&SearchSnapshot),
 ) -> SearchSnapshot {
     let started = Instant::now();
+    let evaluation = if game.position().rounds_played >= 2 {
+        EvaluationKind::ExactLatePolicy
+    } else {
+        EvaluationKind::OneRoundHeuristic
+    };
+    let mut policy_control = PolicyControl::for_budget(started, config.budget);
     let opponent = config.us.other();
     let our_moves = legal_moves(game, config.us);
     let opponent_moves = match config.mode {
@@ -218,12 +235,17 @@ pub fn search(
                         expired = true;
                         break 'matrix;
                     }
-                    let sample = evaluate_pair(
+                    let Some(sample) = evaluate_pair(
                         game,
                         config,
                         candidates[candidate_index].move_,
                         opponent_move,
-                    );
+                        evaluation,
+                        &mut policy_control,
+                    ) else {
+                        expired = true;
+                        break 'matrix;
+                    };
                     candidates[candidate_index].push(sample);
                     units_done += 1;
                 }
@@ -233,6 +255,7 @@ pub fn search(
                     units_done,
                     units_total,
                     started.elapsed(),
+                    evaluation,
                     &mut progress,
                     &mut last_publication,
                 );
@@ -245,7 +268,17 @@ pub fn search(
                         expired = true;
                         break 'matrix;
                     }
-                    let sample = evaluate_pair(game, config, candidate.move_, opponent_move);
+                    let Some(sample) = evaluate_pair(
+                        game,
+                        config,
+                        candidate.move_,
+                        opponent_move,
+                        evaluation,
+                        &mut policy_control,
+                    ) else {
+                        expired = true;
+                        break 'matrix;
+                    };
                     candidate.push(sample);
                     units_done += 1;
                 }
@@ -255,6 +288,7 @@ pub fn search(
                     units_done,
                     units_total,
                     started.elapsed(),
+                    evaluation,
                     &mut progress,
                     &mut last_publication,
                 );
@@ -269,6 +303,7 @@ pub fn search(
         units_total,
         started.elapsed(),
         complete,
+        evaluation,
     );
     // Always send a final state for a zero-budget, empty, or between-boundaries stop, but
     // avoid cloning and repainting the final complete matrix twice.
@@ -283,12 +318,20 @@ fn evaluate_pair(
     config: SearchConfig,
     our_move: AdvisorMove,
     opponent_move: AdvisorMove,
-) -> Sample {
+    evaluation: EvaluationKind,
+    policy_control: &mut PolicyControl,
+) -> Option<Sample> {
     let input = round_input(config.first_mover, config.us, our_move, opponent_move);
     let (_, undo) = game
         .make(input)
         .expect("legal advisor moves must execute in a fully admitted match");
-    let sample = evaluate(game, config.us);
+    let sample = evaluate(
+        game,
+        config.us,
+        evaluation,
+        config.first_mover.other(),
+        policy_control,
+    );
     game.unmake(undo);
     sample
 }
@@ -298,11 +341,19 @@ fn publish(
     units_done: usize,
     units_total: usize,
     elapsed: Duration,
+    evaluation: EvaluationKind,
     progress: &mut impl FnMut(&SearchSnapshot),
     last_publication: &mut Option<(usize, bool)>,
 ) {
     let complete = units_done == units_total;
-    let update = snapshot(candidates, units_done, units_total, elapsed, complete);
+    let update = snapshot(
+        candidates,
+        units_done,
+        units_total,
+        elapsed,
+        complete,
+        evaluation,
+    );
     progress(&update);
     *last_publication = Some((units_done, complete));
 }
@@ -323,20 +374,44 @@ fn round_input(
     }
 }
 
-fn evaluate(game: &CombatStatDiagnosticV1, us: PlayerId) -> Sample {
-    let position = game.position();
+fn evaluate(
+    game: &mut CombatStatDiagnosticV1,
+    us: PlayerId,
+    evaluation: EvaluationKind,
+    next_first_mover: PlayerId,
+    policy_control: &mut PolicyControl,
+) -> Option<Sample> {
     let opponent = us.other();
-    let value = match position.status {
+    let status = game.position().status;
+    let opponent_life = game.position().players[opponent].life;
+    let our_life = game.position().players[us].life;
+    let value = match status {
         MatchStatus::Won(winner) if winner == us => 1.0,
         MatchStatus::Won(_) => -1.0,
         MatchStatus::Draw => 0.0,
-        MatchStatus::Playing => position_heuristic(game, us),
+        MatchStatus::Playing => match evaluation {
+            EvaluationKind::OneRoundHeuristic => position_heuristic(game, us),
+            EvaluationKind::ExactLatePolicy => exact_score(continuation_value(
+                game,
+                us,
+                next_first_mover,
+                policy_control,
+            )?),
+        },
     };
-    Sample {
+    Some(Sample {
         value,
-        ko: value == 1.0 && position.players[opponent].life == 0,
+        ko: value == 1.0 && opponent_life == 0,
         // A double knockout still counts as being knocked out, matching the TypeScript UI.
-        koed: position.players[us].life == 0,
+        koed: our_life == 0,
+    })
+}
+
+const fn exact_score(value: ExactValue) -> f64 {
+    match value {
+        ExactValue::Loss => -1.0,
+        ExactValue::Draw => 0.0,
+        ExactValue::Win => 1.0,
     }
 }
 
@@ -372,6 +447,7 @@ fn snapshot(
     units_total: usize,
     elapsed: Duration,
     complete: bool,
+    evaluation: EvaluationKind,
 ) -> SearchSnapshot {
     let mut ranked: Vec<_> = candidates.iter().map(Candidate::ranked).collect();
     ranked.sort_by(compare_ranked);
@@ -381,6 +457,7 @@ fn snapshot(
         units_total,
         elapsed,
         complete,
+        evaluation,
     }
 }
 
@@ -482,6 +559,18 @@ mod tests {
         }
     }
 
+    fn shallow_evaluate(game: &mut CombatStatDiagnosticV1, us: PlayerId) -> Sample {
+        let mut control = PolicyControl::for_budget(Instant::now(), Duration::from_secs(1));
+        evaluate(
+            game,
+            us,
+            EvaluationKind::OneRoundHeuristic,
+            PlayerId::P1,
+            &mut control,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn legal_actions_match_the_reference_counts_and_fury_cost() {
         let twelve = test_game(20, 12, (6, 3), (6, 3));
@@ -559,6 +648,7 @@ mod tests {
         assert_eq!(first.ranked.len(), 20);
         assert_eq!(first.units_total, 400);
         assert_eq!(first_updates, 20);
+        assert_eq!(first.evaluation, EvaluationKind::OneRoundHeuristic);
         assert!(first.ranked.iter().all(|candidate| candidate.samples == 20));
 
         let mut second_updates = 0;
@@ -597,8 +687,8 @@ mod tests {
                 },
             ))
             .unwrap();
-        let ours = evaluate(&knockout, PlayerId::P1);
-        let theirs = evaluate(&knockout, PlayerId::P2);
+        let ours = shallow_evaluate(&mut knockout, PlayerId::P1);
+        let theirs = shallow_evaluate(&mut knockout, PlayerId::P2);
         assert_eq!((ours.value, ours.ko, ours.koed), (1.0, true, false));
         assert_eq!((theirs.value, theirs.ko, theirs.koed), (-1.0, false, true));
         knockout.unmake(undo);
@@ -620,11 +710,46 @@ mod tests {
                 },
             ))
             .unwrap();
-        let p1 = evaluate(&position, PlayerId::P1).value;
-        let p2 = evaluate(&position, PlayerId::P2).value;
+        let p1 = shallow_evaluate(&mut position, PlayerId::P1).value;
+        let p2 = shallow_evaluate(&mut position, PlayerId::P2).value;
         assert!(p1.abs() < 1.0);
         assert_eq!(p1, -p2);
         position.unmake(undo);
+    }
+
+    #[test]
+    fn round_three_uses_exact_information_aware_continuations_and_restores_root() {
+        let mut game = test_game(20, 0, (7, 3), (6, 2));
+        for (slot, first_mover) in [(0, PlayerId::P1), (1, PlayerId::P2)] {
+            game.make(round_input(
+                first_mover,
+                PlayerId::P1,
+                AdvisorMove {
+                    hand_index: slot,
+                    pillz: 0,
+                    fury: false,
+                },
+                AdvisorMove {
+                    hand_index: slot,
+                    pillz: 0,
+                    fury: false,
+                },
+            ))
+            .unwrap();
+        }
+        let before = game.clone();
+        let result = search(
+            &mut game,
+            config(SearchMode::First, Duration::from_secs(1)),
+            |_| {},
+        );
+        assert!(result.complete);
+        assert_eq!(result.evaluation, EvaluationKind::ExactLatePolicy);
+        assert_eq!((result.units_done, result.units_total), (4, 4));
+        assert!(result.ranked.iter().all(|candidate| {
+            (-1.0..=1.0).contains(&candidate.average) && [-1.0, 0.0, 1.0].contains(&candidate.worst)
+        }));
+        assert_eq!(game, before);
     }
 
     #[test]

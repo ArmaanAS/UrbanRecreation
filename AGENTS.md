@@ -34,7 +34,8 @@ deno task advise                 # live view; starts its capture server automati
 deno task advise --replay 866431 --budget 10   # grade your moves in a captured battle
 deno task rust:check             # Rust library + optional historical advisor compile check
 deno task rust:test              # Rust foundation, catalog, replay and current base-engine tests
-deno task rust:advise --plain    # current Rust engine: strict demo/manual one-round TUI
+deno task rust:advise --plain    # current Rust engine: strict current-round TUI
+deno task rust:advise --interactive --plain  # manually advance the supported match
 UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (off by default)
 ```
 
@@ -132,10 +133,12 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   correctness oracle.
 - Do not revive the historical perfect-information advisor as the live recommendation
   model. The current hidden-information `Search`/`Policy` behavior must be ported explicitly.
-- `rust/src/advisor/` is the first current-engine vertical slice: strict manual/demo input,
-  a complete current-round make/unmake matrix, deadline-safe partial results, and a bounded
-  static terminal view. Its nonterminal score is deliberately labelled a one-round
-  heuristic. Do not present it as live capture or continuation-policy parity.
+- `rust/src/advisor/` is the current-engine vertical slice: strict manual/demo input, a
+  complete current-round make/unmake matrix, deadline-safe partial results, a bounded
+  terminal view, and a manual four-round session. Rounds 1–2 deliberately use a labelled
+  position heuristic; rounds 3–4 use an exact conservative policy whose reply may depend
+  on a visible opposing card but not hidden pillz/Fury. Do not present it as live capture,
+  opening-prior, blind-second, round-2, or complete TypeScript policy parity.
 - Initial integration should use a versioned JSON-lines worker owned by the TypeScript
   advisor. Reconsider in-process FFI only after correctness and protocol stability.
 

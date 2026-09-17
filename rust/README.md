@@ -35,6 +35,7 @@ From the repository root, run the strict supported demo:
 
 ```sh
 deno task rust:advise --plain
+deno task rust:advise --interactive --plain
 ```
 
 The same executable accepts exact card identities and levels:
@@ -46,13 +47,18 @@ cargo run --release --locked --manifest-path rust/Cargo.toml \
   --p2 441:1,444:1,445:1,447:1 --plain
 ```
 
-Run `deno task rust:advise --help` for first/second-mover, night, budget, and terminal-size
-options. Construction goes through `CatalogCombatStatMatchV1`, so an unsupported card
-effect produces an error instead of a plausible-looking wrong recommendation. The search
-uses real engine make/unmake over every legal current-round pairing and the TUI shows both
-the average and worst sampled result. Nonterminal continuations currently use a bounded
-one-round heuristic; live capture, captured opening weights, and the TypeScript conservative
-continuation policy remain to be ported.
+Run `deno task rust:advise --help` for first/second-mover, night, budget, interactive, and
+terminal-size options. Construction goes through `CatalogCombatStatMatchV1`, so an
+unsupported card effect produces an error instead of a plausible-looking wrong
+recommendation. The search uses real engine make/unmake over every legal current-round
+pairing and the TUI shows both the average and worst sampled result.
+
+Interactive mode records resolved moves as `SLOT:PILLZ` or `SLOT:PILLZ:F`, alternates the
+explicit first mover, and asks for the visible opposing card before second-mover searches.
+Rounds 1–2 use the bounded position heuristic. Rounds 3–4 recursively solve exact terminal
+win/draw/loss values with the conservative pure policy: one response may depend on the
+opponent's visible card, but never on hidden pillz or Fury. Live capture, captured opening
+weights, blind-second work, and round-2 continuation search remain to be ported.
 
 ## Historical engine usage
 

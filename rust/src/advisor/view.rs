@@ -36,8 +36,8 @@ pub struct AdvisorViewModel {
     pub p1: AdvisorSide,
     pub p2: AdvisorSide,
     pub us: PlayerId,
-    /// Usually `ONE-ROUND HEURISTIC`; supplied by the caller so future solver modes do
-    /// not have to fork the renderer.
+    /// Such as `ONE-ROUND HEURISTIC` or `EXACT LATE POLICY`; supplied by the caller so
+    /// solver modes do not have to fork the renderer.
     pub mode: String,
     /// A short, visible statement of what this solver does not yet model.
     pub limitation: String,
@@ -437,7 +437,7 @@ fn clip_ansi(line: &str, width: usize, colour: ColourMode) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::advisor::search::{AdvisorMove, RankedMove, SearchSnapshot};
+    use crate::advisor::search::{AdvisorMove, EvaluationKind, RankedMove, SearchSnapshot};
     use std::time::Duration;
 
     fn card(name: &str, played: bool) -> AdvisorCard {
@@ -483,6 +483,7 @@ mod tests {
             units_total: 16,
             elapsed: Duration::from_millis(12),
             complete,
+            evaluation: EvaluationKind::OneRoundHeuristic,
         }
     }
 

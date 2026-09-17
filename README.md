@@ -61,14 +61,18 @@ The normal Rust build is a library and does not compile the historical HTTP advi
 deno task rust:check
 deno task rust:test
 deno task rust:advise --plain
+deno task rust:advise --interactive --plain
 ```
 
 `rust:advise` defaults to a deterministic supported demo and accepts exact `id:level`
 hands; run `deno task rust:advise --help` for the complete interface. It resolves the real
 current Rust engine's complete current-round matrix with make/unmake and renders a bounded
-terminal ranking. This first vertical slice is deliberately labelled as a one-round
-heuristic: it does not yet ingest the live capture stream or implement the TypeScript
-continuation policy.
+terminal ranking. `--interactive` carries the same strict match through four manually
+observed rounds, asking for the opponent's revealed card before second-mover advice and
+showing updated resources after each resolution. Rounds 1–2 remain clearly labelled
+position heuristics; rounds 3–4 use an exact conservative continuation policy that never
+conditions a reply on hidden pillz or Fury. It does not yet ingest the live capture stream,
+use captured opening weights, or claim complete TypeScript policy parity.
 
 To inspect the old advisor explicitly:
 

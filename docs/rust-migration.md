@@ -432,12 +432,22 @@ terminal ranking. The default supported demo evaluates 8,464 pairings in a few m
 in a warmed release build. First- and second-mover matrices, deadline cutoffs, deterministic
 visible-percent ranking, root restoration, clipping, and ANSI/plain equivalence are tested.
 
-This is a usable integration checkpoint, not solver parity. It uses a clearly labelled
-one-round position heuristic after nonterminal rounds, samples current hidden choices
-uniformly, accepts manual exact-card input rather than live capture state, and only admits
+That first checkpoint was usable, not solver parity. It used a clearly labelled one-round
+position heuristic after nonterminal rounds, sampled current hidden choices uniformly,
+accepted manual exact-card input rather than live capture state, and only admitted
 the engine's current fail-closed effect subset. Do not compare its displayed score or
 runtime with the TypeScript continuation-policy solver as though they were the same
 algorithm.
+
+The next vertical slice adds a manual four-round session and exact late-game policy.
+`--interactive` retains committed rounds in the real engine, alternates the explicit first
+mover, and requests the revealed opposing card before second-mover advice. From round 3,
+nonterminal samples recurse to exact win/draw/loss values with the same essential
+information-set rule as `Policy.ts`: our response can vary by visible card but not by hidden
+pillz or Fury. Cancellation unwinds every made round before returning. Rounds 1–2 keep the
+bounded heuristic by design; an effect-free twelve-pill upper count is roughly 69 million
+paired histories from round 2 versus about 210 thousand from round 3, before effect-driven
+resource growth.
 
 Do not revive the old perfect-information recommendation model as the live advisor. Port
 the current TypeScript behavior deliberately:
