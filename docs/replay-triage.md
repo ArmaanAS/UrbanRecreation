@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
 Status from `deno test -A --no-check tests/replay/` against 359 captured battles
-(352 replay-ready, 7 incomplete/Dojo ignored): 304 replay exactly and 48 mismatch. Each entry
+(352 replay-ready, 7 incomplete/Dojo ignored): 310 replay exactly and 42 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -34,6 +34,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-16 | 277 | 45 | Riots Victory-or-Defeat Pillz now applies after its owner's KO |
 | 2026-09-16 | 278 | 44 | Pr Hide's exact printed Victory-or-Defeat Pillz ability now also applies after KO |
 | 2026-09-17 | 304 | 48 | +31 captures extracted (29 committed but never extracted, plus 2 new); 4 fresh mismatches awaiting triage |
+| 2026-09-17 | 310 | 42 | Bet > N Pillz gates its effect; Fury settles with the Damage dealt; a gift of Opp. Pillz needs no pool |
 
 ## Fixed
 
@@ -79,6 +80,37 @@ the same fully searched recommendation is 86%. Reanimate is also allowed to lift
 from zero and prevent KO, while a stopped Reanimate does nothing; 1080877 supplies the
 captured Stop Opp. Ability case. Tests in `tests/ability/Reanimate.test.ts` and
 `tests/solver/Policy.test.ts` pin all three behaviours plus the displayed percentage.
+
+### Bet > N Pillz is a condition, not decoration
+The prefix was split off as a condition and then matched nothing in `ConditionType`, so it
+fell through to UNDEFINED and every one of these abilities fired unconditionally. The server
+states the rule itself, identically on all 14 captured `betPillzLink: "more"` entries: the
+effect applies "only if the player has bet a number of Pillz strictly greater than N,
+including free Pillz and excluding Fury". So the test is `bet + 1 > N`, and Fury's three
+Pillz - paid, but not bet - do not count. 1207064 r0 has Tyd win on five Pillz (6 > 6 is
+false) and gain no Life; 1131144 r1 has Ilarius bet nothing, leaving Rescue's Support bonus
+to carry Callie to 48 Attack; 901004 r0 has Kubrat Cr bet one and take no Life. Fixed
+901004, 1131144, 1207064. Tests in `tests/ability/BetPillz.test.ts`.
+
+### Fury is settled with the Damage dealt, not with the Damage modifiers
+`CardBattle` added Fury's +2 before the Attack phase, so every POST modifier saw it. Goran's
+"+2 Attack Per Opp. Damage" then read a Fury Uuber as 4 Damage instead of 2 and gave Goran
+28 Attack where the server reported 24 (8x4 + 2x2 - Hive's Equalizer 3x4). The +2 now lands
+after the POST buckets and before the life loss, so the Attack phase and the Attack
+modifiers see the printed Damage while the damage dealt and every END effect still count it.
+Own and opposing Damage modifiers were already earlier than this (PRE2 / PRE1) and are
+unaffected. Fixed 1093129, 1130726. Tests in `tests/ability/FuryDamage.test.ts`.
+
+Whether the multiplier is the opponent's printed Damage or their modified Damage minus Fury
+is still open: the only two captured rounds with a Per Opp. Damage card (925899 r0, 1130726
+r3) agree on both readings. This implements the second.
+
+### A gift of Opp. Pillz does not need a non-empty pool
+`BasicModifier.canApply` required `data.opp.pillz > 0` for every opposing Pillz effect. That
+guard exists so a removal cannot drive the counter negative, but it also refused to *pay*
+a player who had none: in 1130425 r2 Pr SenQ's "Defeat: +1 Opp. Pillz" was dropped because
+its Rescue opponent had just spent their last three. It now applies to removals only.
+Fixed 1130425. Tests in `tests/ability/OppPillz.test.ts`.
 
 ### Bonus before ability, reductions by descending Min
 `Ability.card()` compiles the clan bonus before the ability, and `Events.execute()` sorts the
@@ -212,21 +244,17 @@ the server's completed-round totals before solving the next decision. Therefore 
 correctly starts with 3 pillz and cannot offer the impossible fourth pill, while the replay
 continues to fail and keeps the engine bug visible.
 
-### Damage Exchange — 901004
-The inactive-bonus half of this entry is a false lead: across the captures there are 23
-played rounds where the server sends no clan bonus, and in every one the card is the only
-member of its clan in the hand. Most of those games already replay exactly, so the
-≥2-same-clan rule is already right and nothing needs doing there.
+### Inactive clan bonuses — nothing to do
+Across the captures there are 23 played rounds where the server sends no clan bonus, and in
+every one the card is the only member of its clan in the hand. Most of those games already
+replay exactly, so the ≥2-same-clan rule is already right.
 
-What is left is Damage Exchange, and 901004 r0 pins its semantics completely: Waldegrin Cr
-lv5 has a written Damage of 1 and Kubrat Cr lv5 has 8, and the server reports Waldegrin
-fighting at 8 and Kubrat at 1 - the two *base* values swapped, exactly as `abilityData` 1588
-says ("The starting Damage (written on the card) of your card is exchanged with that of your
-opponent's", sideAffected "both", attributeAction "copy"). Kubrat then deals 1.
-`ExchangeModifier` already does precisely that swap, so the bug is elsewhere in the round:
-the engine has Kubrat dealing 6, which is neither base (8) nor the swapped value (1). Find
-where the 2 goes missing before touching the modifier. Only 3 captured rounds play a Damage
-Exchange card at all, one of them on a loss.
+Damage Exchange was filed here with it and was never the bug. 901004 r0 pins the exchange
+itself: Waldegrin Cr lv5 writes 1 Damage and Kubrat Cr lv5 writes 8, and the server reports
+them fighting at 8 and 1 - the two *base* values swapped, as `abilityData` 1588 says, and
+`ExchangeModifier` already did exactly that. The missing 5 Life was Kubrat's *other* text,
+"Bet > 11 Pillz: -5 Opp. Life Min 0", firing on a one-Pillz bet; see the fixed entry above.
+Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss.
 
 ### Revenge / Damage Impose
 - 874712 r1 Tina "Revenge: Power And Damage +2" (lost previous round) vs Kochar "Damage
@@ -244,7 +272,7 @@ Exchange card at all, one of them on a loss.
 
 ## Fresh capture backlog
 
-The expanded corpus now has 44 additional mismatches that have not yet been
+The expanded corpus now has 39 additional mismatches that have not yet been
 grouped or attributed to rules. They are recorded as regression targets only; inspect the
 first failing round and group them by ability keyword before changing the engine:
 
@@ -252,11 +280,11 @@ first failing round and group them by ability keyword before changing the engine
 943231, 946810, 947010, 947670, 948108, 948390, 949439, 956902, 1023946,
 1024592, 1024732, 1024821, 1025413, 1059149, 1060341, 1065308, 1066210,
 1069506, 1078555, 1078820, 1079078, 1088641, 1089830, 1089974, 1090269,
-1091235, 1091381, 1092066, 1093129, 1093569, 1130425, 1130726, 1131144,
-1207064.
+1091235, 1091381, 1092066, 1093569.
 
-The last four arrived on 2026-09-17 with the 31 newly extracted captures and are the only
-genuinely new ground truth in that list.
+The five that arrived with the 2026-09-17 captures are no longer here: 1130425, 1130726,
+1131144, 1207064 and 1093129 are all fixed above, and so is 901004, which had been filed
+under Damage Exchange since the first triage pass.
 
 ## Legacy tests
 - `tests/Game_2.test.ts` "Protection" uses empty card names (never passed).

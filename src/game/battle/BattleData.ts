@@ -12,6 +12,12 @@ export default class BattleData {
   opp: Player;
   oppCard: Card;
   oppPillzUsed: number;
+  /**
+   * What a `Bet > N Pillz` condition compares against: the Pillz staked plus the free
+   * one, with Fury's three excluded. `pillz1` arrives with Fury already folded in, since
+   * the Attack calculation and every Per Pillz effect want the full cost.
+   */
+  betPillz: number;
   events: Events;
   constructor(
     round: PlayerRound,
@@ -23,6 +29,7 @@ export default class BattleData {
     pillz2: number,
     events: Events,
     compile = true,
+    fury1 = false,
   ) {
     // round is necessary for conditions
     this.round = round;
@@ -30,6 +37,7 @@ export default class BattleData {
     this.player = p1;
     this.card = card1;
     this.playerPillzUsed = pillz1;
+    this.betPillz = pillz1 - (fury1 ? 3 : 0) + 1;
 
     this.opp = p2;
     this.oppCard = card2;

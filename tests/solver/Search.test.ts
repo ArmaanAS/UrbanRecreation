@@ -190,3 +190,63 @@ Deno.test("Node.toString reports on the mover's side, in [-1, 1]", () => {
     "[Loss] 2 4 false",
   );
 });
+
+// The hidden-wager order decides what a partial SECOND-mode average is standing on. The
+// read panel's three defaults come first; everything after them is sampled middle-out so
+// the early rows already span low, middle and high bets of both kinds.
+const answeringTwelve = () => {
+  const g = new Game(
+    new Player(12, 12, 0),
+    new Player(12, 12, 1),
+    HandGenerator.handOf(
+      ["Natrang", "Natrang", "Natrang", "Natrang"] as HandOf<string>,
+      [1, 1, 1, 1] as HandOf<number | undefined>,
+    ),
+    HandGenerator.handOf(
+      ["Natrang", "Natrang", "Natrang", "Natrang"] as HandOf<string>,
+      [1, 1, 1, 1] as HandOf<number | undefined>,
+    ),
+    Turn.PLAYER_1,
+    false,
+  );
+  g.select(0, 4, false, false);
+  return quiet(() => new Search(g));
+};
+
+Deno.test("the read panel's three hypotheses are still settled first", () => {
+  const s = answeringTwelve();
+
+  assertEquals(s.mode, SearchMode.SECOND);
+  assertEquals(
+    s.opponentMoves.slice(0, 3).map((m) => `${m.pillz} ${m.fury}`),
+    ["12 false", "0 false", "9 true"],
+  );
+});
+
+Deno.test("the hidden wagers after them are sampled middle-out", () => {
+  const s = answeringTwelve();
+  const after = s.opponentMoves.slice(3);
+
+  // Plain and Fury alternate, and each family starts at its own midpoint.
+  assertEquals(
+    after.slice(0, 4).map((m) => `${m.pillz} ${m.fury}`),
+    ["6 false", "4 true", "3 false", "1 true"],
+  );
+  // Nothing is lost or duplicated by the reordering.
+  assertEquals(
+    new Set(s.opponentMoves.map((m) => `${m.pillz} ${m.fury}`)).size,
+    s.opponentMoves.length,
+  );
+  assertEquals(s.samples, s.opponentMoves.length);
+});
+
+Deno.test("an early average already spans the range of bets", () => {
+  const s = answeringTwelve();
+  const early = s.opponentMoves.slice(0, 8).filter((m) => !m.fury);
+  const bets = early.map((m) => m.pillz).sort((a, b) => a - b);
+
+  assertEquals(bets[0], 0);
+  assertEquals(bets[bets.length - 1], 12);
+  // At least one wager from the middle third, which carries most of the opening prior.
+  assertEquals(bets.some((p) => p >= 4 && p <= 8), true);
+});

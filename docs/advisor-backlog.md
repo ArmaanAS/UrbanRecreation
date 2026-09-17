@@ -1,10 +1,20 @@
 # Advisor backlog
 
-## Make early searches useful
+## Make early searches useful (implemented 2026-09-17)
 
-- Improve progressive sampling order. When answering a card in round 1, spread
-  the first few samples across low, middle, all-in, plain and Fury bets instead
-  of presenting an average dominated by the current extreme-first ordering.
+- SECOND-mode hidden wagers are sampled read-panel defaults first (plain all-in,
+  zero, Fury all-in), then middle-out: each of the plain and Fury families is
+  walked by repeated bisection and the two are interleaved. Enumeration order
+  used to continue outwards from those three extremes, so for most of a
+  round-one search the running average stood on them, while the wagers in
+  between carry most of the captured opening prior's weight.
+- The reordering is confined to `Search`'s SECOND mode. `legalMoves` keeps the
+  probe order `Analysis.iterTree` and the Rust `legal_moves` mirror, and the
+  Rust worker orders its own hidden-wager column independently, so no parity
+  gate compares the two orders - only completed results.
+- Pinned in `tests/solver/Search.test.ts`: the panel's three hypotheses stay
+  first, the next four alternate plain and Fury from each family's midpoint, and
+  nothing is dropped or duplicated.
 
 ## Worker pool (implemented 2026-09-11)
 
@@ -27,8 +37,14 @@
 - Narrow initial scope: round 4, exactly one card remains, at most three pillz,
   advisor has a settled legal recommendation, and battle / side / turn identity
   all agree.
-- Capture and document the site's current manual-play request before
-  implementing anything.
+- The request is already in every capture, as a `play` entry:
+  `{"requests": [{"call": "battles.play", "params": {"id": <battle>, "characterInBattleID":
+  <1-8, the absolute seat slot>, "pillz": <bet, free Pillz excluded>, "fury": <bool>}}]}`.
+  `captures/battles/1207064.jsonl` has one per move. The capture records no
+  authentication: the site's session carries it, which is why any sender has to
+  live in the userscript.
+- Nothing beyond that documentation should be built without the owner asking for
+  it explicitly, and only after checking the game's automation rules.
 - Send from the browser userscript, which owns the authenticated session. Never
   copy tokens from `ur_log.jsonl` into the advisor or another persisted file.
 - Make submission one-shot and idempotent per battle, visibly armed in the TUI,

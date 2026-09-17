@@ -6,6 +6,12 @@ import { type Clan, type ClanId, ClanIdMap } from "@/game/types/CardTypes.ts";
 import { DEBUG } from "../utils/Debug.ts";
 
 const VICTORY_OR_DEFEAT_ONE_PILLZ = "Victory Or Defeat : +1 Pillz";
+/**
+ * "Bet > N Pillz: ..." only activates when the bet is strictly greater than N,
+ * "including free Pillz and excluding Fury" - the server's own wording on every
+ * ability carrying `betPillzLink: "more"` (captures/abilities.json 4657, 4893, 4949).
+ */
+const BET_MORE_PILLZ = /^Bet > (\d+) Pillz$/i;
 const PR_HIDE_ID = 1568;
 const PR_HIDE_LEVEL = 3;
 
@@ -35,6 +41,7 @@ export enum ConditionType {
   INFILTRATED = 22,
   VERSUS = 23,
   AFTER = 24,
+  BET = 25,
 }
 
 export default class Condition {
@@ -42,6 +49,8 @@ export default class Condition {
   type: ConditionType;
   stop!: string;
   clans!: Clan[];
+  /** Threshold of a `Bet > N Pillz` condition. */
+  bet!: number;
   constructor(s: string) {
     this.s = s;
     if (s.endsWith("]")) {
@@ -56,9 +65,15 @@ export default class Condition {
         this.type = ConditionType.INFILTRATED;
       }
     } else {
-      this.type =
-        ConditionType[s.toUpperCase() as keyof typeof ConditionType] ??
-          ConditionType.UNDEFINED;
+      const betMore = BET_MORE_PILLZ.exec(s);
+      if (betMore !== null) {
+        this.type = ConditionType.BET;
+        this.bet = +betMore[1];
+      } else {
+        this.type =
+          ConditionType[s.toUpperCase() as keyof typeof ConditionType] ??
+            ConditionType.UNDEFINED;
+      }
     }
     if (DEBUG) console.log("Condition", s, this.type);
   }
@@ -123,6 +138,8 @@ export default class Condition {
       case ConditionType.AFTER:
         return data.round.lastClan !== undefined &&
           this.clans.includes(data.round.lastClan);
+      case ConditionType.BET:
+        return data.betPillz > this.bet;
       case ConditionType.VERSUS:
         return this.clans.find((c) =>
           data.round.oppHand.map((c) => c.clan).includes(c)

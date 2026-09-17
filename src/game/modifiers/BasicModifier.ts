@@ -205,7 +205,11 @@ export default class BasicModifier extends Modifier {
           return !data.oppCard.life.blocked && !data.card.life.blocked &&
             data.opp.life > 0;
         case Type.PILLZ:
-          return !data.oppCard.pillz.blocked && data.opp.pillz > 0;
+          // The pool only has to hold something when Pillz are being taken out of it -
+          // the guard is there so a removal cannot drive the setter negative. Pr SenQ's
+          // "Defeat: +1 Opp. Pillz" paid an opponent sitting on exactly 0 in 1130425 r2.
+          return !data.oppCard.pillz.blocked &&
+            (this.change > 0 || data.opp.pillz > 0);
         case Type.TUNEOUT:
           return true;
       }

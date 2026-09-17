@@ -34,6 +34,7 @@ export default class CardBattle {
       totalPillz2,
       events1,
       compile,
+      fury1,
     );
     // this.
     const b2 = new BattleData(
@@ -46,6 +47,7 @@ export default class CardBattle {
       totalPillz1,
       events2,
       compile,
+      fury2,
     );
 
     // CardBattle.battle(
@@ -72,14 +74,6 @@ export default class CardBattle {
     events1.execute(EventTime.PRE1, b1);
     events2.execute(EventTime.PRE1, b2);
 
-    if (fury1) {
-      card1.damage.final += 2;
-    }
-
-    if (fury2) {
-      card2.damage.final += 2;
-    }
-
     const a1 = card1.power.final * (pillz1 + 1);
     const a2 = card2.power.final * (pillz2 + 1);
     card1.attack.final = a1;
@@ -95,6 +89,19 @@ export default class CardBattle {
     events2.execute(EventTime.POST3, b2);
     events1.execute(EventTime.POST4, b1);
     events2.execute(EventTime.POST4, b2);
+
+    // Fury is settled where the Damage is dealt, not alongside the card's own Damage
+    // modifiers: the Attack phase above and the POST modifiers still see the printed
+    // Damage. Goran's "+2 Attack Per Opp. Damage" read 2, not 4, against a Fury Uuber in
+    // battle 1130726 r3 (8x4 + 2x2 - Hive Equalizer 3x4 = 24). The END effects and the
+    // life loss below still count it.
+    if (fury1) {
+      card1.damage.final += 2;
+    }
+
+    if (fury2) {
+      card2.damage.final += 2;
+    }
 
     if (DEBUG) {
       console.log(

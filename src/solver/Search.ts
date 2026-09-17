@@ -112,6 +112,34 @@ function* legalMoves(game: Game, indexes: number[]): Generator<Move> {
   }
 }
 
+/**
+ * Midpoint-first ordering: the middle of the list, then the middles of the two halves, and
+ * so on. Walking a bet-sorted list this way means the first few samples already span low,
+ * middle and high wagers, instead of leaving a partial average standing on the extremes.
+ */
+function bisected<T>(items: T[]): T[] {
+  const out: T[] = [];
+  const ranges: [number, number][] = [[0, items.length - 1]];
+  for (let i = 0; i < ranges.length; i++) {
+    const [lo, hi] = ranges[i];
+    if (lo > hi) continue;
+    const mid = (lo + hi) >> 1;
+    out.push(items[mid]);
+    ranges.push([lo, mid - 1], [mid + 1, hi]);
+  }
+  return out;
+}
+
+/** Take from each list in turn, so neither plain nor Fury waits for the other to finish. */
+function interleaved<T>(a: T[], b: T[]): T[] {
+  const out: T[] = [];
+  for (let i = 0; i < a.length || i < b.length; i++) {
+    if (i < a.length) out.push(a[i]);
+    if (i < b.length) out.push(b[i]);
+  }
+  return out;
+}
+
 const terminalValue = (game: Game): number | undefined => {
   switch (game.winner) {
     case Winner.PLAYER_1:
@@ -279,12 +307,21 @@ export default class Search {
           : move.fury && moveCost(move) === hiddenPillz
           ? 2
           : 3;
-      this.outer = hiddenMoves
-        .map((move, order) => ({ move, order }))
-        .sort((a, b) =>
-          priority(a.move) - priority(b.move) || a.order - b.order
-        )
-        .map(({ move }) => move);
+      // Everything after them is sampled middle-out and plain/Fury alternately. The three
+      // above are the extremes of the range, so continuing in enumeration order left the
+      // running average standing on those extremes for most of a round-one search, where
+      // the wagers in between carry most of the captured opening prior's weight.
+      const byBet = (a: Move, b: Move) => a.pillz - b.pillz;
+      const rest = hiddenMoves.filter((move) => priority(move) === 3);
+      this.outer = [
+        ...hiddenMoves
+          .filter((move) => priority(move) < 3)
+          .sort((a, b) => priority(a) - priority(b)),
+        ...interleaved(
+          bisected(rest.filter((move) => !move.fury).sort(byBet)),
+          bisected(rest.filter((move) => move.fury).sort(byBet)),
+        ),
+      ];
       this.inner = this.repliesTo(this.outer[0]);
     } else if (blindSecond) {
       // The opponent is still choosing. Treat every one of their cards and hidden bets as
