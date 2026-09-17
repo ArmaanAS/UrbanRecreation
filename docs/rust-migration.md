@@ -934,10 +934,49 @@ Measure engine and solver performance separately:
 A faster answer from a different policy or a smaller tree is not an implementation speedup.
 Correctness and semantic equivalence are gates before headline comparisons.
 
-One local, fixture-specific `--rust=compare --workers 1` run on battle `877636`'s exact
-round-two FIRST decision reported `rust match`: Rust search took about 46 ms versus about
-2.1 s for single-threaded TypeScript. Those are solver-reported search times from one local
-run, not process-startup measurements or a universal benchmark.
+`deno task time-rust` (`tests/RustCompare.bench.ts`) drives real decision points from
+strict-eligible captures through both implementations and prints each side's time beside the
+semantic verdict, because a faster answer that differs is not a faster answer. It needs the
+release worker, so run `deno task rust:worker` first. Every row below reported `rust match`.
+One local run on 2026-09-17, median of three, single-threaded on both sides:
+
+| Decision | Units | TypeScript | Rust (whole process) |
+| --- | --- | --- | --- |
+| round 1 opening FIRST (`1024673`) | 8464 | 56 ms | 48 ms |
+| round 1 opening SECOND (`1061897`) | 2116 | 19 ms | 45 ms |
+| round 2 exact FIRST (`877636`) | 3519 | 1866 ms | 106 ms |
+| round 3 blind-second (`877636`) | 836 | 17 ms | 43 ms |
+| round 3 exact SECOND (`877636`) | 418 | 7 ms | 43 ms |
+| round 3 exact FIRST (`1069813`) | 252 | 7 ms | 43 ms |
+| round 4 exact FIRST (`877636`) | 11 | 0 ms | 41 ms |
+
+The Rust column is whole-process wall time — spawn, canonical data load, search, response —
+which is what the host actually waits for. About 40 ms of it is that fixed cost, so every
+row under ~250 units is measuring startup rather than search, and TypeScript wins those
+outright by already being warm. The one row where the search dominates is round-two exact
+FIRST, at roughly **18x**. That is the shape to expect: the process boundary costs a flat
+40 ms and buys back an order of magnitude only once the tree is big enough to pay for it.
+
+### Is an exact opening affordable yet?
+
+Round one is a deliberate model choice in both implementations, not a speed limit either
+one hit. `Search.ts` sets `openingEstimate = round === 1` and `search_with_control` picks
+`EvaluationKind::OpeningEstimate` below `rounds_played >= 1`; both then score the whole
+8464-pairing matrix with the same one-round position heuristic and weight replies by the
+same fixed 198-play prior. The two round-one rows above match because they are running the
+same model, not because Rust solved anything TypeScript could not.
+
+Forcing `ExactContinuationPolicy` at round zero in a local throwaway build measured the
+complete exact opening in release Rust at **6.2 s on the supported demo draw and 11.6 s,
+14.2 s and 17.7 s on captures `925719`, `1024673` and `1089346`** — single-threaded, all
+8464 units, no deadline cutoff. At the 18x ratio above the same work in TypeScript would be
+roughly two to five minutes, which is why the heuristic exists.
+
+So an exact opening is not out of reach in Rust the way it is in TypeScript, but 6-18 s is
+still far past a live turn timer, and the honest options are a deadline-bounded partial
+exact search (the search already publishes progressive snapshots and commits hypothesis
+columns transactionally), the existing worker pool, or a transposition table. None of that
+is a measurement yet. The patch used above was reverted and is not in the tree.
 
 ## Working commands
 
@@ -950,4 +989,8 @@ deno test -A --no-check
 cargo fmt --manifest-path rust/Cargo.toml -- --check
 cargo check --manifest-path rust/Cargo.toml --locked --all-features
 cargo test --manifest-path rust/Cargo.toml --locked
+
+# Head-to-head timing (needs the release worker)
+deno task rust:worker
+deno task time-rust
 ```

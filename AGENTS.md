@@ -40,6 +40,7 @@ deno task rust:advise --plain    # current Rust engine: strict current-round TUI
 deno task rust:advise --interactive --plain  # manually advance the supported match
 deno task rust:advise --replay 877636 --plain  # grade and verify a real captured match
 deno task rust:advise --replay 1024673 --plain # SOA + round-two KO replay smoke
+deno task time-rust              # same decisions in both solvers, time + semantic verdict
 deno task advise --rust=compare  # TS stays authoritative; compare every supported Rust mode
 deno task advise --rust=use      # use complete protocol-validated Rust results, else TS fallback
 UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (off by default)
