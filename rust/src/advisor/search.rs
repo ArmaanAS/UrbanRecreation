@@ -40,6 +40,9 @@ pub enum SearchMode {
     First,
     /// The opponent's card is visible, but its pillz and Fury remain hidden.
     Second { opponent_hand_index: u8 },
+    /// The opponent moves first but has not revealed a card. Every row is one fixed reply
+    /// against every unplayed opponent card and its hidden pillz/Fury wager.
+    BlindSecond,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -236,7 +239,8 @@ fn ordered_bets(available: u16) -> Vec<(u16, bool)> {
 /// Evaluates the current round until every pairing is complete or the time budget expires.
 ///
 /// The callback receives immutable, already-ranked snapshots at bounded useful boundaries:
-/// after a full reply set in First mode or a hidden wager across all replies in Second mode.
+/// after a full reply set in First mode or one complete unknown-opponent column across all
+/// replies in Second and BlindSecond modes.
 /// Publication happens only after undo restores the root, so cancellation and callback
 /// code can never observe a half-resolved position.
 pub fn search(
@@ -281,6 +285,9 @@ fn search_with_control(
             .into_iter()
             .filter(|move_| move_.hand_index == opponent_hand_index)
             .collect(),
+        // The opponent has not committed a visible card yet. Keep every card/wager action
+        // as a separate hypothesis, while candidates below remain our fixed replies.
+        SearchMode::BlindSecond => legal_moves(game, opponent),
     };
     let units_total = our_moves.len().saturating_mul(opponent_moves.len());
     let mut candidates: Vec<_> = our_moves.into_iter().map(Candidate::new).collect();
@@ -288,10 +295,11 @@ fn search_with_control(
     let mut expired = false;
     let mut last_publication: Option<(usize, bool)> = None;
 
-    // A publication is transactional. First mode commits a whole reply row; Second mode
-    // commits a whole hidden-wager column. A deadline or policy cancellation inside either
-    // block discards its buffered samples, so ranked candidates never contain incomparable
-    // partial blocks and `units_done` always counts published work.
+    // A publication is transactional. First mode commits a whole reply row; Second and
+    // BlindSecond modes commit one whole hidden-opponent column. A deadline or policy
+    // cancellation inside either block discards its buffered samples, so ranked candidates
+    // never contain incomparable partial blocks and `units_done` always counts published
+    // work.
     match config.mode {
         SearchMode::First => {
             'matrix: for candidate_index in 0..candidates.len() {
@@ -330,7 +338,7 @@ fn search_with_control(
                 );
             }
         }
-        SearchMode::Second { .. } => {
+        SearchMode::Second { .. } | SearchMode::BlindSecond => {
             'matrix: for &opponent_move in &opponent_moves {
                 let mut column = Vec::with_capacity(candidates.len());
                 for candidate in &candidates {
@@ -355,7 +363,8 @@ fn search_with_control(
                     candidate.push(sample, weight);
                 }
                 units_done += candidates.len();
-                // This hidden wager has now been tested against every possible response.
+                // This exact hidden wager (and, in blind mode, its card) has now been
+                // tested against every possible fixed response.
                 publish(
                     &candidates,
                     units_done,
@@ -646,6 +655,15 @@ mod tests {
         }
     }
 
+    fn blind_second_config(budget: Duration) -> SearchConfig {
+        SearchConfig {
+            us: PlayerId::P1,
+            first_mover: PlayerId::P2,
+            mode: SearchMode::BlindSecond,
+            budget,
+        }
+    }
+
     fn shallow_evaluate(game: &mut CombatStatDiagnosticV1, us: PlayerId) -> Sample {
         let mut control = PolicyControl::for_budget(Instant::now(), Duration::from_secs(1));
         evaluate(
@@ -817,6 +835,68 @@ mod tests {
         assert_eq!(second.units_total, 100);
         assert_eq!(second_updates, 5);
         assert!(second.ranked.iter().all(|candidate| candidate.samples == 5));
+    }
+
+    #[test]
+    fn blind_second_groups_every_opponent_card_and_wager_into_fixed_reply_rows() {
+        // Round three leaves two cards each. With one pill, each card has two plain
+        // actions, so blind mode has four opponent card/wager hypotheses and four fixed
+        // replies. The completed columns make every row directly comparable.
+        let mut game = round_three_game(1);
+        let before = game.clone();
+        let mut updates = 0;
+        let result = search(
+            &mut game,
+            blind_second_config(Duration::from_secs(1)),
+            |_| updates += 1,
+        );
+
+        assert!(result.complete);
+        assert_eq!(result.evaluation, EvaluationKind::ExactContinuationPolicy);
+        assert_eq!(
+            (result.ranked.len(), result.units_done, result.units_total),
+            (4, 16, 16)
+        );
+        assert_eq!(updates, 4);
+        assert!(result.ranked.iter().all(|candidate| candidate.samples == 4));
+        assert_eq!(game, before);
+    }
+
+    #[test]
+    fn blind_second_uses_exact_continuations_from_round_two() {
+        let mut game = test_game(20, 0, (7, 3), (6, 2));
+        game.make(round_input(
+            PlayerId::P1,
+            PlayerId::P1,
+            AdvisorMove {
+                hand_index: 0,
+                pillz: 0,
+                fury: false,
+            },
+            AdvisorMove {
+                hand_index: 0,
+                pillz: 0,
+                fury: false,
+            },
+        ))
+        .unwrap();
+        let before = game.clone();
+        let result = search(
+            &mut game,
+            blind_second_config(Duration::from_secs(1)),
+            |_| {},
+        );
+
+        assert!(result.complete);
+        assert_eq!(result.evaluation, EvaluationKind::ExactContinuationPolicy);
+        assert_eq!(
+            (result.ranked.len(), result.units_done, result.units_total),
+            (3, 9, 9)
+        );
+        assert!(result.ranked.iter().all(|candidate| {
+            (candidate.average, candidate.worst, candidate.best) == (1.0, 1.0, 1.0)
+        }));
+        assert_eq!(game, before);
     }
 
     #[test]
@@ -1126,6 +1206,42 @@ mod tests {
         assert_eq!(control.nodes(), 5);
         assert!(!result.complete);
         assert_eq!((result.units_done, result.units_total), (4, 8));
+        assert!(result.ranked.iter().all(|candidate| candidate.samples == 1));
+        assert_eq!(callbacks.len(), 1);
+        assert_eq!(callbacks[0].evaluation, result.evaluation);
+        assert_eq!(
+            (
+                callbacks[0].units_done,
+                callbacks[0].units_total,
+                callbacks[0].complete
+            ),
+            (result.units_done, result.units_total, result.complete),
+        );
+        assert!(callbacks[0]
+            .ranked
+            .iter()
+            .all(|candidate| candidate.samples == 1));
+        assert_eq!(game, before);
+    }
+
+    #[test]
+    fn blind_second_discards_a_cancelled_card_wager_column_before_publishing() {
+        let mut game = round_three_game(1);
+        let before = game.clone();
+        // Four fixed replies complete the first unknown card/wager column. The fifth node
+        // begins the next column, whose remaining replies must be discarded on cancellation.
+        let mut control = PolicyControl::for_nodes(5);
+        let mut callbacks = Vec::new();
+        let result = search_with_test_control(
+            &mut game,
+            blind_second_config(Duration::from_secs(1)),
+            &mut control,
+            |snapshot| callbacks.push(snapshot.clone()),
+        );
+
+        assert_eq!(control.nodes(), 5);
+        assert!(!result.complete);
+        assert_eq!((result.units_done, result.units_total), (4, 16));
         assert!(result.ranked.iter().all(|candidate| candidate.samples == 1));
         assert_eq!(callbacks.len(), 1);
         assert_eq!(callbacks[0].evaluation, result.evaluation);

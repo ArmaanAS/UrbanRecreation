@@ -70,8 +70,10 @@ deno task rust:advise --replay 1024673 --plain
 hands; run `deno task rust:advise --help` for the complete interface. It resolves the real
 current Rust engine's complete current-round matrix with make/unmake and renders a bounded
 terminal ranking. `--interactive` carries the same strict match through four manually
-observed rounds, asking for the opponent's revealed card before second-mover advice and
-showing updated resources after each resolution. Round 1 remains clearly labelled an opening
+observed rounds. In rounds 2-4 where the opponent moves first, it first shows a provisional
+blind-second ranking over every unplayed opposing card and hidden wager, then asks for the
+revealed card and replaces it with precise second-mover advice. It shows updated resources
+after each resolution. Round 1 remains clearly labelled an opening
 position estimate, weighted by the TypeScript advisor's literal historical table of 198
 round-one replies captured as of 2026-09-13; rounds 2–4 use an exact conservative
 continuation policy that never conditions a reply on hidden pillz or Fury. `--replay` loads a captured battle through the
@@ -79,8 +81,8 @@ strict catalog boundary, renders and grades every recorded decision, then verifi
 committed round's power, damage, attack, winner, life, and pillz against the server record.
 Battles `877636` and `1024673` are complete supported real draws; the latter exercises
 unconditional Stop Opp. Ability through the real solver/TUI and ends in a round-two KO.
-Rust does not yet ingest the live capture stream, refresh that fixed opening table, use
-blind-second work, or claim complete TypeScript policy parity.
+Rust does not yet ingest the live capture stream, refresh that fixed opening table, run
+searches across workers, expose a process protocol, or claim complete TypeScript policy parity.
 
 To inspect the old advisor explicitly:
 

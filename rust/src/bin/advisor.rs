@@ -360,6 +360,24 @@ fn run_interactive(
         let revealed = if first_mover == prepared.options.us {
             None
         } else {
+            // The live TypeScript advisor begins this provisional work while the opponent
+            // chooses. This synchronous terminal path paints the same fixed-reply ranking
+            // immediately before asking the user which card was revealed. Opening advice
+            // remains deliberately absent: its historical estimate is not a replacement
+            // for the later exact blind-second policy.
+            if session.game().position().rounds_played >= 1 {
+                render_search(
+                    prepared,
+                    session.game_mut(),
+                    SearchConfig {
+                        us: prepared.options.us,
+                        first_mover,
+                        mode: SearchMode::BlindSecond,
+                        budget: Duration::from_millis(prepared.options.budget_ms),
+                    },
+                    output,
+                )?;
+            }
             match prompt_revealed_card(prepared.options.us, &session, input, output)? {
                 Some(slot) => Some(slot),
                 None => {
@@ -609,20 +627,20 @@ fn view_model(
         EvaluationKind::OpeningEstimate => "OPENING ESTIMATE",
         EvaluationKind::ExactContinuationPolicy => "EXACT CONTINUATION POLICY",
     };
-    let limitation = match snapshot.evaluation {
-        EvaluationKind::OpeningEstimate => {
-            if prepared.replay.is_some() {
-                "server-backed strict replay; weighted opening estimate from 198 historical replies"
-            } else {
-                "strict supported draw; weighted opening estimate from 198 historical replies"
-            }
+    let source = if prepared.replay.is_some() {
+        "server-backed strict replay"
+    } else {
+        "strict supported draw"
+    };
+    let limitation = match (snapshot.evaluation, mode) {
+        (_, SearchMode::BlindSecond) => format!(
+            "{source}; provisional fixed replies across unknown opponent card, pillz, and Fury; replaced when their card is revealed"
+        ),
+        (EvaluationKind::OpeningEstimate, _) => {
+            format!("{source}; weighted opening estimate from 198 historical replies")
         }
-        EvaluationKind::ExactContinuationPolicy => {
-            if prepared.replay.is_some() {
-                "server-backed strict replay; exact rounds 2-4 policy; current hidden choices uniform"
-            } else {
-                "strict supported draw; exact rounds 2-4 policy; current hidden choices uniform"
-            }
+        (EvaluationKind::ExactContinuationPolicy, _) => {
+            format!("{source}; exact rounds 2-4 policy; current hidden choices uniform")
         }
     };
     let round = game.position().rounds_played + 1;
@@ -639,9 +657,14 @@ fn view_model(
             SearchMode::Second {
                 opponent_hand_index,
             } => format!("{replay_prefix}{phase} · SECOND · OPP CARD {opponent_hand_index}"),
+            SearchMode::BlindSecond => {
+                format!(
+                    "{replay_prefix}{phase} · BLIND SECOND · OPPONENT CHOOSING · INITIAL ESTIMATE"
+                )
+            }
             SearchMode::First => format!("{replay_prefix}{phase} · FIRST"),
         },
-        limitation: limitation.to_owned(),
+        limitation,
         snapshot,
         supported_cards: HAND_SIZE * PlayerId::ALL.len(),
         provenance_revision: prepared
@@ -744,13 +767,24 @@ mod tests {
         options.plain = true;
         options.budget_ms = 1;
         let prepared = prepare(options).unwrap();
-        // P1 starts rounds 1/3. P2 starts rounds 2/4, so their visible card is supplied
-        // before those searches. Both resolved moves are then recorded in our/their order.
+        // P1 starts rounds 1/3. P2 starts rounds 2/4, so the advisor first paints blind
+        // provisional advice, then asks for their visible card before the precise search.
+        // Both resolved moves are then recorded in our/their order.
         let script = b"0:0\n0:0\n1\n1:0\n1:0\n2:0\n2:0\n3\n3:0\n3:0\n";
         let mut input = Cursor::new(script);
         let mut output = Vec::new();
         run_interactive(&prepared, &mut input, &mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
+        let blind = output
+            .find("BLIND SECOND")
+            .expect("round two must show provisional blind-second advice");
+        let reveal = output
+            .find("Opponent revealed card slot (0..3)")
+            .expect("the card prompt must follow blind advice");
+        let precise = output
+            .find("OPP CARD 1")
+            .expect("revealed-card advice must replace blind advice");
+        assert!(blind < reveal && reveal < precise);
         assert!(output.contains("OPENING ESTIMATE · FIRST"));
         assert!(output.contains("EXACT CONTINUATION POLICY · SECOND · OPP CARD 1"));
         assert!(output.contains("EXACT CONTINUATION POLICY · FIRST"));

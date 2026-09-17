@@ -491,7 +491,12 @@ captured-reply-weighted opening estimate; rounds 2–4 use the conservative exac
 policy. The opening prior is the literal 198-play `OPENING_REPLY_COUNTS` table from the
 TypeScript advisor, captured as of 2026-09-13, with Laplace +1 for unseen wagers. It is
 historical provenance, not a table regenerated from the current corpus. The round-two slice
-does not add blind-second work, workers, or new engine semantics.
+also adds a single-thread blind-second pass in manual sessions: in rounds 2-4 while the
+opponent chooses, every unplayed opponent card and hidden wager is a hypothesis and every
+row remains one fixed reply. A full hypothesis column is committed transactionally, so a
+deadline or policy cancellation never publishes incomparable rows. The visible card then
+replaces that provisional ranking with the ordinary precise second-mover search. This does
+not add workers, a protocol, live capture, or new engine semantics.
 
 The server-backed advisor path loads captures `877636` and `1024673` with `--replay`.
 It derives both exact hands, resources, night state, recording side, and each round's mover
@@ -510,7 +515,7 @@ the current TypeScript behavior deliberately:
 - depth-2 work units and cancellation;
 - the conservative information-aware policy for hidden pillz and Fury;
 - opening-prior refresh from later captures;
-- blind-second handling;
+- blind-second handling (manual single-thread slice landed);
 - visible-percent, knockout, safety, then cost ranking.
 
 Keep the old Rust solver available as a historical reference until equivalence tests cover

@@ -54,13 +54,15 @@ unsupported card effect produces an error instead of a plausible-looking wrong
 recommendation. The search uses real engine make/unmake over every legal current-round
 pairing and the TUI shows both the average and worst sampled result.
 
-Interactive mode records resolved moves as `SLOT:PILLZ` or `SLOT:PILLZ:F`, alternates the
-explicit first mover, and asks for the visible opposing card before second-mover searches.
+Interactive mode records resolved moves as `SLOT:PILLZ` or `SLOT:PILLZ:F` and alternates the
+explicit first mover. In rounds 2-4 where the opponent moves first, it first renders a
+provisional blind-second ranking across every unplayed opponent card and hidden pillz/Fury
+wager, then asks for the visible card and replaces it with the precise second-mover search.
 Round 1 uses a bounded opening estimate, weighted by the TypeScript advisor's literal table
 of 198 round-one replies captured as of 2026-09-13 (with Laplace +1 for unseen wagers).
 Rounds 2–4 recursively solve exact terminal win/draw/loss values with the conservative pure policy: one response may depend on the
-opponent's visible card, but never on hidden pillz or Fury. Live capture, captured opening
-weights refresh, and blind-second work remain to be ported.
+opponent's visible card, but never on hidden pillz or Fury. Live capture, opening-prior
+refresh, workers, and process integration remain to be ported.
 Replay `1024673` is a short end-to-end smoke for the strict catalog, unconditional Stop
 Opp. Ability, server verification, move grading, and the round-two knockout path.
 
