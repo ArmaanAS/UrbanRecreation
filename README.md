@@ -98,7 +98,8 @@ per-wager SECOND outcomes, and the response's shape and numeric bounds. Those ou
 the existing clickable opponent-read panel intact. This structural validation does not prove
 semantic equivalence on each invocation, and unsupported engine effects still fail closed.
 `rust:worker:test` builds the release worker and exercises FIRST, SECOND, and blind-second
-through the real process boundary, including a pinned TypeScript/Rust semantic match.
+through the real process boundary, with pinned TypeScript/Rust semantic matches in all
+three information modes.
 
 To inspect the old advisor explicitly:
 

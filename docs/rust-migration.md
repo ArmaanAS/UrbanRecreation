@@ -613,10 +613,15 @@ does not prove semantic equivalence on every request and is neither full replay 
 complete engine parity. In-process FFI remains a later consideration only after this
 protocol and engine behavior have stayed stable.
 
-The real-process gate runs admissible FIRST, SECOND, and blind-second requests from captures
-`877636`, `1024673`, and `1060199`, and pins an actual `rust match` on an exact `877636`
-decision. Capture `1081463` remains a standalone Rust replay gate: its battle-rule id is 3,
-so the rule-10 TypeScript-hosted worker deliberately rejects it before launch.
+The real-process gate runs admissible requests from every rule-10 strict draw: `877636`,
+`877950`, `1024673`, and `1060199`. It pins complete TypeScript/Rust semantic matches for
+opening and exact FIRST, opening SECOND, and exact blind-second decisions, including at
+least one match on every one of those draws. Each TypeScript
+comparison finishes before another `Game` is constructed because the reference still owns a
+process-global battle cache. Capture `1081463` remains a standalone Rust replay gate: its
+battle-rule id is 3, so the rule-10 TypeScript-hosted worker deliberately rejects it before
+launch. The two rule-6 strict draws are Dojo/incomplete records without TypeScript testcases
+and cannot enter the hosted bridge.
 
 ## Performance measurement
 

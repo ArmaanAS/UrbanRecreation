@@ -111,18 +111,72 @@ Deno.test({
     "release Rust worker handles admissible capture decisions through the production bridge",
   ignore: !workerAvailable,
   async fn() {
-    // One FIRST decision from each rule-10 end-to-end capture, plus the two information
-    // sets that require a partial/live-style capture snapshot.
-    await runDecision(1024673, 0, "first", SearchMode.FIRST);
-    await runDecision(1060199, 0, "first", SearchMode.FIRST);
+    // At least one decision from every rule-10 strict draw, spanning all three live
+    // information modes and both opening and exact continuation evaluation.
+    const openingFirst = await runDecision(
+      1024673,
+      0,
+      "first",
+      SearchMode.FIRST,
+    );
+    // Complete each TS semantic comparison before constructing another Game. The TS
+    // reference still owns a process-global CardBattle cache and supports one live Game.
+    while (openingFirst.search.step()) {
+      /* complete the TypeScript opening matrix */
+    }
+    assertEquals(
+      compareRustSearches(openingFirst.search, openingFirst.rust),
+      "rust match",
+    );
+    const reprisalOpeningFirst = await runDecision(
+      1060199,
+      0,
+      "first",
+      SearchMode.FIRST,
+    );
+    while (reprisalOpeningFirst.search.step()) {
+      /* complete the TypeScript opening matrix */
+    }
+    assertEquals(
+      compareRustSearches(
+        reprisalOpeningFirst.search,
+        reprisalOpeningFirst.rust,
+      ),
+      "rust match",
+    );
+    const openingSecond = await runDecision(
+      877950,
+      0,
+      "second",
+      SearchMode.SECOND,
+    );
+    while (openingSecond.search.step()) {
+      /* complete the TypeScript opening matrix */
+    }
+    assertEquals(
+      compareRustSearches(openingSecond.search, openingSecond.rust),
+      "rust match",
+    );
     const exactFirst = await runDecision(877636, 1, "first", SearchMode.FIRST);
-    await runDecision(1024673, 1, "second", SearchMode.SECOND);
-    await runDecision(877636, 2, "blind", SearchMode.BLIND_SECOND);
     while (exactFirst.search.step()) {
       /* complete the TypeScript exact matrix */
     }
     assertEquals(
       compareRustSearches(exactFirst.search, exactFirst.rust),
+      "rust match",
+    );
+    await runDecision(1024673, 1, "second", SearchMode.SECOND);
+    const blindSecond = await runDecision(
+      877636,
+      2,
+      "blind",
+      SearchMode.BLIND_SECOND,
+    );
+    while (blindSecond.search.step()) {
+      /* complete the TypeScript blind-second matrix */
+    }
+    assertEquals(
+      compareRustSearches(blindSecond.search, blindSecond.rust),
       "rust match",
     );
   },
