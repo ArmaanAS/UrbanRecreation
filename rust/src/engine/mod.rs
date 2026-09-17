@@ -362,12 +362,23 @@ pub(super) enum PostRoundEffect {
     GainOnePillzOnVictoryOrDefeat,
     GainOnePillzAndLifeOnVictory,
     GainTwoPillzOnDefeatMaxEleven,
+    /// Anita's exact Courage conversion. Its magnitude is the selected winner's final
+    /// resolved damage, so Fury and any already-resolved combat damage modifiers count.
+    GainLifeEqualToFinalDamageOnCourageVictory,
     GainLifeOnVictory(u16),
     GainLifeOnDefeat(u16),
     ReanimateLife(u16),
-    GainLifeOnVictoryOrDefeat { life: u16 },
-    ReduceOpponentLifeOnVictoryOrDefeat { life: u16, minimum: u16 },
-    ReduceOpponentLifeOnVictory { life: u16, minimum: u16 },
+    GainLifeOnVictoryOrDefeat {
+        life: u16,
+    },
+    ReduceOpponentLifeOnVictoryOrDefeat {
+        life: u16,
+        minimum: u16,
+    },
+    ReduceOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -517,6 +528,22 @@ impl BaseRulesGame {
                         }
                     }
                     PostRoundEffect::GainTwoPillzOnDefeatMaxEleven => {}
+                    // Anita's reviewed conversion is ordinary, post-damage Victory Life:
+                    // its owner must have moved first, won, and still be living. The
+                    // selected result is final damage (after Fury and combat modifiers),
+                    // not the printed base stat. A terminal zero is deliberately never
+                    // revived without separate capture evidence.
+                    PostRoundEffect::GainLifeEqualToFinalDamageOnCourageVictory
+                        if owner == winner
+                            && owner == input.first_mover
+                            && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(prepared[owner].result.damage)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainLifeEqualToFinalDamageOnCourageVictory => {}
                     // Victory Life is immediate end-of-round work: it sees the damage
                     // result, applies only to the round winner, and can therefore revive
                     // neither a defeated player nor a KO.  `position` is still a private

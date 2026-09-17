@@ -56,6 +56,11 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (924740, 2),
     (963694, 1),
     (970972, 1),
+    (1059454, 4),
+    (1069813, 4),
+    (1078906, 3),
+    (1089346, 4),
+    (1090607, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -219,6 +224,16 @@ fn argos_defeat_capped_pillz_entry(id: u32, description: &str) -> serde_json::Va
     entry
 }
 
+fn anita_courage_damage_to_life_entry(id: u32, description: &str) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "attacker", 1, 0);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry["abilityData"]["specialAction"] = serde_json::json!("convert_dmg_to_life");
+    entry
+}
+
 fn round_scaled_numeric_entry(
     id: u32,
     description: &str,
@@ -302,7 +317,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_sixty_eight_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_eighty_seven_unique_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -338,22 +353,22 @@ fn fixed_server_backed_gate_is_exactly_sixty_eight_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 68);
+    assert_eq!(rounds, 87);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 36, 37, 38, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 202, 257, 266, 292, 310,
-            333, 368, 377, 391, 401, 412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888,
-            916, 980, 1034, 1047, 1158, 1163, 1241, 1310, 1335, 1338, 1342, 1359, 1372, 1375, 1415,
-            1418, 1420, 1518, 1536, 1578, 1628, 1688, 1694, 1714, 1770, 1844, 1845, 1848, 1850,
-            2299, 2329, 2412, 2535, 2881, 2965, 3487, 3677, 3864, 3865, 3897, 4041, 4216, 4297,
-            4299, 4399, 4458, 4464, 4711, 4718, 4757, 4966, 5026, 5085, 5273, 5404, 5520, 5763,
-            5852,
+            6, 36, 37, 38, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 257, 266, 274,
+            292, 310, 333, 367, 368, 377, 391, 401, 412, 520, 536, 577, 578, 585, 612, 713, 741,
+            801, 844, 871, 883, 888, 916, 938, 980, 1034, 1047, 1158, 1163, 1241, 1310, 1335, 1338,
+            1342, 1359, 1372, 1375, 1415, 1418, 1420, 1518, 1536, 1578, 1628, 1634, 1688, 1694,
+            1714, 1770, 1806, 1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881, 2944, 2965,
+            3487, 3677, 3864, 3865, 3897, 4041, 4216, 4297, 4299, 4389, 4399, 4458, 4464, 4711,
+            4718, 4757, 4966, 5026, 5085, 5273, 5404, 5520, 5763, 5849, 5852,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([274, 809, 854, 1399, 1852, 2317, 4303, 4459, 4657, 4695, 4747, 5283,])
+        BTreeSet::from([809, 854, 1399, 1852, 2317, 4303, 4459, 4657, 4695, 4747, 5283,])
     );
     assert_eq!(absent, 4);
 }
@@ -550,7 +565,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 18);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 19);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -606,7 +621,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        18
+        19
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -2456,6 +2471,212 @@ fn uuber_victory_or_defeat_life_unlocks_925719_through_round_two() {
     // opponent from 12 to 11, matching the server's 9 / 11 endpoint.
     assert_eq!(round.round.players[owner].life, 9);
     assert_eq!(round.round.players[owner.other()].life, 11);
+}
+
+#[test]
+fn anita_courage_damage_to_life_is_exactly_ability_274_on_anita_level_three() {
+    const ID: u32 = 274;
+    const DESCRIPTION: &str = "Courage: +1 Life Per Dmg";
+    let catalog = catalog();
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    source.rounds.clear();
+    source.players[0].hand[0].key = CardKey::new(448, 3);
+    source.players[0].hand[0].source_ability = Some(SourceModifier {
+        id: ID,
+        description: DESCRIPTION.to_owned(),
+    });
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        source,
+        &catalog,
+        &one_entry_registry(anita_courage_damage_to_life_entry(ID, DESCRIPTION)),
+        PROJECTION,
+    )
+    .expect("the direct Anita Ability must prepare");
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][0].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+        } if identity.id == ID
+    ));
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::Execute {
+            source_id: ID,
+            predicate: CombatStatPredicateV1::OwnerMovesFirst,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+        }
+    ));
+}
+
+#[test]
+fn anita_courage_damage_to_life_variants_reject_or_remain_disabled_fail_closed() {
+    const ID: u32 = 274;
+    const DESCRIPTION: &str = "Courage: +1 Life Per Dmg";
+    #[derive(Clone, Copy)]
+    enum Mutation {
+        CopyAbility,
+        ValueMinimumOne,
+    }
+    let catalog = catalog();
+
+    // A Bonus placement, copied alias, same-text alias, and malformed direct record must
+    // never become an inert selected no-op. Each is retained in preparation but rejects
+    // when selected.
+    for (label, id, bonus, mutate) in [
+        ("bonus", ID, true, None),
+        ("copied alias", 900_274, false, Some(Mutation::CopyAbility)),
+        ("same-text alias", 900_274, false, None),
+        (
+            "malformed direct record",
+            ID,
+            false,
+            Some(Mutation::ValueMinimumOne),
+        ),
+    ] {
+        let mut source = replay(875375, &catalog);
+        clear_sources(&mut source);
+        source.rounds.clear();
+        let player = PlayerId::P2;
+        source.players[player.index()].hand[0].key = CardKey::new(448, 3);
+        let modifier = Some(SourceModifier {
+            id,
+            description: DESCRIPTION.to_owned(),
+        });
+        if bonus {
+            source.players[player.index()].hand[0].source_bonus = modifier;
+        } else {
+            source.players[player.index()].hand[0].source_ability = modifier;
+        }
+        let mut entry = anita_courage_damage_to_life_entry(id, DESCRIPTION);
+        if let Some(mutation) = mutate {
+            match mutation {
+                Mutation::CopyAbility => {
+                    entry["abilityData"]["specialAction"] = serde_json::json!("copy_ability");
+                }
+                Mutation::ValueMinimumOne => {
+                    entry["abilityData"]["valueMin"] = serde_json::json!(1);
+                }
+            }
+        }
+        let prepared = CombatStatDiagnosticReplayV1::new(
+            source,
+            &catalog,
+            &one_entry_registry(entry),
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{label} must prepare fail-closed: {error}"));
+        let disposition = if bonus {
+            &prepared.preparation()[player][0].bonus
+        } else {
+            &prepared.preparation()[player][0].ability
+        };
+        assert!(
+            matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::Disabled { .. }
+            ),
+            "{label}"
+        );
+        let plan = if bonus {
+            prepared.new_game().card_plans()[player][0].bonus
+        } else {
+            prepared.new_game().card_plans()[player][0].ability
+        };
+        assert!(
+            matches!(
+                plan,
+                CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+            ),
+            "{label}"
+        );
+    }
+
+    // A copied Anita effect on any other card reaches the engine's identity guard during
+    // immutable plan validation, before it can execute even if that card is selected.
+    let mut wrong_card = replay(875032, &catalog);
+    clear_sources(&mut wrong_card);
+    wrong_card.rounds.clear();
+    wrong_card.players[0].hand[0].source_ability = Some(SourceModifier {
+        id: ID,
+        description: DESCRIPTION.to_owned(),
+    });
+    assert!(matches!(
+        CombatStatDiagnosticReplayV1::new(
+            wrong_card,
+            &catalog,
+            &one_entry_registry(anita_courage_damage_to_life_entry(ID, DESCRIPTION)),
+            PROJECTION,
+        ),
+        Err(CombatStatDiagnosticPreparationErrorV1::EnginePlan(_))
+    ));
+}
+
+#[test]
+fn anita_server_replays_pin_active_normal_fury_and_losing_courage() {
+    let catalog = catalog();
+    let registry = registry();
+    for (battle_id, prefix, round_index, expected_damage, expected_life, won) in [
+        // Normal Courage win: 8 + 3 Anita Life from resolved damage = 11.
+        (1059454, 4, 2, 3, 11, true),
+        // Fury win: final resolved damage is five, and the captured endpoint is 17.
+        (1089346, 4, 0, 5, 17, true),
+        // Courage is live but loses, so it gains no Life.
+        (1069813, 4, 0, 5, 10, false),
+    ] {
+        let report = diagnostic(battle_id, &catalog, &registry)
+            .execute_combat_stat_diagnostic_v1_prefix(prefix)
+            .unwrap_or_else(|error| panic!("Anita fixture {battle_id}/{prefix}: {error}"));
+        let round = &report.rounds[round_index];
+        let owner = PlayerId::ALL
+            .into_iter()
+            .find(|player| matches!(
+                round.selected[*player].ability,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    identity: ref id,
+                    effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+                } if id.id == 274
+            ))
+            .unwrap_or_else(|| panic!("battle {battle_id} must select Anita"));
+        assert_eq!(
+            round.round.cards[owner].damage, expected_damage,
+            "battle {battle_id}"
+        );
+        assert_eq!(round.round.cards[owner].won, won, "battle {battle_id}");
+        assert_eq!(
+            round.round.players[owner].life, expected_life,
+            "battle {battle_id}"
+        );
+    }
+
+    // `damageAfter` is a capture transport field rather than replay ground truth.  The
+    // immutable adapter keeps the server's transient resolved `damage` (three here), so
+    // this evidence must not be silently rewritten to the transport value five.
+    let transport_evidence = diagnostic(875375, &catalog, &registry);
+    let round = &transport_evidence.replay().rounds[1];
+    let owner = PlayerId::P2;
+    let slot = usize::from(
+        round
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P2)
+            .expect("875375/r1 has P2's Anita play")
+            .hand_index,
+    );
+    assert!(matches!(
+        transport_evidence.preparation()[owner][slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            identity: ref id,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+        } if id.id == 274
+    ));
+    assert_eq!(
+        round.expected_card_results[owner.index()]
+            .expect("server result")
+            .damage,
+        3
+    );
 }
 
 #[test]

@@ -5,11 +5,12 @@
 //! registry, and refuses a match if any legal card could reach an unsupported effect.
 
 use super::combat_stat_compiler::{
-    classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
-    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
+    classify_combat_stat_effect, classify_defeat_life, classify_defeat_recover_pillz,
+    classify_equalizer_opponent_life_on_victory, classify_komboka_victory_pillz_and_life,
+    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, compact_effect, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
@@ -33,6 +34,8 @@ pub const OCULUS_CLAN_ID: u32 = 56;
 const VORTEX_CLAN_ID: u32 = 45;
 const VORTEX_CATALOG_BONUS_ID: u32 = 43;
 const DEFEAT_RECOVER_DESCRIPTION: &str = "Defeat: Recover 2 Pillz Out Of 3";
+const ANITA_COURAGE_DAMAGE_TO_LIFE_DESCRIPTION: &str = "Courage: +1 Life Per Dmg";
+const ANITA_COURAGE_DAMAGE_TO_LIFE_REGISTRY_ID: u32 = 274;
 const ARGOS_DEFEAT_CAPPED_PILLZ_DESCRIPTION: &str = "Defeat: +2 Pillz Max. 11";
 const ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID: u32 = 1158;
 const LOBO_REANIMATE_REGISTRY_ID: u32 = 4951;
@@ -830,6 +833,48 @@ fn prepare_catalog_source(
             description,
             registry_definition_id,
         );
+    }
+    // This conversion's runtime magnitude is the resolved damage, so it is not a
+    // generic numeric modifier. It is admitted solely through Anita's printed level-3
+    // Ability identity; description aliases, bonus provenance, and Copy have no
+    // catalog authority.
+    if description == ANITA_COURAGE_DAMAGE_TO_LIFE_DESCRIPTION {
+        if anita_courage_damage_to_life_registry_definition_id(card_key, source_kind, catalog_id)
+            .is_some()
+        {
+            return prepare_anita_courage_damage_to_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+            );
+        }
+        let definition = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
     }
     if description == ARGOS_DEFEAT_CAPPED_PILLZ_DESCRIPTION {
         if source_kind == CombatStatEffectSourceV1::Ability
@@ -1973,6 +2018,88 @@ fn prepare_victory_or_defeat_pillz_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
+        },
+    })
+}
+
+/// The immutable catalog can only execute Anita's printed level-three Ability. The
+/// registry's shared text lookup is deliberately not authority: Ellie and Lorea, an
+/// invented Bonus, and dynamic Copy must remain outside this narrow catalog slice.
+fn anita_courage_damage_to_life_registry_definition_id(
+    card_key: CardKey,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+) -> Option<u32> {
+    match (card_key, source_kind, catalog_id) {
+        (
+            CardKey { id: 448, level: 3 },
+            CombatStatEffectSourceV1::Ability,
+            Some(ANITA_COURAGE_DAMAGE_TO_LIFE_REGISTRY_ID),
+        ) => Some(ANITA_COURAGE_DAMAGE_TO_LIFE_REGISTRY_ID),
+        _ => None,
+    }
+}
+
+fn prepare_anita_courage_damage_to_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(ANITA_COURAGE_DAMAGE_TO_LIFE_REGISTRY_ID, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    if !classify_anita_courage_damage_to_life(definition, source_kind) {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::OwnerMovesFirst,
+            effect: CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
         },
     })
 }

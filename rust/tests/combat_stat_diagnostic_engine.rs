@@ -157,6 +157,169 @@ fn vod_spec(
     }
 }
 
+fn anita_spec(power: u16, damage: u16) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(power, damage);
+    base.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        274,
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+    );
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+#[test]
+fn anita_courage_damage_life_plan_is_exactly_identity_card_effect_and_predicate_locked() {
+    assert!(CombatStatDiagnosticV1::new(anita_spec(7, 3)).is_ok());
+
+    let mut wrong_card = anita_spec(7, 3);
+    wrong_card.base_rules.players[PlayerId::P1].hand[0].key = CardKey::new(449, 3);
+    wrong_card.cards[PlayerId::P1][0].key = CardKey::new(449, 3);
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(wrong_card),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeCard,
+            ..
+        })
+    ));
+
+    let mut wrong_id = anita_spec(7, 3);
+    wrong_id.cards[PlayerId::P1][0].ability = execute(
+        275,
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(wrong_id),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeIdentity,
+            ..
+        })
+    ));
+
+    let mut wrong_effect = anita_spec(7, 3);
+    wrong_effect.cards[PlayerId::P1][0].ability = execute(
+        274,
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatEffectV1::GainLifeOnVictory { life: 1 },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(wrong_effect),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeEffect,
+            ..
+        })
+    ));
+
+    let mut wrong_predicate = anita_spec(7, 3);
+    wrong_predicate.cards[PlayerId::P1][0].ability = execute(
+        274,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(wrong_predicate),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifePredicate,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn anita_courage_damage_life_gains_final_damage_and_unmakes_exactly() {
+    let mut game = CombatStatDiagnosticV1::new(anita_spec(7, 3)).unwrap();
+    let before = game.position().clone();
+    let before_hash = position_hash(&before);
+    let (report, undo) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.cards[PlayerId::P1].damage, 3);
+    assert_eq!(report.players[PlayerId::P1].life, 23);
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+    assert_eq!(position_hash(game.position()), before_hash);
+}
+
+#[test]
+fn anita_courage_damage_life_uses_damage_after_reduction_then_fury() {
+    let mut spec = anita_spec(7, 3);
+    // Capture 1065557: Anita's base 3 is reduced to Min 2, then Fury makes the
+    // resolved damage 4 and she gains exactly 4 Life. This is deliberately not the
+    // transport `damageAfter` field guarded by capture 875375.
+    spec.cards[PlayerId::P2][0].ability = execute(
+        7_001,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Damage, 2, 2),
+    );
+    let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 3, true), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].damage, 4);
+    assert_eq!(report.players[PlayerId::P1].life, 24);
+    assert_eq!(report.players[PlayerId::P2].life, 16);
+}
+
+#[test]
+fn anita_courage_damage_life_is_suppressed_when_second_losing_or_stopped() {
+    let mut second_spec = anita_spec(8, 3);
+    second_spec.base_rules.players[PlayerId::P2].hand[0].power = 7;
+    let mut second = CombatStatDiagnosticV1::new(second_spec).unwrap();
+    let (report, _) = second
+        .make(input(PlayerId::P2, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 20);
+
+    let mut losing_spec = anita_spec(4, 3);
+    losing_spec.base_rules.players[PlayerId::P2].hand[0].power = 7;
+    let mut losing = CombatStatDiagnosticV1::new(losing_spec).unwrap();
+    let (report, _) = losing
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 17);
+
+    let mut stopped_spec = anita_spec(7, 3);
+    stopped_spec.cards[PlayerId::P2][0].ability = execute(
+        41,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut stopped = CombatStatDiagnosticV1::new(stopped_spec).unwrap();
+    let (report, _) = stopped
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 20);
+}
+
+#[test]
+fn anita_courage_damage_life_overflow_is_atomic() {
+    let mut spec = anita_spec(7, 3);
+    spec.base_rules.players[PlayerId::P1].initial_life = u16::MAX - 1;
+    let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+    let before = game.position().clone();
+    let before_hash = position_hash(&before);
+    assert_eq!(
+        game.make(input(PlayerId::P1, (0, 0, false), (0, 0, false))),
+        Err(CombatStatDiagnosticErrorV1::BaseRules(
+            BaseRulesError::LifeIncreaseOverflow {
+                player: PlayerId::P1
+            }
+        ))
+    );
+    assert_eq!(game.position(), &before);
+    assert_eq!(position_hash(game.position()), before_hash);
+}
+
 #[test]
 fn vod_life_public_plans_are_exact_registry_effect_and_predicate_locks() {
     let own_one = CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life: 1 };

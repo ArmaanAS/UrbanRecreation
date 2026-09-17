@@ -14,12 +14,13 @@ use crate::effect_registry::{
     SupportedEffectV1, UnsupportedReasonV1,
 };
 use crate::engine::combat_stat_compiler::{
-    classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
-    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
-    has_defeat_life_shape, has_reanimate_life_shape, has_victory_life_shape,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
+    classify_combat_stat_effect, classify_defeat_life, classify_defeat_recover_pillz,
+    classify_equalizer_opponent_life_on_victory, classify_komboka_victory_pillz_and_life,
+    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
+    has_reanimate_life_shape, has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -627,6 +628,22 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    // Anita is deliberately an identity-locked post-round conversion rather than a
+    // generic Life increase: Courage is bound into the compact predicate and the engine
+    // supplies the selected card's final resolved damage as the runtime magnitude.
+    if classify_anita_courage_damage_to_life(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::OwnerMovesFirst,
+                effect: CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+            },
+        });
+    }
     if classify_victory_or_defeat_pillz(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -822,6 +839,12 @@ fn prepare_combat_stat_source(
     // a selected hazard instead of quietly becoming a disabled no-op.
     let unadmitted_argos_defeat_capped_pillz =
         source.id == 1158 || source.description == "Defeat: +2 Pillz Max. 11";
+    // Anita's conversion has one printed Ability identity and one exact structured
+    // record. Source-slot changes, card borrowing, same-text aliases, and malformed
+    // records are all selected hazards rather than inert disabled sources.
+    let unadmitted_anita_courage_damage_to_life = source.id == 274
+        || source.description == "Courage: +1 Life Per Dmg"
+        || input.special_action == SpecialActionV1::ConvertDamageToLife;
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
@@ -838,6 +861,7 @@ fn prepare_combat_stat_source(
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
+        || unadmitted_anita_courage_damage_to_life
         || unadmitted_komboka_victory_pillz_and_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
@@ -865,6 +889,7 @@ fn prepare_combat_stat_source(
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
+        || unadmitted_anita_courage_damage_to_life
         || unadmitted_komboka_victory_pillz_and_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {

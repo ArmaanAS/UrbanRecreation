@@ -106,6 +106,44 @@ fn catalog_with_equalizer_opponent_life_bonus() -> EffectiveCardCatalog {
     EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
 }
 
+fn catalog_with_anita_courage_life_alias(key: CardKey) -> EffectiveCardCatalog {
+    let mut rows: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("data/data.json")).unwrap()).unwrap();
+    let row = rows
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == key.id && row["level"] == key.level)
+        .unwrap();
+    row["ability_id"] = serde_json::json!(274);
+    row["ability"] = serde_json::json!("Courage: +1 Life Per Dmg");
+    let rows = serde_json::to_vec(&rows).unwrap();
+    let overrides = fs::read(root_path("data/battle_card_overrides.json")).unwrap();
+    EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
+}
+
+fn catalog_with_anita_courage_life_bonus() -> EffectiveCardCatalog {
+    let mut rows: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("data/data.json")).unwrap()).unwrap();
+    for row in rows.as_array_mut().unwrap() {
+        if row["clan_id"] == 28 {
+            row["bonus_id"] = serde_json::json!(274);
+            row["bonus"] = serde_json::json!("Courage: +1 Life Per Dmg");
+        }
+    }
+    let rows = serde_json::to_vec(&rows).unwrap();
+    let overrides = fs::read(root_path("data/battle_card_overrides.json")).unwrap();
+    EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
+}
+
+fn registry_with_malformed_anita_courage_life() -> EffectRegistryV1 {
+    let mut effects: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("captures/abilities.json")).unwrap()).unwrap();
+    effects["274"]["abilityData"]["specialAction"] = serde_json::json!("convert_dmg_to_pillz");
+    let effects = serde_json::to_vec(&effects).unwrap();
+    EffectRegistryV1::from_reader(effects.as_slice()).unwrap()
+}
+
 fn player(hand: [CardKey; 4]) -> CatalogCombatStatPlayerInputV1 {
     CatalogCombatStatPlayerInputV1 {
         initial_life: 12,
@@ -1064,6 +1102,170 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
     assert_eq!(report.players[PlayerId::P1].pillz, 12);
     game.unmake(undo);
     assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_admits_only_anitas_exact_courage_damage_life_ability() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let anita_hand = [
+        CardKey::new(448, 3),
+        CardKey::new(441, 1),
+        CardKey::new(444, 1),
+        CardKey::new(445, 1),
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(anita_hand, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+        &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Anita L3 was not prepared as Courage damage-to-Life")
+    };
+    assert_eq!(identity.catalog_id, Some(274));
+    assert_eq!(identity.registry_definition_id, 274);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [274]);
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory
+    );
+    assert!(matches!(
+        prepared.match_spec().cards[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 274,
+            predicate: CombatStatPredicateV1::OwnerMovesFirst,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+        }
+    ));
+
+    // Anita's lower levels print no ability. Even a malformed catalog that gives either
+    // level the exact source text and id cannot borrow her level-three authority.
+    for key in [CardKey::new(448, 1), CardKey::new(448, 2)] {
+        let lookalike = catalog_with_anita_courage_life_alias(key);
+        assert!(matches!(
+            CatalogCombatStatMatchV1::new(
+                input([key, CardKey::new(123, 1), CardKey::new(124, 1), CardKey::new(138, 1)], opponent, false),
+                &lookalike,
+                &registry,
+                PROJECTION,
+            ),
+            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                player: PlayerId::P1,
+                hand_slot,
+                source_kind: CombatStatEffectSourceV1::Ability,
+                catalog_id: Some(274),
+                ref description,
+                ..
+            }) if hand_slot.get() == 0 && description == "Courage: +1 Life Per Dmg"
+        ));
+    }
+
+    // Ellie and Lorea naturally print exactly the same text. Their distinct ability ids
+    // are not aliases for Anita's catalog row.
+    for (key, catalog_id) in [(CardKey::new(1017, 2), 843), (CardKey::new(1183, 2), 1010)] {
+        assert!(matches!(
+            CatalogCombatStatMatchV1::new(
+                input([key, CardKey::new(123, 1), CardKey::new(124, 1), CardKey::new(138, 1)], opponent, false),
+                &catalog,
+                &registry,
+                PROJECTION,
+            ),
+            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                player: PlayerId::P1,
+                hand_slot,
+                source_kind: CombatStatEffectSourceV1::Ability,
+                catalog_id: Some(actual_catalog_id),
+                ref description,
+                ..
+            }) if hand_slot.get() == 0
+                && actual_catalog_id == catalog_id
+                && description == "Courage: +1 Life Per Dmg"
+        ));
+    }
+
+    // A captured Copy may use Ability or Bonus provenance dynamically, but no canonical
+    // catalog bonus can materialize Anita's effect. An invented active Uppers bonus is
+    // therefore rejected before it can borrow registry id 274.
+    let bonus_lookalike = catalog_with_anita_courage_life_bonus();
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(143, 1),
+                    CardKey::new(165, 1),
+                    CardKey::new(166, 1),
+                    CardKey::new(167, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &bonus_lookalike,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            source_kind: CombatStatEffectSourceV1::Bonus,
+            catalog_id: Some(274),
+            ref description,
+            ..
+        }) if description == "Courage: +1 Life Per Dmg"
+    ));
+
+    // Copy is resolved from live capture data, not canonical card rows. Gwen cannot turn
+    // an opposing Anita into catalog source 274 merely because the eventual dynamic
+    // source would be a card Ability.
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(159, 3), // Gwen: Copy: Opp. Ability.
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                anita_hand,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(5558),
+            ref description,
+            ..
+        }) if hand_slot.get() == 0 && description == "Copy: Opp. Ability"
+    ));
+
+    // An exact card/id/description remains non-executable if the registry definition is
+    // malformed. Strict construction must not promote an alias group by text alone.
+    let malformed = registry_with_malformed_anita_courage_life();
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(anita_hand, opponent, false),
+            &catalog,
+            &malformed,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(274),
+            ref description,
+            registry_definition_id: 274,
+            ..
+        }) if hand_slot.get() == 0 && description == "Courage: +1 Life Per Dmg"
+    ));
 }
 
 #[test]
@@ -2146,7 +2348,7 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
     ));
 
     let mut unsupported = p1;
-    unsupported[0] = CardKey::new(448, 3);
+    unsupported[0] = CardKey::new(1020, 3); // Saki: Copy: Opp. Bonus.
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(unsupported, p2, false),
@@ -2335,7 +2537,8 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
     assert_eq!(
         eligible,
         BTreeSet::from([
-            830285, 869944, 877636, 877812, 877950, 925719, 1024673, 1060199, 1081463,
+            830285, 869944, 877636, 877812, 877950, 925719, 1024673, 1060199, 1061897, 1069813,
+            1081463, 1089346,
         ])
     );
 }

@@ -14,7 +14,59 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 18;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 19;
+
+/// Recognize Anita's one reviewed Courage conversion only. It must stay outside the
+/// generic numeric compiler because its magnitude is final resolved round damage.
+pub(crate) fn classify_anita_courage_damage_to_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> bool {
+    anita_courage_damage_to_life_identity_matches(source_kind, definition.id())
+        && definition.description() == "Courage: +1 Life Per Dmg"
+        && anita_courage_damage_to_life_shape_matches(definition.structured_input())
+}
+
+/// Shared identity gate for cold compilation and direct compact-plan validation.
+pub(crate) fn anita_courage_damage_to_life_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    (source_kind, definition_id) == (CombatStatEffectSourceV1::Ability, 274)
+}
+
+fn anita_courage_damage_to_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value == 1
+        && input.value_min == 0
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Attacker
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::ConvertDamageToLife
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
 
 /// Recognize Komboka's exact clan-bonus composite Victory effect.  This remains outside
 /// the ordinary numeric compiler because its two checked post-round mutations must stay
@@ -311,6 +363,9 @@ pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    if classify_anita_courage_damage_to_life(definition, source_kind) {
+        return None;
+    }
     // Recovery has its own post-round execution channel. Keep it out of this combat-stat
     // return type so neither generic numeric admission nor cancellation can reinterpret it.
     if classify_defeat_recover_pillz(definition, source_kind) {
@@ -1148,6 +1203,51 @@ mod tests {
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json"),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn anita_courage_damage_life_is_exact_identity_description_and_shape_locked() {
+        let registry = registry();
+        let anita = registry
+            .lookup_capture(274, "Courage: +1 Life Per Dmg")
+            .unwrap();
+        assert!(classify_anita_courage_damage_to_life(
+            anita,
+            CombatStatEffectSourceV1::Ability,
+        ));
+        assert!(!classify_anita_courage_damage_to_life(
+            anita,
+            CombatStatEffectSourceV1::Bonus,
+        ));
+        assert!(!anita_courage_damage_to_life_identity_matches(
+            CombatStatEffectSourceV1::Ability,
+            275,
+        ));
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("positionRequirement", serde_json::json!("both")),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("specialAction", serde_json::json!("convert_dmg_to_pillz")),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["274"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert!(
+                !classify_anita_courage_damage_to_life(
+                    malformed
+                        .lookup_capture(274, "Courage: +1 Life Per Dmg")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                "mutated field {field}",
+            );
+        }
     }
 
     #[test]

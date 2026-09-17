@@ -157,6 +157,31 @@ Deno.test({
       ),
       "rust match",
     );
+    // Anita's exact Courage conversion admits these three further strict rule-10 draws.
+    // Keep one completed production decision for each, rather than treating catalog
+    // eligibility as proof that the worker's post-round implementation agrees with TS.
+    // 1061897's owner moved second, so retain the committed first card for an actual
+    // opening SECOND decision rather than forcing a nonexistent FIRST view.
+    const anitaOpenings: Array<[number, Decision, SearchMode]> = [
+      [1061897, "second", SearchMode.SECOND],
+      [1069813, "first", SearchMode.FIRST],
+      [1089346, "first", SearchMode.FIRST],
+    ];
+    for (const [id, decision, mode] of anitaOpenings) {
+      const anitaOpening = await runDecision(
+        id,
+        0,
+        decision,
+        mode,
+      );
+      while (anitaOpening.search.step()) {
+        /* complete the TypeScript Anita opening matrix */
+      }
+      assertEquals(
+        compareRustSearches(anitaOpening.search, anitaOpening.rust),
+        "rust match",
+      );
+    }
     const reprisalOpeningFirst = await runDecision(
       1060199,
       0,
@@ -194,7 +219,19 @@ Deno.test({
       compareRustSearches(exactFirst.search, exactFirst.rust),
       "rust match",
     );
-    await runDecision(1024673, 1, "second", SearchMode.SECOND);
+    const exactSecond = await runDecision(
+      1024673,
+      1,
+      "second",
+      SearchMode.SECOND,
+    );
+    while (exactSecond.search.step()) {
+      /* complete the TypeScript exact matrix, including hidden opponent wagers */
+    }
+    assertEquals(
+      compareRustSearches(exactSecond.search, exactSecond.rust),
+      "rust match",
+    );
     const blindSecond = await runDecision(
       877636,
       2,

@@ -8,7 +8,7 @@ use super::combat_resolution::{
     CombatResolutionError, PreparedCombatResolution, ResolutionCardPlan, ResolutionSourcePlan,
 };
 use super::combat_stat_compiler::{
-    argos_defeat_capped_pillz_identity_matches,
+    anita_courage_damage_to_life_identity_matches, argos_defeat_capped_pillz_identity_matches,
     equalizer_opponent_life_on_victory_identity_matches,
     komboka_victory_pillz_and_life_identity_matches, victory_or_defeat_pillz_identity_matches,
 };
@@ -81,12 +81,29 @@ pub enum CombatStatPostRoundEffectV1 {
     GainOnePillzOnVictoryOrDefeat,
     GainOnePillzAndLifeOnVictory,
     GainTwoPillzOnDefeatMaxEleven,
-    GainLifeOnVictory { life: u16 },
-    GainLifeOnDefeat { life: u16 },
-    ReanimateLife { life: u16 },
-    GainLifeOnVictoryOrDefeat { life: u16 },
-    ReduceOpponentLifeOnVictoryOrDefeat { life: u16, minimum: u16 },
-    ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: u16, minimum: u16 },
+    /// Anita's identity-locked Courage conversion, whose runtime magnitude is the final
+    /// resolved damage dealt by its owner.
+    GainLifeEqualToFinalDamageOnCourageVictory,
+    GainLifeOnVictory {
+        life: u16,
+    },
+    GainLifeOnDefeat {
+        life: u16,
+    },
+    ReanimateLife {
+        life: u16,
+    },
+    GainLifeOnVictoryOrDefeat {
+        life: u16,
+    },
+    ReduceOpponentLifeOnVictoryOrDefeat {
+        life: u16,
+        minimum: u16,
+    },
+    ReduceOpponentLifeOnVictoryPerOpponentStars {
+        per_star: u16,
+        minimum: u16,
+    },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -118,6 +135,9 @@ pub enum CombatStatEffectV1 {
     /// Argos' fixed surviving-Defeat gain, applied after the clan bonus and capped at 11
     /// without lowering a value which is already at or above that cap.
     GainTwoPillzOnDefeatMaxEleven,
+    /// Anita's identity-locked Courage conversion, whose runtime magnitude is the final
+    /// resolved damage dealt by its owner.
+    GainLifeEqualToFinalDamageOnCourageVictory,
     /// Generic fixed Victory Life, admitted only by the cold structured compiler.  The
     /// hot plan retains its exact positive magnitude but no strings or registry access.
     GainLifeOnVictory {
@@ -233,6 +253,10 @@ pub enum InvalidCombatStatPlanReasonV1 {
     KombokaVictoryPillzAndLifePredicate,
     ArgosDefeatCappedPillzIdentity,
     ArgosDefeatCappedPillzPredicate,
+    AnitaCourageDamageToLifeCard,
+    AnitaCourageDamageToLifeEffect,
+    AnitaCourageDamageToLifeIdentity,
+    AnitaCourageDamageToLifePredicate,
     VictoryLifeMagnitude,
     VictoryLifePredicate,
     DefeatLifeSource,
@@ -608,6 +632,8 @@ fn equalizer_opponent_life_id_is_reserved(source_id: u32) -> bool {
     matches!(source_id, 1415 | 4458)
 }
 
+const ANITA_COURAGE_DAMAGE_TO_LIFE_CARD: CardKey = CardKey { id: 448, level: 3 };
+
 fn equalizer_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
     matches!(
         (source_id, effect),
@@ -656,6 +682,56 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
+    // Anita's conversion remains a single printed Ability identity.  It cannot be
+    // borrowed by another card, source slot, predicate, or dynamic Copy provenance.
+    if source_id == 274 {
+        if !anita_courage_damage_to_life_identity_matches(source, source_id) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeIdentity,
+            ));
+        }
+        if card_key != ANITA_COURAGE_DAMAGE_TO_LIFE_CARD {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeCard,
+            ));
+        }
+        if effect != CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeEffect,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::OwnerMovesFirst {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if effect == CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeIdentity,
+        ));
+    }
     // Reserve every reviewed VOD-Life identity independently of its claimed source. A
     // caller cannot turn Scott's +1 into Uuber's reduction or smuggle an otherwise
     // plausible VOD-Life value through a generic plan. Captured Copy may legitimately
@@ -1357,6 +1433,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat
         | CombatStatEffectV1::GainOnePillzAndLifeOnVictory
         | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven
+        | CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory
         | CombatStatEffectV1::GainLifeOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
         | CombatStatEffectV1::ReanimateLife { .. }
@@ -1380,6 +1457,11 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainTwoPillzOnDefeatMaxEleven,
         )),
+        CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::GainLifeEqualToFinalDamageOnCourageVictory,
+            ))
+        }
         CombatStatEffectV1::GainLifeOnVictory { life } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainLifeOnVictory(life),
         )),
