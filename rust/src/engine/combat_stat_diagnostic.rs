@@ -78,6 +78,8 @@ pub enum CombatStatPostRoundEffectV1 {
     GainOnePillzOnVictoryOrDefeat,
     GainTwoPillzOnDefeatMaxEleven,
     GainLifeOnVictory { life: u16 },
+    GainLifeOnDefeat { life: u16 },
+    ReanimateLife { life: u16 },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -109,6 +111,16 @@ pub enum CombatStatEffectV1 {
     /// Generic fixed Victory Life, admitted only by the cold structured compiler.  The
     /// hot plan retains its exact positive magnitude but no strings or registry access.
     GainLifeOnVictory {
+        life: u16,
+    },
+    /// Ordinary Defeat Life applies only after a surviving loss. The hot path retains the
+    /// exact positive magnitude but no strings or registry access.
+    GainLifeOnDefeat {
+        life: u16,
+    },
+    /// Reanimate is the explicit Defeat-Life exception permitted to revive its owner from
+    /// zero before terminal status is calculated.
+    ReanimateLife {
         life: u16,
     },
 }
@@ -194,6 +206,12 @@ pub enum InvalidCombatStatPlanReasonV1 {
     ArgosDefeatCappedPillzPredicate,
     VictoryLifeMagnitude,
     VictoryLifePredicate,
+    DefeatLifeSource,
+    DefeatLifeMagnitude,
+    DefeatLifePredicate,
+    ReanimateLifeSource,
+    ReanimateLifeMagnitude,
+    ReanimateLifePredicate,
     /// The ability uses Support outside the unconditional basic-stat subset admitted by
     /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
@@ -637,6 +655,66 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    if let CombatStatEffectV1::GainLifeOnDefeat { life } = effect {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::DefeatLifeSource,
+            ));
+        }
+        if life == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::DefeatLifeMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::DefeatLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if let CombatStatEffectV1::ReanimateLife { life } = effect {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ReanimateLifeSource,
+            ));
+        }
+        if life == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ReanimateLifeMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ReanimateLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
     {
@@ -983,7 +1061,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         CombatStatEffectV1::RecoverPaidPillzOnDefeat
         | CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat
         | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven
-        | CombatStatEffectV1::GainLifeOnVictory { .. } => return None,
+        | CombatStatEffectV1::GainLifeOnVictory { .. }
+        | CombatStatEffectV1::GainLifeOnDefeat { .. }
+        | CombatStatEffectV1::ReanimateLife { .. } => return None,
     })
 }
 
@@ -1001,6 +1081,10 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffec
         CombatStatEffectV1::GainLifeOnVictory { life } => {
             Some(PostRoundEffect::GainLifeOnVictory(life))
         }
+        CombatStatEffectV1::GainLifeOnDefeat { life } => {
+            Some(PostRoundEffect::GainLifeOnDefeat(life))
+        }
+        CombatStatEffectV1::ReanimateLife { life } => Some(PostRoundEffect::ReanimateLife(life)),
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentAbility
         | CombatStatEffectV1::StopOpponentBonus
@@ -1513,6 +1597,147 @@ mod tests {
             ))
         ));
         assert_eq!(overflow.position(), &before);
+    }
+
+    #[test]
+    fn defeat_life_is_surviving_loss_only_and_reanimate_revives_before_status() {
+        let defeat = CombatStatEffectV1::GainLifeOnDefeat { life: 2 };
+        let reanimate = CombatStatEffectV1::ReanimateLife { life: 2 };
+
+        let mut ordinary = spec_with_p1(CombatStatEffectSourceV1::Ability, 862, defeat, 0);
+        ordinary.base_rules.players[PlayerId::P1].initial_life = 7;
+        let mut ordinary = CombatStatDiagnosticV1::new(ordinary).unwrap();
+        let (report, _) = ordinary.make(input(0, false)).unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        // 7 - 3 damage + 2 Defeat Life.
+        assert_eq!(report.players[PlayerId::P1].life, 6);
+
+        let mut ordinary_ko = spec_with_p1(CombatStatEffectSourceV1::Ability, 862, defeat, 0);
+        ordinary_ko.base_rules.players[PlayerId::P1].initial_life = 2;
+        let mut ordinary_ko = CombatStatDiagnosticV1::new(ordinary_ko).unwrap();
+        let (report, _) = ordinary_ko.make(input(0, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].life, 0);
+        assert_eq!(report.status, MatchStatus::Won(PlayerId::P2));
+
+        let mut winning = spec_with_p1(CombatStatEffectSourceV1::Ability, 862, defeat, 0);
+        winning.base_rules.players[PlayerId::P1].initial_life = 7;
+        winning.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        let mut winning = CombatStatDiagnosticV1::new(winning).unwrap();
+        let (report, _) = winning.make(input(0, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].life, 7);
+
+        let mut revive = spec_with_p1(CombatStatEffectSourceV1::Ability, 4951, reanimate, 0);
+        revive.base_rules.players[PlayerId::P1].initial_life = 2;
+        let mut revive = CombatStatDiagnosticV1::new(revive).unwrap();
+        let before = revive.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let (report, undo) = revive.make(input(0, false)).unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].life, 2);
+        assert_eq!(report.status, MatchStatus::Playing);
+        revive.unmake(undo);
+        assert_eq!(revive.position(), &before);
+        let mut restored = DefaultHasher::new();
+        revive.position().hash(&mut restored);
+        assert_eq!(restored.finish(), before_hash);
+    }
+
+    #[test]
+    fn reanimate_is_stopped_and_life_overflow_is_atomic() {
+        let reanimate = CombatStatEffectV1::ReanimateLife { life: 2 };
+        let mut stopped = spec_with_p1(CombatStatEffectSourceV1::Ability, 4951, reanimate, 0);
+        stopped.base_rules.players[PlayerId::P1].initial_life = 7;
+        stopped.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        let mut stopped = CombatStatDiagnosticV1::new(stopped).unwrap();
+        let (report, _) = stopped.make(input(0, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].life, 4);
+
+        let mut overflow = spec_with_p1(CombatStatEffectSourceV1::Ability, 4951, reanimate, 0);
+        overflow.base_rules.players[PlayerId::P1].initial_life = u16::MAX;
+        // Keep the loss while making its damage zero, so Reanimate's checked add is the
+        // operation which overflows and the complete replacement position must roll back.
+        overflow.base_rules.players[PlayerId::P2].hand[0].damage = 0;
+        let mut overflow = CombatStatDiagnosticV1::new(overflow).unwrap();
+        let before = overflow.position().clone();
+        assert!(matches!(
+            overflow.make(input(0, false)),
+            Err(CombatStatDiagnosticErrorV1::BaseRules(
+                BaseRulesError::LifeIncreaseOverflow {
+                    player: PlayerId::P1
+                }
+            ))
+        ));
+        assert_eq!(overflow.position(), &before);
+    }
+
+    #[test]
+    fn defeat_life_and_reanimate_public_plans_are_ability_only_positive_and_unconditional() {
+        for (effect, source_reason, magnitude_reason, predicate_reason) in [
+            (
+                CombatStatEffectV1::GainLifeOnDefeat { life: 2 },
+                InvalidCombatStatPlanReasonV1::DefeatLifeSource,
+                InvalidCombatStatPlanReasonV1::DefeatLifeMagnitude,
+                InvalidCombatStatPlanReasonV1::DefeatLifePredicate,
+            ),
+            (
+                CombatStatEffectV1::ReanimateLife { life: 2 },
+                InvalidCombatStatPlanReasonV1::ReanimateLifeSource,
+                InvalidCombatStatPlanReasonV1::ReanimateLifeMagnitude,
+                InvalidCombatStatPlanReasonV1::ReanimateLifePredicate,
+            ),
+        ] {
+            assert!(CombatStatDiagnosticV1::new(spec_with_p1(
+                CombatStatEffectSourceV1::Ability,
+                1,
+                effect,
+                0,
+            ))
+            .is_ok());
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(spec_with_p1(
+                    CombatStatEffectSourceV1::Bonus,
+                    1,
+                    effect,
+                    0,
+                )),
+                Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) if reason == source_reason
+            ));
+            let zero = match effect {
+                CombatStatEffectV1::GainLifeOnDefeat { .. } => {
+                    CombatStatEffectV1::GainLifeOnDefeat { life: 0 }
+                }
+                CombatStatEffectV1::ReanimateLife { .. } => {
+                    CombatStatEffectV1::ReanimateLife { life: 0 }
+                }
+                _ => unreachable!(),
+            };
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(spec_with_p1(
+                    CombatStatEffectSourceV1::Ability,
+                    1,
+                    zero,
+                    0,
+                )),
+                Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) if reason == magnitude_reason
+            ));
+            let mut conditional = spec_with_p1(CombatStatEffectSourceV1::Ability, 1, effect, 0);
+            conditional.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+                source_id: 1,
+                predicate: CombatStatPredicateV1::OwnerLostPreviousRound,
+                effect,
+            };
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(conditional),
+                Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) if reason == predicate_reason
+            ));
+        }
     }
 
     #[test]

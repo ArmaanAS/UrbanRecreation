@@ -1050,6 +1050,101 @@ fn strict_catalog_match_preserves_dave_catalog_and_registry_life_identity() {
 }
 
 #[test]
+fn strict_catalog_match_admits_alias_bound_defeat_life_and_lobos_reanimate_only() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let rescue = [
+        CardKey::new(453, 3), // Lobo: Reanimate: +2 Life, Ability:4951
+        CardKey::new(441, 1),
+        CardKey::new(444, 1),
+        CardKey::new(445, 1),
+    ];
+    let lobo = CatalogCombatStatMatchV1::new(
+        input(rescue, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+        &lobo.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Lobo's observed Reanimate was not prepared")
+    };
+    assert_eq!(identity.catalog_id, Some(4951));
+    assert_eq!(identity.registry_definition_id, 4951);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [4951]);
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::ReanimateLife { life: 2 }
+    );
+    assert!(matches!(
+        lobo.match_spec().cards[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 4951,
+            predicate: CombatStatPredicateV1::Always,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::ReanimateLife { life: 2 },
+        }
+    ));
+
+    let eugene_hand = [
+        CardKey::new(1035, 3), // Eugene: Defeat: +2 Life, Ability:862
+        CardKey::new(123, 1),
+        CardKey::new(124, 1),
+        CardKey::new(138, 1),
+    ];
+    let eugene = CatalogCombatStatMatchV1::new(
+        input(eugene_hand, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+        &eugene.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Eugene's Defeat Life was not prepared")
+    };
+    assert_eq!(identity.catalog_id, Some(862));
+    assert_eq!(identity.registry_definition_id, 862);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [862, 1020, 4635]);
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::GainLifeOnDefeat { life: 2 }
+    );
+
+    // Eugene level 2 prints identical text under catalog Ability:5089, which is not an
+    // alias of captured definition 862. Strict admission must reject text borrowing.
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(1035, 2),
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(5089),
+            ref description,
+            registry_definition_id: 862,
+            ..
+        }) if hand_slot.get() == 0 && description == "Defeat: +2 Life"
+    ));
+}
+
+#[test]
 fn strict_catalog_match_bridges_only_the_active_jungo_victory_life_bonus() {
     let catalog = catalog();
     let registry = registry();

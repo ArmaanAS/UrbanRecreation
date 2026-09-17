@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 13;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 14;
 
 /// Recognize only the literal, immediate end-of-round Victory Life grammar.  Unlike the
 /// identity-locked Pillz slices below, this is deliberately generic: any registry
@@ -35,6 +35,46 @@ pub(crate) fn classify_victory_life(
 pub(crate) fn has_victory_life_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
     input.value > 0 && victory_life_shape_matches(input)
+}
+
+/// Recognize the immediate, surviving Defeat Life grammar. This deliberately admits card
+/// abilities only: ordinary resource gains do not pay after the owner has been KO'd.
+pub(crate) fn classify_defeat_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_defeat_life_shape(definition)
+        && definition.description() == format!("Defeat: +{} Life", input.value))
+    .then_some(input.value)
+}
+
+/// Structural half of the ordinary Defeat Life boundary. Its `value_min=1` is distinct
+/// from Reanimate's zero-life exception and makes malformed near-misses rejectable.
+pub(crate) fn has_defeat_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && defeat_life_shape_matches(input, 1)
+}
+
+/// Recognize the immediate Reanimate grammar. Reanimate is a card ability which revives
+/// from zero after a loss; the commit phase owns that exceptional life-zero behavior.
+pub(crate) fn classify_reanimate_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_reanimate_life_shape(definition)
+        && definition.description() == format!("Reanimate: +{} Life", input.value))
+    .then_some(input.value)
+}
+
+/// Structural half of the Reanimate boundary. `value_min=0` is its only intentional
+/// difference from ordinary Defeat Life.
+pub(crate) fn has_reanimate_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && defeat_life_shape_matches(input, 0)
 }
 
 /// Strictly recognize the three replay identities audited for the diagnostic's Defeat
@@ -113,6 +153,11 @@ pub(crate) fn classify_combat_stat_effect(
         return None;
     }
     if classify_victory_life(definition, source_kind).is_some() {
+        return None;
+    }
+    if classify_defeat_life(definition, source_kind).is_some()
+        || classify_reanimate_life(definition, source_kind).is_some()
+    {
         return None;
     }
     // Victory Or Defeat Pillz likewise has its own post-round execution channel.
@@ -475,6 +520,38 @@ fn victory_life_shape_matches(input: &StructuredEffectV1) -> bool {
         && input.position_requirement == PositionRequirementV1::Both
         && input.previous_round_requirement == PreviousRoundRequirementV1::Any
         && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+fn defeat_life_shape_matches(input: &StructuredEffectV1, minimum: u16) -> bool {
+    input.value_min == minimum
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Lose
         && input.index_requirement == IndexRequirementV1::Any
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
@@ -969,6 +1046,99 @@ mod tests {
         assert_eq!(
             classify_victory_life(
                 malformed.lookup_capture(888, "+2 Life ").unwrap(),
+                CombatStatEffectSourceV1::Ability,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn defeat_life_and_reanimate_require_their_exact_ability_only_shapes() {
+        let registry = registry();
+        let defeat = registry.lookup_capture(862, "Defeat: +2 Life").unwrap();
+        assert_eq!(
+            classify_defeat_life(defeat, CombatStatEffectSourceV1::Ability),
+            Some(2)
+        );
+        assert_eq!(
+            classify_defeat_life(defeat, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        let reanimate = registry.lookup_capture(4951, "Reanimate: +2 Life").unwrap();
+        assert_eq!(
+            classify_reanimate_life(reanimate, CombatStatEffectSourceV1::Ability),
+            Some(2)
+        );
+        assert_eq!(
+            classify_reanimate_life(reanimate, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (id, description, classifier, field, value) in [
+            (
+                "862",
+                "Defeat: +2 Life",
+                classify_defeat_life
+                    as fn(&EffectDefinitionV1, CombatStatEffectSourceV1) -> Option<u16>,
+                "valueMin",
+                serde_json::json!(0),
+            ),
+            (
+                "4951",
+                "Reanimate: +2 Life",
+                classify_reanimate_life
+                    as fn(&EffectDefinitionV1, CombatStatEffectSourceV1) -> Option<u16>,
+                "valueMin",
+                serde_json::json!(1),
+            ),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classifier(
+                    malformed
+                        .lookup_capture(id.parse().unwrap(), description)
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "id={id} mutated {field}"
+            );
+        }
+        for (field, value) in [
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("isLifeLinked", serde_json::json!(true)),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["4951"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_reanimate_life(
+                    malformed
+                        .lookup_capture(4951, "Reanimate: +2 Life")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "mutated Reanimate {field}"
+            );
+        }
+        let mut malformed = source;
+        malformed["862"]["description"] = serde_json::json!("Defeat: +2 Life ");
+        let malformed =
+            EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                .unwrap();
+        assert_eq!(
+            classify_defeat_life(
+                malformed.lookup_capture(862, "Defeat: +2 Life ").unwrap(),
                 CombatStatEffectSourceV1::Ability,
             ),
             None

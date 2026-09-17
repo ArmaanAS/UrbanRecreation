@@ -14,9 +14,11 @@ use crate::effect_registry::{
     SupportedEffectV1, UnsupportedReasonV1,
 };
 use crate::engine::combat_stat_compiler::{
-    classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_recover_pillz,
-    classify_victory_life, classify_victory_or_defeat_pillz, compact_effect,
-    has_victory_life_shape, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
+    classify_defeat_recover_pillz, classify_reanimate_life, classify_victory_life,
+    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
+    has_reanimate_life_shape, has_victory_life_shape,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -36,6 +38,8 @@ pub enum CombatStatDiagnosticProjectionV1 {
 
 pub const COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 =
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1;
+
+const LOBO_REANIMATE_REGISTRY_ID: u32 = 4951;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CombatStatReplayModelV1 {
@@ -648,6 +652,36 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some(life) = classify_defeat_life(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::GainLifeOnDefeat { life },
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::GainLifeOnDefeat { life },
+            },
+        });
+    }
+    // The generic structural classifier makes malformed Reanimate records fail-closed, but
+    // the executable replay slice remains restricted to Lobo's captured identity.
+    if source.id == LOBO_REANIMATE_REGISTRY_ID {
+        if let Some(life) = classify_reanimate_life(definition, source_kind) {
+            return Ok(PreparedCombatStatSourceV1 {
+                disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                    identity,
+                    effect: CombatStatPostRoundEffectV1::ReanimateLife { life },
+                },
+                compact_plan: CombatStatSourcePlanV1::Execute {
+                    source_id: source.id,
+                    predicate: CombatStatPredicateV1::Always,
+                    effect: CombatStatEffectV1::ReanimateLife { life },
+                },
+            });
+        }
+    }
     if let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) {
         let compact_effect = compact_effect(effect).ok_or(
             CombatStatDiagnosticPreparationErrorV1::UnsupportedCompiledShape {
@@ -691,6 +725,25 @@ fn prepare_combat_stat_source(
         && source.description.ends_with(" Life")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Life)
         || has_victory_life_shape(definition);
+    // The admitted grammar is deliberately narrower than the deferred family. Capped,
+    // compound, and context-prefixed losing-Life forms must still reject when selected;
+    // otherwise a near-miss would quietly become a no-op merely because it is not plain
+    // `Defeat: +N Life` / `Reanimate: +N Life` text.
+    let input = definition.structured_input();
+    let losing_own_life_increase = input.current_round_requirement
+        == crate::effect_registry::CurrentRoundRequirementV1::Lose
+        && input.side_affected == crate::effect_registry::AffectedSideV1::Player
+        && input.attribute_action == AttributeActionV1::Increase
+        && matches!(
+            input.attribute_affected,
+            AttributeAffectedV1::Life | AttributeAffectedV1::LifeAndPillz
+        );
+    let unadmitted_defeat_life = (source.description.contains("Defeat")
+        && losing_own_life_increase)
+        || has_defeat_life_shape(definition);
+    let unadmitted_reanimate_life = (source.description.contains("Reanimate")
+        && losing_own_life_increase)
+        || has_reanimate_life_shape(definition);
     // A shape, identity, or description mutation of the reviewed Argos record must remain
     // a selected hazard instead of quietly becoming a disabled no-op.
     let unadmitted_argos_defeat_capped_pillz =
@@ -701,6 +754,8 @@ fn prepare_combat_stat_source(
         CombatStatDisabledReasonV1::UnsupportedSelectedHazard { registry_reasons }
     } else if unadmitted_victory_or_defeat
         || unadmitted_victory_life
+        || unadmitted_defeat_life
+        || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
@@ -723,6 +778,8 @@ fn prepare_combat_stat_source(
         || unadmitted_post_round_recovery
         || unadmitted_victory_or_defeat
         || unadmitted_victory_life
+        || unadmitted_defeat_life
+        || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
     {
         CombatStatSourcePlanV1::RejectIfSelected {

@@ -150,6 +150,24 @@ fn victory_life_entry(id: u32, life: u16) -> serde_json::Value {
     entry
 }
 
+fn defeat_life_entry(id: u32, life: u16) -> serde_json::Value {
+    let mut entry = numeric_entry(id, &format!("Defeat: +{life} Life"), "both", life, 1);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry
+}
+
+fn reanimate_life_entry(id: u32, life: u16) -> serde_json::Value {
+    let mut entry = numeric_entry(id, &format!("Reanimate: +{life} Life"), "both", life, 0);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry
+}
+
 fn argos_defeat_capped_pillz_entry(id: u32, description: &str) -> serde_json::Value {
     let mut entry = numeric_entry(id, description, "both", 2, 0);
     entry["abilityData"]["valueMax"] = serde_json::json!(11);
@@ -480,7 +498,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 13);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 14);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -502,6 +520,83 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         .unwrap();
     assert_eq!(report.provenance, provenance);
     assert_eq!(report.rounds[0].provenance, provenance);
+}
+
+#[test]
+fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_gate() {
+    let catalog = catalog();
+    let registry = registry();
+    let source_in_round = |prepared: &CombatStatDiagnosticReplayV1,
+                           round_index: usize,
+                           card_id: u32| {
+        let round = &prepared.replay().rounds[round_index];
+        let play = round
+            .plays
+            .iter()
+            .find(|play| play.card.id == card_id)
+            .unwrap_or_else(|| panic!("battle {} is missing card {card_id}", prepared.battle_id()));
+        (
+            round.expected_player_states[match play.engine_player {
+                EnginePlayer::P1 => PlayerId::P1,
+                EnginePlayer::P2 => PlayerId::P2,
+            }
+            .index()]
+            .life,
+            match play.engine_player {
+                EnginePlayer::P1 => PlayerId::P1,
+                EnginePlayer::P2 => PlayerId::P2,
+            },
+            usize::from(play.hand_index),
+        )
+    };
+
+    let lobo = diagnostic(1130654, &catalog, &registry);
+    assert_eq!(
+        lobo.preparation_provenance()
+            .compiler_policy_semantic_revision,
+        14
+    );
+    let (life, owner, slot) = source_in_round(&lobo, 1, 453);
+    assert_eq!(life, 4); // 7 - Miyo 5 + 2
+    assert!(matches!(
+        lobo.preparation()[owner][slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReanimateLife {
+                life: 2
+            },
+        } if identity.id == 4951
+    ));
+
+    let stopped_lobo = diagnostic(1080877, &catalog, &registry);
+    let (life, owner, slot) = source_in_round(&stopped_lobo, 2, 453);
+    // Lobo starts the round on 13 and Spidee deals 6. The capture ends at 8: Campbell's
+    // already-latched Heal supplies the one Life, so stopped Reanimate did not supply +2.
+    assert_eq!(life, 8);
+    assert!(matches!(
+        stopped_lobo.preparation()[owner][slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReanimateLife {
+                life: 2
+            },
+            ..
+        }
+    ));
+
+    let chadwik = diagnostic(1069193, &catalog, &registry);
+    let (life, owner, slot) = source_in_round(&chadwik, 3, 2539);
+    // Reprisal SOA is in the opposing selected source; Chadwik is therefore left at
+    // 18 - Spidee 6 = 12 rather than receiving Defeat: +2 Life.
+    assert_eq!(life, 12);
+    assert!(matches!(
+        chadwik.preparation()[owner][slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnDefeat {
+                life: 2
+            },
+        } if identity.id == 4635
+    ));
 }
 
 #[test]
@@ -1262,6 +1357,154 @@ fn victory_life_compiler_requires_the_complete_structured_shape_for_abilities_an
         prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
         CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
     ));
+}
+
+#[test]
+fn defeat_life_and_reanimate_are_post_round_abilities_and_near_misses_reject() {
+    let catalog = catalog();
+    const DEFEAT_ID: u32 = 862;
+    const REANIMATE_ID: u32 = 4951;
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let selected_slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: DEFEAT_ID,
+        description: "Defeat: +2 Life".to_owned(),
+    });
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        source.clone(),
+        &catalog,
+        &one_entry_registry(defeat_life_entry(DEFEAT_ID, 2)),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnDefeat {
+                life: 2
+            },
+            ..
+        }
+    ));
+
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: REANIMATE_ID,
+        description: "Reanimate: +2 Life".to_owned(),
+    });
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        source.clone(),
+        &catalog,
+        &one_entry_registry(reanimate_life_entry(REANIMATE_ID, 2)),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReanimateLife {
+                life: 2
+            },
+            ..
+        }
+    ));
+
+    // Other neutral Reanimate records are a visible selected hazard until server evidence
+    // authorizes an identity beyond Lobo's captured Ability:4951.
+    const OTHER_REANIMATE_ID: u32 = 900_114;
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: OTHER_REANIMATE_ID,
+        description: "Reanimate: +2 Life".to_owned(),
+    });
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        source.clone(),
+        &catalog,
+        &one_entry_registry(reanimate_life_entry(OTHER_REANIMATE_ID, 2)),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        CombatStatProjectionDispositionV1::Disabled {
+            reason: CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected {
+            source_id: OTHER_REANIMATE_ID
+        }
+    ));
+
+    let mut malformed = defeat_life_entry(DEFEAT_ID, 2);
+    malformed["abilityData"]["valueMin"] = serde_json::json!(0);
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: DEFEAT_ID,
+        description: "Defeat: +2 Life".to_owned(),
+    });
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        source,
+        &catalog,
+        &one_entry_registry(malformed),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected {
+            source_id: DEFEAT_ID
+        }
+    ));
+
+    // Deferred variants remain hazards rather than becoming disabled no-ops: a Life cap,
+    // compound Life/Pillz gain, or nested Reanimate context is not admitted by this slice.
+    for (id, description, mut entry) in [
+        (1217, "Defeat: +2 Life Max. 12", defeat_life_entry(1217, 2)),
+        (
+            1716,
+            "Defeat: +1 Pillz And Life",
+            defeat_life_entry(1716, 1),
+        ),
+        (
+            900_115,
+            "Support: Reanimate: +2 Life",
+            reanimate_life_entry(900_115, 2),
+        ),
+    ] {
+        entry["description"] = serde_json::json!(description);
+        entry["longDescription"] = serde_json::json!(description);
+        match id {
+            1217 => entry["abilityData"]["valueMax"] = serde_json::json!(12),
+            1716 => entry["abilityData"]["attributeAffected"] = serde_json::json!("life&pillz"),
+            900_115 => entry["abilityData"]["isSupport"] = serde_json::json!(true),
+            _ => unreachable!(),
+        }
+        let mut deferred = replay(875032, &catalog);
+        clear_sources(&mut deferred);
+        deferred.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+            id,
+            description: description.to_owned(),
+        });
+        let prepared = CombatStatDiagnosticReplayV1::new(
+            deferred,
+            &catalog,
+            &one_entry_registry(entry),
+            PROJECTION,
+        )
+        .unwrap();
+        assert!(matches!(
+            prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
+            CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+        ));
+    }
 }
 
 #[test]

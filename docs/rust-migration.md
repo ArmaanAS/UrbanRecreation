@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 13 for the current scope.
+Replay provenance records compiler/policy semantic revision 14 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 13.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 14.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -388,6 +388,34 @@ capture `1024673` adds two sequential verified rounds. The immutable combat-stat
 52 rounds. `deno task rust:advise --replay 1024673 --plain` grades both recorded decisions,
 verifies both server rounds, and completes the round-two KO through the release TUI.
 
+Semantic revision 14 adds two narrowly typed losing-side Life plans without turning all
+Life text into a general resource-effect implementation. An uncapped `Defeat: +{N} Life`
+Ability is admitted only with its exact positive literal and the neutral captured shape:
+own Life increase, `currentRoundRequirement=lose`, `valueMin=1`, and no cap, link,
+permanence, Support, special action, or other condition. It runs after damage only when
+its owner survived that damage. Eugene in `877533/1` proves `14 - 4 + 2 = 12`, and Daqun
+in `1092369/0` independently proves `12 - 6 + 3 = 9`. Chadwik in `1069193/3` is stopped
+by Spidee's Reprisal Stop Opp. Ability and ends `18 - 6 = 12`, proving ordinary Defeat
+Life remains subject to source liveness.
+
+Reanimate is deliberately separate: only the observed `ability:4951`, Lobo level 3's
+`Reanimate: +2 Life`, is admitted. It uses the otherwise identical losing-side Life shape
+with `valueMin=0`, and may add Life from zero before match status is calculated. In
+`1130654/1`, Lobo loses on 7 Life to Miyo's 5 damage and ends on 4, so it is not a
+lethal-only trigger. In `1080877/2`, Lobo loses from 13 to Spidee's 6 damage while
+Spidee's Reprisal Stop Opp. Ability is live; Lobo ends on 8, which is the already-latched
+Campbell Heal +1 only (an active Reanimate would leave 10). Capped Defeat Life,
+Defeat Life-and-Pillz, and other Reanimate identities remain deferred. The Kubra
+Life-and-Pillz KOs in `876712` and `877023` remain the evidence boundary for suppressing
+ordinary post-KO resource gains.
+
+Catalog admission requires the printed catalog id to belong to the resolved registry
+definition's structural alias set; description equality never transfers these effects to a
+different card. Replay preparation retains every malformed near-miss as a selected hazard.
+The 52-prefix exact replay gate is intentionally unchanged: the new evidence is asserted
+through source dispositions and focused arithmetic, not by treating unsupported cards in a
+full capture as executable. Provenance records compiler/policy semantic revision 14.
+
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
@@ -408,7 +436,7 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 13 records this semantic boundary together with the exact
+context. Compiler/policy revision 14 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
@@ -450,7 +478,7 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Dynamic Oblivion Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 13, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 14, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots

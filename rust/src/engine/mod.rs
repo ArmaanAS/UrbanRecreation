@@ -353,6 +353,8 @@ pub(super) enum PostRoundEffect {
     GainOnePillzOnVictoryOrDefeat,
     GainTwoPillzOnDefeatMaxEleven,
     GainLifeOnVictory(u16),
+    GainLifeOnDefeat(u16),
+    ReanimateLife(u16),
 }
 
 #[derive(Clone, Copy)]
@@ -497,6 +499,27 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainLifeOnVictory(_) => {}
+                    // Ordinary Defeat Life is post-damage work for a loss that did not KO
+                    // its owner. It deliberately cannot turn a terminal zero back into a
+                    // live position.
+                    PostRoundEffect::GainLifeOnDefeat(life)
+                        if owner == loser && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(life)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainLifeOnDefeat(_) => {}
+                    // Reanimate is the explicit Life exception: damage has already been
+                    // saturated at zero, and revival happens before status is calculated.
+                    PostRoundEffect::ReanimateLife(life) if owner == loser => {
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(life)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::ReanimateLife(_) => {}
                 }
             }
         }
