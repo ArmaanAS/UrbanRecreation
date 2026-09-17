@@ -8,14 +8,16 @@ use super::combat_resolution::{
     CombatResolutionError, PreparedCombatResolution, ResolutionCardPlan, ResolutionSourcePlan,
 };
 use super::combat_stat_compiler::{
-    argos_defeat_capped_pillz_identity_matches, komboka_victory_pillz_and_life_identity_matches,
-    victory_or_defeat_pillz_identity_matches,
+    argos_defeat_capped_pillz_identity_matches,
+    equalizer_opponent_life_on_victory_identity_matches,
+    komboka_victory_pillz_and_life_identity_matches, victory_or_defeat_pillz_identity_matches,
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
     DiagnosticCombatEffectV1, DiagnosticCombatStatV1, DiagnosticMagnitudeV1,
-    DiagnosticStatOperationV1, HandSlot, PlayerId, PostRoundEffect, ValidatedSelection, HAND_SIZE,
+    DiagnosticStatOperationV1, HandSlot, PlayerId, PostRoundEffect, PostRoundSourceEffect,
+    ValidatedSelection, HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -84,6 +86,7 @@ pub enum CombatStatPostRoundEffectV1 {
     ReanimateLife { life: u16 },
     GainLifeOnVictoryOrDefeat { life: u16 },
     ReduceOpponentLifeOnVictoryOrDefeat { life: u16, minimum: u16 },
+    ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: u16, minimum: u16 },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -137,6 +140,12 @@ pub enum CombatStatEffectV1 {
     /// Reduce the opposing player's life after either round outcome, bounded below by `minimum`.
     ReduceOpponentLifeOnVictoryOrDefeat {
         life: u16,
+        minimum: u16,
+    },
+    /// Victory-only opponent-Life reduction whose magnitude is bound from the selected
+    /// opposing card's stars after Stop liveness has been resolved.
+    ReduceOpponentLifeOnVictoryPerOpponentStars {
+        per_star: u16,
         minimum: u16,
     },
 }
@@ -235,6 +244,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     VictoryOrDefeatLifeIdentity,
     VictoryOrDefeatLifeEffect,
     VictoryOrDefeatLifePredicate,
+    EqualizerOpponentLifeIdentity,
+    EqualizerOpponentLifeEffect,
+    EqualizerOpponentLifePredicate,
     ReprisalStopOpponentAbilityCard,
     ReprisalStopOpponentAbilityEffect,
     ReprisalStopOpponentAbilityIdentity,
@@ -592,6 +604,23 @@ fn victory_or_defeat_life_id_is_reserved(source_id: u32) -> bool {
     matches!(source_id, 1396 | 1628 | 2944 | 2992 | 5799 | 5802 | 5835)
 }
 
+fn equalizer_opponent_life_id_is_reserved(source_id: u32) -> bool {
+    matches!(source_id, 1415 | 4458)
+}
+
+fn equalizer_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
+    matches!(
+        (source_id, effect),
+        (
+            1415 | 4458,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                per_star: 1,
+                minimum: 2
+            }
+        )
+    )
+}
+
 fn victory_or_defeat_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
     matches!(
         (source_id, effect),
@@ -651,6 +680,41 @@ fn validate_combat_stat_source_plan(
             ));
         }
         return Ok(());
+    }
+    if equalizer_opponent_life_id_is_reserved(source_id) {
+        if !equalizer_opponent_life_on_victory_identity_matches(source, source_id)
+            || !equalizer_opponent_life_effect_matches(source_id, effect)
+        {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::EqualizerOpponentLifeEffect,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::EqualizerOpponentLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if matches!(
+        effect,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+    ) {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::EqualizerOpponentLifeIdentity,
+        ));
     }
     if matches!(
         effect,
@@ -1297,36 +1361,49 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
         | CombatStatEffectV1::ReanimateLife { .. }
         | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
-        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. } => return None,
+        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
+        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. } => return None,
     })
 }
 
-fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffect> {
+fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourceEffect> {
     match effect {
-        CombatStatEffectV1::RecoverPaidPillzOnDefeat => {
-            Some(PostRoundEffect::RecoverPaidPillzOnDefeat)
-        }
-        CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat => {
-            Some(PostRoundEffect::GainOnePillzOnVictoryOrDefeat)
-        }
-        CombatStatEffectV1::GainOnePillzAndLifeOnVictory => {
-            Some(PostRoundEffect::GainOnePillzAndLifeOnVictory)
-        }
-        CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven => {
-            Some(PostRoundEffect::GainTwoPillzOnDefeatMaxEleven)
-        }
-        CombatStatEffectV1::GainLifeOnVictory { life } => {
-            Some(PostRoundEffect::GainLifeOnVictory(life))
-        }
-        CombatStatEffectV1::GainLifeOnDefeat { life } => {
-            Some(PostRoundEffect::GainLifeOnDefeat(life))
-        }
-        CombatStatEffectV1::ReanimateLife { life } => Some(PostRoundEffect::ReanimateLife(life)),
-        CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life } => {
-            Some(PostRoundEffect::GainLifeOnVictoryOrDefeat { life })
-        }
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::RecoverPaidPillzOnDefeat,
+        )),
+        CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::GainOnePillzOnVictoryOrDefeat,
+        )),
+        CombatStatEffectV1::GainOnePillzAndLifeOnVictory => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::GainOnePillzAndLifeOnVictory,
+        )),
+        CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::GainTwoPillzOnDefeatMaxEleven,
+        )),
+        CombatStatEffectV1::GainLifeOnVictory { life } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::GainLifeOnVictory(life),
+        )),
+        CombatStatEffectV1::GainLifeOnDefeat { life } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::GainLifeOnDefeat(life),
+        )),
+        CombatStatEffectV1::ReanimateLife { life } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::ReanimateLife(life),
+        )),
+        CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::GainLifeOnVictoryOrDefeat { life }),
+        ),
         CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum } => {
-            Some(PostRoundEffect::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum })
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
+            ))
+        }
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star, minimum } => {
+            Some(
+                PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                    per_star,
+                    minimum,
+                },
+            )
         }
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentAbility

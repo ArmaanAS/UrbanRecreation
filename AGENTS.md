@@ -14,7 +14,7 @@ Written by hand by the repo owner (armaanas); AI assistance started September 20
 | `data/` | `data.json` = the card list the engine loads, **one row per card per level** (power, damage and ability differ by level), built by `deno task cards` from `site_characters.jsonl` (gitignored 40 MB dump of the site's own card DB, refreshed via `__ur.dumpCharacters()` in the browser). `site_clans.json` (from `__ur.dumpClans()`) supplies clan names/bonuses; otherwise they come from the legacy `cards.json`. `cards.json` / `data.maxlevel.json` = older OAuth-API dumps (Dec 2024, max level only, stale); `compiled.json` = ability inventory from `deno task compile`. |
 | `scripts/` | Card data (`BuildCardData.ts` is the live path; `RequestCards.ts` / `RequestAllCardLevels.ts` / `UR_API.ts` are the OAuth-API path, needs API_KEY/API_SECRET in `.env` plus a browser auth step), ability compiler (`CompileAbilities.js`), battle capture (`BattleCapture.ts`, `ExtractBattle.ts`). |
 | `tests/` | `deno test -A`. Per-ability tests in `tests/ability/`, replay of captured games in `tests/replay/`, Rust cross-check testcases in `tests/rust/`. |
-| `rust/` | Imported Rust implementation and candidate high-performance backend. `engine::BaseRulesGame` remains the effects-disabled 20-round reference; `engine::ClanBonusDiagnostic` preserves its separate 40-round projected gate; `engine::CombatStatDiagnosticV1` adds a distinct fail-closed combat-stat projection with a 62-round gate. Semantic revision 17 retains the bounded numeric and post-round slices, adds exact unconditional Stop Opp. Ability with allocation-free TypeScript-compatible PRE4 dependency resolution, captured Reprisal SOA aliases `1310`/`2073` with `OwnerMovesSecond`, exact Komboka Bonus `1714` `+1 Pillz And Life`, and the reviewed Victory-or-Defeat Life identities (`+1`/`+2` own Life and `-1` opponent Life Min 1), alongside strict ability-only ordinary Defeat Life and Lobo's evidence-backed Reanimate identity; unobserved same-text/source variants, other conditional SOA, Protection, dynamic catalog Copy, capped increases, compound Life/Pillz, and other Reanimate identities remain fail-closed. `engine::CatalogCombatStatMatchV1` is the strict catalog-only constructor for search positions: it applies reviewed runtime card overrides, derives immutable Oculus/effective-clan and day/night context, and rejects a draw unless all eight cards are executable by that projection. `advisor/` contains a current-engine make/unmake search, bounded TUI, manual four-round mode, a fixed 198-play historical opening prior, exact conservative rounds 2–4 policy, a single-thread manual blind-second pass, and strict captured-replay grading. The precompiled one-request JSONL V3 worker lets the TypeScript host use supported FIRST, SECOND, and blind-second decisions after validating data fingerprints, compiler/catalog/policy semantic revisions, replayed history, information-set identity, legal actions, bounded SECOND wager outcomes, and response bounds. Complete captures `877636`, `925719`, `1024673`, `1060199`, and `1081463` are current end-to-end gates, not full live-policy parity. The historical engine remains beside them, and the old HTTP advisor is behind `legacy-advisor`. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
+| `rust/` | Imported Rust implementation and candidate high-performance backend. `engine::BaseRulesGame` remains the effects-disabled 20-round reference; `engine::ClanBonusDiagnostic` preserves its separate 40-round projected gate; `engine::CombatStatDiagnosticV1` adds a distinct fail-closed combat-stat projection with a 68-round gate. Semantic revision 18 retains the bounded numeric and post-round slices, adds exact unconditional Stop Opp. Ability with allocation-free TypeScript-compatible PRE4 dependency resolution, captured Reprisal SOA aliases `1310`/`2073` with `OwnerMovesSecond`, exact Komboka Bonus `1714` `+1 Pillz And Life`, the reviewed Victory-or-Defeat Life identities (`+1`/`+2` own Life and `-1` opponent Life Min 1), and exact Equalizer opponent-Life definitions `1415`/`4458`, alongside strict ability-only ordinary Defeat Life and Lobo's evidence-backed Reanimate identity; unobserved same-text/source variants, other conditional SOA, Protection, dynamic catalog Copy, capped increases, compound Life/Pillz, and other Reanimate identities remain fail-closed. `engine::CatalogCombatStatMatchV1` is the strict catalog-only constructor for search positions: it applies reviewed runtime card overrides, derives immutable Oculus/effective-clan and day/night context, and rejects a draw unless all eight cards are executable by that projection. `advisor/` contains a current-engine make/unmake search, bounded TUI, manual four-round mode, a fixed 198-play historical opening prior, exact conservative rounds 2–4 policy, a single-thread manual blind-second pass, and strict captured-replay grading. The precompiled one-request JSONL V3 worker lets the TypeScript host use supported FIRST, SECOND, and blind-second decisions after validating data fingerprints, compiler/catalog/policy semantic revisions, replayed history, information-set identity, legal actions, bounded SECOND wager outcomes, and response bounds. Complete captures `877636`, `877812`, `925719`, `1024673`, `1060199`, and `1081463` are current end-to-end gates, not full live-policy parity. The historical engine remains beside them, and the old HTTP advisor is behind `legacy-advisor`. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
 | `ur-logger.user.js` + `log_server.ts` | Tampermonkey userscript mirroring site traffic to a local server that writes `ur_log.jsonl` (raw, **contains tokens, gitignored**) and secret-free per-battle files in `captures/battles/`. Binary response bodies (WebGL asset bundles, images, wasm) are dropped on both sides: `res.text()` decodes them as lossy UTF-8, so they are unrecoverable garbage, and unfiltered they were 65% of the first real log. `scripts/PruneLog.ts` retro-fixes older logs. |
 | `captures/` | `battles/<id>.jsonl` raw battle capture in a compact lossless form (static block once + one dynamic line per `battles.status` poll, ~20 KB/battle instead of ~450 KB; `expandStatus()` in `scripts/BattleCapture.ts` rebuilds the original server objects); `abilities.json` shared ability/bonus dictionary (id → description + structured `abilityData`); `games/<id>.json` clean game records with decks, moves, per-round resolution, life/pillz, and an engine `testcase`. All safe to commit. |
 
@@ -83,7 +83,7 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    unchanged 20-round base set plus 20 audited additions. It trusts captured active bonus
    identity for replay preparation only; do not use its source-bonus Support grouping as a
    catalog-only/effective-clan solver rule. Night bonus id 1442 remains deferred.
-   The separate Rust `CombatStatDiagnosticV1` gate is fixed at 62 sequential prefix rounds.
+   The separate Rust `CombatStatDiagnosticV1` gate is fixed at 68 sequential prefix rounds.
    It admits fixed ordinary combat stats with Always/Courage/Reprisal and numeric
    Symmetry/Asymmetry (immutable original hand-slot equality/inequality), round-scaled
    Growth/Degrowth, selected-opponent-level Equalizer, ordinary unconditional Support
@@ -93,14 +93,15 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    plus Argos' exact `Defeat: +2 Pillz Max. 11` ability (`1158`), exact structured
    fixed `+N Life` on victory, strict ability-only uncapped `Defeat: +N Life`, and Lobo's
    evidence-backed `Reanimate: +2 Life` (`4951`), exact Komboka Bonus `1714` `+1 Pillz And Life` on Victory,
-   and the reviewed Victory-or-Defeat Life identities (`1396/2944/2992/5799/5802/5835/1628`),
+   the reviewed Victory-or-Defeat Life identities (`1396/2944/2992/5799/5802/5835/1628`),
+   and exact Equalizer opponent-Life definitions `1415`/`4458`,
    plus exact unconditional Stop Opp. Ability from Ability,
    Roots, and GHEIST sources and Reprisal aliases `1310`/`2073` using source-dependency ordering shared with Stop Bonus;
    replay-only dynamic `ability:1034` is never synthesized by catalog construction; global/off-card
    hazards are preparation-fatal, while unadmitted combat-stat, control, and `recover_pillz`
    hazards reject if selected. Ability and bonus Support use independently validated immutable
    effective-clan character counts;
-   provenance revision 17 records the current compiler policy. Recovery ratios, source-id
+   provenance revision 18 records the current compiler policy. Recovery ratios, source-id
    variants (including `2475`), every unlisted same-text identity, generic capped increases,
    and controls beyond unconditional Stop Bonus/Stop Opp. Ability and the two exact Reprisal aliases remain fail-closed.
 5. The owner has authorized tested `main` pushes. Never force-push, and never commit
@@ -124,9 +125,10 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   adapter come before engine parity; engine parity comes before porting current solver policy.
 - `rust/src/engine/` keeps base rules and projected effect models separate. The 20-round
   base gate proves replay/combat plumbing, the 40-round clan diagnostic executes its bounded
-  bonus slice, and the 62-round combat-stat diagnostic adds fixed ordinary abilities,
-  numeric hand-slot predicates, round-scaled magnitudes, Equalizer, and ordinary numeric
-  Support abilities without claiming general condition or full-effect parity.
+  bonus slice, and the 68-round combat-stat diagnostic adds fixed ordinary abilities,
+  numeric hand-slot predicates, round-scaled magnitudes, combat-stat Equalizer, exact
+  Equalizer opponent-Life, and ordinary numeric Support abilities without claiming general
+  condition or full-effect parity.
 - `EffectiveCardCatalog` is required for solver-facing construction and validates
   `data/battle_card_overrides.json` before exposing rows. `CatalogCombatStatMatchV1` takes
   exact `(card id, level)` keys, derives canonical versus effective clans without mutation,
@@ -147,7 +149,8 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 - `rust/src/advisor/` is the current-engine vertical slice: strict manual/demo/replay input, a
   complete current-round make/unmake matrix, deadline-safe partial results, a bounded
   terminal view, a manual four-round session, and server-backed grading of every decision in
-  supported captures `877636`, `1024673`, `1060199`, and `1081463`. Replay mode verifies complete card and resource results before
+  supported captures `877636`, `877812`, `925719`, `1024673`, `1060199`, and `1081463`.
+  Replay mode verifies complete card and resource results before
   advancing. Round 1 uses a labelled, fixed 198-play historical opening prior; rounds 2–4
   use an exact conservative policy whose reply may depend on a visible opposing card but not
   hidden pillz/Fury. In manual rounds 2-4 where the opponent moves first, a single-thread

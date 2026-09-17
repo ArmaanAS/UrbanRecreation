@@ -141,6 +141,22 @@ Deno.test({
       compareRustSearches(vodLifeOpeningFirst.search, vodLifeOpeningFirst.rust),
       "rust match",
     );
+    const equalizerLifeOpeningFirst = await runDecision(
+      877812,
+      0,
+      "first",
+      SearchMode.FIRST,
+    );
+    while (equalizerLifeOpeningFirst.search.step()) {
+      /* complete the TypeScript Equalizer-Life opening matrix */
+    }
+    assertEquals(
+      compareRustSearches(
+        equalizerLifeOpeningFirst.search,
+        equalizerLifeOpeningFirst.rust,
+      ),
+      "rust match",
+    );
     const reprisalOpeningFirst = await runDecision(
       1060199,
       0,

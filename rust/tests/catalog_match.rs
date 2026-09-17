@@ -92,6 +92,20 @@ fn catalog_with_vod_life_bonus() -> EffectiveCardCatalog {
     EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
 }
 
+fn catalog_with_equalizer_opponent_life_bonus() -> EffectiveCardCatalog {
+    let mut rows: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("data/data.json")).unwrap()).unwrap();
+    for row in rows.as_array_mut().unwrap() {
+        if row["clan_id"] == 28 {
+            row["bonus_id"] = serde_json::json!(1415);
+            row["bonus"] = serde_json::json!("Equalizer: - 1 Opp. Life Min 2");
+        }
+    }
+    let rows = serde_json::to_vec(&rows).unwrap();
+    let overrides = fs::read(root_path("data/battle_card_overrides.json")).unwrap();
+    EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
+}
+
 fn player(hand: [CardKey; 4]) -> CatalogCombatStatPlayerInputV1 {
     CatalogCombatStatPlayerInputV1 {
         initial_life: 12,
@@ -1219,6 +1233,134 @@ fn strict_catalog_match_admits_only_card_key_locked_victory_or_defeat_life_sourc
 }
 
 #[test]
+fn strict_catalog_match_admits_only_two_printed_equalizer_opponent_life_sources() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    for (key, catalog_id) in [(CardKey::new(1605, 2), 1415), (CardKey::new(841, 2), 4458)] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?} was not catalog-executable: {error}"));
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+            &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as Equalizer opponent-Life")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert_eq!(identity.registry_definition_id, catalog_id);
+        assert_eq!(identity.registry_alias_ids.as_ref(), [1415, 4458]);
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                per_star: 1,
+                minimum: 2,
+            }
+        );
+        assert!(matches!(
+            prepared.match_spec().cards[PlayerId::P1][0].ability,
+            CombatStatSourcePlanV1::Execute {
+                source_id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: urban_recreation_rust::engine::CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: 1, minimum: 2 },
+            } if source_id == catalog_id
+        ));
+    }
+
+    // Gail L1 shares the text but not Gail L2's reviewed id; O Riley and El Cazador are
+    // adjacent printed Equalizer Life forms. None may borrow the two canonical sources.
+    for (key, catalog_id, description) in [
+        (CardKey::new(841, 1), 5536, "Equalizer: - 1 Opp. Life Min 2"),
+        (
+            CardKey::new(2519, 2),
+            4455,
+            "Equalizer: - 1 Opp. Life Min 2",
+        ),
+        (
+            CardKey::new(2519, 3),
+            4125,
+            "Equalizer: - 1 Opp. Life Min 2",
+        ),
+        (
+            CardKey::new(2260, 3),
+            5793,
+            "Equalizer: - 1 Opp. Life Min 0",
+        ),
+    ] {
+        assert!(
+            matches!(
+                CatalogCombatStatMatchV1::new(
+                    input(
+                        [
+                            key,
+                            CardKey::new(123, 1),
+                            CardKey::new(124, 1),
+                            CardKey::new(138, 1),
+                        ],
+                        rescue,
+                        false,
+                    ),
+                    &catalog,
+                    &registry,
+                    PROJECTION,
+                ),
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player: PlayerId::P1,
+                    hand_slot,
+                    source_kind: CombatStatEffectSourceV1::Ability,
+                    catalog_id: Some(actual_catalog_id),
+                    description: ref actual_description,
+                    ..
+                }) if hand_slot.get() == 0
+                    && actual_catalog_id == catalog_id
+                    && actual_description == description
+            ),
+            "{key:?} must remain outside the exact Equalizer Life catalog slice"
+        );
+    }
+
+    // Copy's captured Bonus provenance has no catalog authority. A synthetic clan bonus
+    // bearing the exact reviewed id must therefore reject rather than becoming executable.
+    let bonus_lookalike = catalog_with_equalizer_opponent_life_bonus();
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(1605, 2),
+                    CardKey::new(143, 1),
+                    CardKey::new(165, 1),
+                    CardKey::new(166, 1),
+                ],
+                rescue,
+                false,
+            ),
+            &bonus_lookalike,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            source_kind: CombatStatEffectSourceV1::Bonus,
+            catalog_id: Some(1415),
+            ref description,
+            ..
+        }) if description == "Equalizer: - 1 Opp. Life Min 2"
+    ));
+}
+
+#[test]
 fn strict_catalog_match_preserves_dave_catalog_and_registry_life_identity() {
     let catalog = catalog();
     let registry = registry();
@@ -2192,6 +2334,8 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
     assert_eq!(scanned, 328);
     assert_eq!(
         eligible,
-        BTreeSet::from([830285, 869944, 877636, 877950, 925719, 1024673, 1060199, 1081463,])
+        BTreeSet::from([
+            830285, 869944, 877636, 877812, 877950, 925719, 1024673, 1060199, 1081463,
+        ])
     );
 }

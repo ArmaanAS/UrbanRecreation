@@ -6,10 +6,10 @@
 
 use super::combat_stat_compiler::{
     classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
-    classify_defeat_recover_pillz, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, compact_effect, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
@@ -44,6 +44,7 @@ const VICTORY_OR_DEFEAT_GAIN_LIFE_ONE_DESCRIPTION: &str = "Victory Or Defeat : +
 const VICTORY_OR_DEFEAT_GAIN_LIFE_TWO_DESCRIPTION: &str = "Victory Or Defeat : +2 Life";
 const VICTORY_OR_DEFEAT_REDUCE_OPPONENT_LIFE_DESCRIPTION: &str =
     "Victory Or Defeat: - 1 Opp. Life Min 1";
+const EQUALIZER_REDUCE_OPPONENT_LIFE_DESCRIPTION: &str = "Equalizer: - 1 Opp. Life Min 2";
 const KOMBOKA_CLAN_ID: u32 = 54;
 const KOMBOKA_CATALOG_BONUS_ID: u32 = 53;
 const KOMBOKA_VICTORY_PILLZ_AND_LIFE_DESCRIPTION: &str = "+1 Pillz And Life";
@@ -958,6 +959,47 @@ fn prepare_catalog_source(
                 .into_boxed_slice(),
         });
     }
+    // Equalizer opponent-Life has only two reviewed canonical printed abilities. Dynamic
+    // Copy is admitted by replay preparation, never by this immutable catalog constructor.
+    if description == EQUALIZER_REDUCE_OPPONENT_LIFE_DESCRIPTION {
+        if let Some(registry_definition_id) =
+            equalizer_opponent_life_registry_definition_id(card_key, source_kind, catalog_id)
+        {
+            return prepare_equalizer_opponent_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                registry_definition_id,
+            );
+        }
+        let definition = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
     // Komboka's clan bonus is a catalog namespace source.  Its same-text Carnibox
     // Ability:3356 alias is provenance only: it must never lend execution authority to
     // a card ability, another clan, or a different catalog bonus id.
@@ -1755,6 +1797,98 @@ fn prepare_victory_or_defeat_life_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: compact_effect,
+        },
+    })
+}
+
+/// Maps the only two printed catalog sources reviewed for Equalizer opponent-Life. The
+/// IDs share a registry description alias group, but neither aliases nor Copy provenance
+/// authorize another catalog row.
+fn equalizer_opponent_life_registry_definition_id(
+    card_key: CardKey,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+) -> Option<u32> {
+    match (card_key, source_kind, catalog_id) {
+        (CardKey { id: 1605, level: 2 }, CombatStatEffectSourceV1::Ability, Some(1415)) => {
+            Some(1415)
+        }
+        (CardKey { id: 841, level: 2 }, CombatStatEffectSourceV1::Ability, Some(4458)) => {
+            Some(4458)
+        }
+        _ => None,
+    }
+}
+
+fn prepare_equalizer_opponent_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    let Some((per_star, minimum)) =
+        classify_equalizer_opponent_life_on_victory(definition, source_kind)
+    else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                per_star,
+                minimum,
+            },
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                per_star,
+                minimum,
+            },
         },
     })
 }

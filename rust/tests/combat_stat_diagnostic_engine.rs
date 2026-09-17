@@ -367,6 +367,165 @@ fn vod_opponent_life_clamps_minimum_and_owner_ko_still_applies() {
 }
 
 #[test]
+fn equalizer_opponent_life_public_plans_are_exact_and_copy_can_use_either_source() {
+    let equalizer = CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+        per_star: 1,
+        minimum: 2,
+    };
+    for source_id in [1415, 4458] {
+        assert!(CombatStatDiagnosticV1::new(vod_spec(
+            CardKey::new(9_999, 1),
+            source_id,
+            equalizer,
+        ))
+        .is_ok());
+    }
+
+    let mut copied_bonus = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+    copied_bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    copied_bonus.cards[PlayerId::P1][0].bonus =
+        execute(1415, CombatStatPredicateV1::Always, equalizer);
+    copied_bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(CombatStatDiagnosticV1::new(copied_bonus).is_ok());
+
+    for effect in [
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+            per_star: 2,
+            minimum: 2,
+        },
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+            per_star: 1,
+            minimum: 1,
+        },
+    ] {
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(vod_spec(CardKey::new(9_999, 1), 1415, effect)),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::EqualizerOpponentLifeEffect,
+                ..
+            })
+        ));
+    }
+    let mut conditional = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+    conditional.cards[PlayerId::P1][0].ability = execute(
+        1415,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+        equalizer,
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(conditional),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::EqualizerOpponentLifePredicate,
+            ..
+        })
+    ));
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(vod_spec(CardKey::new(9_999, 1), 9_1415, equalizer)),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::EqualizerOpponentLifeIdentity,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn equalizer_binds_revealed_stars_after_stop_and_make_unmake_is_exact() {
+    let equalizer = CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+        per_star: 1,
+        minimum: 2,
+    };
+    let mut scaled = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+    scaled.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    scaled.base_rules.players[PlayerId::P2].hand[0].key = CardKey::new(200, 5);
+    scaled.cards[PlayerId::P2][0].key = CardKey::new(200, 5);
+    let mut scaled = CombatStatDiagnosticV1::new(scaled).unwrap();
+    let before = scaled.position().clone();
+    let before_hash = position_hash(&before);
+    let (report, undo) = scaled
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 12); // 20 - 3 damage - (1 * 5 stars)
+    scaled.unmake(undo);
+    assert_eq!(scaled.position(), &before);
+    assert_eq!(position_hash(scaled.position()), before_hash);
+
+    let mut minimum = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+    minimum.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    minimum.base_rules.players[PlayerId::P2].hand[0].key = CardKey::new(200, 5);
+    minimum.cards[PlayerId::P2][0].key = CardKey::new(200, 5);
+    minimum.base_rules.players[PlayerId::P2].initial_life = 6;
+    let (report, _) = CombatStatDiagnosticV1::new(minimum)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 2);
+
+    // At commit time the target is already below or at Min: the effect must not raise
+    // post-damage Life 0, 1, or 2. The preceding case pins the only allowed boundary
+    // transition, post-damage 3 -> 2.
+    for (initial_life, expected_life) in [(4, 1), (5, 2)] {
+        let mut already_capped = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+        already_capped.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        already_capped.base_rules.players[PlayerId::P2].initial_life = initial_life;
+        let (report, _) = CombatStatDiagnosticV1::new(already_capped)
+            .unwrap()
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(report.players[PlayerId::P2].life, expected_life);
+    }
+    let mut target_ko = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+    target_ko.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    target_ko.base_rules.players[PlayerId::P2].initial_life = 3;
+    let (report, _) = CombatStatDiagnosticV1::new(target_ko)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 0);
+
+    let mut losing = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+    losing.base_rules.players[PlayerId::P2].hand[0].power = 7;
+    let (report, _) = CombatStatDiagnosticV1::new(losing)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 20);
+
+    let mut stopped = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+    stopped.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    stopped.base_rules.players[PlayerId::P2].hand[0].key = CardKey::new(200, 5);
+    stopped.cards[PlayerId::P2][0].key = CardKey::new(200, 5);
+    stopped.cards[PlayerId::P2][0].ability = execute(
+        1,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let (report, _) = CombatStatDiagnosticV1::new(stopped)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+
+    let mut copied_bonus = vod_spec(CardKey::new(9_999, 1), 1415, equalizer);
+    copied_bonus.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    copied_bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    copied_bonus.cards[PlayerId::P1][0].bonus =
+        execute(1415, CombatStatPredicateV1::Always, equalizer);
+    copied_bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    copied_bonus.cards[PlayerId::P2][0].ability = execute(
+        1,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    let (report, _) = CombatStatDiagnosticV1::new(copied_bonus)
+        .unwrap()
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+}
+
+#[test]
 fn vod_own_life_overflow_is_atomic() {
     let effect = CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life: 2 };
     let mut overflow = vod_spec(CardKey::new(1676, 2), 2944, effect);

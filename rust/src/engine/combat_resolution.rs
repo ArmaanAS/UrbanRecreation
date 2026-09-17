@@ -8,8 +8,8 @@ use super::clan_bonus_diagnostic::{
     DiagnosticMagnitudeV1, DiagnosticStatOperationV1,
 };
 use super::{
-    BaseRulesCardResult, ByPlayer, PlayerId, PostRoundEffect, PostRoundPlan, PreparedSelection,
-    ValidatedSelection, FURY_DAMAGE, MAX_ROUNDS,
+    BaseRulesCardResult, ByPlayer, PlayerId, PostRoundEffect, PostRoundPlan, PostRoundSourceEffect,
+    PreparedSelection, ValidatedSelection, FURY_DAMAGE, MAX_ROUNDS,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,7 +29,7 @@ pub(super) struct CombatResolutionError {
 #[derive(Clone, Copy, Default)]
 pub(super) struct ResolutionSourcePlan {
     pub effect: Option<DiagnosticCombatEffectV1>,
-    pub post_round: Option<PostRoundEffect>,
+    pub post_round: Option<PostRoundSourceEffect>,
     pub support_count: u16,
 }
 
@@ -408,21 +408,37 @@ pub(super) fn prepare_combat_resolution_with_post_round(
             ability: live[PlayerId::P1]
                 .ability
                 .then_some(selected_plans[PlayerId::P1].ability.post_round)
-                .flatten(),
+                .flatten()
+                .map(|effect| {
+                    bind_post_round_effect(PlayerId::P1, effect, opponent_stars[PlayerId::P1])
+                })
+                .transpose()?,
             bonus: live[PlayerId::P1]
                 .bonus
                 .then_some(selected_plans[PlayerId::P1].bonus.post_round)
-                .flatten(),
+                .flatten()
+                .map(|effect| {
+                    bind_post_round_effect(PlayerId::P1, effect, opponent_stars[PlayerId::P1])
+                })
+                .transpose()?,
         },
         PostRoundPlan {
             ability: live[PlayerId::P2]
                 .ability
                 .then_some(selected_plans[PlayerId::P2].ability.post_round)
-                .flatten(),
+                .flatten()
+                .map(|effect| {
+                    bind_post_round_effect(PlayerId::P2, effect, opponent_stars[PlayerId::P2])
+                })
+                .transpose()?,
             bonus: live[PlayerId::P2]
                 .bonus
                 .then_some(selected_plans[PlayerId::P2].bonus.post_round)
-                .flatten(),
+                .flatten()
+                .map(|effect| {
+                    bind_post_round_effect(PlayerId::P2, effect, opponent_stars[PlayerId::P2])
+                })
+                .transpose()?,
         },
     );
     Ok(PreparedCombatResolution {
@@ -433,6 +449,28 @@ pub(super) fn prepare_combat_resolution_with_post_round(
 
 fn source_is_live(source: ResolutionSourcePlan) -> bool {
     source.effect.is_some() || source.post_round.is_some()
+}
+
+fn bind_post_round_effect(
+    player: PlayerId,
+    effect: PostRoundSourceEffect,
+    opponent_stars: u16,
+) -> Result<PostRoundEffect, CombatResolutionError> {
+    match effect {
+        PostRoundSourceEffect::Fixed(effect) => Ok(effect),
+        PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerOpponentStars {
+            per_star,
+            minimum,
+        } => {
+            let life = per_star
+                .checked_mul(opponent_stars)
+                .ok_or(CombatResolutionError {
+                    player,
+                    stage: CombatResolutionArithmeticStage::EffectMagnitude,
+                })?;
+            Ok(PostRoundEffect::ReduceOpponentLifeOnVictory { life, minimum })
+        }
+    }
 }
 
 fn finish_selection(

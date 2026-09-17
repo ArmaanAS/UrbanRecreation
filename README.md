@@ -65,6 +65,7 @@ deno task rust:worker:test
 deno task rust:advise --plain
 deno task rust:advise --interactive --plain
 deno task rust:advise --replay 877636 --plain
+deno task rust:advise --replay 877812 --plain
 deno task rust:advise --replay 1024673 --plain
 ```
 
@@ -81,10 +82,12 @@ round-one replies captured as of 2026-09-13; rounds 2–4 use an exact conservat
 continuation policy that never conditions a reply on hidden pillz or Fury. `--replay` loads a captured battle through the
 strict catalog boundary, renders and grades every recorded decision, then verifies each
 committed round's power, damage, attack, winner, life, and pillz against the server record.
-Battles `877636`, `925719`, and `1024673` are complete supported real draws. `925719`
-exercises Victory-or-Defeat opponent-Life work across a three-round match; `1024673`
-exercises unconditional Stop Opp. Ability through the real solver/TUI and ends in a
-round-two KO.
+Battles `877636`, `877812`, `925719`, `1024673`, `1060199`, and `1081463` are complete
+supported real draws.
+`877812` puts selected-opponent-star Equalizer Life through the real solver matrix and TUI;
+`925719` exercises Victory-or-Defeat opponent-Life work across a three-round match; and
+`1024673` exercises unconditional Stop Opp. Ability through the real solver/TUI and ends in
+a round-two KO.
 Rust does not yet ingest the live capture stream, refresh that fixed opening table, run
 searches across workers, or claim complete TypeScript policy parity.
 

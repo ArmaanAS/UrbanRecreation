@@ -15,11 +15,11 @@ use crate::effect_registry::{
 };
 use crate::engine::combat_stat_compiler::{
     classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_life,
-    classify_defeat_recover_pillz, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
-    has_reanimate_life_shape, has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
+    has_defeat_life_shape, has_reanimate_life_shape, has_victory_life_shape,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -663,6 +663,27 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some((per_star, minimum)) =
+        classify_equalizer_opponent_life_on_victory(definition, source_kind)
+    {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                    per_star,
+                    minimum,
+                },
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                    per_star,
+                    minimum,
+                },
+            },
+        });
+    }
     if classify_komboka_victory_pillz_and_life(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -763,6 +784,13 @@ fn prepare_combat_stat_source(
                 && (source.description.contains("Life")
                     || definition.structured_input().attribute_affected
                         == AttributeAffectedV1::Life));
+    // Equalizer opponent-Life is an equally closed identity-and-shape family. Captured
+    // Copy can put either reviewed id in either source slot, but every malformed record
+    // and adjacent Equalizer Life form must reject when selected.
+    let unadmitted_equalizer_opponent_life = matches!(source.id, 1415 | 4458)
+        || (source.description.contains("Equalizer")
+            && (source.description.contains("Life")
+                || definition.structured_input().attribute_affected == AttributeAffectedV1::Life));
     // A near-miss of the admitted family is a selected hazard: either the literal grammar
     // names Victory Life but its structure is wrong, or the complete reviewed structure
     // is present under malformed text. Other Life families keep the diagnostic's existing
@@ -805,6 +833,7 @@ fn prepare_combat_stat_source(
         CombatStatDisabledReasonV1::UnsupportedSelectedHazard { registry_reasons }
     } else if unadmitted_victory_or_defeat
         || unadmitted_victory_or_defeat_life
+        || unadmitted_equalizer_opponent_life
         || unadmitted_victory_life
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
@@ -831,6 +860,7 @@ fn prepare_combat_stat_source(
         || unadmitted_post_round_recovery
         || unadmitted_victory_or_defeat
         || unadmitted_victory_or_defeat_life
+        || unadmitted_equalizer_opponent_life
         || unadmitted_victory_life
         || unadmitted_defeat_life
         || unadmitted_reanimate_life

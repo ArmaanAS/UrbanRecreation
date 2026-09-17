@@ -347,6 +347,15 @@ pub(super) struct PostRoundPlan {
     pub bonus: Option<PostRoundEffect>,
 }
 
+/// Source-level post-round work before resolution has bound any selected-card-dependent
+/// values. Fixed work stays explicit so old effects cannot accidentally acquire dynamic
+/// semantics.
+#[derive(Clone, Copy)]
+pub(super) enum PostRoundSourceEffect {
+    Fixed(PostRoundEffect),
+    ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: u16, minimum: u16 },
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum PostRoundEffect {
     RecoverPaidPillzOnDefeat,
@@ -358,6 +367,7 @@ pub(super) enum PostRoundEffect {
     ReanimateLife(u16),
     GainLifeOnVictoryOrDefeat { life: u16 },
     ReduceOpponentLifeOnVictoryOrDefeat { life: u16, minimum: u16 },
+    ReduceOpponentLifeOnVictory { life: u16, minimum: u16 },
 }
 
 #[derive(Clone, Copy)]
@@ -544,6 +554,20 @@ impl BaseRulesGame {
                                 .max(minimum);
                         }
                     }
+                    // Equalizer's magnitude was bound from the revealed opposing card
+                    // after Stop liveness. It is Victory-only: neither an owner KO nor a
+                    // defeated owner may affect the opponent, and a target at/below Min
+                    // must remain untouched.
+                    PostRoundEffect::ReduceOpponentLifeOnVictory { life, minimum }
+                        if owner == winner && position.players[owner.other()].life > minimum =>
+                    {
+                        let target = owner.other();
+                        position.players[target].life = position.players[target]
+                            .life
+                            .saturating_sub(life)
+                            .max(minimum);
+                    }
+                    PostRoundEffect::ReduceOpponentLifeOnVictory { .. } => {}
                     // Ordinary Defeat Life is post-damage work for a loss that did not KO
                     // its owner. It deliberately cannot turn a terminal zero back into a
                     // live position.

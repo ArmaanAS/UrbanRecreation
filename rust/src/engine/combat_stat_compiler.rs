@@ -14,7 +14,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 17;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 18;
 
 /// Recognize Komboka's exact clan-bonus composite Victory effect.  This remains outside
 /// the ordinary numeric compiler because its two checked post-round mutations must stay
@@ -262,6 +262,32 @@ pub(crate) fn victory_or_defeat_life_identity_matches(
     )
 }
 
+/// Recognize the two reviewed Equalizer opponent-Life effects.  This is a Victory-only
+/// post-round reduction whose magnitude is bound from the revealed opposing card's stars
+/// after source liveness is known, rather than a normal combat-stat modifier.
+pub(crate) fn classify_equalizer_opponent_life_on_victory(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (equalizer_opponent_life_on_victory_identity_matches(source_kind, definition.id())
+        && definition.description() == "Equalizer: - 1 Opp. Life Min 2"
+        && equalizer_opponent_life_on_victory_shape_matches(input))
+    .then_some((input.value, input.value_min))
+}
+
+/// Shared identity gate for compiler output and direct compact-plan validation. Captured
+/// Copy can materialise either source kind, so neither source slot is privileged here.
+pub(crate) fn equalizer_opponent_life_on_victory_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    matches!(
+        source_kind,
+        CombatStatEffectSourceV1::Ability | CombatStatEffectSourceV1::Bonus
+    ) && matches!(definition_id, 1415 | 4458)
+}
+
 /// Strictly recognize Argos' printed Defeat Pillz effect. Its cap is applied after a
 /// live clan bonus in the shared END phase, so it requires a distinct typed path.
 pub(crate) fn classify_argos_defeat_capped_pillz(
@@ -311,6 +337,9 @@ pub(crate) fn classify_combat_stat_effect(
         return None;
     }
     if classify_victory_or_defeat_life(definition, source_kind).is_some() {
+        return None;
+    }
+    if classify_equalizer_opponent_life_on_victory(definition, source_kind).is_some() {
         return None;
     }
     if classify_reprisal_stop_opponent_ability(definition, source_kind) {
@@ -796,6 +825,39 @@ fn victory_or_defeat_life_shape_matches(
         && !input.is_lost_life_linked
         && !input.is_lost_pillz_linked
         && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+fn equalizer_opponent_life_on_victory_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value == 1
+        && input.value_min == 2
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Opponent
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Decrease
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && input.is_opponent_stars_linked
         && !input.is_clanmates_count_linked
         && !input.is_anti_clanmates_count_linked
         && !input.is_permanent
@@ -1343,6 +1405,58 @@ mod tests {
             ),
             None,
         );
+    }
+
+    #[test]
+    fn equalizer_opponent_life_is_exact_identity_description_and_shape_locked() {
+        let registry = registry();
+        for id in [1415, 4458] {
+            let definition = registry
+                .lookup_capture(id, "Equalizer: - 1 Opp. Life Min 2")
+                .unwrap();
+            for source_kind in [
+                CombatStatEffectSourceV1::Ability,
+                CombatStatEffectSourceV1::Bonus,
+            ] {
+                assert_eq!(
+                    classify_equalizer_opponent_life_on_victory(definition, source_kind),
+                    Some((1, 2)),
+                    "id={id} source={source_kind:?}",
+                );
+            }
+        }
+        assert!(!equalizer_opponent_life_on_victory_identity_matches(
+            CombatStatEffectSourceV1::Ability,
+            1414,
+        ));
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("valueMin", serde_json::json!(1)),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("sideAffected", serde_json::json!("player")),
+            ("attributeAction", serde_json::json!("increase")),
+            ("isOppStarsLinked", serde_json::json!(false)),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1415"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_equalizer_opponent_life_on_victory(
+                    malformed
+                        .lookup_capture(1415, "Equalizer: - 1 Opp. Life Min 2")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "mutated field {field}",
+            );
+        }
     }
 
     #[test]

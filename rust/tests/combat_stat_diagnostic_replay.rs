@@ -33,7 +33,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1011643, 2),
     (1011768, 1),
     (1011483, 2),
-    (877812, 2),
+    (877812, 3),
     (874642, 1),
     (1059269, 1),
     (1091585, 1),
@@ -52,6 +52,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1092909, 2),
     (925719, 3),
     (877636, 4),
+    (943111, 1),
+    (924740, 2),
+    (963694, 1),
+    (970972, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -240,6 +244,15 @@ fn equalizer_numeric_entry(
     entry
 }
 
+fn equalizer_opponent_life_entry(id: u32, description: &str) -> serde_json::Value {
+    let mut entry = equalizer_numeric_entry(id, description, 1, 2);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("opponent");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("decrease");
+    entry
+}
+
 fn support_numeric_entry(
     id: u32,
     description: &str,
@@ -289,7 +302,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_sixty_two_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_sixty_eight_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -325,23 +338,24 @@ fn fixed_server_backed_gate_is_exactly_sixty_two_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 62);
+    assert_eq!(rounds, 68);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 36, 37, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 257, 266, 292, 310, 333, 368,
-            377, 391, 401, 412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980,
-            1034, 1047, 1158, 1163, 1241, 1310, 1335, 1338, 1342, 1359, 1372, 1375, 1418, 1420,
-            1518, 1536, 1578, 1628, 1688, 1694, 1714, 1770, 1844, 1845, 1848, 1850, 2299, 2329,
-            2412, 2535, 2881, 2965, 3677, 3864, 3865, 3897, 4041, 4216, 4297, 4299, 4399, 4464,
-            4711, 4718, 4757, 4966, 5026, 5085, 5273, 5520, 5763, 5852,
+            6, 36, 37, 38, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 202, 257, 266, 292, 310,
+            333, 368, 377, 391, 401, 412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888,
+            916, 980, 1034, 1047, 1158, 1163, 1241, 1310, 1335, 1338, 1342, 1359, 1372, 1375, 1415,
+            1418, 1420, 1518, 1536, 1578, 1628, 1688, 1694, 1714, 1770, 1844, 1845, 1848, 1850,
+            2299, 2329, 2412, 2535, 2881, 2965, 3487, 3677, 3864, 3865, 3897, 4041, 4216, 4297,
+            4299, 4399, 4458, 4464, 4711, 4718, 4757, 4966, 5026, 5085, 5273, 5404, 5520, 5763,
+            5852,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([274, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459, 4695, 5283,])
+        BTreeSet::from([274, 809, 854, 1399, 1852, 2317, 4303, 4459, 4657, 4695, 4747, 5283,])
     );
-    assert_eq!(absent, 2);
+    assert_eq!(absent, 4);
 }
 
 #[test]
@@ -536,7 +550,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 17);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 18);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -592,7 +606,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        17
+        18
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -2294,6 +2308,127 @@ fn victory_or_defeat_life_server_evidence_preserves_liveness_and_stop_semantics(
             "battle {battle_id}"
         );
     }
+}
+
+#[test]
+fn equalizer_opponent_life_is_exactly_the_audited_post_round_family() {
+    let catalog = catalog();
+    const DESCRIPTION: &str = "Equalizer: - 1 Opp. Life Min 2";
+
+    // Copy can materialize either reviewed registry identity in either source slot.
+    for (id, source_kind) in [
+        (1415, CombatStatEffectSourceV1::Ability),
+        (1415, CombatStatEffectSourceV1::Bonus),
+        (4458, CombatStatEffectSourceV1::Ability),
+        (4458, CombatStatEffectSourceV1::Bonus),
+    ] {
+        let registry = one_entry_registry(equalizer_opponent_life_entry(id, DESCRIPTION));
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let selected_slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        let modifier = Some(SourceModifier {
+            id,
+            description: DESCRIPTION.to_owned(),
+        });
+        if source_kind == CombatStatEffectSourceV1::Ability {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        let disposition = if source_kind == CombatStatEffectSourceV1::Ability {
+            &prepared.preparation()[PlayerId::P1][selected_slot].ability
+        } else {
+            &prepared.preparation()[PlayerId::P1][selected_slot].bonus
+        };
+        assert!(matches!(
+            disposition,
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: 1, minimum: 2 },
+            } if identity.id == id
+        ));
+        let plan = if source_kind == CombatStatEffectSourceV1::Ability {
+            prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability
+        } else {
+            prepared.new_game().card_plans()[PlayerId::P1][selected_slot].bonus
+        };
+        assert!(matches!(
+            plan,
+            CombatStatSourcePlanV1::Execute {
+                source_id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: urban_recreation_rust::engine::CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: 1, minimum: 2 },
+            } if source_id == id
+        ));
+    }
+
+    // Identity, player-gain, and nested/adjacent Equalizer Life records are selected
+    // hazards, never disabled no-ops.
+    let mut player_gain = equalizer_opponent_life_entry(900_1415, "Equalizer: +1 Life");
+    player_gain["abilityData"]["sideAffected"] = serde_json::json!("player");
+    player_gain["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    let mut nested =
+        equalizer_opponent_life_entry(900_4458, "Night: Equalizer: - 1 Opp. Life Min 2");
+    nested["abilityData"]["positionRequirement"] = serde_json::json!("attacker");
+    let mut malformed = equalizer_opponent_life_entry(1415, DESCRIPTION);
+    malformed["abilityData"]["valueMin"] = serde_json::json!(1);
+    for (id, description, entry) in [
+        (1415, DESCRIPTION, malformed),
+        (
+            5793,
+            "Equalizer: - 1 Opp. Life Min 0",
+            equalizer_opponent_life_entry(5793, "Equalizer: - 1 Opp. Life Min 0"),
+        ),
+        (900_1415, "Equalizer: +1 Life", player_gain),
+        (900_4458, "Night: Equalizer: - 1 Opp. Life Min 2", nested),
+    ] {
+        let registry = one_entry_registry(entry);
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        source.players[0].hand[0].source_ability = Some(SourceModifier {
+            id,
+            description: description.to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert!(matches!(
+            prepared.new_game().card_plans()[PlayerId::P1][0].ability,
+            CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+        ));
+    }
+}
+
+#[test]
+fn equalizer_opponent_life_copy_bonus_preparation_preserves_924669_provenance() {
+    // 924669 has earlier out-of-slice post-round work, so it remains preparation evidence
+    // rather than an immutable executable prefix. Its Copy result is nevertheless exact.
+    let prepared = diagnostic(924669, &catalog(), &registry());
+    let round = &prepared.replay().rounds[2];
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P2][usize::from(
+            round
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P2)
+                .expect("924669/r2 must select Copy carrying 1415 as Bonus")
+                .hand_index
+        )]
+        .bonus,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: 1, minimum: 2 },
+        } if identity.id == 1415
+    ));
+    assert_eq!(round.expected_player_states[PlayerId::P1.index()].life, 2);
 }
 
 #[test]
