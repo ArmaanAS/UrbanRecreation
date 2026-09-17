@@ -15,6 +15,11 @@ use crate::engine::{
 
 use super::policy::{continuation_value, ExactValue, PolicyControl};
 
+/// Semantic identity of the live recommendation policy, including the fixed historical
+/// opening prior below. Bump this whenever ranking, continuation, or opening-weight
+/// semantics change in a way that can change a recommendation.
+pub const ADVISOR_POLICY_SEMANTIC_REVISION_V1: u16 = 1;
+
 /// A wager in engine notation. `pillz` excludes the free attack pill and the Fury cost.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AdvisorMove {

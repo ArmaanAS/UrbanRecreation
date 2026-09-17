@@ -40,6 +40,7 @@ import {
   DenoCommandRunner,
   runRustAdvisor,
   RustAdvisorCancelledError,
+  type RustAdvisorRequest,
   type RustAdvisorRunner,
   RustAdvisorTimeoutError,
 } from "./RustAdvisor.ts";
@@ -458,6 +459,11 @@ export interface RustDecisionJobOptions {
   readonly changed?: () => void;
 }
 
+function rustRevisionTag(request: RustAdvisorRequest): string {
+  const provenance = request.provenance;
+  return `v${request.protocol_version}:${provenance.compiler_policy_semantic_revision}/${provenance.catalog_context_policy_semantic_revision}/${provenance.advisor_policy_semantic_revision}`;
+}
+
 /**
  * Owns one worker for one Position key.  This small boundary keeps process lifetime and
  * late-result checks testable without needing a capture feed or terminal.
@@ -468,6 +474,7 @@ export class RustDecisionJob {
   #transcript?: Awaited<ReturnType<typeof runRustAdvisor>>;
   #settled = false;
   #cancelled = false;
+  #revisionTag = "";
   #runPromise: Promise<void>;
 
   constructor(private readonly options: RustDecisionJobOptions) {
@@ -502,10 +509,12 @@ export class RustDecisionJob {
       this.#status = compareRustSearches(
         search,
         new CompletedRustSearch(this.options.game, this.#transcript.final),
-      );
+      ) + ` · ${this.#revisionTag}`;
     } catch (error) {
       this.#status = boundedRustStatus(
-        `rust rejected; TS fallback: ${(error as Error).message}`,
+        `rust rejected · ${this.#revisionTag}; TS fallback: ${
+          (error as Error).message
+        }`,
       );
     }
     this.#settled = true;
@@ -536,7 +545,8 @@ export class RustDecisionJob {
         this.#settled = true;
         return;
       }
-      this.setStatus("rust running");
+      this.#revisionTag = rustRevisionTag(normalised.request);
+      this.setStatus(`rust running · ${this.#revisionTag}`);
       const runner = typeof this.options.runner === "function"
         ? await this.options.runner()
         : this.options.runner;
@@ -563,17 +573,22 @@ export class RustDecisionJob {
         this.options.replaceSearch(replacement);
         cancelSearch(previous);
         this.#settled = true;
-        this.setStatus("rust active");
+        this.setStatus(`rust active · ${this.#revisionTag}`);
         return;
       }
       this.#transcript = transcript;
-      this.setStatus(source.done ? "rust ready" : "rust ready; TS finishing");
+      this.setStatus(
+        `${
+          source.done ? "rust ready" : "rust ready; TS finishing"
+        } · ${this.#revisionTag}`,
+      );
       this.settleCompare();
     } catch (error) {
       if (!this.current()) return;
+      const tag = this.#revisionTag ? ` · ${this.#revisionTag}` : "";
       const status = error instanceof RustAdvisorTimeoutError
-        ? "rust timeout; TS fallback"
-        : `rust rejected: ${(error as Error).message}`;
+        ? `rust timeout${tag}; TS fallback`
+        : `rust rejected${tag}; TS fallback: ${(error as Error).message}`;
       this.setStatus(status);
       this.#settled = true;
     }

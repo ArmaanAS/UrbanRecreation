@@ -1,4 +1,4 @@
-// Strict capture-to-Rust-advisor V2 request normalisation.
+// Strict capture-to-Rust-advisor V3 request normalisation.
 //
 // This is intentionally separate from both Advisor's private live loop and RustAdvisor's
 // process protocol.  It is the one place which is allowed to translate the site-side
@@ -84,11 +84,24 @@ function joinBytes(parts: readonly Uint8Array[]): Uint8Array {
  */
 export async function readRustV1Provenance(): Promise<RustProvenance> {
   const root = new URL("../../", import.meta.url);
-  const [registry, catalog, overrides, registrySource] = await Promise.all([
+  const [
+    registry,
+    catalog,
+    overrides,
+    registrySource,
+    compilerSource,
+    catalogMatchSource,
+    advisorSearchSource,
+  ] = await Promise.all([
     Deno.readFile(new URL("captures/abilities.json", root)),
     Deno.readFile(new URL("data/data.json", root)),
     Deno.readFile(new URL("data/battle_card_overrides.json", root)),
     Deno.readTextFile(new URL("rust/src/effect_registry.rs", root)),
+    Deno.readTextFile(
+      new URL("rust/src/engine/combat_stat_compiler.rs", root),
+    ),
+    Deno.readTextFile(new URL("rust/src/engine/catalog_match.rs", root)),
+    Deno.readTextFile(new URL("rust/src/advisor/search.rs", root)),
   ]);
   const version = /pub const EFFECT_REGISTRY_SCHEMA_VERSION:\s*u16\s*=\s*(\d+);/
     .exec(registrySource)?.[1];
@@ -100,6 +113,18 @@ export async function readRustV1Provenance(): Promise<RustProvenance> {
       "Rust V1 effect-registry schema version is missing or unsupported",
     );
   }
+  const semanticRevision = (
+    source: string,
+    name: string,
+  ): number => {
+    const revision = new RegExp(
+      `(?:pub(?:\\(crate\\))?\\s+)?const\\s+${name}:\\s*u16\\s*=\\s*(\\d+);`,
+    ).exec(source)?.[1];
+    if (revision === undefined) {
+      throw new Error(`Rust semantic revision ${name} is missing`);
+    }
+    return Number(revision);
+  };
   const effective = joinBytes([
     encoder.encode("urban-recreation-effective-catalog-v1\0"),
     u64le(catalog.length),
@@ -111,6 +136,18 @@ export async function readRustV1Provenance(): Promise<RustProvenance> {
     effectiveCatalogFingerprintFnv1a64: fnv1a64(effective),
     effectRegistryFingerprintFnv1a64: fnv1a64(registry),
     effectRegistrySchemaVersion: Number(version),
+    compilerPolicySemanticRevision: semanticRevision(
+      compilerSource,
+      "COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1",
+    ),
+    catalogContextPolicySemanticRevision: semanticRevision(
+      catalogMatchSource,
+      "CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1",
+    ),
+    advisorPolicySemanticRevision: semanticRevision(
+      advisorSearchSource,
+      "ADVISOR_POLICY_SEMANTIC_REVISION_V1",
+    ),
   };
 }
 
@@ -133,7 +170,7 @@ export function rustV1Provenance(): ReturnType<typeof readRustV1Provenance> {
 }
 
 function unsupported(reason: string): RustAdvisorInputResult {
-  return { supported: false, reason: `Rust advisor V2 unsupported: ${reason}` };
+  return { supported: false, reason: `Rust advisor V3 unsupported: ${reason}` };
 }
 
 function integer(value: unknown, where: string, min = 0): number | string {
@@ -166,7 +203,7 @@ function resources(
   const validPillz = integer(pillz, `${where}.pillz`);
   if (typeof validLife === "string") return validLife;
   if (typeof validPillz === "string") return validPillz;
-  if (validPillz > 30) return `${where}.pillz exceeds Rust V2's limit of 30`;
+  if (validPillz > 30) return `${where}.pillz exceeds Rust V3's limit of 30`;
   return { life: validLife, pillz: validPillz };
 }
 
@@ -314,7 +351,7 @@ function history(
       if (typeof pillz === "string" || pillz > 30) {
         return typeof pillz === "string"
           ? pillz
-          : `round ${roundIndex}.move.pillz exceeds Rust V2's limit of 30`;
+          : `round ${roundIndex}.move.pillz exceeds Rust V3's limit of 30`;
       }
       if (typeof move.fury !== "boolean") {
         return `round ${roundIndex}.move.fury must be boolean`;
@@ -362,7 +399,7 @@ function history(
       if (typeof pillz === "string" || pillz > 30) {
         return typeof pillz === "string"
           ? pillz
-          : `round ${roundIndex}.move.pillz exceeds Rust V2's limit of 30`;
+          : `round ${roundIndex}.move.pillz exceeds Rust V3's limit of 30`;
       }
       if (typeof move.fury !== "boolean") {
         return `round ${roundIndex}.move.fury must be boolean`;
@@ -385,12 +422,12 @@ function history(
     });
     expectedFirst = opposite(expectedFirst);
   }
-  if (result.length > 3) return "Rust V2 accepts at most three resolved rounds";
+  if (result.length > 3) return "Rust V3 accepts at most three resolved rounds";
   return { completed: result, current: undefined };
 }
 
 /**
- * Return a V2 request for the exact live information set. Server resources are read directly
+ * Return a V3 request for the exact live information set. Server resources are read directly
  * from the latest resolved capture round; the potentially reconciled TS Game is used solely
  * to establish decision orientation and independently check card/mask state.
  */
@@ -515,7 +552,7 @@ export async function normaliseRustAdvisorInput(
   if (typeof battleRuleId === "string") return unsupported(battleRuleId);
   if (battleRuleId !== RUST_V1_BATTLE_RULE_ID) {
     return unsupported(
-      `battle rule ${battleRuleId} is not Rust V2 rule ${RUST_V1_BATTLE_RULE_ID}`,
+      `battle rule ${battleRuleId} is not Rust V3 rule ${RUST_V1_BATTLE_RULE_ID}`,
     );
   }
   if (typeof rec.night !== "boolean") {
@@ -526,7 +563,7 @@ export async function normaliseRustAdvisorInput(
     return unsupported(
       typeof budget === "string"
         ? budget
-        : "budgetMs exceeds Rust V2's limit of 30000",
+        : "budgetMs exceeds Rust V3's limit of 30000",
     );
   }
   if (!/^[ -~]{1,128}$/.test(context.requestId)) {

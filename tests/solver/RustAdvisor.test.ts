@@ -30,9 +30,26 @@ const actions = [
   { index: 0, pillz: 0, fury: false },
   { index: 1, pillz: 1, fury: false },
 ];
+const provenance = {
+  effectiveCatalogFingerprintFnv1a64: "0000000000000000",
+  effectRegistryFingerprintFnv1a64: "0000000000000000",
+  effectRegistrySchemaVersion: 1,
+  compilerPolicySemanticRevision: 16,
+  catalogContextPolicySemanticRevision: 3,
+  advisorPolicySemanticRevision: 1,
+};
+const wireProvenance = {
+  effective_catalog_fingerprint_fnv1a64: "0000000000000000",
+  effect_registry_fingerprint_fnv1a64: "0000000000000000",
+  effect_registry_schema_version: 1,
+  compiler_policy_semantic_revision: 16,
+  catalog_context_policy_semantic_revision: 3,
+  advisor_policy_semantic_revision: 1,
+};
 const expectation = {
-  version: 2 as const,
+  version: 3 as const,
   requestId: "request-1",
+  provenance,
   mode: "first" as const,
   opponentHandIndex: null,
   candidates: actions,
@@ -58,10 +75,11 @@ const line = (
   opponent_hand_index: number | null = null,
 ) =>
   JSON.stringify({
-    protocol_version: 2,
+    protocol_version: 3,
     request_id: "request-1",
     sequence,
     kind,
+    provenance: wireProvenance,
     score_frame: "requester",
     evaluation_kind: "exact_continuation_policy",
     complete,
@@ -82,6 +100,14 @@ Deno.test("Rust JSONL permits a partial progress subset but requires an exact co
   );
   assertEquals(transcript.progress.length, 1);
   assertEquals(transcript.final.ranked.length, 2);
+  const wrongProvenance = JSON.parse(
+    line("final", 0, [row(actions[0]), row(actions[1])]),
+  );
+  wrongProvenance.provenance.advisor_policy_semantic_revision = 2;
+  assertThrows(
+    () => decodeRustJsonl(`${JSON.stringify(wrongProvenance)}\n`, expectation),
+    RustAdvisorProtocolError,
+  );
   assertThrows(
     () =>
       decodeRustJsonl(`${line("final", 0, [row(actions[0])])}\n`, expectation),
@@ -138,7 +164,7 @@ Deno.test("Rust JSONL fails closed for duplicate candidates, score violations, a
   );
 });
 
-Deno.test("Rust V2 SECOND JSONL requires one exact outcome per hidden wager", () => {
+Deno.test("Rust V3 SECOND JSONL requires one exact outcome per hidden wager", () => {
   const secondExpectation = {
     ...expectation,
     mode: "second" as const,
@@ -208,11 +234,7 @@ const firstInput = (): RustFirstInput => ({
   firstMover: "p1",
   battleRuleId: 10,
   night: false,
-  provenance: {
-    effectiveCatalogFingerprintFnv1a64: "0000000000000000",
-    effectRegistryFingerprintFnv1a64: "0000000000000000",
-    effectRegistrySchemaVersion: 1,
-  },
+  provenance,
   players: {
     p1: {
       initial: { life: 12, pillz: 0 },
@@ -232,9 +254,10 @@ const firstInput = (): RustFirstInput => ({
 });
 const request = (): RustFirstRequest => buildFirstRequest(firstInput());
 
-Deno.test("Rust V2 request builder emits only the strict worker shape", () => {
+Deno.test("Rust V3 request builder emits only the strict worker shape", () => {
   const built = request();
-  assertEquals(built.protocol_version, 2);
+  assertEquals(built.protocol_version, 3);
+  assertEquals(built.provenance, wireProvenance);
   assertEquals(built.battle_rule_id, 10);
   assertEquals(built.players.p1.hand.length, 4);
   assertEquals(Object.keys(built.players.p1.hand[0]).sort(), [
@@ -262,7 +285,7 @@ Deno.test("Rust V2 request builder emits only the strict worker shape", () => {
   );
 });
 
-Deno.test("Rust V2 builder makes mode and visible card explicit", () => {
+Deno.test("Rust V3 builder makes mode and visible card explicit", () => {
   const second = buildAdvisorRequest({
     ...firstInput(),
     mode: "second",
@@ -377,6 +400,7 @@ Deno.test("completed Rust FIRST adapter flips requester P2 scores into the TS P1
   const final: RustAdvisorFinal = {
     kind: "final",
     sequence: 0,
+    provenance,
     evaluationKind: "opening_estimate",
     complete: true,
     unitsDone: ts.units,
@@ -414,6 +438,7 @@ Deno.test("completed adapter rejects malformed direct finals and the wrong evalu
   const base: RustAdvisorFinal = {
     kind: "final",
     sequence: 0,
+    provenance,
     evaluationKind: "opening_estimate",
     complete: true,
     unitsDone: ts.units,
@@ -498,6 +523,7 @@ Deno.test("completed Rust SECOND adapter restores hidden-wager outcomes for the 
   const final: RustAdvisorFinal = {
     kind: "final",
     sequence: 0,
+    provenance,
     evaluationKind: "opening_estimate",
     complete: true,
     unitsDone: ts.units,
@@ -540,6 +566,7 @@ Deno.test("completed Rust BLIND_SECOND adapter keeps the provisional view shape"
   const adapter = new CompletedRustSearch(game, {
     kind: "final",
     sequence: 0,
+    provenance,
     evaluationKind: "opening_estimate",
     complete: true,
     unitsDone: ts.units,

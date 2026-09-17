@@ -61,6 +61,7 @@ The normal Rust build is a library and does not compile the historical HTTP advi
 deno task rust:check
 deno task rust:test
 deno task rust:worker
+deno task rust:worker:test
 deno task rust:advise --plain
 deno task rust:advise --interactive --plain
 deno task rust:advise --replay 877636 --plain
@@ -90,11 +91,14 @@ For the opt-in TypeScript-hosted integration, build the precompiled JSONL worker
 while comparing every supported information mode; `--rust=use` shows a structurally
 validated, complete Rust result in the existing TypeScript TUI, automatically falling back
 to TypeScript when the worker is unavailable or its result is rejected. Rust is off by
-default. V2 starts one process per JSONL request and strictly validates provenance, replayed
-history, the information mode, any revealed opposing slot, every legal action, bounded
+default. V3 starts one process per JSONL request and strictly validates data fingerprints,
+compiled engine/catalog/advisor-policy revisions, replayed history, the information mode,
+any revealed opposing slot, every legal action, bounded
 per-wager SECOND outcomes, and the response's shape and numeric bounds. Those outcomes keep
 the existing clickable opponent-read panel intact. This structural validation does not prove
 semantic equivalence on each invocation, and unsupported engine effects still fail closed.
+`rust:worker:test` builds the release worker and exercises FIRST, SECOND, and blind-second
+through the real process boundary, including a pinned TypeScript/Rust semantic match.
 
 To inspect the old advisor explicitly:
 

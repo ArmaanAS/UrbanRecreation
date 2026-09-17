@@ -140,7 +140,7 @@ function gameState(game: Game) {
   };
 }
 
-Deno.test("Rust V2 normalises 1024673's opening into engine P1 and preserves null identities", async () => {
+Deno.test("Rust V3 normalises 1024673's opening into engine P1 and preserves null identities", async () => {
   const rec = openingCapture();
   const result = await normaliseRustAdvisorInput({
     rec,
@@ -153,7 +153,7 @@ Deno.test("Rust V2 normalises 1024673's opening into engine P1 and preserves nul
   const { request } = result;
   assertEquals(request.us, "p1");
   assertEquals(request.first_mover, "p1");
-  assertEquals(request.protocol_version, 2);
+  assertEquals(request.protocol_version, 3);
   assertEquals(request.mode, "first");
   assertEquals("opponent_hand_index" in request, false);
   assertEquals(request.players.p1.hand.map((card) => card.id), [
@@ -184,7 +184,7 @@ Deno.test("Rust V2 normalises 1024673's opening into engine P1 and preserves nul
   assertEquals(request.history, []);
 });
 
-Deno.test("Rust V2 maps 1024673's round two into P2-first history and server resources", async () => {
+Deno.test("Rust V3 maps 1024673's round two into P2-first history and server resources", async () => {
   const result = await requestAtRoundTwo();
   if (!result.supported) throw new Error(result.reason);
   const { request } = result;
@@ -202,17 +202,20 @@ Deno.test("Rust V2 maps 1024673's round two into P2-first history and server res
   }]);
 });
 
-Deno.test("Rust V2 provenance is the Rust FNV-1a contract over raw repository bytes", async () => {
+Deno.test("Rust V3 provenance includes exact inputs and semantic revisions", async () => {
   const expected = {
     effectiveCatalogFingerprintFnv1a64: "95774366ab5ee807",
     effectRegistryFingerprintFnv1a64: "6e2ba7ed825a3f3f",
     effectRegistrySchemaVersion: 1,
+    compilerPolicySemanticRevision: 16,
+    catalogContextPolicySemanticRevision: 3,
+    advisorPolicySemanticRevision: 1,
   };
   assertEquals(await readRustV1Provenance(), expected);
   assertEquals(await rustV1Provenance(), expected);
 });
 
-Deno.test("Rust V2 normalises the revealed first card for SECOND without adding it to history", async () => {
+Deno.test("Rust V3 normalises the revealed first card for SECOND without adding it to history", async () => {
   const rec = partialCurrentRoundCapture();
   const game = afterFirstRoundSecondGame();
   const before = gameState(game);
@@ -227,7 +230,7 @@ Deno.test("Rust V2 normalises the revealed first card for SECOND without adding 
   const firstMove = fixture.rounds[1].moves.find((move: { side: number }) =>
     move.side === 0
   )!;
-  assertEquals(result.request.protocol_version, 2);
+  assertEquals(result.request.protocol_version, 3);
   assertEquals(result.request.mode, "second");
   assertEquals(result.request.us, "p1");
   assertEquals(result.request.first_mover, "p2");
@@ -239,7 +242,7 @@ Deno.test("Rust V2 normalises the revealed first card for SECOND without adding 
   assertEquals(gameState(game), before);
 });
 
-Deno.test("Rust V2 normalises BLIND_SECOND after a completed round without a current move", async () => {
+Deno.test("Rust V3 normalises BLIND_SECOND after a completed round without a current move", async () => {
   const rec = afterFirstRoundCapture();
   rec.mySide = 1;
   const current = emptyCurrentRound();
@@ -255,7 +258,7 @@ Deno.test("Rust V2 normalises BLIND_SECOND after a completed round without a cur
     budgetMs: 20,
   });
   if (!result.supported) throw new Error(result.reason);
-  assertEquals(result.request.protocol_version, 2);
+  assertEquals(result.request.protocol_version, 3);
   assertEquals(result.request.mode, "blind_second");
   assertEquals(result.request.us, "p1");
   assertEquals(result.request.first_mover, "p2");
@@ -264,7 +267,7 @@ Deno.test("Rust V2 normalises BLIND_SECOND after a completed round without a cur
   assertEquals(gameState(game), before);
 });
 
-Deno.test("Rust V2 accepts a live-shaped empty current round", async () => {
+Deno.test("Rust V3 accepts a live-shaped empty current round", async () => {
   const rec = afterFirstRoundCapture();
   const current = emptyCurrentRound();
   current.first = 0; // reconstruct() exposes the scheduled round-two mover before a play.
@@ -274,7 +277,7 @@ Deno.test("Rust V2 accepts a live-shaped empty current round", async () => {
   assertEquals(result.request.history.length, 1);
 });
 
-Deno.test("Rust V2 rejects a partial current round and chronology tails", async () => {
+Deno.test("Rust V3 rejects a partial current round and chronology tails", async () => {
   const partial = afterFirstRoundCapture();
   const current = emptyCurrentRound();
   current.first = 0;
@@ -299,7 +302,7 @@ Deno.test("Rust V2 rejects a partial current round and chronology tails", async 
   );
 });
 
-Deno.test("Rust V2 rejects contradictory SECOND and BLIND current states without mutating the game", async () => {
+Deno.test("Rust V3 rejects contradictory SECOND and BLIND current states without mutating the game", async () => {
   const secondRec = partialCurrentRoundCapture();
   const unselected = afterFirstRoundGame();
   assertUnsupported(
@@ -357,7 +360,7 @@ Deno.test("Rust V2 rejects contradictory SECOND and BLIND current states without
   );
 });
 
-Deno.test("Rust V2 rejects a first-mode decision when the capture owner is not first", async () => {
+Deno.test("Rust V3 rejects a first-mode decision when the capture owner is not first", async () => {
   const rec = openingCapture();
   rec.mySide = 0;
   const result = await normaliseRustAdvisorInput({
@@ -370,7 +373,7 @@ Deno.test("Rust V2 rejects a first-mode decision when the capture owner is not f
   assertUnsupported(result, "not the current first mover");
 });
 
-Deno.test("Rust V2 forwards authoritative server resources despite TS replay drift", async () => {
+Deno.test("Rust V3 forwards authoritative server resources despite TS replay drift", async () => {
   const game = afterFirstRoundGame();
   // This deliberately differs from the server's end-of-round totals.  Eligibility uses
   // the capture totals; the worker's strict replay remains responsible for rejecting a

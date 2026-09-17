@@ -588,10 +588,11 @@ the current TypeScript behavior deliberately:
 Keep the old Rust solver available as a historical reference until equivalence tests cover
 the intended replacement.
 
-### 5. TypeScript-hosted Rust worker (V2)
+### 5. TypeScript-hosted Rust worker (V3)
 
-V2 uses a versioned, one-request-per-process JSONL worker. Build it with
-`deno task rust:worker`. The TypeScript advisor remains the owner of live capture state,
+V3 uses a versioned, one-request-per-process JSONL worker. Build it with
+`deno task rust:worker`, or build and exercise the real process boundary with
+`deno task rust:worker:test`. The TypeScript advisor remains the owner of live capture state,
 policy selection, cancellation, and terminal rendering. Rust is off by default;
 `deno task advise --rust=compare` keeps TypeScript authoritative while comparing supported
 FIRST, SECOND, and blind-second decisions, and `--rust=use` installs only a structurally
@@ -600,7 +601,9 @@ provenance, history, information-set, action, completion, or result-validation f
 automatically leaves or returns the decision to TypeScript.
 
 The narrow boundary is intentional: the worker strictly validates canonical-input
-provenance, replays supplied resolved history, binds SECOND to the revealed opposing slot,
+fingerprints plus compiler, catalog-context, and advisor-policy semantic revisions; echoes
+that exact provenance on every response; replays supplied resolved history; binds SECOND to
+the revealed opposing slot,
 and checks the legal action matrix and response bounds against TypeScript's corresponding
 mode. Compact per-hidden-wager SECOND outcomes are validated against their aggregates and
 rebuild the existing opponent-read panel rather than degrading the TUI. `--rust=compare`
@@ -609,6 +612,11 @@ round-two FIRST, round-three blind-second, revealed-card SECOND, and round-four 
 does not prove semantic equivalence on every request and is neither full replay parity nor
 complete engine parity. In-process FFI remains a later consideration only after this
 protocol and engine behavior have stayed stable.
+
+The real-process gate runs admissible FIRST, SECOND, and blind-second requests from captures
+`877636`, `1024673`, and `1060199`, and pins an actual `rust match` on an exact `877636`
+decision. Capture `1081463` remains a standalone Rust replay gate: its battle-rule id is 3,
+so the rule-10 TypeScript-hosted worker deliberately rejects it before launch.
 
 ## Performance measurement
 

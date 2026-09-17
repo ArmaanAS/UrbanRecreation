@@ -48,6 +48,18 @@ export interface RustProvenance {
   readonly effectiveCatalogFingerprintFnv1a64: string;
   readonly effectRegistryFingerprintFnv1a64: string;
   readonly effectRegistrySchemaVersion: number;
+  readonly compilerPolicySemanticRevision: number;
+  readonly catalogContextPolicySemanticRevision: number;
+  readonly advisorPolicySemanticRevision: number;
+}
+
+interface RustWireProvenance {
+  readonly effective_catalog_fingerprint_fnv1a64: string;
+  readonly effect_registry_fingerprint_fnv1a64: string;
+  readonly effect_registry_schema_version: number;
+  readonly compiler_policy_semantic_revision: number;
+  readonly catalog_context_policy_semantic_revision: number;
+  readonly advisor_policy_semantic_revision: number;
 }
 
 export interface RustHistoryMove {
@@ -92,17 +104,13 @@ export type RustAdvisorInput =
 export type RustFirstInput = RustAdvisorInputBase;
 
 interface RustAdvisorRequestBase {
-  readonly protocol_version: 2;
+  readonly protocol_version: 3;
   readonly request_id: string;
   readonly us: RustWirePlayer;
   readonly first_mover: RustWirePlayer;
   readonly battle_rule_id: number;
   readonly night: boolean;
-  readonly provenance: {
-    readonly effective_catalog_fingerprint_fnv1a64: string;
-    readonly effect_registry_fingerprint_fnv1a64: string;
-    readonly effect_registry_schema_version: number;
-  };
+  readonly provenance: RustWireProvenance;
   readonly players: {
     readonly p1: RustWirePlayerState;
     readonly p2: RustWirePlayerState;
@@ -151,8 +159,8 @@ export interface RustWirePlayerState {
   }[];
 }
 
-export const RUST_ADVISOR_VERSION = 2 as const;
-/** V2 permits 32 progress records plus a detailed SECOND-mode final. */
+export const RUST_ADVISOR_VERSION = 3 as const;
+/** V3 permits 32 progress records plus a detailed SECOND-mode final. */
 export const DEFAULT_MAX_JSONL_BYTES = 3_145_761;
 export const DEFAULT_MAX_STDERR_BYTES = 64_000;
 export const DEFAULT_MAX_JSONL_LINES = 1_024;
@@ -246,6 +254,104 @@ function boundedString(value: unknown, where: string, max: number): string {
   return value;
 }
 
+function fingerprint(value: unknown, field: string): string {
+  if (typeof value !== "string" || !/^[0-9a-f]{16}$/.test(value)) {
+    fail(`${field} must be 16 lowercase hexadecimal characters`);
+  }
+  return value;
+}
+
+function normaliseWireProvenance(
+  value: unknown,
+  where: string,
+): RustProvenance {
+  const source = object(value, where);
+  keys(source, [
+    "effective_catalog_fingerprint_fnv1a64",
+    "effect_registry_fingerprint_fnv1a64",
+    "effect_registry_schema_version",
+    "compiler_policy_semantic_revision",
+    "catalog_context_policy_semantic_revision",
+    "advisor_policy_semantic_revision",
+  ], where);
+  return {
+    effectiveCatalogFingerprintFnv1a64: fingerprint(
+      source.effective_catalog_fingerprint_fnv1a64,
+      `${where}.effective_catalog_fingerprint_fnv1a64`,
+    ),
+    effectRegistryFingerprintFnv1a64: fingerprint(
+      source.effect_registry_fingerprint_fnv1a64,
+      `${where}.effect_registry_fingerprint_fnv1a64`,
+    ),
+    effectRegistrySchemaVersion: boundedInteger(
+      source.effect_registry_schema_version,
+      `${where}.effect_registry_schema_version`,
+      0,
+      65535,
+    ),
+    compilerPolicySemanticRevision: boundedInteger(
+      source.compiler_policy_semantic_revision,
+      `${where}.compiler_policy_semantic_revision`,
+      1,
+      65535,
+    ),
+    catalogContextPolicySemanticRevision: boundedInteger(
+      source.catalog_context_policy_semantic_revision,
+      `${where}.catalog_context_policy_semantic_revision`,
+      1,
+      65535,
+    ),
+    advisorPolicySemanticRevision: boundedInteger(
+      source.advisor_policy_semantic_revision,
+      `${where}.advisor_policy_semantic_revision`,
+      1,
+      65535,
+    ),
+  };
+}
+
+function sameProvenance(a: RustProvenance, b: RustProvenance): boolean {
+  return a.effectiveCatalogFingerprintFnv1a64 ===
+      b.effectiveCatalogFingerprintFnv1a64 &&
+    a.effectRegistryFingerprintFnv1a64 ===
+      b.effectRegistryFingerprintFnv1a64 &&
+    a.effectRegistrySchemaVersion === b.effectRegistrySchemaVersion &&
+    a.compilerPolicySemanticRevision === b.compilerPolicySemanticRevision &&
+    a.catalogContextPolicySemanticRevision ===
+      b.catalogContextPolicySemanticRevision &&
+    a.advisorPolicySemanticRevision === b.advisorPolicySemanticRevision;
+}
+
+function validateHostProvenance(value: unknown, where: string): void {
+  const source = object(value, where);
+  keys(source, [
+    "effectiveCatalogFingerprintFnv1a64",
+    "effectRegistryFingerprintFnv1a64",
+    "effectRegistrySchemaVersion",
+    "compilerPolicySemanticRevision",
+    "catalogContextPolicySemanticRevision",
+    "advisorPolicySemanticRevision",
+  ], where);
+  fingerprint(
+    source.effectiveCatalogFingerprintFnv1a64,
+    `${where}.effectiveCatalogFingerprintFnv1a64`,
+  );
+  fingerprint(
+    source.effectRegistryFingerprintFnv1a64,
+    `${where}.effectRegistryFingerprintFnv1a64`,
+  );
+  for (
+    const field of [
+      "effectRegistrySchemaVersion",
+      "compilerPolicySemanticRevision",
+      "catalogContextPolicySemanticRevision",
+      "advisorPolicySemanticRevision",
+    ] as const
+  ) {
+    boundedInteger(source[field], `${where}.${field}`, 1, 65535);
+  }
+}
+
 function score(value: unknown, where: string): number {
   const result = finite(value, where);
   if (result < -1 || result > 1) fail(`${where} must be in [-1, 1]`);
@@ -282,7 +388,7 @@ function json(value: JsonValue, where: string): JsonValue {
 }
 
 /**
- * The V2 request builder. It validates and copies the supplied DTO but makes no attempt
+ * The V3 request builder. It validates and copies the supplied DTO but makes no attempt
  * to infer its contents from a capture or the private Advisor reconstruction.
  */
 export function buildAdvisorRequest(
@@ -364,19 +470,16 @@ export function buildAdvisorRequest(
   if (input.mode === "blind_second" && input.us === input.firstMover) {
     fail("blind_second mode requires us to be the second mover");
   }
-  if (input.battleRuleId !== 10) fail("V2 supports battleRuleId 10 only");
+  if (input.battleRuleId !== 10) fail("V3 supports battleRuleId 10 only");
   if (typeof input.night !== "boolean") fail("night must be boolean");
   keys(object(input.provenance, "provenance"), [
     "effectiveCatalogFingerprintFnv1a64",
     "effectRegistryFingerprintFnv1a64",
     "effectRegistrySchemaVersion",
+    "compilerPolicySemanticRevision",
+    "catalogContextPolicySemanticRevision",
+    "advisorPolicySemanticRevision",
   ], "provenance");
-  const fingerprint = (value: string, field: string) => {
-    if (!/^[0-9a-f]{16}$/.test(value)) {
-      fail(`${field} must be 16 lowercase hexadecimal characters`);
-    }
-    return value;
-  };
   if (!Array.isArray(input.history) || input.history.length > 3) {
     fail("history must contain at most three rounds");
   }
@@ -436,6 +539,24 @@ export function buildAdvisorRequest(
         0,
         65535,
       ),
+      compiler_policy_semantic_revision: boundedInteger(
+        input.provenance.compilerPolicySemanticRevision,
+        "provenance.compilerPolicySemanticRevision",
+        1,
+        65535,
+      ),
+      catalog_context_policy_semantic_revision: boundedInteger(
+        input.provenance.catalogContextPolicySemanticRevision,
+        "provenance.catalogContextPolicySemanticRevision",
+        1,
+        65535,
+      ),
+      advisor_policy_semantic_revision: boundedInteger(
+        input.provenance.advisorPolicySemanticRevision,
+        "provenance.advisorPolicySemanticRevision",
+        1,
+        65535,
+      ),
     },
     players: {
       p1: player(input.players.p1, "players.p1"),
@@ -491,6 +612,7 @@ export interface RustHiddenOutcome {
 export interface RustAdvisorUpdate {
   readonly kind: "progress" | "final";
   readonly sequence: number;
+  readonly provenance: RustProvenance;
   readonly evaluationKind: "opening_estimate" | "exact_continuation_policy";
   readonly complete: boolean;
   readonly unitsDone: number;
@@ -512,8 +634,9 @@ export interface RustAdvisorTranscript {
 }
 
 export interface ResponseExpectation {
-  readonly version: 2;
+  readonly version: 3;
   readonly requestId: string;
+  readonly provenance: RustProvenance;
   readonly mode: RustAdvisorMode;
   readonly opponentHandIndex: number | null;
   /** Every update must describe this exact action set, once each. */
@@ -707,6 +830,7 @@ function decodeLine(
   }
   keys(message, [
     ...common,
+    "provenance",
     "score_frame",
     "evaluation_kind",
     "complete",
@@ -722,6 +846,13 @@ function decodeLine(
     message.request_id !== expectation.requestId
   ) {
     fail(`line ${lineNumber} does not echo this request`);
+  }
+  const provenance = normaliseWireProvenance(
+    message.provenance,
+    `line ${lineNumber}.provenance`,
+  );
+  if (!sameProvenance(provenance, expectation.provenance)) {
+    fail(`line ${lineNumber} provenance does not echo this request`);
   }
   if (message.score_frame !== "requester") {
     fail(`line ${lineNumber} has unsupported score frame`);
@@ -791,6 +922,7 @@ function decodeLine(
   const update: RustAdvisorUpdate = {
     kind: kind as "progress" | "final",
     sequence: integer(message.sequence, `line ${lineNumber}.sequence`, 0),
+    provenance,
     evaluationKind: evaluationKind(
       message.evaluation_kind,
       `line ${lineNumber}.evaluation_kind`,
@@ -1077,6 +1209,10 @@ export async function runRustAdvisor(
     return decodeRustJsonl(output.stdout, {
       version: request.protocol_version,
       requestId: request.request_id,
+      provenance: normaliseWireProvenance(
+        request.provenance,
+        "request.provenance",
+      ),
       mode: request.mode,
       opponentHandIndex: request.mode === "second"
         ? request.opponent_hand_index
@@ -1110,6 +1246,7 @@ function validateCompletedFinal(final: RustAdvisorFinal) {
   keys(value, [
     "kind",
     "sequence",
+    "provenance",
     "evaluationKind",
     "complete",
     "unitsDone",
@@ -1119,6 +1256,7 @@ function validateCompletedFinal(final: RustAdvisorFinal) {
     "opponentHandIndex",
     "ranked",
   ], "final");
+  validateHostProvenance(value.provenance, "final.provenance");
   if (value.kind !== "final" || value.complete !== true) {
     fail("final must be a complete final update");
   }

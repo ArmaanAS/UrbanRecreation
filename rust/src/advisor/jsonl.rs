@@ -1,6 +1,6 @@
 //! Strict, one-shot JSONL protocol for embedding the current Rust advisor.
 //!
-//! V2 carries first, revealed-card second, and blind-second information sets. It validates
+//! V3 carries first, revealed-card second, and blind-second information sets. It validates
 //! observed card identities against the prepared catalog/registry sources, reconstructs
 //! supplied resolved history through the same fully-executable catalog projection as the
 //! terminal advisor, and binds SECOND results to the revealed slot. Nothing on stdout is
@@ -16,16 +16,19 @@ use serde::{Deserialize, Serialize};
 use crate::advisor::input::{repository_root, BATTLE_RULE_ID};
 use crate::advisor::search::{
     search, EvaluationKind, RankedMove, SearchConfig, SearchMode, SearchSnapshot,
+    ADVISOR_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::catalog::{CardKey, EffectiveCardCatalog};
 use crate::effect_registry::EffectRegistryV1;
+use crate::engine::combat_stat_compiler::COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1;
 use crate::engine::{
     BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CatalogCombatStatMatchInputV1,
     CatalogCombatStatMatchV1, CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-    CatalogCombatStatSourceDispositionV1, MatchStatus, PlayerId, HAND_SIZE,
+    CatalogCombatStatSourceDispositionV1, MatchStatus, PlayerId,
+    CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1, HAND_SIZE,
 };
 
-pub const PROTOCOL_VERSION: u8 = 2;
+pub const PROTOCOL_VERSION: u8 = 3;
 pub const MAX_REQUEST_BYTES: usize = 65_536;
 const MAX_REQUEST_ID_BYTES: usize = 128;
 const MAX_BUDGET_MS: u64 = 30_000;
@@ -88,6 +91,7 @@ pub fn run(
                 kind,
                 request.mode,
                 request.opponent_hand_index,
+                &request.provenance,
                 snapshot,
             );
             sequence = sequence.checked_add(1).ok_or_else(|| {
@@ -211,7 +215,7 @@ impl Request {
         }
         if self.battle_rule_id != BATTLE_RULE_ID {
             return Err(protocol(&format!(
-                "unsupported battle_rule_id {}; V2 supports {BATTLE_RULE_ID}",
+                "unsupported battle_rule_id {}; V3 supports {BATTLE_RULE_ID}",
                 self.battle_rule_id
             )));
         }
@@ -342,7 +346,7 @@ impl WirePlayer {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Provenance {
     /// Exact lowercase hexadecimal FNV-1a-64 values. JSON numbers are forbidden because
@@ -350,6 +354,9 @@ struct Provenance {
     effective_catalog_fingerprint_fnv1a64: String,
     effect_registry_fingerprint_fnv1a64: String,
     effect_registry_schema_version: u16,
+    compiler_policy_semantic_revision: u16,
+    catalog_context_policy_semantic_revision: u16,
+    advisor_policy_semantic_revision: u16,
 }
 
 #[derive(Deserialize)]
@@ -587,6 +594,12 @@ fn validate_provenance(
         || request.provenance.effect_registry_fingerprint_fnv1a64
             != fnv1a64(registry.source_fingerprint_fnv1a64().value())
         || request.provenance.effect_registry_schema_version != registry.schema_version()
+        || request.provenance.compiler_policy_semantic_revision
+            != COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1
+        || request.provenance.catalog_context_policy_semantic_revision
+            != CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
+        || request.provenance.advisor_policy_semantic_revision
+            != ADVISOR_POLICY_SEMANTIC_REVISION_V1
     {
         return Err(protocol(
             "request provenance does not match this worker's strict inputs",
@@ -712,6 +725,7 @@ struct Response {
     request_id: String,
     sequence: u64,
     kind: ResponseKind,
+    provenance: Provenance,
     mode: WireSearchMode,
     /// Echoes the revealed card binding for SECOND and is null for the other modes.
     opponent_hand_index: Option<u8>,
@@ -732,6 +746,7 @@ impl Response {
         kind: ResponseKind,
         mode: WireSearchMode,
         opponent_hand_index: Option<u8>,
+        provenance: &Provenance,
         snapshot: &SearchSnapshot,
     ) -> Self {
         let include_hidden_outcomes = matches!(kind, ResponseKind::Final)
@@ -742,6 +757,7 @@ impl Response {
             request_id,
             sequence,
             kind,
+            provenance: provenance.clone(),
             mode,
             opponent_hand_index,
             score_frame: "requester",
@@ -818,12 +834,15 @@ impl ResponseMove {
 mod tests {
     use super::{run, MAX_REQUEST_BYTES};
     use crate::advisor::input::repository_root;
+    use crate::advisor::search::ADVISOR_POLICY_SEMANTIC_REVISION_V1;
     use crate::catalog::{CardKey, EffectiveCardCatalog};
     use crate::effect_registry::EffectRegistryV1;
+    use crate::engine::combat_stat_compiler::COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1;
     use crate::engine::{
         BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CatalogCombatStatMatchInputV1,
         CatalogCombatStatMatchV1, CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-        CatalogCombatStatSourceDispositionV1, PlayerId, HAND_SIZE,
+        CatalogCombatStatSourceDispositionV1, PlayerId,
+        CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1, HAND_SIZE,
     };
     use serde_json::{json, Value};
 
@@ -915,7 +934,7 @@ mod tests {
             .map(|slot| prepared_wire_card(&catalog, &prepared, PlayerId::P2, slot))
             .collect::<Vec<_>>();
         json!({
-            "protocol_version": 2,
+            "protocol_version": 3,
             "request_id": "fixture-1",
             "mode": "first",
             "us": "p1",
@@ -926,6 +945,9 @@ mod tests {
                 "effective_catalog_fingerprint_fnv1a64": format!("{:016x}", catalog.source_fingerprint_fnv1a64().value()),
                 "effect_registry_fingerprint_fnv1a64": format!("{:016x}", registry.source_fingerprint_fnv1a64().value()),
                 "effect_registry_schema_version": registry.schema_version(),
+                "compiler_policy_semantic_revision": COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+                "catalog_context_policy_semantic_revision": CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
+                "advisor_policy_semantic_revision": ADVISOR_POLICY_SEMANTIC_REVISION_V1,
             },
             "players": {
                 "p1": {"initial": {"life": 14, "pillz": 0}, "current": {"life": 14, "pillz": 0}, "played": [false, false, false, false], "hand": p1_hand},
@@ -945,7 +967,7 @@ mod tests {
         .unwrap();
         let registry = EffectRegistryV1::load(root.join("captures/abilities.json")).unwrap();
         json!({
-            "protocol_version": 2,
+            "protocol_version": 3,
             "request_id": "capture-1024673-opening",
             "mode": "first",
             "us": "p1",
@@ -956,6 +978,9 @@ mod tests {
                 "effective_catalog_fingerprint_fnv1a64": format!("{:016x}", catalog.source_fingerprint_fnv1a64().value()),
                 "effect_registry_fingerprint_fnv1a64": format!("{:016x}", registry.source_fingerprint_fnv1a64().value()),
                 "effect_registry_schema_version": registry.schema_version(),
+                "compiler_policy_semantic_revision": COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+                "catalog_context_policy_semantic_revision": CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
+                "advisor_policy_semantic_revision": ADVISOR_POLICY_SEMANTIC_REVISION_V1,
             },
             "players": {
                 "p1": {"initial": {"life": 12, "pillz": 12}, "current": {"life": 12, "pillz": 12}, "played": [false, false, false, false], "hand": [
@@ -1052,7 +1077,19 @@ mod tests {
             .collect();
         assert!(!lines.is_empty(), "expected a final record: {stdout}");
         for (index, line) in lines.iter().enumerate() {
-            assert_eq!(line["protocol_version"], 2);
+            assert_eq!(line["protocol_version"], 3);
+            assert_eq!(
+                line["provenance"]["compiler_policy_semantic_revision"],
+                COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1
+            );
+            assert_eq!(
+                line["provenance"]["catalog_context_policy_semantic_revision"],
+                CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
+            );
+            assert_eq!(
+                line["provenance"]["advisor_policy_semantic_revision"],
+                ADVISOR_POLICY_SEMANTIC_REVISION_V1
+            );
             assert_eq!(line["request_id"], "fixture-1");
             assert_eq!(line["sequence"], index as u64);
             assert_eq!(line["mode"], "first");
@@ -1169,7 +1206,7 @@ mod tests {
     }
 
     #[test]
-    fn v2_mode_contract_rejects_wrong_roles_slots_and_blind_opening() {
+    fn v3_mode_contract_rejects_wrong_roles_slots_and_blind_opening() {
         let mut first_with_slot = valid_request();
         first_with_slot["opponent_hand_index"] = json!(0);
         assert_rejected(first_with_slot);
@@ -1220,7 +1257,7 @@ mod tests {
         assert!(output.is_empty());
 
         for (field, value) in [
-            ("protocol_version", json!(1)),
+            ("protocol_version", json!(2)),
             ("mode", json!("second")),
             ("battle_rule_id", json!(11)),
         ] {
@@ -1255,6 +1292,22 @@ mod tests {
 
         let mut request = valid_request();
         request["provenance"]["effect_registry_fingerprint_fnv1a64"] = json!("ABCDEF0123456789");
+        assert_rejected(request);
+
+        for field in [
+            "compiler_policy_semantic_revision",
+            "catalog_context_policy_semantic_revision",
+            "advisor_policy_semantic_revision",
+        ] {
+            let mut request = valid_request();
+            request["provenance"][field] = json!(0);
+            assert_rejected(request);
+        }
+        let mut request = valid_request();
+        request["provenance"]
+            .as_object_mut()
+            .unwrap()
+            .remove("advisor_policy_semantic_revision");
         assert_rejected(request);
 
         let mut request = valid_request();

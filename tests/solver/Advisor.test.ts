@@ -29,12 +29,22 @@ const rustJobGame = () =>
     false,
   );
 
+const wireProvenance = {
+  effective_catalog_fingerprint_fnv1a64: "0000000000000000",
+  effect_registry_fingerprint_fnv1a64: "0000000000000000",
+  effect_registry_schema_version: 1,
+  compiler_policy_semantic_revision: 16,
+  catalog_context_policy_semantic_revision: 3,
+  advisor_policy_semantic_revision: 1,
+};
+
 const workerFinal = (requestId: string, search: Search) =>
   JSON.stringify({
-    protocol_version: 2,
+    protocol_version: 3,
     request_id: requestId,
     sequence: 0,
     kind: "final",
+    provenance: wireProvenance,
     mode: search.mode === SearchMode.BLIND_SECOND
       ? "blind_second"
       : search.mode,
@@ -103,9 +113,10 @@ function supportedRequest() {
   return {
     supported: true as const,
     request: {
-      protocol_version: 2,
+      protocol_version: 3,
       request_id: "advisor-test",
       mode: "first",
+      provenance: wireProvenance,
     } as RustAdvisorRequest,
   };
 }
@@ -182,7 +193,8 @@ Deno.test("compare keeps the TypeScript search authoritative", async () => {
   while (state.search.step()) { /* small opening search */ }
   state.job.settleCompare();
   assert(
-    state.job.status === "rust match" || state.job.status === "rust differs",
+    state.job.status.startsWith("rust match") ||
+      state.job.status.startsWith("rust differs"),
   );
   assertEquals(state.search, ts);
 });
@@ -194,7 +206,10 @@ Deno.test("use atomically replaces TypeScript only after a valid complete Rust r
   await waitFor(() => !state.job.waiting);
   assertNotEquals(state.search, ts);
   assertEquals(state.search.done, true);
-  assertEquals(state.job.status, "rust active");
+  assertEquals(
+    state.job.status,
+    "rust active · v3:16/3/1",
+  );
 });
 
 Deno.test("a rejected Rust normalisation leaves the TypeScript fallback live", async () => {
@@ -216,6 +231,27 @@ Deno.test("a rejected Rust normalisation leaves the TypeScript fallback live", a
   assertEquals(state.job.status.startsWith("rust rejected"), true);
 });
 
+Deno.test("a Rust semantic-provenance mismatch leaves the TypeScript fallback live", async () => {
+  const runner: RustAdvisorRunner = {
+    run(request) {
+      const requestId = JSON.parse(request).request_id;
+      const response = JSON.parse(workerFinal(requestId, state.search));
+      response.provenance.advisor_policy_semantic_revision = 2;
+      return Promise.resolve({
+        code: 0,
+        stdout: `${JSON.stringify(response)}\n`,
+        stderr: "",
+      });
+    },
+  };
+  const state = startFakeRustJob("use", runner);
+  const ts = state.search;
+  await waitFor(() => !state.job.waiting);
+  assertEquals(state.search, ts);
+  assert(state.job.status.includes("TS fallback"));
+  assert(state.job.status.includes("v3:16/3/1"));
+});
+
 Deno.test("a cancelled position ignores a late Rust result", async () => {
   let complete!: () => void;
   const runner: RustAdvisorRunner = {
@@ -231,7 +267,7 @@ Deno.test("a cancelled position ignores a late Rust result", async () => {
   };
   const state = startFakeRustJob("use", runner);
   const ts = state.search;
-  await waitFor(() => state.job.status === "rust running");
+  await waitFor(() => state.job.status.startsWith("rust running"));
   state.job.cancel();
   complete();
   await new Promise((resolve) => setTimeout(resolve, 0));
