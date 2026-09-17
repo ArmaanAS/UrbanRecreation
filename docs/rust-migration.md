@@ -696,6 +696,36 @@ TypeScript solver parity;
 the 98-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
 
+### Choosing the next slice
+
+Reach and unlock rank differently, and only unlock is worth acting on. Strict construction
+rejects a draw at its first unsupported source, so a raw error tally counts sources that
+merely co-occur with other blockers. `rust/tests/strict_coverage_blockers.rs` retires each
+blocking slot with a neutral filler and retries, collecting every blocker in a draw, then
+reports both numbers. It is ignored by default because it is a report rather than a gate:
+
+```bash
+cargo test --manifest-path rust/Cargo.toml --locked \
+    --test strict_coverage_blockers -- --ignored --nocapture
+```
+
+On 2026-09-17 at revision 21 it scanned 328 complete draws: 17 eligible and 8 refused
+structurally, by a Leader or a duplicate character rather than by a missing effect. The
+widest-reaching source is `759` `Protection: Power And Damage` in 50 draws, but reach is
+not value: the candidate families each unlock only a few draws on their own — conditional
+Copy (Reprisal/Revenge) 3, conditional Victory opponent-Life
+(`4708`/`4533`/`3016`/`1730`) 3, Protection (`759`/`461`/`481`/`1132`/`1355`) 3,
+stat-copying Copy 2, and Asymmetry/Unison Copy 1.
+
+Two of those are cheap because their machinery already exists. Conditional Copy needs only a
+predicate on the existing Copy plan, and conditional Victory opponent-Life needs only a
+predicate on the existing `ReduceOpponentLifeOnVictory` plan; both reuse admitted predicates
+(`OwnerMovesFirst`, `OwnerMovesSecond`, `SelectedHandSlotsMatch`, `OwnerWonPreviousRound`).
+Today a post-round plan carries no predicate, so that one shared change would serve both.
+Protection is a genuinely new control channel and Growth-on-post-round is a new magnitude
+interaction, so neither is a small slice. The measurement should be rerun after any admission
+change rather than trusted from this paragraph.
+
 ### 4. Port current solver semantics
 
 The first current-engine vertical slice landed on 2026-09-17. The
