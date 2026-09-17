@@ -77,6 +77,7 @@ pub enum CombatStatPostRoundEffectV1 {
     RecoverPaidPillzOnDefeat,
     GainOnePillzOnVictoryOrDefeat,
     GainTwoPillzOnDefeatMaxEleven,
+    GainLifeOnVictory { life: u16 },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -104,6 +105,11 @@ pub enum CombatStatEffectV1 {
     /// Argos' fixed surviving-Defeat gain, applied after the clan bonus and capped at 11
     /// without lowering a value which is already at or above that cap.
     GainTwoPillzOnDefeatMaxEleven,
+    /// Generic fixed Victory Life, admitted only by the cold structured compiler.  The
+    /// hot plan retains its exact positive magnitude but no strings or registry access.
+    GainLifeOnVictory {
+        life: u16,
+    },
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and
@@ -185,6 +191,8 @@ pub enum InvalidCombatStatPlanReasonV1 {
     VictoryOrDefeatPredicate,
     ArgosDefeatCappedPillzIdentity,
     ArgosDefeatCappedPillzPredicate,
+    VictoryLifeMagnitude,
+    VictoryLifePredicate,
     /// The ability uses Support outside the unconditional basic-stat subset admitted by
     /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
@@ -607,6 +615,27 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    if let CombatStatEffectV1::GainLifeOnVictory { life } = effect {
+        if life == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryLifeMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
     {
@@ -951,7 +980,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         }
         CombatStatEffectV1::RecoverPaidPillzOnDefeat
         | CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat
-        | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven => return None,
+        | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven
+        | CombatStatEffectV1::GainLifeOnVictory { .. } => return None,
     })
 }
 
@@ -965,6 +995,9 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundEffec
         }
         CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven => {
             Some(PostRoundEffect::GainTwoPillzOnDefeatMaxEleven)
+        }
+        CombatStatEffectV1::GainLifeOnVictory { life } => {
+            Some(PostRoundEffect::GainLifeOnVictory(life))
         }
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentBonus
@@ -1400,6 +1433,78 @@ mod tests {
             overflow.make(input(0, false)),
             Err(CombatStatDiagnosticErrorV1::BaseRules(
                 BaseRulesError::PillzIncreaseOverflow {
+                    player: PlayerId::P1
+                }
+            ))
+        ));
+        assert_eq!(overflow.position(), &before);
+    }
+
+    #[test]
+    fn victory_life_direct_plan_is_positive_winner_only_bonus_before_ability_and_atomic() {
+        let bonus = CombatStatEffectV1::GainLifeOnVictory { life: 2 };
+        let ability = CombatStatEffectV1::GainLifeOnVictory { life: 1 };
+        let mut ordered = spec_with_p1(CombatStatEffectSourceV1::Bonus, 888, bonus, 3);
+        ordered.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        ordered.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 889,
+            predicate: CombatStatPredicateV1::Always,
+            effect: ability,
+        };
+        let mut ordered = CombatStatDiagnosticV1::new(ordered).unwrap();
+        let before = ordered.position().clone();
+        let mut hasher = DefaultHasher::new();
+        before.hash(&mut hasher);
+        let before_hash = hasher.finish();
+        let (report, undo) = ordered.make(input(3, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        // The Bonus registration is before Ability in the common END plan; both values
+        // are carried by the plan rather than read from a registry on the hot path.
+        assert_eq!(report.players[PlayerId::P1].life, 23);
+        ordered.unmake(undo);
+        assert_eq!(ordered.position(), &before);
+        let mut restored = DefaultHasher::new();
+        ordered.position().hash(&mut restored);
+        assert_eq!(restored.finish(), before_hash);
+
+        let mut zero = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            888,
+            CombatStatEffectV1::GainLifeOnVictory { life: 0 },
+            3,
+        );
+        zero.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(zero),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::VictoryLifeMagnitude,
+                ..
+            })
+        ));
+
+        let mut conditional = spec_with_p1(CombatStatEffectSourceV1::Ability, 888, bonus, 3);
+        conditional.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 888,
+            predicate: CombatStatPredicateV1::OwnerWonPreviousRound,
+            effect: bonus,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(conditional),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::VictoryLifePredicate,
+                ..
+            })
+        ));
+
+        let mut overflow = spec_with_p1(CombatStatEffectSourceV1::Ability, 888, bonus, 0);
+        overflow.base_rules.players[PlayerId::P1].initial_life = u16::MAX;
+        overflow.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        let mut overflow = CombatStatDiagnosticV1::new(overflow).unwrap();
+        let before = overflow.position().clone();
+        assert!(matches!(
+            overflow.make(input(0, false)),
+            Err(CombatStatDiagnosticErrorV1::BaseRules(
+                BaseRulesError::LifeIncreaseOverflow {
                     player: PlayerId::P1
                 }
             ))

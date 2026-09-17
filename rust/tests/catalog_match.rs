@@ -1000,6 +1000,117 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
 }
 
 #[test]
+fn strict_catalog_match_preserves_dave_catalog_and_registry_life_identity() {
+    let catalog = catalog();
+    let registry = registry();
+    let dave_hand = [
+        CardKey::new(488, 4),
+        CardKey::new(1062, 2),
+        CardKey::new(1019, 2),
+        CardKey::new(1918, 3),
+    ];
+    let opponent = [
+        CardKey::new(128, 3),
+        CardKey::new(432, 4),
+        CardKey::new(486, 3),
+        CardKey::new(166, 3),
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(dave_hand, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+        &prepared.preparation()[PlayerId::P1][1].ability
+    else {
+        panic!("Dave's catalog ability was not prepared as Victory Life")
+    };
+    assert_eq!(identity.catalog_id, Some(888));
+    // The catalog's stable source id is an alias, not the registry's canonical first
+    // definition.  Strict construction keeps both identities rather than collapsing it
+    // to description text or pretending the catalog id is the registry definition.
+    assert_eq!(identity.registry_definition_id, 401);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [401, 888]);
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::GainLifeOnVictory { life: 2 }
+    );
+    assert!(matches!(
+        prepared.match_spec().cards[PlayerId::P1][1].ability,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 401,
+            predicate: CombatStatPredicateV1::Always,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::GainLifeOnVictory {
+                life: 2
+            },
+        }
+    ));
+}
+
+#[test]
+fn strict_catalog_match_bridges_only_the_active_jungo_victory_life_bonus() {
+    let catalog = catalog();
+    let registry = registry();
+    let jungo = [
+        CardKey::new(584, 1),
+        CardKey::new(585, 1),
+        CardKey::new(587, 1),
+        CardKey::new(589, 1),
+    ];
+    let (_, opponent) = fully_supported_hands();
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(jungo, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+
+    for slot in 0..4 {
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, effect } =
+            &prepared.preparation()[PlayerId::P1][slot].bonus
+        else {
+            panic!("active Jungo bonus in slot {slot} was not executable")
+        };
+        assert_eq!(identity.catalog_id, Some(41));
+        assert_eq!(identity.registry_definition_id, 401);
+        assert_eq!(identity.registry_alias_ids.as_ref(), [401, 888]);
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::GainLifeOnVictory { life: 2 }
+        );
+        assert!(matches!(
+            prepared.match_spec().cards[PlayerId::P1][slot].bonus,
+            CombatStatSourcePlanV1::Execute {
+                source_id: 401,
+                predicate: CombatStatPredicateV1::Always,
+                effect: urban_recreation_rust::engine::CombatStatEffectV1::GainLifeOnVictory {
+                    life: 2
+                },
+            }
+        ));
+    }
+
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(2, 12, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 14);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
+}
+
+#[test]
 fn strict_catalog_match_rejects_dynamic_copy_before_it_can_synthesize_vod_1034() {
     let catalog = catalog();
     let registry = registry();
@@ -1147,6 +1258,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 2);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);

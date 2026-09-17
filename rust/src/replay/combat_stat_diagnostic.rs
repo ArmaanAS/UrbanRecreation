@@ -15,8 +15,8 @@ use crate::effect_registry::{
 };
 use crate::engine::combat_stat_compiler::{
     classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_recover_pillz,
-    classify_victory_or_defeat_pillz, compact_effect,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_victory_life, classify_victory_or_defeat_pillz, compact_effect,
+    has_victory_life_shape, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -635,6 +635,19 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some(life) = classify_victory_life(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::GainLifeOnVictory { life },
+            },
+        });
+    }
     if let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) {
         let compact_effect = compact_effect(effect).ok_or(
             CombatStatDiagnosticPreparationErrorV1::UnsupportedCompiledShape {
@@ -670,6 +683,14 @@ fn prepare_combat_stat_source(
     let unadmitted_post_round_recovery =
         definition.structured_input().special_action == SpecialActionV1::RecoverPillz;
     let unadmitted_victory_or_defeat = source.description == "Victory Or Defeat : +1 Pillz";
+    // A near-miss of the admitted family is a selected hazard: either the literal grammar
+    // names Victory Life but its structure is wrong, or the complete reviewed structure
+    // is present under malformed text. Other Life families keep the diagnostic's existing
+    // visible-but-disabled behavior until their own slices are implemented.
+    let unadmitted_victory_life = (source.description.starts_with('+')
+        && source.description.ends_with(" Life")
+        && definition.structured_input().attribute_affected == AttributeAffectedV1::Life)
+        || has_victory_life_shape(definition);
     // A shape, identity, or description mutation of the reviewed Argos record must remain
     // a selected hazard instead of quietly becoming a disabled no-op.
     let unadmitted_argos_defeat_capped_pillz =
@@ -678,9 +699,10 @@ fn prepare_combat_stat_source(
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {
         CombatStatDisabledReasonV1::UnsupportedSelectedHazard { registry_reasons }
-    } else if unadmitted_victory_or_defeat {
-        CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
-    } else if unadmitted_argos_defeat_capped_pillz {
+    } else if unadmitted_victory_or_defeat
+        || unadmitted_victory_life
+        || unadmitted_argos_defeat_capped_pillz
+    {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
     } else if unadmitted_post_round_recovery {
         CombatStatDisabledReasonV1::UnsupportedPostRoundRecovery { registry_reasons }
@@ -700,6 +722,7 @@ fn prepare_combat_stat_source(
         || unadmitted_combat_stat
         || unadmitted_post_round_recovery
         || unadmitted_victory_or_defeat
+        || unadmitted_victory_life
         || unadmitted_argos_defeat_capped_pillz
     {
         CombatStatSourcePlanV1::RejectIfSelected {

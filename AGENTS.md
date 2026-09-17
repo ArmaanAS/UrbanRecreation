@@ -14,7 +14,7 @@ Written by hand by the repo owner (armaanas); AI assistance started September 20
 | `data/` | `data.json` = the card list the engine loads, **one row per card per level** (power, damage and ability differ by level), built by `deno task cards` from `site_characters.jsonl` (gitignored 40 MB dump of the site's own card DB, refreshed via `__ur.dumpCharacters()` in the browser). `site_clans.json` (from `__ur.dumpClans()`) supplies clan names/bonuses; otherwise they come from the legacy `cards.json`. `cards.json` / `data.maxlevel.json` = older OAuth-API dumps (Dec 2024, max level only, stale); `compiled.json` = ability inventory from `deno task compile`. |
 | `scripts/` | Card data (`BuildCardData.ts` is the live path; `RequestCards.ts` / `RequestAllCardLevels.ts` / `UR_API.ts` are the OAuth-API path, needs API_KEY/API_SECRET in `.env` plus a browser auth step), ability compiler (`CompileAbilities.js`), battle capture (`BattleCapture.ts`, `ExtractBattle.ts`). |
 | `tests/` | `deno test -A`. Per-ability tests in `tests/ability/`, replay of captured games in `tests/replay/`, Rust cross-check testcases in `tests/rust/`. |
-| `rust/` | Imported Rust implementation and candidate high-performance backend. `engine::BaseRulesGame` remains the effects-disabled 20-round reference; `engine::ClanBonusDiagnostic` preserves its separate 40-round projected gate; `engine::CombatStatDiagnosticV1` adds a distinct fail-closed combat-stat projection with a 44-round gate. Semantic revision 11 retains the bounded fixed-stat and previous-round slices, exact Defeat recovery (`bonus 577`, `ability 729/1418`), the audited `Victory Or Defeat : +1 Pillz` family (`bonus 1034`; abilities `1034/1375/4111/5085/5520`), and Argos' exact capped Defeat Pillz ability (`1158`), not general temporal-condition, Copy, capped-increase, or resource-effect parity. `engine::CatalogCombatStatMatchV1` is the strict catalog-only constructor for search positions: it applies reviewed runtime card overrides, derives immutable Oculus/effective-clan and day/night context, and rejects a draw unless all eight cards are executable by that projection. `advisor/` now contains a current-engine, one-round make/unmake search and bounded static TUI for manual strict draws; it is an integration checkpoint, not live-policy parity. The historical engine remains beside them, and the old HTTP advisor is behind `legacy-advisor`. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
+| `rust/` | Imported Rust implementation and candidate high-performance backend. `engine::BaseRulesGame` remains the effects-disabled 20-round reference; `engine::ClanBonusDiagnostic` preserves its separate 40-round projected gate; `engine::CombatStatDiagnosticV1` adds a distinct fail-closed combat-stat projection with a 48-round gate. Semantic revision 12 retains the bounded fixed-stat and previous-round slices, exact Defeat recovery (`bonus 577`, `ability 729/1418`), the audited `Victory Or Defeat : +1 Pillz` family (`bonus 1034`; abilities `1034/1375/4111/5085/5520`), Argos' exact capped Defeat Pillz ability (`1158`), and exact structured fixed `+N Life` on victory (Ability or Bonus; captures `877636`, `877860`, `878011`), not general temporal-condition, Copy, capped-increase, or resource-effect parity. `engine::CatalogCombatStatMatchV1` is the strict catalog-only constructor for search positions: it applies reviewed runtime card overrides, derives immutable Oculus/effective-clan and day/night context, and rejects a draw unless all eight cards are executable by that projection. `advisor/` contains a current-engine make/unmake search, bounded TUI, manual four-round mode, exact conservative rounds 3–4 policy, and strict captured-replay grading; it is an integration checkpoint, not full live-policy parity. The historical engine remains beside them, and the old HTTP advisor is behind `legacy-advisor`. New Rust work reads the root canonical data and captures—`rust/assets/` is historical only. See `docs/rust-migration.md`. |
 | `ur-logger.user.js` + `log_server.ts` | Tampermonkey userscript mirroring site traffic to a local server that writes `ur_log.jsonl` (raw, **contains tokens, gitignored**) and secret-free per-battle files in `captures/battles/`. Binary response bodies (WebGL asset bundles, images, wasm) are dropped on both sides: `res.text()` decodes them as lossy UTF-8, so they are unrecoverable garbage, and unfiltered they were 65% of the first real log. `scripts/PruneLog.ts` retro-fixes older logs. |
 | `captures/` | `battles/<id>.jsonl` raw battle capture in a compact lossless form (static block once + one dynamic line per `battles.status` poll, ~20 KB/battle instead of ~450 KB; `expandStatus()` in `scripts/BattleCapture.ts` rebuilds the original server objects); `abilities.json` shared ability/bonus dictionary (id → description + structured `abilityData`); `games/<id>.json` clean game records with decks, moves, per-round resolution, life/pillz, and an engine `testcase`. All safe to commit. |
 
@@ -36,6 +36,7 @@ deno task rust:check             # Rust library + optional historical advisor co
 deno task rust:test              # Rust foundation, catalog, replay and current base-engine tests
 deno task rust:advise --plain    # current Rust engine: strict current-round TUI
 deno task rust:advise --interactive --plain  # manually advance the supported match
+deno task rust:advise --replay 877636 --plain  # grade and verify a real captured match
 UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (off by default)
 ```
 
@@ -77,19 +78,20 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    unchanged 20-round base set plus 20 audited additions. It trusts captured active bonus
    identity for replay preparation only; do not use its source-bonus Support grouping as a
    catalog-only/effective-clan solver rule. Night bonus id 1442 remains deferred.
-   The separate Rust `CombatStatDiagnosticV1` gate is fixed at 44 sequential prefix rounds.
+   The separate Rust `CombatStatDiagnosticV1` gate is fixed at 48 sequential prefix rounds.
    It admits fixed ordinary combat stats with Always/Courage/Reprisal and numeric
    Symmetry/Asymmetry (immutable original hand-slot equality/inequality), round-scaled
    Growth/Degrowth, selected-opponent-level Equalizer, ordinary unconditional Support
    Attack/Power/Damage abilities, the earlier bonus/control slice, and the exact
    post-round Defeat recovery identities (bonus `577`; abilities `729`/`1418`) and the exact
    Victory-or-Defeat Pillz family (bonus `1034`; abilities `1034/1375/4111/5085/5520`),
-   plus Argos' exact `Defeat: +2 Pillz Max. 11` ability (`1158`);
+   plus Argos' exact `Defeat: +2 Pillz Max. 11` ability (`1158`) and exact structured
+   fixed `+N Life` on victory;
    replay-only dynamic `ability:1034` is never synthesized by catalog construction; global/off-card
    hazards are preparation-fatal, while unadmitted combat-stat, control, and `recover_pillz`
    hazards reject if selected. Ability and bonus Support use independently validated immutable
    effective-clan character counts;
-   provenance revision 11 records the current compiler policy. Recovery ratios, source-id
+   provenance revision 12 records the current compiler policy. Recovery ratios, source-id
    variants (including `2475`), every unlisted same-text identity, generic capped increases,
    and controls beyond Stop Bonus remain fail-closed.
 5. The owner has authorized tested `main` pushes. Never force-push, and never commit
@@ -113,7 +115,7 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   adapter come before engine parity; engine parity comes before porting current solver policy.
 - `rust/src/engine/` keeps base rules and projected effect models separate. The 20-round
   base gate proves replay/combat plumbing, the 40-round clan diagnostic executes its bounded
-  bonus slice, and the 44-round combat-stat diagnostic adds fixed ordinary abilities,
+  bonus slice, and the 48-round combat-stat diagnostic adds fixed ordinary abilities,
   numeric hand-slot predicates, round-scaled magnitudes, Equalizer, and ordinary numeric
   Support abilities without claiming general condition or full-effect parity.
 - `EffectiveCardCatalog` is required for solver-facing construction and validates
@@ -122,8 +124,8 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   resolves active day/night descriptions through the effect registry, and rejects duplicate
   characters, Leaders, dynamic Copy, and every other source outside the bounded projection.
   Its provenance includes exact effective-catalog and registry source fingerprints plus
-  compiler and catalog-context policy revisions. It prepares trustworthy match inputs; the
-  current TypeScript solver policy has not yet been ported.
+  compiler and catalog-context policy revisions. It prepares trustworthy match inputs; only
+  the exact conservative late policy has been ported, not the complete TypeScript solver.
 - `rust/src/effect_registry.rs` strictly parses and classifies `captures/abilities.json`.
   Supported compiler output is a string-free future execution plan; no effect is implemented
   until an engine slice executes it and replay evidence establishes its behavior. Never treat
@@ -133,11 +135,13 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   correctness oracle.
 - Do not revive the historical perfect-information advisor as the live recommendation
   model. The current hidden-information `Search`/`Policy` behavior must be ported explicitly.
-- `rust/src/advisor/` is the current-engine vertical slice: strict manual/demo input, a
+- `rust/src/advisor/` is the current-engine vertical slice: strict manual/demo/replay input, a
   complete current-round make/unmake matrix, deadline-safe partial results, a bounded
-  terminal view, and a manual four-round session. Rounds 1–2 deliberately use a labelled
+  terminal view, a manual four-round session, and server-backed grading of every decision in
+  supported capture `877636`. Replay mode verifies complete card and resource results before
+  advancing. Rounds 1–2 deliberately use a labelled
   position heuristic; rounds 3–4 use an exact conservative policy whose reply may depend
-  on a visible opposing card but not hidden pillz/Fury. Do not present it as live capture,
+  on a visible opposing card but not hidden pillz/Fury. Do not present it as live-stream capture,
   opening-prior, blind-second, round-2, or complete TypeScript policy parity.
 - Initial integration should use a versioned JSON-lines worker owned by the TypeScript
   advisor. Reconsider in-process FFI only after correctness and protocol stability.

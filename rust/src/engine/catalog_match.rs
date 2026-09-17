@@ -6,7 +6,7 @@
 
 use super::combat_stat_compiler::{
     classify_argos_defeat_capped_pillz, classify_combat_stat_effect, classify_defeat_recover_pillz,
-    classify_victory_or_defeat_pillz, compact_effect,
+    classify_victory_life, classify_victory_or_defeat_pillz, compact_effect,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::{
@@ -37,7 +37,11 @@ const RIOTS_CLAN_ID: u32 = 49;
 const RIOTS_CATALOG_BONUS_ID: u32 = 47;
 const VICTORY_OR_DEFEAT_PILLZ_DESCRIPTION: &str = "Victory Or Defeat : +1 Pillz";
 const VICTORY_OR_DEFEAT_RIOTS_BONUS_REGISTRY_ID: u32 = 1034;
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 1;
+const JUNGO_CLAN_ID: u32 = 43;
+const JUNGO_CATALOG_BONUS_ID: u32 = 41;
+const JUNGO_VICTORY_LIFE_BONUS_REGISTRY_ID: u32 = 401;
+const JUNGO_VICTORY_LIFE_DESCRIPTION: &str = "+2 Life";
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -792,6 +796,54 @@ fn prepare_catalog_source(
                 .into_boxed_slice(),
         });
     }
+    // Jungo's catalog bonus id is not a capture-registry id. Bridge only its active
+    // effective clan and exact printed source to the independently captured definition.
+    if description == JUNGO_VICTORY_LIFE_DESCRIPTION
+        && source_kind == CombatStatEffectSourceV1::Bonus
+        && effective_clan_id == JUNGO_CLAN_ID
+        && catalog_id == Some(JUNGO_CATALOG_BONUS_ID)
+    {
+        return prepare_victory_life_source(
+            registry,
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description,
+            JUNGO_VICTORY_LIFE_BONUS_REGISTRY_ID,
+        );
+    }
+    // Every other generic Victory Life source must carry an actual registry identity in
+    // the catalog. Description equality alone is never authority to execute a Life effect.
+    if let Ok(match_) = registry.lookup_description(description) {
+        let definition = match_.definition();
+        if classify_victory_life(definition, source_kind).is_some() {
+            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
+                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description: description.to_owned(),
+                    registry_definition_id: definition.id(),
+                    registry_reasons: definition
+                        .compiled()
+                        .unsupported_reasons()
+                        .to_vec()
+                        .into_boxed_slice(),
+                });
+            }
+            return prepare_victory_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
+    }
     let match_ = registry.lookup_description(description).map_err(|source| {
         CatalogCombatStatMatchErrorV1::Lookup {
             player,
@@ -841,6 +893,71 @@ fn prepare_catalog_source(
             source_id: definition.id(),
             predicate,
             effect: compact_effect,
+        },
+    })
+}
+
+fn prepare_victory_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    let Some(life) = classify_victory_life(definition, source_kind) else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::GainLifeOnVictory { life },
         },
     })
 }

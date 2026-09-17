@@ -270,6 +270,9 @@ pub enum BaseRulesError {
     PillzIncreaseOverflow {
         player: PlayerId,
     },
+    LifeIncreaseOverflow {
+        player: PlayerId,
+    },
 }
 
 impl fmt::Display for BaseRulesError {
@@ -312,6 +315,9 @@ impl fmt::Display for BaseRulesError {
             Self::PillzIncreaseOverflow { player } => {
                 write!(formatter, "{player:?} pillz increase overflow")
             }
+            Self::LifeIncreaseOverflow { player } => {
+                write!(formatter, "{player:?} life increase overflow")
+            }
         }
     }
 }
@@ -346,6 +352,7 @@ pub(super) enum PostRoundEffect {
     RecoverPaidPillzOnDefeat,
     GainOnePillzOnVictoryOrDefeat,
     GainTwoPillzOnDefeatMaxEleven,
+    GainLifeOnVictory(u16),
 }
 
 #[derive(Clone, Copy)]
@@ -478,6 +485,18 @@ impl BaseRulesGame {
                         }
                     }
                     PostRoundEffect::GainTwoPillzOnDefeatMaxEleven => {}
+                    // Victory Life is immediate end-of-round work: it sees the damage
+                    // result, applies only to the round winner, and can therefore revive
+                    // neither a defeated player nor a KO.  `position` is still a private
+                    // replacement until every checked addition succeeds, keeping failure
+                    // atomic and make/unmake exact.
+                    PostRoundEffect::GainLifeOnVictory(life) if owner == winner => {
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(life)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainLifeOnVictory(_) => {}
                 }
             }
         }

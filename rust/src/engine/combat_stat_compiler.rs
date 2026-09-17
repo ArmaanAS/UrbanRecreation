@@ -14,7 +14,28 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 11;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 12;
+
+/// Recognize only the literal, immediate end-of-round Victory Life grammar.  Unlike the
+/// identity-locked Pillz slices below, this is deliberately generic: any registry
+/// definition with the complete reviewed structured shape may supply its positive fixed
+/// magnitude, whether it came from an Ability or a Bonus.
+pub(crate) fn classify_victory_life(
+    definition: &EffectDefinitionV1,
+    _source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let input = definition.structured_input();
+    (has_victory_life_shape(definition)
+        && definition.description() == format!("+{} Life", input.value))
+    .then_some(input.value)
+}
+
+/// Structural half of the Victory Life boundary. Replay preparation uses this to reject
+/// exact-shape sources whose description is malformed instead of silently disabling them.
+pub(crate) fn has_victory_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && victory_life_shape_matches(input)
+}
 
 /// Strictly recognize the three replay identities audited for the diagnostic's Defeat
 /// recovery effect. This intentionally does not broaden the registry compiler's generic
@@ -89,6 +110,9 @@ pub(crate) fn classify_combat_stat_effect(
         return None;
     }
     if classify_argos_defeat_capped_pillz(definition, source_kind) {
+        return None;
+    }
+    if classify_victory_life(definition, source_kind).is_some() {
         return None;
     }
     // Victory Or Defeat Pillz likewise has its own post-round execution channel.
@@ -427,6 +451,38 @@ fn defeat_recover_shape_matches(input: &StructuredEffectV1) -> bool {
         && input.attribute_affected == AttributeAffectedV1::Pillz
         && input.attribute_action == AttributeActionV1::Increase
         && input.special_action == SpecialActionV1::RecoverPillz
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+fn victory_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value_min == 0
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::None
         && !input.is_inverted
         && !input.is_support
         && !input.is_anti_support
@@ -867,6 +923,53 @@ mod tests {
                 .unwrap(),
             CombatStatEffectSourceV1::Bonus,
         ));
+    }
+
+    #[test]
+    fn victory_life_requires_positive_literal_description_and_complete_neutral_shape() {
+        let registry = registry();
+        let dave = registry.lookup_capture(888, "+2 Life").unwrap();
+        for source in [
+            CombatStatEffectSourceV1::Ability,
+            CombatStatEffectSourceV1::Bonus,
+        ] {
+            assert_eq!(classify_victory_life(dave, source), Some(2));
+        }
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("valueMin", serde_json::json!(1)),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("isLifeLinked", serde_json::json!(true)),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["888"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_victory_life(
+                    malformed.lookup_capture(888, "+2 Life").unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "mutated field {field}"
+            );
+        }
+        let mut malformed = source;
+        malformed["888"]["description"] = serde_json::json!("+2 Life ");
+        let malformed =
+            EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                .unwrap();
+        assert_eq!(
+            classify_victory_life(
+                malformed.lookup_capture(888, "+2 Life ").unwrap(),
+                CombatStatEffectSourceV1::Ability,
+            ),
+            None
+        );
     }
 
     #[test]

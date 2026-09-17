@@ -7,14 +7,20 @@
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
-use std::path::PathBuf;
+use std::fs::File;
+use std::io;
+use std::path::{Path, PathBuf};
 
 use crate::catalog::{CardKey, EffectiveCardCatalog, EffectiveCatalogError};
 use crate::effect_registry::{EffectRegistryError, EffectRegistryV1};
 use crate::engine::{
     ByPlayer, CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1,
     CatalogCombatStatMatchV1, CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-    PlayerId, HAND_SIZE,
+    CatalogCombatStatSourceDispositionV1, PlayerId, HAND_SIZE,
+};
+use crate::replay::{
+    adapt_capture, AdapterError, CapturedGame, EnginePlayer, ReplayCaseV1, ReplayClassification,
+    ReplayRound, SourceModifier,
 };
 
 pub const DEFAULT_LIFE: u16 = 14;
@@ -39,7 +45,7 @@ const DEMO_P2: [CardKey; HAND_SIZE] = [
     CardKey::new(447, 1),
 ];
 
-pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,...] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match; one-shot second-mover advice requires --second-card.";
+pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,... | --replay BATTLE_ID] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match. --replay grades every recorded decision through the strict Rust engine and solver; it may be combined only with budget/display flags. One-shot second-mover advice requires --second-card.";
 
 /// All non-card controls are explicit, while the two hands remain fixed-size card keys.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,6 +65,9 @@ pub struct AdvisorOptions {
     pub plain: bool,
     pub interactive: bool,
     pub using_demo_draw: bool,
+    /// A normalized capture to replay decision by decision. Its hands, resources, roles,
+    /// night state, and first movers are authoritative over the manual defaults above.
+    pub replay_id: Option<u64>,
 }
 
 impl Default for AdvisorOptions {
@@ -78,8 +87,18 @@ impl Default for AdvisorOptions {
             plain: false,
             interactive: false,
             using_demo_draw: true,
+            replay_id: None,
         }
     }
+}
+
+/// Immutable normalized capture data retained by replay mode after strict draw preparation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedAdvisorReplay {
+    pub battle_id: u64,
+    pub us: PlayerId,
+    pub player_names: ByPlayer<String>,
+    pub rounds: Vec<ReplayRound>,
 }
 
 /// Display data is copied from the same effective catalog that produced the strict match.
@@ -101,6 +120,8 @@ pub struct PreparedAdvisorInput {
     pub options: AdvisorOptions,
     pub combat_match: CatalogCombatStatMatchV1,
     pub cards: ByPlayer<[AdvisorCardDisplay; HAND_SIZE]>,
+    pub source_label: String,
+    pub replay: Option<PreparedAdvisorReplay>,
 }
 
 impl PreparedAdvisorInput {
@@ -114,6 +135,34 @@ pub enum AdvisorInputError {
     Argument(String),
     Catalog(EffectiveCatalogError),
     Registry(EffectRegistryError),
+    ReplayOpen {
+        path: PathBuf,
+        source: io::Error,
+    },
+    ReplayParse {
+        battle_id: u64,
+        source: serde_json::Error,
+    },
+    ReplayAdapt(AdapterError),
+    ReplayUnavailable {
+        battle_id: u64,
+        reason: String,
+    },
+    ReplayRecordingSideMissing {
+        battle_id: u64,
+    },
+    ReplayEvidenceMissing {
+        battle_id: u64,
+        round: u8,
+        player: PlayerId,
+    },
+    ReplaySourceMismatch {
+        battle_id: u64,
+        player: PlayerId,
+        hand_slot: u8,
+        source_kind: &'static str,
+        detail: String,
+    },
     UnsupportedDraw(CatalogCombatStatMatchErrorV1),
 }
 
@@ -125,6 +174,39 @@ impl fmt::Display for AdvisorInputError {
                 write!(formatter, "failed to load effective catalog: {source}")
             }
             Self::Registry(source) => write!(formatter, "failed to load effect registry: {source}"),
+            Self::ReplayOpen { path, source } => {
+                write!(formatter, "failed to open replay {}: {source}", path.display())
+            }
+            Self::ReplayParse { battle_id, source } => {
+                write!(formatter, "failed to parse replay battle {battle_id}: {source}")
+            }
+            Self::ReplayAdapt(source) => source.fmt(formatter),
+            Self::ReplayUnavailable { battle_id, reason } => {
+                write!(formatter, "battle {battle_id} is not replayable: {reason}")
+            }
+            Self::ReplayRecordingSideMissing { battle_id } => write!(
+                formatter,
+                "battle {battle_id} does not identify the recording player, so its decisions cannot be graded"
+            ),
+            Self::ReplayEvidenceMissing {
+                battle_id,
+                round,
+                player,
+            } => write!(
+                formatter,
+                "battle {battle_id} round {} has no server card result for {player:?}; strict replay advice requires power, damage, attack, winner, life, and pillz evidence",
+                round + 1
+            ),
+            Self::ReplaySourceMismatch {
+                battle_id,
+                player,
+                hand_slot,
+                source_kind,
+                detail,
+            } => write!(
+                formatter,
+                "battle {battle_id} {player:?} slot {hand_slot} {source_kind} differs from the strict catalog match: {detail}"
+            ),
             Self::UnsupportedDraw(source) => write!(formatter, "unsupported draw: {source}"),
         }
     }
@@ -135,8 +217,15 @@ impl Error for AdvisorInputError {
         match self {
             Self::Catalog(source) => Some(source),
             Self::Registry(source) => Some(source),
+            Self::ReplayOpen { source, .. } => Some(source),
+            Self::ReplayParse { source, .. } => Some(source),
+            Self::ReplayAdapt(source) => Some(source),
             Self::UnsupportedDraw(source) => Some(source),
-            Self::Argument(_) => None,
+            Self::Argument(_)
+            | Self::ReplayUnavailable { .. }
+            | Self::ReplayRecordingSideMissing { .. }
+            | Self::ReplayEvidenceMissing { .. }
+            | Self::ReplaySourceMismatch { .. } => None,
         }
     }
 }
@@ -173,6 +262,13 @@ where
             "--demo" => {
                 mark_once(&mut seen, flag)?;
                 explicit_demo = true;
+            }
+            "--replay" => {
+                mark_once(&mut seen, flag)?;
+                options.replay_id = Some(parse_nonzero(
+                    value_after(&arguments, &mut index, flag)?,
+                    flag,
+                )?);
             }
             "--p1" => {
                 mark_once(&mut seen, flag)?;
@@ -260,6 +356,26 @@ where
         }
         _ => return Err(argument_error("--p1 and --p2 must be supplied together")),
     }
+    if options.replay_id.is_some() {
+        let conflicts = [
+            "--demo",
+            "--p1",
+            "--p2",
+            "--life",
+            "--pillz",
+            "--night",
+            "--us",
+            "--first",
+            "--second-card",
+            "--interactive",
+        ];
+        if let Some(conflict) = conflicts.iter().find(|flag| seen.contains(**flag)) {
+            return Err(argument_error(&format!(
+                "--replay cannot be combined with {conflict}"
+            )));
+        }
+        options.using_demo_draw = false;
+    }
     if options.interactive && options.second_card.is_some() {
         return Err(argument_error(
             "--interactive prompts for each revealed card and conflicts with --second-card",
@@ -278,8 +394,9 @@ where
     Ok(AdvisorCommand::Run(options))
 }
 
-/// Loads exactly the three versioned repository inputs used by the strict catalog boundary.
-pub fn prepare(options: AdvisorOptions) -> Result<PreparedAdvisorInput, AdvisorInputError> {
+/// Loads the versioned repository inputs used by the strict catalog boundary. Replay mode
+/// additionally normalizes one captured game through the same adapter as the replay gate.
+pub fn prepare(mut options: AdvisorOptions) -> Result<PreparedAdvisorInput, AdvisorInputError> {
     let root = repository_root();
     let catalog = EffectiveCardCatalog::load(
         root.join("data/data.json"),
@@ -288,7 +405,81 @@ pub fn prepare(options: AdvisorOptions) -> Result<PreparedAdvisorInput, AdvisorI
     .map_err(AdvisorInputError::Catalog)?;
     let registry = EffectRegistryV1::load(root.join("captures/abilities.json"))
         .map_err(AdvisorInputError::Registry)?;
-    prepare_with_sources(options, &catalog, &registry)
+    let Some(battle_id) = options.replay_id else {
+        return prepare_with_sources(options, &catalog, &registry);
+    };
+
+    let replay = load_replay(&root, battle_id, &catalog)?;
+    let recording_side = replay
+        .metadata
+        .recording_side
+        .ok_or(AdvisorInputError::ReplayRecordingSideMissing { battle_id })?;
+    let us = replay
+        .players
+        .iter()
+        .find(|player| player.source_side == recording_side)
+        .map(|player| engine_player(player.engine_player))
+        .ok_or(AdvisorInputError::ReplayRecordingSideMissing { battle_id })?;
+    let first_round =
+        replay
+            .rounds
+            .first()
+            .ok_or_else(|| AdvisorInputError::ReplayUnavailable {
+                battle_id,
+                reason: "the normalized capture contains no resolved rounds".to_owned(),
+            })?;
+    validate_replay_evidence(&replay)?;
+    let hands = ByPlayer::new(
+        replay.players[0].hand.clone().map(|card| card.key),
+        replay.players[1].hand.clone().map(|card| card.key),
+    );
+    options.p1 = hands[PlayerId::P1];
+    options.p2 = hands[PlayerId::P2];
+    options.life = replay.players[0].base_life;
+    options.pillz = replay.players[0].base_pillz;
+    options.night = replay.metadata.night;
+    options.us = us;
+    options.first_mover = engine_player(first_round.first_mover);
+    options.second_card = None;
+    options.interactive = false;
+    options.using_demo_draw = false;
+
+    let player_names = ByPlayer::new(
+        replay.players[0].profile.name.clone(),
+        replay.players[1].profile.name.clone(),
+    );
+    let replay_data = PreparedAdvisorReplay {
+        battle_id,
+        us,
+        player_names,
+        rounds: replay.rounds.clone(),
+    };
+    let input = CatalogCombatStatMatchInputV1 {
+        battle_rule_id: replay.metadata.battle_rule_id,
+        night: replay.metadata.night,
+        players: ByPlayer::new(
+            player_input(
+                hands[PlayerId::P1],
+                replay.players[0].base_life,
+                replay.players[0].base_pillz,
+            ),
+            player_input(
+                hands[PlayerId::P2],
+                replay.players[1].base_life,
+                replay.players[1].base_pillz,
+            ),
+        ),
+    };
+    let prepared = prepare_match(
+        options,
+        input,
+        &catalog,
+        &registry,
+        format!("REPLAY {battle_id}"),
+        Some(replay_data),
+    )?;
+    validate_replay_sources(&replay, &prepared.combat_match)?;
+    Ok(prepared)
 }
 
 /// Kept public for deterministic tests and for a future embedding host that owns validated
@@ -298,6 +489,11 @@ pub fn prepare_with_sources(
     catalog: &EffectiveCardCatalog,
     registry: &EffectRegistryV1,
 ) -> Result<PreparedAdvisorInput, AdvisorInputError> {
+    if options.replay_id.is_some() {
+        return Err(argument_error(
+            "prepare_with_sources cannot load --replay; use prepare() with repository capture data",
+        ));
+    }
     let input = CatalogCombatStatMatchInputV1 {
         battle_rule_id: BATTLE_RULE_ID,
         night: options.night,
@@ -306,6 +502,22 @@ pub fn prepare_with_sources(
             player_input(options.p2, options.life, options.pillz),
         ),
     };
+    let source_label = if options.using_demo_draw {
+        "DEMO".to_owned()
+    } else {
+        "CATALOG".to_owned()
+    };
+    prepare_match(options, input, catalog, registry, source_label, None)
+}
+
+fn prepare_match(
+    options: AdvisorOptions,
+    input: CatalogCombatStatMatchInputV1,
+    catalog: &EffectiveCardCatalog,
+    registry: &EffectRegistryV1,
+    source_label: String,
+    replay: Option<PreparedAdvisorReplay>,
+) -> Result<PreparedAdvisorInput, AdvisorInputError> {
     let combat_match = CatalogCombatStatMatchV1::new(
         input,
         catalog,
@@ -321,7 +533,183 @@ pub fn prepare_with_sources(
         options,
         combat_match,
         cards,
+        source_label,
+        replay,
     })
+}
+
+fn load_replay(
+    root: &Path,
+    battle_id: u64,
+    catalog: &EffectiveCardCatalog,
+) -> Result<Box<ReplayCaseV1>, AdvisorInputError> {
+    let path = root.join(format!("captures/games/{battle_id}.json"));
+    let file = File::open(&path).map_err(|source| AdvisorInputError::ReplayOpen {
+        path: path.clone(),
+        source,
+    })?;
+    let capture = CapturedGame::from_reader(file)
+        .map_err(|source| AdvisorInputError::ReplayParse { battle_id, source })?;
+    match adapt_capture(capture, catalog.as_catalog()).map_err(AdvisorInputError::ReplayAdapt)? {
+        ReplayClassification::Ready(replay) => Ok(replay),
+        ReplayClassification::Skipped(skipped) => Err(AdvisorInputError::ReplayUnavailable {
+            battle_id,
+            reason: format!(
+                "{:?} (source status {})",
+                skipped.reason, skipped.source_status
+            ),
+        }),
+    }
+}
+
+fn validate_replay_sources(
+    replay: &ReplayCaseV1,
+    combat_match: &CatalogCombatStatMatchV1,
+) -> Result<(), AdvisorInputError> {
+    for player in PlayerId::ALL {
+        let index = match player {
+            PlayerId::P1 => 0,
+            PlayerId::P2 => 1,
+        };
+        for hand_slot in 0..HAND_SIZE {
+            let captured = &replay.players[index].hand[hand_slot];
+            let prepared = &combat_match.preparation()[player][hand_slot];
+            validate_replay_source(
+                replay.metadata.battle_id,
+                player,
+                hand_slot as u8,
+                "Ability",
+                captured.source_ability.as_ref(),
+                &prepared.ability,
+                true,
+            )?;
+            validate_replay_source(
+                replay.metadata.battle_id,
+                player,
+                hand_slot as u8,
+                "Bonus",
+                captured.source_bonus.as_ref(),
+                &prepared.bonus,
+                false,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_replay_evidence(replay: &ReplayCaseV1) -> Result<(), AdvisorInputError> {
+    for round in &replay.rounds {
+        for (index, result) in round.expected_card_results.iter().enumerate() {
+            if result.is_none() {
+                return Err(AdvisorInputError::ReplayEvidenceMissing {
+                    battle_id: replay.metadata.battle_id,
+                    round: round.round,
+                    player: if index == 0 {
+                        PlayerId::P1
+                    } else {
+                        PlayerId::P2
+                    },
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_replay_source(
+    battle_id: u64,
+    player: PlayerId,
+    hand_slot: u8,
+    source_kind: &'static str,
+    captured: Option<&SourceModifier>,
+    prepared: &CatalogCombatStatSourceDispositionV1,
+    require_catalog_identity: bool,
+) -> Result<(), AdvisorInputError> {
+    let identity = match prepared {
+        CatalogCombatStatSourceDispositionV1::Absent => {
+            if let Some(captured) = captured {
+                return Err(replay_source_mismatch(
+                    battle_id,
+                    player,
+                    hand_slot,
+                    source_kind,
+                    format!(
+                        "capture has id {}, catalog has no active source",
+                        captured.id
+                    ),
+                ));
+            }
+            return Ok(());
+        }
+        CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
+        | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => identity,
+    };
+    let Some(captured) = captured else {
+        return Err(replay_source_mismatch(
+            battle_id,
+            player,
+            hand_slot,
+            source_kind,
+            format!(
+                "capture has no active source, catalog has id {:?}",
+                identity.catalog_id
+            ),
+        ));
+    };
+    if captured.description != identity.description {
+        return Err(replay_source_mismatch(
+            battle_id,
+            player,
+            hand_slot,
+            source_kind,
+            "capture and catalog descriptions differ".to_owned(),
+        ));
+    }
+    let identity_matches = if require_catalog_identity {
+        identity.catalog_id == Some(captured.id)
+    } else {
+        captured.id == identity.registry_definition_id
+    };
+    if !identity_matches {
+        return Err(replay_source_mismatch(
+            battle_id,
+            player,
+            hand_slot,
+            source_kind,
+            format!(
+                "capture id {}, catalog id {:?}, registry definition {}, aliases {:?}",
+                captured.id,
+                identity.catalog_id,
+                identity.registry_definition_id,
+                identity.registry_alias_ids,
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn replay_source_mismatch(
+    battle_id: u64,
+    player: PlayerId,
+    hand_slot: u8,
+    source_kind: &'static str,
+    detail: String,
+) -> AdvisorInputError {
+    AdvisorInputError::ReplaySourceMismatch {
+        battle_id,
+        player,
+        hand_slot,
+        source_kind,
+        detail,
+    }
+}
+
+const fn engine_player(player: EnginePlayer) -> PlayerId {
+    match player {
+        EnginePlayer::P1 => PlayerId::P1,
+        EnginePlayer::P2 => PlayerId::P2,
+    }
 }
 
 pub fn repository_root() -> PathBuf {
@@ -461,8 +849,12 @@ fn argument_error(message: &str) -> AdvisorInputError {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_args, AdvisorCommand, AdvisorOptions, DEFAULT_BUDGET_MS};
-    use crate::catalog::CardKey;
+    use super::{
+        load_replay, parse_args, prepare, repository_root, validate_replay_evidence,
+        validate_replay_sources, AdvisorCommand, AdvisorInputError, AdvisorOptions,
+        DEFAULT_BUDGET_MS,
+    };
+    use crate::catalog::{CardKey, EffectiveCardCatalog};
     use crate::engine::PlayerId;
 
     fn parse(arguments: &[&str]) -> AdvisorCommand {
@@ -520,6 +912,136 @@ mod tests {
         assert_eq!(options.first_mover, PlayerId::P1);
         assert_eq!(options.second_card, Some(3));
         assert!(options.plain);
+    }
+
+    #[test]
+    fn replay_mode_accepts_only_budget_and_display_controls() {
+        let AdvisorCommand::Run(options) = parse(&[
+            "--replay",
+            "877636",
+            "--budget-ms",
+            "25",
+            "--width",
+            "100",
+            "--height",
+            "40",
+            "--plain",
+        ]) else {
+            panic!("replay invocation must run");
+        };
+        assert_eq!(options.replay_id, Some(877636));
+        assert!(!options.using_demo_draw);
+        assert_eq!(options.budget_ms, 25);
+        assert!(options.plain);
+
+        for conflict in [
+            "--demo",
+            "--p1",
+            "--p2",
+            "--life",
+            "--pillz",
+            "--night",
+            "--us",
+            "--first",
+            "--second-card",
+            "--interactive",
+        ] {
+            let mut arguments = vec!["--replay", "877636", conflict];
+            if matches!(
+                conflict,
+                "--p1" | "--p2" | "--life" | "--pillz" | "--us" | "--first" | "--second-card"
+            ) {
+                arguments.push(if matches!(conflict, "--us" | "--first") {
+                    "p1"
+                } else if matches!(conflict, "--p1" | "--p2") {
+                    "1:1,2:1,3:1,4:1"
+                } else {
+                    "1"
+                });
+            }
+            assert!(
+                parse_args(arguments.into_iter().map(str::to_owned)).is_err(),
+                "{conflict}"
+            );
+        }
+    }
+
+    #[test]
+    fn replay_preparation_requires_capture_and_catalog_source_identity_to_agree() {
+        let AdvisorCommand::Run(options) = parse(&["--replay", "877636", "--plain"]) else {
+            panic!("the replay invocation must run");
+        };
+        let prepared = prepare(options).expect("the audited capture must be fully executable");
+        let root = repository_root();
+        let catalog = EffectiveCardCatalog::load(
+            root.join("data/data.json"),
+            root.join("data/battle_card_overrides.json"),
+        )
+        .unwrap();
+        let mut replay = load_replay(&root, 877636, &catalog).unwrap();
+        // Dave's printed catalog ability is id 888. Registry id 401 has the same structure
+        // and text, but a captured dynamic replacement must not inherit printed authority.
+        replay.players[1].hand[1]
+            .source_ability
+            .as_mut()
+            .unwrap()
+            .id = 401;
+        assert!(matches!(
+            validate_replay_sources(&replay, &prepared.combat_match),
+            Err(AdvisorInputError::ReplaySourceMismatch {
+                player: PlayerId::P2,
+                hand_slot: 1,
+                source_kind: "Ability",
+                ..
+            })
+        ));
+
+        let mut replay = load_replay(&root, 877636, &catalog).unwrap();
+        // Ulu Watu's executable bonus is registry definition 39. Id 43 has the same
+        // description, but an alias is provenance rather than execution authority.
+        replay.players[1].hand[0].source_bonus.as_mut().unwrap().id = 43;
+        assert!(matches!(
+            validate_replay_sources(&replay, &prepared.combat_match),
+            Err(AdvisorInputError::ReplaySourceMismatch {
+                player: PlayerId::P2,
+                hand_slot: 0,
+                source_kind: "Bonus",
+                ..
+            })
+        ));
+
+        let mut replay = load_replay(&root, 877636, &catalog).unwrap();
+        replay.players[1].hand[1]
+            .source_ability
+            .as_mut()
+            .unwrap()
+            .description = "\u{1b}[31mforged\r\nsource".to_owned();
+        let error = validate_replay_sources(&replay, &prepared.combat_match).unwrap_err();
+        let rendered = error.to_string();
+        assert!(!rendered.contains('\u{1b}'));
+        assert!(!rendered.contains('\r'));
+        assert!(!rendered.contains('\n'));
+        assert!(rendered.contains("descriptions differ"));
+    }
+
+    #[test]
+    fn strict_replay_advice_rejects_missing_server_card_evidence() {
+        let root = repository_root();
+        let catalog = EffectiveCardCatalog::load(
+            root.join("data/data.json"),
+            root.join("data/battle_card_overrides.json"),
+        )
+        .unwrap();
+        let mut replay = load_replay(&root, 877636, &catalog).unwrap();
+        replay.rounds[2].expected_card_results[1] = None;
+        assert!(matches!(
+            validate_replay_evidence(&replay),
+            Err(AdvisorInputError::ReplayEvidenceMissing {
+                battle_id: 877636,
+                round: 2,
+                player: PlayerId::P2,
+            })
+        ));
     }
 
     #[test]

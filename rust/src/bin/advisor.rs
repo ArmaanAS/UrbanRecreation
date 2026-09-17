@@ -12,18 +12,24 @@ use std::time::Duration;
 use urban_recreation_rust::advisor::input::{
     parse_args, prepare, AdvisorCommand, PreparedAdvisorInput, USAGE,
 };
-use urban_recreation_rust::advisor::search::{search, EvaluationKind, SearchConfig, SearchMode};
+use urban_recreation_rust::advisor::search::{
+    search, AdvisorMove, EvaluationKind, SearchConfig, SearchMode, SearchSnapshot,
+};
 use urban_recreation_rust::advisor::session::{AdvisorSession, ManualSelection};
 use urban_recreation_rust::advisor::view::{
     render, AdvisorCard, AdvisorSide, AdvisorViewModel, ColourMode,
 };
-use urban_recreation_rust::engine::{ByPlayer, MatchStatus, PlayerId, HAND_SIZE};
+use urban_recreation_rust::engine::{
+    BaseRulesRoundInput, BaseRulesRoundReport, BaseRulesSelection, ByPlayer, MatchStatus, PlayerId,
+    HAND_SIZE,
+};
+use urban_recreation_rust::replay::{EnginePlayer, ReplayRound};
 
 const MAX_PROMPT_LINE: usize = 64;
 
 fn main() {
     if let Err(error) = run() {
-        eprintln!("advisor: {error}");
+        eprintln!("advisor: {}", safe_terminal_error(&error.to_string()));
         eprintln!("\n{USAGE}");
         process::exit(2);
     }
@@ -37,7 +43,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         AdvisorCommand::Run(options) => {
             let prepared = prepare(options)?;
-            if prepared.options.interactive {
+            if prepared.replay.is_some() {
+                let stdout = io::stdout();
+                run_replay(&prepared, &mut stdout.lock()).map_err(Into::into)
+            } else if prepared.options.interactive {
                 let stdin = io::stdin();
                 let stdout = io::stdout();
                 run_interactive(&prepared, &mut stdin.lock(), &mut stdout.lock())
@@ -53,7 +62,275 @@ fn run() -> Result<(), Box<dyn Error>> {
 fn run_once(prepared: &PreparedAdvisorInput, output: &mut impl Write) -> io::Result<()> {
     let mut game = prepared.new_game();
     let config = search_config(prepared);
-    render_search(prepared, &mut game, config, output)
+    render_search(prepared, &mut game, config, output).map(|_| ())
+}
+
+fn run_replay(prepared: &PreparedAdvisorInput, output: &mut impl Write) -> io::Result<()> {
+    let replay = prepared
+        .replay
+        .as_ref()
+        .expect("run_replay requires prepared replay data");
+    let mut game = prepared.new_game();
+    writeln!(
+        output,
+        "Replay {}: grading {} recorded decision(s) for {}.\n",
+        replay.battle_id,
+        replay.rounds.len(),
+        safe_terminal_text(&replay.player_names[replay.us]),
+    )?;
+
+    for round in &replay.rounds {
+        let expected_round = game.position().rounds_played;
+        if round.round != expected_round {
+            return Err(invalid_replay(format!(
+                "battle {} expected normalized round {}, found {}",
+                replay.battle_id, expected_round, round.round
+            )));
+        }
+        if game.position().status != MatchStatus::Playing {
+            return Err(invalid_replay(format!(
+                "battle {} has another captured round after engine status {:?}",
+                replay.battle_id,
+                game.position().status
+            )));
+        }
+
+        let first_mover = replay_player(round.first_mover);
+        let mode = if first_mover == replay.us {
+            SearchMode::First
+        } else {
+            SearchMode::Second {
+                opponent_hand_index: captured_move(round, replay.us.other())?.hand_index,
+            }
+        };
+        let config = SearchConfig {
+            us: replay.us,
+            first_mover,
+            mode,
+            budget: Duration::from_millis(prepared.options.budget_ms),
+        };
+        let snapshot = render_search(prepared, &mut game, config, output)?;
+        let played = captured_move(round, replay.us)?;
+        write_replay_grade(prepared, round, &snapshot, played, output)?;
+
+        let input = captured_round_input(round)?;
+        let (report, _undo) = game.make(input).map_err(|error| {
+            invalid_replay(format!(
+                "battle {} round {} failed in the strict engine: {error}",
+                replay.battle_id,
+                round.round + 1
+            ))
+        })?;
+        verify_captured_round(replay.battle_id, round, &report)?;
+        writeln!(
+            output,
+            "SERVER ROUND {} VERIFIED · P1 {}/{} · P2 {}/{} · {:?}\n",
+            round.round + 1,
+            report.players[PlayerId::P1].life,
+            report.players[PlayerId::P1].pillz,
+            report.players[PlayerId::P2].life,
+            report.players[PlayerId::P2].pillz,
+            report.status,
+        )?;
+    }
+
+    let position = game.position();
+    writeln!(
+        output,
+        "REPLAY {} COMPLETE · {} decisions graded · {:?} · P1 {}/{} · P2 {}/{}",
+        replay.battle_id,
+        replay.rounds.len(),
+        position.status,
+        position.players[PlayerId::P1].life,
+        position.players[PlayerId::P1].pillz,
+        position.players[PlayerId::P2].life,
+        position.players[PlayerId::P2].pillz,
+    )
+}
+
+fn captured_move(round: &ReplayRound, player: PlayerId) -> io::Result<AdvisorMove> {
+    round
+        .plays
+        .iter()
+        .find(|play| replay_player(play.engine_player) == player)
+        .map(|play| AdvisorMove {
+            hand_index: play.hand_index,
+            pillz: play.pillz,
+            fury: play.fury,
+        })
+        .ok_or_else(|| {
+            invalid_replay(format!(
+                "normalized round {} has no move for {player:?}",
+                round.round + 1
+            ))
+        })
+}
+
+fn captured_round_input(round: &ReplayRound) -> io::Result<BaseRulesRoundInput> {
+    let p1 = captured_move(round, PlayerId::P1)?;
+    let p2 = captured_move(round, PlayerId::P2)?;
+    Ok(BaseRulesRoundInput {
+        first_mover: replay_player(round.first_mover),
+        selections: ByPlayer::new(
+            BaseRulesSelection::new(p1.hand_index, p1.pillz, p1.fury),
+            BaseRulesSelection::new(p2.hand_index, p2.pillz, p2.fury),
+        ),
+    })
+}
+
+fn write_replay_grade(
+    prepared: &PreparedAdvisorInput,
+    round: &ReplayRound,
+    snapshot: &SearchSnapshot,
+    played: AdvisorMove,
+    output: &mut impl Write,
+) -> io::Result<()> {
+    let us = prepared.options.us;
+    let card = &prepared.cards[us][usize::from(played.hand_index)];
+    let card_name = safe_terminal_text(&card.name);
+    let wager = format!(
+        "{} pillz{}",
+        played.pillz,
+        if played.fury { " + Fury" } else { "" }
+    );
+    let Some((index, row)) = snapshot
+        .ranked
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.move_ == played)
+    else {
+        return writeln!(
+            output,
+            "CAPTURED MOVE · round {} · {} · {} · not a legal solver action\n",
+            round.round + 1,
+            card_name,
+            wager,
+        );
+    };
+    if row.samples == 0 || !row.average.is_finite() {
+        return writeln!(
+            output,
+            "CAPTURED MOVE · round {} · {} · {} · legal but not reached before budget\n",
+            round.round + 1,
+            card_name,
+            wager,
+        );
+    }
+    let best = snapshot
+        .ranked
+        .iter()
+        .find(|candidate| candidate.samples > 0 && candidate.average.is_finite())
+        .map(|candidate| displayed_percent(candidate.average))
+        .unwrap_or_else(|| "--".to_owned());
+    writeln!(
+        output,
+        "CAPTURED MOVE · round {} · {} · {} · rank {}/{} · score {} · best {}{}\n",
+        round.round + 1,
+        card_name,
+        wager,
+        index + 1,
+        snapshot.ranked.len(),
+        displayed_percent(row.average),
+        best,
+        if snapshot.complete { "" } else { " · partial" },
+    )
+}
+
+fn verify_captured_round(
+    battle_id: u64,
+    expected: &ReplayRound,
+    actual: &BaseRulesRoundReport,
+) -> io::Result<()> {
+    for player in PlayerId::ALL {
+        let index = match player {
+            PlayerId::P1 => 0,
+            PlayerId::P2 => 1,
+        };
+        let expected_player = expected.expected_player_states[index];
+        let actual_player = actual.players[player];
+        if actual_player.life != expected_player.life
+            || actual_player.pillz != expected_player.pillz
+        {
+            return Err(invalid_replay(format!(
+                "battle {battle_id} round {} {player:?} resource mismatch: engine {}/{} server {}/{}",
+                expected.round + 1,
+                actual_player.life,
+                actual_player.pillz,
+                expected_player.life,
+                expected_player.pillz,
+            )));
+        }
+        if let Some(expected_card) = expected.expected_card_results[index] {
+            let actual_card = actual.cards[player];
+            if actual_card.power != expected_card.power
+                || actual_card.damage != expected_card.damage
+                || actual_card.attack != expected_card.attack
+                || actual_card.won != expected_card.won
+            {
+                return Err(invalid_replay(format!(
+                    "battle {battle_id} round {} {player:?} card mismatch: engine {}/{}/{} won={} server {}/{}/{} won={}",
+                    expected.round + 1,
+                    actual_card.power,
+                    actual_card.damage,
+                    actual_card.attack,
+                    actual_card.won,
+                    expected_card.power,
+                    expected_card.damage,
+                    expected_card.attack,
+                    expected_card.won,
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn replay_player(player: EnginePlayer) -> PlayerId {
+    match player {
+        EnginePlayer::P1 => PlayerId::P1,
+        EnginePlayer::P2 => PlayerId::P2,
+    }
+}
+
+fn displayed_percent(value: f64) -> String {
+    if !value.is_finite() {
+        return "--".to_owned();
+    }
+    let percent = ((value.clamp(-1.0, 1.0) + 1.0) * 50.0).round() as i32;
+    let percent = if percent >= 100 && value < 1.0 {
+        99
+    } else if percent <= 0 && value > -1.0 {
+        1
+    } else {
+        percent
+    };
+    format!("{percent}%")
+}
+
+fn invalid_replay(message: String) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, message)
+}
+
+fn safe_terminal_text(value: &str) -> String {
+    safe_terminal_text_bounded(value, 64)
+}
+
+fn safe_terminal_error(value: &str) -> String {
+    safe_terminal_text_bounded(value, 1024)
+}
+
+fn safe_terminal_text_bounded(value: &str, limit: usize) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                '?'
+            } else {
+                character
+            }
+        })
+        .take(limit)
+        .collect()
 }
 
 fn run_interactive(
@@ -165,10 +442,10 @@ fn render_search(
     game: &mut urban_recreation_rust::engine::CombatStatDiagnosticV1,
     config: SearchConfig,
     output: &mut impl Write,
-) -> io::Result<()> {
+) -> io::Result<SearchSnapshot> {
     let mode = config.mode;
     let snapshot = search(game, config, |_| {});
-    let model = view_model(prepared, game, snapshot, mode);
+    let model = view_model(prepared, game, snapshot.clone(), mode);
     let colour = if prepared.options.plain {
         ColourMode::Never
     } else {
@@ -183,7 +460,8 @@ fn render_search(
             usize::from(prepared.options.height),
             colour,
         )
-    )
+    )?;
+    Ok(snapshot)
 }
 
 fn prompt_revealed_card(
@@ -322,12 +600,26 @@ fn view_model(
     };
     let limitation = match snapshot.evaluation {
         EvaluationKind::OneRoundHeuristic => {
-            "strict supported draw; future rounds use a position heuristic; current choices uniform"
+            if prepared.replay.is_some() {
+                "server-backed strict replay; future rounds use a position heuristic; current choices uniform"
+            } else {
+                "strict supported draw; future rounds use a position heuristic; current choices uniform"
+            }
         }
         EvaluationKind::ExactLatePolicy => {
-            "strict supported draw; exact rounds 3-4 policy; current hidden choices uniform"
+            if prepared.replay.is_some() {
+                "server-backed strict replay; exact rounds 3-4 policy; current hidden choices uniform"
+            } else {
+                "strict supported draw; exact rounds 3-4 policy; current hidden choices uniform"
+            }
         }
     };
+    let round = game.position().rounds_played + 1;
+    let replay_prefix = prepared
+        .replay
+        .as_ref()
+        .map(|replay| format!("REPLAY {} · ROUND {round} · ", replay.battle_id))
+        .unwrap_or_default();
     AdvisorViewModel {
         p1: view_side(prepared, game, PlayerId::P1),
         p2: view_side(prepared, game, PlayerId::P2),
@@ -335,8 +627,8 @@ fn view_model(
         mode: match mode {
             SearchMode::Second {
                 opponent_hand_index,
-            } => format!("{phase} · SECOND · OPP CARD {opponent_hand_index}"),
-            SearchMode::First => format!("{phase} · FIRST"),
+            } => format!("{replay_prefix}{phase} · SECOND · OPP CARD {opponent_hand_index}"),
+            SearchMode::First => format!("{replay_prefix}{phase} · FIRST"),
         },
         limitation: limitation.to_owned(),
         snapshot,
@@ -367,10 +659,13 @@ fn view_side(
         }
     });
     AdvisorSide {
-        label: if prepared.options.using_demo_draw {
-            "DEMO".to_owned()
+        label: if let Some(replay) = &prepared.replay {
+            format!(
+                "{} · {}",
+                prepared.source_label, replay.player_names[player]
+            )
         } else {
-            "CATALOG".to_owned()
+            prepared.source_label.clone()
         },
         life: position.players[player].life,
         pillz: position.players[player].pillz,
@@ -380,7 +675,10 @@ fn view_side(
 
 #[cfg(test)]
 mod tests {
-    use super::{read_bounded_line, run_interactive, search_config, AdvisorCommand, PromptLine};
+    use super::{
+        read_bounded_line, run_interactive, run_replay, safe_terminal_error, search_config,
+        AdvisorCommand, PromptLine,
+    };
     use std::io::Cursor;
     use urban_recreation_rust::advisor::input::{parse_args, prepare, AdvisorOptions};
     use urban_recreation_rust::advisor::search::SearchMode;
@@ -447,5 +745,54 @@ mod tests {
         assert!(output.contains("EXACT LATE POLICY · FIRST"));
         assert!(output.contains("ROUND 4 RESOLVED"));
         assert!(output.contains("MATCH COMPLETE · Won(P2)"));
+    }
+
+    #[test]
+    fn captured_battle_runs_first_and_second_advice_and_verifies_every_server_round() {
+        let AdvisorCommand::Run(options) = parse_args(
+            [
+                "--replay",
+                "877636",
+                "--plain",
+                "--budget-ms",
+                "1",
+                "--width",
+                "100",
+                "--height",
+                "24",
+            ]
+            .into_iter()
+            .map(str::to_owned),
+        )
+        .unwrap() else {
+            panic!("the replay invocation must run");
+        };
+        let mut prepared = prepare(options).expect("877636 is the first strict real replay draw");
+        assert_eq!(prepared.options.us, PlayerId::P2);
+        assert_eq!(prepared.replay.as_ref().unwrap().rounds.len(), 4);
+        for card in &mut prepared.cards[prepared.options.us] {
+            card.name = "safe\nFORGED\u{1b}[31m\rname".to_owned();
+        }
+
+        let mut output = Vec::new();
+        run_replay(&prepared, &mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("ROUND 1 · ONE-ROUND HEURISTIC · SECOND · OPP CARD 2"));
+        assert!(output.contains("ROUND 2 · ONE-ROUND HEURISTIC · FIRST"));
+        assert!(output.contains("ROUND 3 · EXACT LATE POLICY · SECOND · OPP CARD 1"));
+        assert!(output.contains("SERVER ROUND 4 VERIFIED"));
+        assert!(output.contains("REPLAY 877636 COMPLETE · 4 decisions graded · Won(P1)"));
+        assert!(!output.contains('\u{1b}'));
+        assert!(!output.contains("\nFORGED"));
+    }
+
+    #[test]
+    fn terminal_error_text_is_single_line_and_bounded() {
+        let unsafe_text = format!("bad\u{1b}[31m\r\n{}", "x".repeat(2_000));
+        let safe = safe_terminal_error(&unsafe_text);
+        assert!(!safe.contains('\u{1b}'));
+        assert!(!safe.contains('\r'));
+        assert!(!safe.contains('\n'));
+        assert_eq!(safe.chars().count(), 1_024);
     }
 }

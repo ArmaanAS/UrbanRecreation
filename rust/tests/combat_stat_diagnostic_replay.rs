@@ -46,6 +46,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1092660, 1),
     (1093500, 2),
     (1092909, 2),
+    (877636, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -138,6 +139,15 @@ fn victory_or_defeat_entry(id: u32) -> serde_json::Value {
     entry
 }
 
+fn victory_life_entry(id: u32, life: u16) -> serde_json::Value {
+    let mut entry = numeric_entry(id, &format!("+{life} Life"), "both", life, 0);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry
+}
+
 fn argos_defeat_capped_pillz_entry(id: u32, description: &str) -> serde_json::Value {
     let mut entry = numeric_entry(id, description, "both", 2, 0);
     entry["abilityData"]["valueMax"] = serde_json::json!(11);
@@ -222,7 +232,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_forty_four_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_forty_eight_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -258,22 +268,22 @@ fn fixed_server_backed_gate_is_exactly_forty_four_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 44);
+    assert_eq!(rounds, 48);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 36, 37, 39, 40, 42, 56, 90, 93, 130, 156, 266, 333, 412, 520, 577, 578, 585, 612,
-            741, 801, 871, 883, 916, 980, 1034, 1047, 1158, 1163, 1241, 1335, 1338, 1342, 1359,
-            1372, 1375, 1418, 1536, 1578, 1688, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2329,
-            2412, 2535, 2881, 3677, 3865, 3897, 4041, 4216, 4297, 4399, 4711, 4718, 4757, 5026,
-            5085, 5273, 5520, 5763, 5852,
+            6, 36, 37, 39, 40, 42, 56, 57, 90, 93, 130, 156, 257, 266, 310, 333, 377, 401, 412,
+            520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980, 1034, 1047, 1158,
+            1163, 1241, 1335, 1338, 1342, 1359, 1372, 1375, 1418, 1536, 1578, 1688, 1694, 1770,
+            1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881, 3677, 3864, 3865, 3897, 4041,
+            4216, 4297, 4399, 4711, 4718, 4757, 5026, 5085, 5273, 5520, 5763, 5852,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([274, 377, 401, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459, 5283,])
+        BTreeSet::from([274, 809, 854, 1399, 1852, 2317, 4303, 4458, 4459, 5283,])
     );
-    assert_eq!(absent, 1);
+    assert_eq!(absent, 2);
 }
 
 #[test]
@@ -320,6 +330,62 @@ fn gate_pins_stop_bonus_cancellation_and_sequential_fury() {
 }
 
 #[test]
+fn dave_victory_life_full_four_round_replay_is_exact() {
+    let catalog = catalog();
+    let registry = registry();
+    let report = diagnostic(877636, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1()
+        .unwrap();
+    assert_eq!(report.rounds.len(), 4);
+
+    // The second normalized round selects Dave.  His +2 Life resolves after Zatman's
+    // one damage: the owner therefore reaches 14 rather than the pre-effect 12.
+    let round = &report.rounds[1];
+    let owner = PlayerId::ALL
+        .into_iter()
+        .find(|player| matches!(
+            round.selected[*player].ability,
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnVictory { life: 2 },
+                ..
+            }
+        ))
+        .expect("Dave's exact +2 Life plan is selected in round 2");
+    assert!(round.round.cards[owner].won);
+    assert_eq!(round.round.players[owner].life, 14);
+    assert_eq!(report.final_position.players[owner].life, 4);
+}
+
+#[test]
+fn server_replays_pin_jungo_victory_life_bonus_on_independent_wins() {
+    let catalog = catalog();
+    let registry = registry();
+    for (battle_id, prefix, selected_round, expected_life) in
+        [(877860, 1, 0, 14), (878011, 1, 0, 14)]
+    {
+        let report = diagnostic(battle_id, &catalog, &registry)
+            .execute_combat_stat_diagnostic_v1_prefix(prefix)
+            .unwrap();
+        let round = &report.rounds[selected_round];
+        let owner = PlayerId::ALL
+            .into_iter()
+            .find(|player| matches!(
+                round.selected[*player].bonus,
+                CombatStatProjectionDispositionV1::ExecutePostRound {
+                    effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnVictory { life: 2 },
+                    ..
+                }
+            ))
+            .expect("the selected Jungo card must carry the captured +2 Life bonus");
+        assert!(round.round.cards[owner].won, "battle {battle_id}");
+        assert_eq!(
+            round.round.players[owner].life, expected_life,
+            "battle {battle_id}"
+        );
+    }
+}
+
+#[test]
 fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
     let catalog = catalog();
     let registry = registry();
@@ -330,7 +396,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 11);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 12);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -1013,6 +1079,104 @@ fn defeat_recover_grammar_is_exact_for_the_three_audited_source_id_pairs() {
     assert!(matches!(
         prepared.execute_combat_stat_diagnostic_v1_prefix(1),
         Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
+    ));
+}
+
+#[test]
+fn victory_life_compiler_requires_the_complete_structured_shape_for_abilities_and_bonuses() {
+    let catalog = catalog();
+    const ID: u32 = 888;
+    const DESCRIPTION: &str = "+2 Life";
+    for ability in [false, true] {
+        let registry = one_entry_registry(victory_life_entry(ID, 2));
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let selected_slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        let modifier = Some(SourceModifier {
+            id: ID,
+            description: DESCRIPTION.to_owned(),
+        });
+        if ability {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        let disposition = if ability {
+            &prepared.preparation()[PlayerId::P1][selected_slot].ability
+        } else {
+            &prepared.preparation()[PlayerId::P1][selected_slot].bonus
+        };
+        assert!(matches!(
+            disposition,
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                effect:
+                    urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifeOnVictory {
+                        life: 2
+                    },
+                ..
+            }
+        ));
+    }
+
+    // A condition mutation remains a selected hazard.  It cannot silently become generic
+    // life support merely because the printed description happens to look familiar.
+    let mut malformed = victory_life_entry(ID, 2);
+    malformed["abilityData"]["currentRoundRequirement"] = serde_json::json!("any");
+    let registry = one_entry_registry(malformed);
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let selected_slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: ID,
+        description: DESCRIPTION.to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        CombatStatProjectionDispositionV1::Disabled {
+            reason: CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
+    ));
+
+    // Description grammar is not the fail-closed boundary. A structurally Life-affecting
+    // source with near-miss text must still reject when selected.
+    const MALFORMED_DESCRIPTION: &str = "+2 life";
+    let mut malformed = victory_life_entry(ID, 2);
+    malformed["description"] = serde_json::json!(MALFORMED_DESCRIPTION);
+    let registry = one_entry_registry(malformed);
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: ID,
+        description: MALFORMED_DESCRIPTION.to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
     ));
 }
 
