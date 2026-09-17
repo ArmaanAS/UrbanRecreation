@@ -209,7 +209,7 @@ Deno.test("Rust V3 provenance includes exact inputs and semantic revisions", asy
     effectRegistrySchemaVersion: 1,
     compilerPolicySemanticRevision: 22,
     catalogContextPolicySemanticRevision: 3,
-    advisorPolicySemanticRevision: 1,
+    advisorPolicySemanticRevision: 2,
   };
   assertEquals(await readRustV1Provenance(), expected);
   assertEquals(await rustV1Provenance(), expected);

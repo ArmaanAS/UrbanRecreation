@@ -18,7 +18,7 @@ use super::policy::{continuation_value, ExactValue, PolicyControl};
 /// Semantic identity of the live recommendation policy, including the fixed historical
 /// opening prior below. Bump this whenever ranking, continuation, or opening-weight
 /// semantics change in a way that can change a recommendation.
-pub const ADVISOR_POLICY_SEMANTIC_REVISION_V1: u16 = 1;
+pub const ADVISOR_POLICY_SEMANTIC_REVISION_V1: u16 = 2;
 
 /// A wager in engine notation. `pillz` excludes the free attack pill and the Fury cost.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -50,21 +50,61 @@ pub enum SearchMode {
     BlindSecond,
 }
 
+/// How the opening round is evaluated. Rounds two through four are always exact, so this
+/// only chooses what happens at the root of a match that has not been played yet.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum OpeningPolicy {
+    /// The bounded one-round position heuristic. Cheap, and the historical default.
+    #[default]
+    PositionHeuristic,
+    /// Solve the opening to the end of the match with the same conservative continuation
+    /// policy the later rounds use. Complete, and far slower: the caller owns that budget.
+    ExactContinuation,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SearchConfig {
     pub us: PlayerId,
     pub first_mover: PlayerId,
     pub mode: SearchMode,
     pub budget: Duration,
+    pub opening: OpeningPolicy,
 }
 
 /// How nonterminal current-round samples are evaluated.
+///
+/// This bundles three separable decisions that happen to agree in the historical pair: how
+/// a nonterminal leaf is scored, how the opponent's current reply is weighted, and whether
+/// the Worst column is a guarantee or a descriptive floor. `ExactOpeningPolicy` splits
+/// them, so read the predicates below rather than comparing variants directly.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EvaluationKind {
     /// Captured-reply-weighted position estimate used for the opening round only.
     OpeningEstimate,
+    /// An opening solved exactly, still weighted by the captured opening replies. That
+    /// weighting is empirical information about what opponents actually open with, which
+    /// is independent of how the resulting position is then scored.
+    ExactOpeningPolicy,
     /// Exact conservative continuation policy for roots in rounds two through four.
     ExactContinuationPolicy,
+}
+
+impl EvaluationKind {
+    /// True when a nonterminal leaf is solved rather than estimated. Only then is the Worst
+    /// column a guarantee over the opponent's current choice, and only then does a
+    /// displayed value mean a win chance rather than a position score.
+    pub const fn scores_exactly(self) -> bool {
+        matches!(
+            self,
+            Self::ExactOpeningPolicy | Self::ExactContinuationPolicy
+        )
+    }
+
+    /// True when the opponent's current reply is weighted by the captured opening prior
+    /// rather than uniformly. That is a property of the round, not of the evaluator.
+    pub const fn weights_by_opening_prior(self) -> bool {
+        matches!(self, Self::OpeningEstimate | Self::ExactOpeningPolicy)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -301,10 +341,13 @@ fn search_with_control(
     policy_control: &mut PolicyControl,
     mut progress: impl FnMut(&SearchSnapshot),
 ) -> SearchSnapshot {
-    let evaluation = if game.position().rounds_played >= 1 {
-        EvaluationKind::ExactContinuationPolicy
-    } else {
-        EvaluationKind::OpeningEstimate
+    let evaluation = match (game.position().rounds_played, config.opening) {
+        (0, OpeningPolicy::PositionHeuristic) => EvaluationKind::OpeningEstimate,
+        (0, OpeningPolicy::ExactContinuation) => EvaluationKind::ExactOpeningPolicy,
+        // The opening policy is about the opening. Once a round is on the board the
+        // continuation policy is the only model there is, and asking for exactness cannot
+        // change it.
+        _ => EvaluationKind::ExactContinuationPolicy,
     };
     let opponent = config.us.other();
     let our_moves = legal_moves(game, config.us);
@@ -508,12 +551,14 @@ fn evaluate(
         MatchStatus::Draw => 0.0,
         MatchStatus::Playing => match evaluation {
             EvaluationKind::OpeningEstimate => position_heuristic(game, us),
-            EvaluationKind::ExactContinuationPolicy => exact_score(continuation_value(
-                game,
-                us,
-                next_first_mover,
-                policy_control,
-            )?),
+            EvaluationKind::ExactOpeningPolicy | EvaluationKind::ExactContinuationPolicy => {
+                exact_score(continuation_value(
+                    game,
+                    us,
+                    next_first_mover,
+                    policy_control,
+                )?)
+            }
         },
     };
     Some(Sample {
@@ -533,9 +578,10 @@ const fn exact_score(value: ExactValue) -> f64 {
 }
 
 fn sample_weight(evaluation: EvaluationKind, opponent_move: AdvisorMove) -> u16 {
-    match evaluation {
-        EvaluationKind::OpeningEstimate => opening_reply_weight(opponent_move),
-        EvaluationKind::ExactContinuationPolicy => 1,
+    if evaluation.weights_by_opening_prior() {
+        opening_reply_weight(opponent_move)
+    } else {
+        1
     }
 }
 
@@ -605,7 +651,7 @@ fn compare_ranked(left: &RankedMove, right: &RankedMove, evaluation: EvaluationK
     // then use their game-theoretic Worst; opening rows expose a descriptive Range, never
     // a guarantee, so deliberately skip that floor.
     let average = displayed_percent(right.average).cmp(&displayed_percent(left.average));
-    let worst = if evaluation == EvaluationKind::ExactContinuationPolicy {
+    let worst = if evaluation.scores_exactly() {
         displayed_percent(right.worst).cmp(&displayed_percent(left.worst))
     } else {
         Ordering::Equal
@@ -687,6 +733,14 @@ mod tests {
             first_mover: PlayerId::P1,
             mode,
             budget,
+            opening: OpeningPolicy::PositionHeuristic,
+        }
+    }
+
+    fn exact_opening_config(mode: SearchMode, budget: Duration) -> SearchConfig {
+        SearchConfig {
+            opening: OpeningPolicy::ExactContinuation,
+            ..config(mode, budget)
         }
     }
 
@@ -696,6 +750,7 @@ mod tests {
             first_mover: PlayerId::P2,
             mode: SearchMode::BlindSecond,
             budget,
+            opening: OpeningPolicy::PositionHeuristic,
         }
     }
 
@@ -946,6 +1001,103 @@ mod tests {
             (candidate.average, candidate.worst, candidate.best) == (1.0, 1.0, 1.0)
         }));
         assert_eq!(game, before);
+    }
+
+    #[test]
+    fn the_opening_policy_chooses_the_evaluator_only_at_the_opening_root() {
+        // One pill each: small enough that the exact opening is cheap, big enough that the
+        // two evaluators are distinguishable.
+        let mut game = test_game(20, 1, (8, 4), (5, 2));
+
+        let heuristic = search(
+            &mut game,
+            config(SearchMode::First, Duration::from_secs(30)),
+            |_| {},
+        );
+        assert_eq!(heuristic.evaluation, EvaluationKind::OpeningEstimate);
+        assert!(!heuristic.evaluation.scores_exactly());
+        assert!(heuristic.evaluation.weights_by_opening_prior());
+
+        let exact = search(
+            &mut game,
+            exact_opening_config(SearchMode::First, Duration::from_secs(30)),
+            |_| {},
+        );
+        assert_eq!(exact.evaluation, EvaluationKind::ExactOpeningPolicy);
+        assert!(exact.evaluation.scores_exactly());
+        // The opening prior is about what opponents actually open with, so it survives the
+        // switch to an exact evaluator. Only the leaf scoring changes.
+        assert!(exact.evaluation.weights_by_opening_prior());
+
+        // Both evaluators see the same legal action set and the same opposing replies.
+        assert_eq!(exact.units_total, heuristic.units_total);
+        assert_eq!(exact.ranked.len(), heuristic.ranked.len());
+        assert!(exact.complete && heuristic.complete);
+        // An exact leaf is a solved match value, so every row lands on a win, draw or loss
+        // boundary once averaged; the heuristic is a continuous position score.
+        assert!(exact
+            .ranked
+            .iter()
+            .all(|row| row.worst == -1.0 || row.worst == 0.0 || row.worst == 1.0));
+
+        // Once a round has been played the opening policy is irrelevant: the continuation
+        // policy is the only model there is.
+        let mut played = game.clone();
+        played
+            .make(round_input(
+                PlayerId::P1,
+                PlayerId::P1,
+                AdvisorMove {
+                    hand_index: 0,
+                    pillz: 0,
+                    fury: false,
+                },
+                AdvisorMove {
+                    hand_index: 0,
+                    pillz: 0,
+                    fury: false,
+                },
+            ))
+            .unwrap();
+        for opening in [
+            OpeningPolicy::PositionHeuristic,
+            OpeningPolicy::ExactContinuation,
+        ] {
+            let result = search(
+                &mut played.clone(),
+                SearchConfig {
+                    opening,
+                    ..config(SearchMode::First, Duration::from_secs(30))
+                },
+                |_| {},
+            );
+            assert_eq!(result.evaluation, EvaluationKind::ExactContinuationPolicy);
+        }
+    }
+
+    #[test]
+    fn an_exact_opening_restores_the_root_and_ranks_by_its_guaranteed_worst() {
+        let mut game = test_game(20, 1, (8, 4), (5, 2));
+        let before = game.clone();
+        let result = search(
+            &mut game,
+            exact_opening_config(SearchMode::First, Duration::from_secs(30)),
+            |_| {},
+        );
+        assert!(result.complete);
+        assert_eq!(game, before);
+
+        // Exact rows break a displayed-percent tie on the guaranteed Worst, which an
+        // opening estimate deliberately ignores because its floor is only descriptive.
+        for pair in result.ranked.windows(2) {
+            let (left, right) = (&pair[0], &pair[1]);
+            if displayed_percent(left.average) == displayed_percent(right.average) {
+                assert!(
+                    displayed_percent(left.worst) >= displayed_percent(right.worst),
+                    "exact rows must order by Worst within a displayed tie",
+                );
+            }
+        }
     }
 
     #[test]

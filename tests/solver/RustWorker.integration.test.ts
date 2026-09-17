@@ -9,6 +9,7 @@ import {
 import {
   CompletedRustSearch,
   DenoCommandRunner,
+  type RustOpeningPolicy,
   runRustAdvisor,
 } from "@/solver/RustAdvisor.ts";
 import { normaliseRustAdvisorInput } from "@/solver/RustAdvisorInput.ts";
@@ -75,6 +76,7 @@ async function runDecision(
   completed: number,
   decision: Decision,
   expectedMode: SearchMode,
+  openingPolicy: RustOpeningPolicy = "position_heuristic",
 ) {
   const state = atDecision(await capture(id), completed, decision);
   assertEquals(state.search.mode, expectedMode, `capture ${id} TS mode`);
@@ -83,7 +85,8 @@ async function runDecision(
     game: state.game,
     decision: { mode: state.search.mode, us: state.search.us },
     requestId: `rust-worker-${id}-${decision}`,
-    budgetMs: 5_000,
+    budgetMs: openingPolicy === "exact_continuation" ? 30_000 : 5_000,
+    openingPolicy,
   });
   assert(input.supported, input.supported ? "" : input.reason);
   if (!input.supported) throw new Error("unreachable");
@@ -99,7 +102,7 @@ async function runDecision(
   assertEquals(transcript.final.complete, true);
   assertEquals(transcript.final.mode, input.request.mode);
   assertEquals(transcript.final.unitsDone, transcript.final.unitsTotal);
-  const rust = new CompletedRustSearch(state.game, transcript.final);
+  const rust = new CompletedRustSearch(state.game, transcript.final, openingPolicy);
   assertEquals(rust.done, true);
   assertEquals(rust.mode, state.search.mode);
   assertEquals(rust.candidates.length, state.search.candidates.length);
@@ -261,6 +264,41 @@ Deno.test({
     }
     assertEquals(
       compareRustSearches(blindSecond.search, blindSecond.rust),
+      "rust match",
+    );
+  },
+});
+
+Deno.test({
+  name: "the hosted worker solves an opening exactly only when asked to",
+  ignore: !workerAvailable,
+  async fn() {
+    // Round one is the only place the opening policy can apply, and 877636 opens SECOND,
+    // which is the cheap information set: the opponent's card is already visible.
+    const estimated = await runDecision(877636, 0, "second", SearchMode.SECOND);
+    assertEquals(estimated.rust.exactOpening, false);
+
+    const exact = await runDecision(
+      877636,
+      0,
+      "second",
+      SearchMode.SECOND,
+      "exact_continuation",
+    );
+    assertEquals(exact.rust.exactOpening, true);
+
+    // Same position, same legal actions, same opposing replies: only the evaluator moved.
+    assertEquals(exact.rust.candidates.length, estimated.rust.candidates.length);
+    assertEquals(exact.rust.units, estimated.rust.units);
+
+    // A solved opening is a different question from an estimated one, so the two must not
+    // be reported as agreeing. The TypeScript side has no exact opening at all.
+    assert(estimated.search.openingEstimate);
+    while (estimated.search.step()) {
+      /* complete the TypeScript opening estimate */
+    }
+    assertEquals(
+      compareRustSearches(estimated.search, estimated.rust),
       "rust match",
     );
   },

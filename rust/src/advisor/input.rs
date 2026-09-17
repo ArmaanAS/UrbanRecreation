@@ -45,7 +45,7 @@ const DEMO_P2: [CardKey; HAND_SIZE] = [
     CardKey::new(447, 1),
 ];
 
-pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,... | --replay BATTLE_ID] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match. --replay grades every recorded decision through the strict Rust engine and solver; it may be combined only with budget/display flags. One-shot second-mover advice requires --second-card.";
+pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,... | --replay BATTLE_ID] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--exact-opening] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match. --replay grades every recorded decision through the strict Rust engine and solver; it may be combined only with budget/display flags. One-shot second-mover advice requires --second-card. --exact-opening solves round one to the end of the match instead of estimating it, which takes seconds rather than milliseconds.";
 
 /// All non-card controls are explicit, while the two hands remain fixed-size card keys.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60,6 +60,9 @@ pub struct AdvisorOptions {
     /// The opponent's revealed card when we move second, indexed in that player's hand.
     pub second_card: Option<u8>,
     pub budget_ms: u64,
+    /// Solve the opening round exactly instead of estimating it. Rounds two through four
+    /// are exact either way, so this changes nothing once a round is on the board.
+    pub exact_opening: bool,
     pub width: u16,
     pub height: u16,
     pub plain: bool,
@@ -82,6 +85,7 @@ impl Default for AdvisorOptions {
             first_mover: PlayerId::P1,
             second_card: None,
             budget_ms: DEFAULT_BUDGET_MS,
+            exact_opening: false,
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
             plain: false,
@@ -323,6 +327,10 @@ where
             "--height" => {
                 mark_once(&mut seen, flag)?;
                 options.height = parse_nonzero(value_after(&arguments, &mut index, flag)?, flag)?;
+            }
+            "--exact-opening" => {
+                mark_once(&mut seen, flag)?;
+                options.exact_opening = true;
             }
             "--plain" => {
                 mark_once(&mut seen, flag)?;

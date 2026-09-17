@@ -972,11 +972,64 @@ complete exact opening in release Rust at **6.2 s on the supported demo draw and
 8464 units, no deadline cutoff. At the 18x ratio above the same work in TypeScript would be
 roughly two to five minutes, which is why the heuristic exists.
 
-So an exact opening is not out of reach in Rust the way it is in TypeScript, but 6-18 s is
-still far past a live turn timer, and the honest options are a deadline-bounded partial
-exact search (the search already publishes progressive snapshots and commits hypothesis
-columns transactionally), the existing worker pool, or a transposition table. None of that
-is a measurement yet. The patch used above was reverted and is not in the tree.
+So an exact opening is not out of reach in Rust the way it is in TypeScript. It is now a
+real mode rather than a measurement; see below.
+
+### The exact opening
+
+`OpeningPolicy::ExactContinuation` solves round one with the same conservative continuation
+policy rounds two through four already use, instead of the one-round position heuristic.
+Reach it with `deno task rust:advise --exact-opening`, or through the hosted worker with
+`deno task advise --rust=use --exact-opening`. It is off by default and has no effect once a
+round has been played, because later rounds are exact under either policy.
+
+Measured on this machine, release, single-threaded, complete with no deadline cutoff:
+
+| Information set | Units | Time |
+| --- | --- | --- |
+| SECOND, opponent's card visible | 2116 | 2.0-5.8 s |
+| FIRST | 8464 | 6.2-29.8 s |
+
+SECOND is roughly four times cheaper because the opponent's card is already known, so the
+matrix is one card wide rather than four.
+
+Three things had to be separated to make this correct, because the historical pair of
+evaluators agreed on all of them and the code had conflated them. How a nonterminal leaf is
+scored, how the opponent's current reply is weighted, and whether the Worst column is a
+guarantee are independent decisions. An exact opening solves its leaves and earns a real
+Worst, but still weights the opponent's reply by the captured 198-play prior, because that
+prior is empirical information about what opponents actually open with and says nothing
+about how the resulting position should be scored. `EvaluationKind::scores_exactly` and
+`weights_by_opening_prior` name the two axes; TypeScript's `Search` gained the same split as
+`openingEstimate` and `openingPrior`. Reading `openingEstimate` as "this is round one" was
+wrong in three places on the host side and each one was a real defect, caught by the parity
+gate rather than by review.
+
+Parity is checkable here, which it would not have been otherwise. A Rust exact opening
+compared against the live TypeScript heuristic proves nothing: they answer different
+questions, and gate 5 above only admits a comparison when both sides use the same evaluator.
+So `Search` has a reference `exactOpening` mode that the live advisor never sets, and
+`tests/solver/ExactOpeningParity.test.ts` runs both implementations over the same opening
+root and requires `rust match` on every candidate's average, worst, ceiling, displayed
+percent, KO and risk shares, and the chosen best move. It is skipped unless `UR_SLOW_PARITY=1`
+because TypeScript needs about seventy seconds for the SECOND set that Rust finishes in two.
+
+The hosted bridge carries an `opening_policy` field on every V3 request and the worker echoes
+which evaluator actually ran, so a host that predates the field keeps its old behaviour, an
+older worker rejects the unknown field outright, and a response that solved an opening nobody
+asked to solve is rejected as a mismatch rather than accepted as a bonus. Advisor policy
+semantic revision is 2. In `--rust=compare` an exact opening reports `rust exact opening ·
+not comparable` rather than `differs`, because there is nothing there to disagree with.
+
+The advice genuinely changes. On capture `925674`'s opening the heuristic recommends Aegis Cr
+at five to eight pillz; the exact solve puts Mou at one pillz on top and does not rank Aegis
+Cr in the first four at all.
+
+What is still open: the search is single-threaded, so FIRST at 6-30 s is a parallelism
+problem rather than an algorithmic one, and there is no unit splitting on the Rust side at
+all. Deadline-bounded partial results exist in the protocol but a partially evaluated root
+matrix cannot be ranked honestly, so a budget expiry currently falls back rather than
+publishing a half-searched opening.
 
 ## Working commands
 

@@ -184,6 +184,11 @@ export default class Search {
   readonly round: number;
   /** Round one uses a fast post-battle position estimate instead of recursive minimax. */
   readonly openingEstimate: boolean;
+  /**
+   * Weight the opponent's current reply by the captured opening prior. That is a fact
+   * about round one, so it holds however the resulting position is then scored.
+   */
+  readonly openingPrior: boolean;
   /** The card the opponent has already committed, in SECOND mode. */
   readonly oppIndex?: number;
   /** The exact hidden opponent wagers represented by each candidate's samples. */
@@ -228,17 +233,25 @@ export default class Search {
     return 1;
   }
 
+  /**
+   * @param exactOpening solve round one to the end of the match instead of estimating it.
+   * This is a reference mode for checking the Rust worker's exact opening, not the live
+   * path: it costs minutes rather than milliseconds and the advisor never sets it. Rounds
+   * two onward are exact regardless, so it changes nothing there.
+   */
   constructor(
     game: Game,
     stride = 1,
     offset = 0,
     blindSecond = false,
+    exactOpening = false,
   ) {
     this.stride = stride;
     this.offset = offset;
     this.root = game.clone();
     this.round = this.root.round;
-    this.openingEstimate = this.round === 1;
+    this.openingPrior = this.round === 1;
+    this.openingEstimate = this.openingPrior && !exactOpening;
 
     if (this.root.firstHasSelected) {
       if (blindSecond) {
@@ -404,7 +417,7 @@ export default class Search {
       candidate.sampleFlags.push((koNow ? 1 : 0) | (koedNow ? 2 : 0));
     }
     candidate.weights.push(
-      this.openingEstimate
+      this.openingPrior
         ? openingReplyWeight(
           this.mode === SearchMode.FIRST ? innerMove : outerMove,
         )

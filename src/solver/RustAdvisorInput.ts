@@ -11,6 +11,7 @@ import {
   type RustAdvisorRequest,
   type RustCardIdentity,
   type RustHistoryRound,
+  type RustOpeningPolicy,
   type RustProvenance,
 } from "./RustAdvisor.ts";
 import { SearchMode } from "./Search.ts";
@@ -36,6 +37,11 @@ export interface RustAdvisorInputContext {
   readonly decision: RustAdvisorDecisionContext;
   readonly requestId: string;
   readonly budgetMs: number;
+  /**
+   * How the Rust worker should evaluate an opening root. Omitted keeps the historical
+   * heuristic, which is what every round past the first uses regardless.
+   */
+  readonly openingPolicy?: RustOpeningPolicy;
 }
 
 /**
@@ -658,6 +664,7 @@ export async function normaliseRustAdvisorInput(
     },
     history: completed,
     budgetMs: budget,
+    openingPolicy: context.openingPolicy,
   };
   return {
     supported: true,

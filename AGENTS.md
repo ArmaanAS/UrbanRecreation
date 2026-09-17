@@ -41,6 +41,9 @@ deno task rust:advise --interactive --plain  # manually advance the supported ma
 deno task rust:advise --replay 877636 --plain  # grade and verify a real captured match
 deno task rust:advise --replay 1024673 --plain # SOA + round-two KO replay smoke
 deno task time-rust              # same decisions in both solvers, time + semantic verdict
+deno task rust:advise --exact-opening --plain  # solve round one instead of estimating it
+deno task advise --rust=use --exact-opening    # the same, through the hosted worker
+UR_SLOW_PARITY=1 deno test -A --no-check tests/solver/ExactOpeningParity.test.ts  # its gate
 deno task advise --rust=compare  # TS stays authoritative; compare every supported Rust mode
 deno task advise --rust=use      # use complete protocol-validated Rust results, else TS fallback
 UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (off by default)
@@ -161,6 +164,15 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   correctness oracle.
 - Do not revive the historical perfect-information advisor as the live recommendation
   model. The current hidden-information `Search`/`Policy` behavior must be ported explicitly.
+- Round one has two evaluators. The default is still the one-round position heuristic with
+  the fixed 198-play reply prior, in both implementations. `--exact-opening` asks Rust to
+  solve the opening with the ordinary continuation policy instead: 2-6 s for SECOND, 6-30 s
+  for FIRST, single-threaded and complete. Weighting replies by the captured prior is a
+  property of round one and survives that switch; only leaf scoring changes. Never read
+  `openingEstimate` as "this is round one" - use `openingPrior` (TS) or
+  `weights_by_opening_prior` (Rust), because conflating them is a live bug three times over.
+  An exact opening cannot be compared against the TypeScript heuristic; the reference
+  `Search` `exactOpening` mode and `tests/solver/ExactOpeningParity.test.ts` exist for that.
 - `rust/src/advisor/` is the current-engine vertical slice: strict manual/demo/replay input, a
   complete current-round make/unmake matrix, deadline-safe partial results, a bounded
   terminal view, a manual four-round session, and server-backed grading of every decision in

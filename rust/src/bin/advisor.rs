@@ -10,10 +10,10 @@ use std::process;
 use std::time::Duration;
 
 use urban_recreation_rust::advisor::input::{
-    parse_args, prepare, AdvisorCommand, PreparedAdvisorInput, USAGE,
+    parse_args, prepare, AdvisorCommand, AdvisorOptions, PreparedAdvisorInput, USAGE,
 };
 use urban_recreation_rust::advisor::search::{
-    search, AdvisorMove, EvaluationKind, SearchConfig, SearchMode, SearchSnapshot,
+    search, AdvisorMove, EvaluationKind, OpeningPolicy, SearchConfig, SearchMode, SearchSnapshot,
 };
 use urban_recreation_rust::advisor::session::{AdvisorSession, ManualSelection};
 use urban_recreation_rust::advisor::view::{
@@ -108,6 +108,7 @@ fn run_replay(prepared: &PreparedAdvisorInput, output: &mut impl Write) -> io::R
             first_mover,
             mode,
             budget: Duration::from_millis(prepared.options.budget_ms),
+            opening: opening_policy(&prepared.options),
         };
         let snapshot = render_search(prepared, &mut game, config, output)?;
         let played = captured_move(round, replay.us)?;
@@ -307,6 +308,15 @@ fn displayed_percent(value: f64) -> String {
     format!("{percent}%")
 }
 
+/// The opening round is the only one this can change; later rounds are exact regardless.
+const fn opening_policy(options: &AdvisorOptions) -> OpeningPolicy {
+    if options.exact_opening {
+        OpeningPolicy::ExactContinuation
+    } else {
+        OpeningPolicy::PositionHeuristic
+    }
+}
+
 fn displayed_score(value: f64, evaluation: EvaluationKind) -> String {
     if evaluation == EvaluationKind::OpeningEstimate {
         if !value.is_finite() {
@@ -374,6 +384,7 @@ fn run_interactive(
                         first_mover,
                         mode: SearchMode::BlindSecond,
                         budget: Duration::from_millis(prepared.options.budget_ms),
+                        opening: opening_policy(&prepared.options),
                     },
                     output,
                 )?;
@@ -399,6 +410,7 @@ fn run_interactive(
             first_mover,
             mode,
             budget: Duration::from_millis(prepared.options.budget_ms),
+            opening: opening_policy(&prepared.options),
         };
         render_search(prepared, session.game_mut(), config, output)?;
 
@@ -614,6 +626,7 @@ fn search_config(prepared: &PreparedAdvisorInput) -> SearchConfig {
         first_mover: options.first_mover,
         mode,
         budget: Duration::from_millis(options.budget_ms),
+        opening: opening_policy(options),
     }
 }
 
@@ -625,6 +638,7 @@ fn view_model(
 ) -> AdvisorViewModel {
     let phase = match snapshot.evaluation {
         EvaluationKind::OpeningEstimate => "OPENING ESTIMATE",
+        EvaluationKind::ExactOpeningPolicy => "EXACT OPENING POLICY",
         EvaluationKind::ExactContinuationPolicy => "EXACT CONTINUATION POLICY",
     };
     let source = if prepared.replay.is_some() {
@@ -639,6 +653,9 @@ fn view_model(
         (EvaluationKind::OpeningEstimate, _) => {
             format!("{source}; weighted opening estimate from 198 historical replies")
         }
+        (EvaluationKind::ExactOpeningPolicy, _) => format!(
+            "{source}; opening solved to the end of the match; opposing replies weighted by 198 historical replies"
+        ),
         (EvaluationKind::ExactContinuationPolicy, _) => {
             format!("{source}; exact rounds 2-4 policy; current hidden choices uniform")
         }

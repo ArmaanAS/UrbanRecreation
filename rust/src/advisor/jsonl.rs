@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::advisor::input::{repository_root, BATTLE_RULE_ID};
 use crate::advisor::search::{
-    search, EvaluationKind, RankedMove, SearchConfig, SearchMode, SearchSnapshot,
+    search, EvaluationKind, OpeningPolicy, RankedMove, SearchConfig, SearchMode, SearchSnapshot,
     ADVISOR_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::catalog::{CardKey, EffectiveCardCatalog};
@@ -120,6 +120,7 @@ pub fn run(
         first_mover: request.first_mover.engine(),
         mode: request.search_mode(),
         budget: Duration::from_millis(request.budget_ms),
+        opening: request.opening_policy.engine(),
     };
     let mut write_failed = None;
     let mut last_progress = Duration::ZERO;
@@ -194,6 +195,29 @@ struct Request {
     players: WirePlayers,
     history: Vec<HistoryRound>,
     budget_ms: u64,
+    /// How to evaluate an opening root. Absent means the historical heuristic, so a host
+    /// that predates this field keeps its old behaviour. A host that predates it cannot
+    /// accidentally receive an exact opening either, because the response echoes which
+    /// evaluator actually ran.
+    #[serde(default)]
+    opening_policy: WireOpeningPolicy,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum WireOpeningPolicy {
+    #[default]
+    PositionHeuristic,
+    ExactContinuation,
+}
+
+impl WireOpeningPolicy {
+    const fn engine(self) -> OpeningPolicy {
+        match self {
+            Self::PositionHeuristic => OpeningPolicy::PositionHeuristic,
+            Self::ExactContinuation => OpeningPolicy::ExactContinuation,
+        }
+    }
 }
 
 impl Request {
@@ -769,6 +793,7 @@ impl Response {
             score_frame: "requester",
             evaluation_kind: match snapshot.evaluation {
                 EvaluationKind::OpeningEstimate => "opening_estimate",
+                EvaluationKind::ExactOpeningPolicy => "exact_opening_policy",
                 EvaluationKind::ExactContinuationPolicy => "exact_continuation_policy",
             },
             complete: snapshot.complete,
