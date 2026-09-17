@@ -38,3 +38,7 @@ required-features = ["legacy-advisor"]
 [[bin]]
 name = "urban-recreation-advisor"
 path = "src/bin/advisor.rs"
+
+[[bin]]
+name = "urban-recreation-advisor-jsonl"
+path = "src/bin/advisor_jsonl.rs"

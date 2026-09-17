@@ -5,6 +5,7 @@
 //! refuses draws outside the strict catalog projection.
 
 pub mod input;
+pub mod jsonl;
 pub mod policy;
 pub mod search;
 pub mod session;
