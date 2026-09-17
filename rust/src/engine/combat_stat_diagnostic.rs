@@ -212,6 +212,10 @@ pub enum InvalidCombatStatPlanReasonV1 {
     ReanimateLifeSource,
     ReanimateLifeMagnitude,
     ReanimateLifePredicate,
+    ReprisalStopOpponentAbilityCard,
+    ReprisalStopOpponentAbilityEffect,
+    ReprisalStopOpponentAbilityIdentity,
+    ReprisalStopOpponentAbilityPredicate,
     /// The ability uses Support outside the unconditional basic-stat subset admitted by
     /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
@@ -393,12 +397,14 @@ impl CombatStatDiagnosticV1 {
                 validate_combat_stat_source_plan(
                     player,
                     slot,
+                    spec.cards[player][slot.index()].key,
                     CombatStatEffectSourceV1::Ability,
                     spec.cards[player][slot.index()].ability,
                 )?;
                 validate_combat_stat_source_plan(
                     player,
                     slot,
+                    spec.cards[player][slot.index()].key,
                     CombatStatEffectSourceV1::Bonus,
                     spec.cards[player][slot.index()].bonus,
                 )?;
@@ -556,6 +562,7 @@ fn effective_clan_character_count(
 fn validate_combat_stat_source_plan(
     player: PlayerId,
     hand_slot: HandSlot,
+    card_key: CardKey,
     source: CombatStatEffectSourceV1,
     plan: CombatStatSourcePlanV1,
 ) -> Result<(), CombatStatPlanErrorV1> {
@@ -567,6 +574,59 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
+    // These ids are reserved independently of the caller-provided source kind. They cannot
+    // be repurposed as generic Bonus or numeric provenance tags to bypass Reprisal's strict
+    // owner, effect, and defender-position contract.
+    if reprisal_stop_opponent_ability_id_is_reserved(source_id) {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityIdentity,
+            ));
+        }
+        if !reprisal_stop_opponent_ability_card_matches(source_id, card_key) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityCard,
+            ));
+        }
+        if effect != CombatStatEffectV1::StopOpponentAbility {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityEffect,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::OwnerMovesSecond {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityPredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if effect == CombatStatEffectV1::StopOpponentAbility
+        && predicate == CombatStatPredicateV1::OwnerMovesSecond
+    {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityIdentity,
+        ));
+    }
     if effect == CombatStatEffectV1::RecoverPaidPillzOnDefeat {
         if !matches!(
             (source, source_id),
@@ -835,6 +895,17 @@ fn validate_combat_stat_source_plan(
         ));
     }
     Ok(())
+}
+
+const fn reprisal_stop_opponent_ability_id_is_reserved(source_id: u32) -> bool {
+    matches!(source_id, 1310 | 2073)
+}
+
+fn reprisal_stop_opponent_ability_card_matches(source_id: u32, key: CardKey) -> bool {
+    matches!(
+        (source_id, key),
+        (1310, CardKey { id: 1498, level: 4 }) | (2073, CardKey { id: 2042, level: 3 })
+    )
 }
 
 fn invalid_combat_stat_execute(
@@ -1177,6 +1248,11 @@ mod tests {
         CombatStatDiagnosticMatchSpecV1 { base_rules, cards }
     }
 
+    fn set_p1_card_key(spec: &mut CombatStatDiagnosticMatchSpecV1, key: CardKey) {
+        spec.base_rules.players[PlayerId::P1].hand[0].key = key;
+        spec.cards[PlayerId::P1][0].key = key;
+    }
+
     fn input(p1_pillz: u16, fury: bool) -> BaseRulesRoundInput {
         BaseRulesRoundInput {
             first_mover: PlayerId::P1,
@@ -1211,6 +1287,308 @@ mod tests {
         let mut restored_hasher = DefaultHasher::new();
         game.position().hash(&mut restored_hasher);
         assert_eq!(restored_hasher.finish(), before_hash);
+    }
+
+    #[test]
+    fn reprisal_soa_is_live_only_when_its_owner_moves_second_and_undo_restores() {
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1310,
+            CombatStatEffectV1::StopOpponentAbility,
+            0,
+        );
+        set_p1_card_key(&mut spec, CardKey::new(1498, 4));
+        spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1310,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        spec.base_rules.players[PlayerId::P2].hand[0].power = 6;
+        spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 2,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Player,
+                stat: CombatStatAttributeV1::Power,
+                operation: CombatStatOperationV1::Increase,
+                value: 3,
+                minimum: None,
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+        };
+
+        let mut first = CombatStatDiagnosticV1::new(spec.clone()).unwrap();
+        let (report, _) = first.make(input(0, false)).unwrap();
+        // P1 moved first, so Reprisal is inactive and P2's Ability is live.
+        assert_eq!(report.cards[PlayerId::P2].power, 9);
+
+        let mut second = CombatStatDiagnosticV1::new(spec).unwrap();
+        let before = second.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let mut second_input = input(0, false);
+        second_input.first_mover = PlayerId::P2;
+        let (report, undo) = second.make(second_input).unwrap();
+        // P1 now moved second, so its SOA is live before PRE4 and suppresses P2's Ability.
+        assert_eq!(report.cards[PlayerId::P2].power, 6);
+        second.unmake(undo);
+        assert_eq!(second.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        second.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
+    }
+
+    #[test]
+    fn reprisal_soa_stops_defeat_life_as_in_capture_1069193_round_three() {
+        // The full capture cannot yet replay because round zero selects Komboka's unsupported
+        // +1 Pillz And Life. This isolated server-backed round keeps the observed arithmetic:
+        // Spidee moves second, deals six to an opponent on 18, and their Defeat +2 Life is
+        // stopped, leaving 12 rather than 14.
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1310,
+            CombatStatEffectV1::StopOpponentAbility,
+            0,
+        );
+        set_p1_card_key(&mut spec, CardKey::new(1498, 4));
+        spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1310,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+        spec.base_rules.players[PlayerId::P1].hand[0].damage = 6;
+        spec.base_rules.players[PlayerId::P2].initial_life = 18;
+        spec.base_rules.players[PlayerId::P2].hand[0].power = 6;
+        spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 4635,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::GainLifeOnDefeat { life: 2 },
+        };
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let before = game.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let mut round = input(0, false);
+        round.first_mover = PlayerId::P2;
+        let (report, undo) = game.make(round).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P2].life, 12);
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        game.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
+    }
+
+    #[test]
+    fn reprisal_soa_participates_in_the_existing_soa_cycle_without_leaking_state() {
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1310,
+            CombatStatEffectV1::StopOpponentAbility,
+            0,
+        );
+        set_p1_card_key(&mut spec, CardKey::new(1498, 4));
+        spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1310,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 41,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let before = game.position().clone();
+        let mut before_hasher = DefaultHasher::new();
+        before.hash(&mut before_hasher);
+        let before_hash = before_hasher.finish();
+        let mut round = input(0, false);
+        round.first_mover = PlayerId::P2;
+        let (_, undo) = game.make(round).unwrap();
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+        let mut restored_hasher = DefaultHasher::new();
+        game.position().hash(&mut restored_hasher);
+        assert_eq!(restored_hasher.finish(), before_hash);
+    }
+
+    #[test]
+    fn reprisal_soa_public_plans_are_ability_identity_and_predicate_locked() {
+        for (id, key) in [(1310, CardKey::new(1498, 4)), (2073, CardKey::new(2042, 3))] {
+            let mut valid = spec_with_p1(
+                CombatStatEffectSourceV1::Ability,
+                id,
+                CombatStatEffectV1::StopOpponentAbility,
+                0,
+            );
+            set_p1_card_key(&mut valid, key);
+            valid.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+                source_id: id,
+                predicate: CombatStatPredicateV1::OwnerMovesSecond,
+                effect: CombatStatEffectV1::StopOpponentAbility,
+            };
+            assert!(CombatStatDiagnosticV1::new(valid).is_ok(), "id={id}");
+        }
+
+        let mut wrong_id = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1,
+            CombatStatEffectV1::StopOpponentAbility,
+            0,
+        );
+        wrong_id.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_id),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityIdentity,
+                ..
+            })
+        ));
+
+        let mut wrong_source = spec_with_p1(
+            CombatStatEffectSourceV1::Bonus,
+            1310,
+            CombatStatEffectV1::StopOpponentAbility,
+            0,
+        );
+        wrong_source.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+            source_id: 1310,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_source),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityIdentity,
+                ..
+            })
+        ));
+
+        for effect in [
+            CombatStatEffectV1::StopOpponentAbility,
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Player,
+                stat: CombatStatAttributeV1::Power,
+                operation: CombatStatOperationV1::Increase,
+                value: 1,
+                minimum: None,
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+        ] {
+            // Default predicate is Always: neither generic unconditional SOA nor a numeric
+            // plan may borrow a reserved Reprisal identity through the Bonus source.
+            let wrong_source_always =
+                spec_with_p1(CombatStatEffectSourceV1::Bonus, 1310, effect, 0);
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(wrong_source_always),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityIdentity,
+                    ..
+                })
+            ));
+        }
+
+        let mut wrong_predicate = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1310,
+            CombatStatEffectV1::StopOpponentAbility,
+            0,
+        );
+        set_p1_card_key(&mut wrong_predicate, CardKey::new(1498, 4));
+        wrong_predicate.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1310,
+            predicate: CombatStatPredicateV1::OwnerMovesFirst,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_predicate),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityPredicate,
+                ..
+            })
+        ));
+
+        let mut unconditional_reprisal = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1310,
+            CombatStatEffectV1::StopOpponentAbility,
+            0,
+        );
+        set_p1_card_key(&mut unconditional_reprisal, CardKey::new(1498, 4));
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(unconditional_reprisal),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityPredicate,
+                ..
+            })
+        ));
+
+        let mut wrong_effect = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            1310,
+            CombatStatEffectV1::StopOpponentBonus,
+            0,
+        );
+        set_p1_card_key(&mut wrong_effect, CardKey::new(1498, 4));
+        wrong_effect.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1310,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+            effect: CombatStatEffectV1::StopOpponentBonus,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_effect),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityEffect,
+                ..
+            })
+        ));
+
+        for (source_id, wrong_key) in [
+            (1310, CardKey::new(1498, 3)),
+            (1310, CardKey::new(2042, 3)),
+            (2073, CardKey::new(2042, 2)),
+            (2073, CardKey::new(1498, 4)),
+        ] {
+            let mut wrong_card = spec_with_p1(
+                CombatStatEffectSourceV1::Ability,
+                source_id,
+                CombatStatEffectV1::StopOpponentAbility,
+                0,
+            );
+            set_p1_card_key(&mut wrong_card, wrong_key);
+            wrong_card.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+                source_id,
+                predicate: CombatStatPredicateV1::OwnerMovesSecond,
+                effect: CombatStatEffectV1::StopOpponentAbility,
+            };
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(wrong_card),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityCard,
+                    ..
+                })
+            ));
+        }
+
+        // Existing unconditional public plans remain intentionally generic.
+        assert!(CombatStatDiagnosticV1::new(spec_with_p1(
+            CombatStatEffectSourceV1::Bonus,
+            1,
+            CombatStatEffectV1::StopOpponentAbility,
+            0,
+        ))
+        .is_ok());
     }
 
     #[test]

@@ -50,6 +50,7 @@ const GHEIST_CLAN_ID: u32 = 32;
 const GHEIST_CATALOG_BONUS_ID: u32 = 32;
 const GHEIST_STOP_ABILITY_BONUS_REGISTRY_ID: u32 = 94;
 const STOP_OPPONENT_ABILITY_DESCRIPTION: &str = "Stop Opp. Ability";
+const REPRISAL_STOP_OPPONENT_ABILITY_DESCRIPTION: &str = "Reprisal: Stop Opp. Ability";
 const PIRANAS_CLAN_ID: u32 = 42;
 const PIRANAS_CATALOG_BONUS_ID: u32 = 40;
 const PIRANAS_STOP_BONUS_REGISTRY_ID: u32 = 333;
@@ -737,6 +738,52 @@ fn prepare_catalog_source(
             );
         }
     }
+    // Reprisal SOA is deliberately a separate, source-identity-gated slice.  The two
+    // captured registry definitions share one structural alias group, but a catalog card
+    // can enter only through its own printed id: description equality must not make every
+    // Reprisal SOA card executable.
+    if description == REPRISAL_STOP_OPPONENT_ABILITY_DESCRIPTION
+        && source_kind == CombatStatEffectSourceV1::Ability
+    {
+        let match_ = registry.lookup_description(description).map_err(|source| {
+            CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            }
+        })?;
+        if let Some(registry_definition_id) =
+            catalog_id.filter(|catalog_id| match_.alias_ids().contains(catalog_id))
+        {
+            return prepare_control_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                registry_definition_id,
+                SupportedEffectV1::StopOpponentAbility,
+            );
+        }
+        let definition = match_.definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
     // The Piranas catalog bonus id is also from a separate namespace. Pin its active
     // clan source to the independently captured registry identity used by real battles.
     if description == STOP_OPPONENT_BONUS_DESCRIPTION
@@ -1075,15 +1122,34 @@ fn prepare_control_source(
         })?;
     // Same-text control records are provenance only after their complete structured shape
     // compiles to this exact effect; malformed aliases never inherit execution authority.
-    let registry_alias_ids = registry
-        .iter()
-        .filter_map(|(id, candidate)| {
-            (candidate.description() == description
-                && candidate.compiled().supported() == Some(expected_effect))
-            .then_some(id)
-        })
-        .collect::<Vec<_>>()
-        .into_boxed_slice();
+    let registry_alias_ids = if description == REPRISAL_STOP_OPPONENT_ABILITY_DESCRIPTION {
+        // Reprisal controls are intentionally model-neutrally Unsupported because their
+        // defender position is not a generic registry primitive.  Use this projection's
+        // exact classifier for provenance only; the catalog-id alias gate above remains
+        // the authority for admission.
+        registry
+            .iter()
+            .filter_map(|(id, candidate)| {
+                matches!(
+                    classify_combat_stat_effect(candidate, source_kind),
+                    Some((effect, CombatStatPredicateV1::OwnerMovesSecond))
+                        if effect == expected_effect
+                )
+                .then_some(id)
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    } else {
+        registry
+            .iter()
+            .filter_map(|(id, candidate)| {
+                (candidate.description() == description
+                    && candidate.compiled().supported() == Some(expected_effect))
+                .then_some(id)
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
+    };
     Ok(PreparedCatalogSourceV1 {
         metadata: CatalogCombatStatSourceDispositionV1::Execute {
             identity: CatalogCombatStatModifierIdentityV1 {

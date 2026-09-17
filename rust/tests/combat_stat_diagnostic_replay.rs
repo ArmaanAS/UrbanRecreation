@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::path::PathBuf;
 
-use urban_recreation_rust::catalog::CardCatalog;
+use urban_recreation_rust::catalog::{CardCatalog, CardKey};
 use urban_recreation_rust::effect_registry::{
     AttributeAffectedV1, EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
 };
@@ -24,7 +24,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1088323, 2),
     (1089001, 1),
     (1024673, 2),
-    (1081463, 1),
+    (1060199, 3),
+    (1081463, 4),
     (1089513, 2),
     (901400, 2),
     (874837, 2),
@@ -168,6 +169,15 @@ fn reanimate_life_entry(id: u32, life: u16) -> serde_json::Value {
     entry
 }
 
+fn reprisal_stop_ability_entry(id: u32) -> serde_json::Value {
+    let mut entry = numeric_entry(id, "Reprisal: Stop Opp. Ability", "defender", 0, 0);
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("none");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("none");
+    entry["abilityData"]["specialAction"] = serde_json::json!("stop_ability");
+    entry
+}
+
 fn argos_defeat_capped_pillz_entry(id: u32, description: &str) -> serde_json::Value {
     let mut entry = numeric_entry(id, description, "both", 2, 0);
     entry["abilityData"]["valueMax"] = serde_json::json!(11);
@@ -252,7 +262,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_fifty_two_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_fifty_eight_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -288,15 +298,16 @@ fn fixed_server_backed_gate_is_exactly_fifty_two_sequential_prefix_rounds() {
             }
         }
     }
-    assert_eq!(rounds, 52);
+    assert_eq!(rounds, 58);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 36, 37, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 257, 266, 310, 333, 377, 401,
-            412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980, 1034, 1047, 1158,
-            1163, 1241, 1335, 1338, 1342, 1359, 1372, 1375, 1418, 1536, 1578, 1688, 1694, 1770,
-            1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881, 2965, 3677, 3864, 3865, 3897,
-            4041, 4216, 4297, 4299, 4399, 4711, 4718, 4757, 5026, 5085, 5273, 5520, 5763, 5852,
+            6, 36, 37, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 257, 266, 292, 310, 333, 377,
+            401, 412, 520, 577, 578, 585, 612, 741, 801, 844, 871, 883, 888, 916, 980, 1034, 1047,
+            1158, 1163, 1241, 1310, 1335, 1338, 1342, 1359, 1372, 1375, 1418, 1420, 1518, 1536,
+            1578, 1688, 1694, 1770, 1844, 1845, 1848, 1850, 2299, 2329, 2412, 2535, 2881, 2965,
+            3677, 3864, 3865, 3897, 4041, 4216, 4297, 4299, 4399, 4464, 4711, 4718, 4757, 4966,
+            5026, 5085, 5273, 5520, 5763, 5852,
         ])
     );
     assert_eq!(
@@ -498,7 +509,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 14);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 15);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -554,7 +565,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        14
+        15
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -596,6 +607,86 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
                 life: 2
             },
         } if identity.id == 4635
+    ));
+
+    let reprisal_slot = chadwik.replay().rounds[3]
+        .plays
+        .iter()
+        .find(|play| play.card.id == 1498)
+        .expect("1069193 round 3 must select Spidee");
+    let reprisal_owner = match reprisal_slot.engine_player {
+        EnginePlayer::P1 => PlayerId::P1,
+        EnginePlayer::P2 => PlayerId::P2,
+    };
+    assert!(matches!(
+        chadwik.preparation()[reprisal_owner][usize::from(reprisal_slot.hand_index)].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            ref identity,
+            effect: SupportedEffectV1::StopOpponentAbility,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+        } if identity.id == 1310
+    ));
+
+    // In 1060199/r2 Spidee is the first mover, so the same captured source is present in
+    // the compact plan but Reprisal is false. Donna Black's active Revenge reduction is
+    // consequently still visible in the server's 44 Attack result.
+    let inactive = diagnostic(1060199, &catalog, &registry);
+    let round = &inactive.replay().rounds[2];
+    let play = round
+        .plays
+        .iter()
+        .find(|play| play.card.id == 1498)
+        .expect("1060199 round 2 must select Spidee");
+    let owner = match play.engine_player {
+        EnginePlayer::P1 => PlayerId::P1,
+        EnginePlayer::P2 => PlayerId::P2,
+    };
+    assert_eq!(round.first_mover, play.engine_player);
+    assert!(matches!(
+        inactive.preparation()[owner][usize::from(play.hand_index)].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            ref identity,
+            effect: SupportedEffectV1::StopOpponentAbility,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+        } if identity.id == 1310
+    ));
+    assert!(
+        round
+            .expected_card_results
+            .iter()
+            .flatten()
+            .any(|result| result.attack == 44),
+        "Donna Black's captured Attack 44 must survive inactive Reprisal"
+    );
+}
+
+#[test]
+fn reprisal_soa_capture_is_not_an_exact_prefix_gate_before_kombokas_pillz_and_life() {
+    let catalog = catalog();
+    let registry = registry();
+    let error = diagnostic(1069193, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(4)
+        .expect_err("Komboka's unimplemented +1 Pillz And Life blocks 1069193/r0");
+    let CombatStatDiagnosticReplayErrorV1::Mismatch {
+        context,
+        selected,
+        field,
+        expected,
+        actual,
+    } = error
+    else {
+        panic!("1069193 must stop at the known round-zero server mismatch");
+    };
+    assert_eq!(context.round, 0);
+    assert_eq!(field, "players.P2.life");
+    assert_eq!(expected, "16");
+    assert_eq!(actual, "15");
+    assert!(matches!(
+        selected[PlayerId::P2].bonus,
+        CombatStatProjectionDispositionV1::Disabled {
+            ref identity,
+            ..
+        } if identity.id == 1714
     ));
 }
 
@@ -886,6 +977,90 @@ fn selected_stop_ability_is_visible_and_rejected_fail_closed() {
         CombatStatDiagnosticReplayErrorV1::Engine { .. }
     ));
     assert!(error.to_string().contains("selected="));
+}
+
+#[test]
+fn reprisal_soa_is_exactly_the_two_captured_ability_aliases() {
+    let catalog = catalog();
+    let selected_slot = 0_usize;
+    for (id, admitted) in [(1310, true), (2073, true), (900_131, false)] {
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        source.rounds.clear();
+        if admitted {
+            source.players[0].hand[selected_slot].key = match id {
+                1310 => CardKey { id: 1498, level: 4 },
+                2073 => CardKey { id: 2042, level: 3 },
+                _ => unreachable!("only the two admitted aliases reach this branch"),
+            };
+        }
+        source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+            id,
+            description: "Reprisal: Stop Opp. Ability".to_owned(),
+        });
+        let registry = one_entry_registry(reprisal_stop_ability_entry(id));
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        let disposition = &prepared.preparation()[PlayerId::P1][selected_slot].ability;
+        assert_eq!(
+            matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::Execute {
+                    identity,
+                    effect: SupportedEffectV1::StopOpponentAbility,
+                    predicate: CombatStatPredicateV1::OwnerMovesSecond,
+                } if identity.id == id
+            ),
+            admitted,
+            "registry id {id}"
+        );
+        if !admitted {
+            assert!(matches!(
+                disposition,
+                CombatStatProjectionDispositionV1::Disabled {
+                    reason: CombatStatDisabledReasonV1::UnsupportedPromisedControl { .. }
+                        | CombatStatDisabledReasonV1::UnsupportedSelectedHazard { .. },
+                    ..
+                }
+            ));
+            assert!(matches!(
+                prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
+                CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+            ));
+        }
+    }
+
+    // The admitted identity still has to retain its complete defender shape.  A malformed
+    // same-id record is not quietly disabled: selecting it remains an atomic hazard.
+    let mut malformed = reprisal_stop_ability_entry(1310);
+    malformed["abilityData"]["positionRequirement"] = serde_json::json!("attacker");
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    source.rounds.clear();
+    source.players[0].hand[selected_slot].key = CardKey { id: 1498, level: 4 };
+    source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        id: 1310,
+        description: "Reprisal: Stop Opp. Ability".to_owned(),
+    });
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        source,
+        &catalog,
+        &one_entry_registry(malformed),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][selected_slot].ability,
+        CombatStatProjectionDispositionV1::Disabled {
+            reason: CombatStatDisabledReasonV1::UnsupportedPromisedControl { .. }
+                | CombatStatDisabledReasonV1::UnsupportedSelectedHazard { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][selected_slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 1310 }
+    ));
 }
 
 #[test]

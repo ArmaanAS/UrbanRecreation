@@ -14,7 +14,60 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 14;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 15;
+
+/// Recognize the two server-observed Reprisal Stop Opp. Ability definitions.  This is
+/// deliberately separate from generic Stop Opp. Ability admission: only the exact
+/// ability identities below may carry the defender-position predicate.
+pub(crate) fn classify_reprisal_stop_opponent_ability(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> bool {
+    reprisal_stop_opponent_ability_identity_matches(source_kind, definition.id())
+        && definition.description() == "Reprisal: Stop Opp. Ability"
+        && reprisal_stop_opponent_ability_shape_matches(definition.structured_input())
+}
+
+/// Shared identity gate for the cold compiler and direct compact-plan validation.
+pub(crate) fn reprisal_stop_opponent_ability_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    source_kind == CombatStatEffectSourceV1::Ability && matches!(definition_id, 1310 | 2073)
+}
+
+fn reprisal_stop_opponent_ability_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value == 0
+        && input.value_min == 0
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Defender
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::None
+        && input.attribute_action == AttributeActionV1::None
+        && input.special_action == SpecialActionV1::StopAbility
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
 
 /// Recognize only the literal, immediate end-of-round Victory Life grammar.  Unlike the
 /// identity-locked Pillz slices below, this is deliberately generic: any registry
@@ -165,6 +218,12 @@ pub(crate) fn classify_combat_stat_effect(
     // broadens its Pillz support.
     if classify_victory_or_defeat_pillz(definition, source_kind) {
         return None;
+    }
+    if classify_reprisal_stop_opponent_ability(definition, source_kind) {
+        return Some((
+            SupportedEffectV1::StopOpponentAbility,
+            CombatStatPredicateV1::OwnerMovesSecond,
+        ));
     }
     // Model-specific conditions take precedence over the registry's model-neutral output.
     // Keep the unconditional guard below as well, so a future registry compiler expansion
@@ -1002,6 +1061,78 @@ mod tests {
                 .lookup_capture(1034, "Victory Or Defeat : +1 Pillz")
                 .unwrap(),
             CombatStatEffectSourceV1::Bonus,
+        ));
+    }
+
+    #[test]
+    fn reprisal_stop_opponent_ability_is_identity_and_shape_locked() {
+        let registry = registry();
+        for id in [1310, 2073] {
+            let definition = registry
+                .lookup_capture(id, "Reprisal: Stop Opp. Ability")
+                .unwrap();
+            assert!(classify_reprisal_stop_opponent_ability(
+                definition,
+                CombatStatEffectSourceV1::Ability,
+            ));
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                Some((
+                    SupportedEffectV1::StopOpponentAbility,
+                    CombatStatPredicateV1::OwnerMovesSecond,
+                )),
+            );
+            assert!(!classify_reprisal_stop_opponent_ability(
+                definition,
+                CombatStatEffectSourceV1::Bonus,
+            ));
+        }
+
+        // The existing unconditional admission stays independent of the new identity gate.
+        let unconditional = registry.lookup_capture(1341, "Stop Opp. Ability").unwrap();
+        assert_eq!(
+            classify_combat_stat_effect(unconditional, CombatStatEffectSourceV1::Ability),
+            Some((
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::Always,
+            )),
+        );
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(1)),
+            ("positionRequirement", serde_json::json!("both")),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("attributeAffected", serde_json::json!("pwr")),
+            ("specialAction", serde_json::json!("stop_bonus")),
+            ("isSupport", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1310"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert!(
+                !classify_reprisal_stop_opponent_ability(
+                    malformed
+                        .lookup_capture(1310, "Reprisal: Stop Opp. Ability")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                "mutated field {field}",
+            );
+        }
+        let mut malformed = source;
+        malformed["1310"]["description"] = serde_json::json!("Reprisal: Stop Opp. Bonus");
+        let malformed =
+            EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                .unwrap();
+        assert!(!classify_reprisal_stop_opponent_ability(
+            malformed
+                .lookup_capture(1310, "Reprisal: Stop Opp. Bonus")
+                .unwrap(),
+            CombatStatEffectSourceV1::Ability,
         ));
     }
 

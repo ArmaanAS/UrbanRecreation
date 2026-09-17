@@ -1,4 +1,5 @@
-use std::collections::hash_map::DefaultHasher;
+use std::collections::{hash_map::DefaultHasher, BTreeSet};
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
@@ -1287,6 +1288,80 @@ fn strict_catalog_match_bridges_only_active_roots_and_gheist_soa_bonuses() {
 }
 
 #[test]
+fn strict_catalog_match_admits_only_the_two_observed_reprisal_soa_aliases() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    let cases = [
+        (
+            [
+                CardKey::new(1498, 4), // Spidee, captured registry alias 1310
+                CardKey::new(441, 1),
+                CardKey::new(444, 1),
+                CardKey::new(445, 1),
+            ],
+            1310,
+        ),
+        (
+            [
+                CardKey::new(2042, 3), // Bulza Cr, captured registry alias 2073
+                CardKey::new(281, 2),
+                CardKey::new(282, 1),
+                CardKey::new(287, 1),
+            ],
+            2073,
+        ),
+    ];
+
+    for (hand, source_id) in cases {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(hand, rescue, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("reprisal SOA {source_id} was not executable: {error}"));
+        let CatalogCombatStatSourceDispositionV1::Execute {
+            identity,
+            effect: SupportedEffectV1::StopOpponentAbility,
+            predicate: CombatStatPredicateV1::OwnerMovesSecond,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("reprisal SOA {source_id} did not compile to its exact defender control")
+        };
+        assert_eq!(identity.catalog_id, Some(source_id));
+        assert_eq!(identity.registry_definition_id, source_id);
+        assert_eq!(identity.registry_alias_ids.as_ref(), [1310, 2073]);
+    }
+
+    // These printed same-text cards are not observed execution authorities.  Each must
+    // remain a strict selected-source rejection even though it belongs to the same text
+    // family as Spidee level 4 and Bulza Cr.
+    for (key, source_id) in [
+        (CardKey::new(1136, 3), 964),  // Carmen
+        (CardKey::new(1288, 2), 1115), // Harmonia
+        (CardKey::new(1498, 3), 4394), // Spidee level 3
+        (CardKey::new(1530, 5), 1337), // Leone Cr
+        (CardKey::new(2688, 5), 5762), // Jax Draven
+    ] {
+        let mut hand = fully_supported_hands().0;
+        hand[0] = key;
+        assert!(matches!(
+            CatalogCombatStatMatchV1::new(input(hand, rescue, false), &catalog, &registry, PROJECTION),
+            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                player: PlayerId::P1,
+                hand_slot,
+                source_kind: CombatStatEffectSourceV1::Ability,
+                catalog_id: Some(id),
+                ref description,
+                ..
+            }) if hand_slot.get() == 0 && id == source_id
+                && description == "Reprisal: Stop Opp. Ability"
+        ));
+    }
+}
+
+#[test]
 fn strict_catalog_match_pins_the_active_piranas_stop_bonus_identity() {
     let catalog = catalog();
     let registry = registry();
@@ -1678,4 +1753,92 @@ fn catalog_bonus_derivation_matches_the_complete_capture_corpus_except_dynamic_c
     assert!(checked_non_dynamic >= 2_538);
     assert!(dynamic_copy_slots > 0);
     assert!(dynamic_replacements > 0);
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StrictCoverageCapture {
+    id: u64,
+    battle_rule_id: u32,
+    night: bool,
+    players: Vec<StrictCoveragePlayer>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StrictCoveragePlayer {
+    base_life: u16,
+    base_pillz: u16,
+    hand: Vec<StrictCoverageCard>,
+}
+
+#[derive(serde::Deserialize)]
+struct StrictCoverageCard {
+    id: u32,
+    level: u8,
+    index: u8,
+}
+
+/// This is intentionally a catalog-only scan rather than a replay gate: all 328 safe
+/// capture files with two complete four-card hands participate, including the six that do
+/// not have a replayable move history.  Keeping the eligible ID set in one test makes any
+/// future documentation claim reproducible from canonical catalog context and the shared
+/// registry, rather than from a hand-maintained list.
+#[test]
+fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
+    let catalog = catalog();
+    let registry = registry();
+    let mut scanned = 0_usize;
+    let mut eligible = BTreeSet::new();
+    let mut paths = fs::read_dir(root_path("captures/games"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+
+    for path in paths {
+        let bytes = fs::read(&path).unwrap();
+        let capture: StrictCoverageCapture = serde_json::from_slice(&bytes)
+            .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        if capture.players.len() != 2 || capture.players.iter().any(|player| player.hand.len() != 4)
+        {
+            continue;
+        }
+        scanned += 1;
+        let make_player = |player: &StrictCoveragePlayer| CatalogCombatStatPlayerInputV1 {
+            initial_life: player.base_life,
+            initial_pillz: player.base_pillz,
+            hand: std::array::from_fn(|index| {
+                let card = player
+                    .hand
+                    .iter()
+                    .find(|card| usize::from(card.index) == index)
+                    .unwrap_or_else(|| {
+                        panic!("capture {} has no card at hand index {index}", capture.id)
+                    });
+                CardKey::new(card.id, card.level)
+            }),
+        };
+        let input = CatalogCombatStatMatchInputV1 {
+            battle_rule_id: capture.battle_rule_id,
+            night: capture.night,
+            players: ByPlayer::new(
+                make_player(&capture.players[0]),
+                make_player(&capture.players[1]),
+            ),
+        };
+        if CatalogCombatStatMatchV1::new(input, &catalog, &registry, PROJECTION).is_ok() {
+            eligible.insert(capture.id);
+        }
+    }
+
+    assert_eq!(scanned, 328);
+    assert_eq!(
+        eligible,
+        BTreeSet::from([830285, 869944, 877636, 877950, 1024673, 1060199, 1081463])
+    );
 }
