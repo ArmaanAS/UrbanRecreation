@@ -8,11 +8,12 @@
     "prune": "deno run --allow-read --allow-write --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/PruneLog.ts",
     "extract": "deno run --allow-read --allow-write=captures --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/ExtractBattle.ts",
     "bench": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 --inspect-brk ./tests/IterTree.bench.ts",
-    "advise": "deno run --allow-read --allow-net=localhost:8787,127.0.0.1:8787 --allow-run=deno --allow-env=FORCE_COLOR --allow-sys=osRelease --v8-flags=--max-old-space-size=12000 ./src/solver/Advisor.ts",
+    "advise": "deno run --allow-read --allow-net=localhost:8787,127.0.0.1:8787 --allow-run=deno,rust/target/release/urban-recreation-advisor-jsonl.exe,rust/target/release/urban-recreation-advisor-jsonl --allow-env=FORCE_COLOR --allow-sys=osRelease --v8-flags=--max-old-space-size=12000 ./src/solver/Advisor.ts",
     "time-search": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --v8-flags=--max-old-space-size=12000 ./tests/Search.bench.ts",
     "time": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 ./tests/IterTree.bench.ts",
     "rust:check": "cargo check --manifest-path rust/Cargo.toml --locked --all-features",
     "rust:test": "cargo test --manifest-path rust/Cargo.toml --locked",
+    "rust:worker": "cargo build --manifest-path rust/Cargo.toml --release --locked --bin urban-recreation-advisor-jsonl",
     "rust:advise": "cargo run --manifest-path rust/Cargo.toml --release --locked --bin urban-recreation-advisor --",
     "rust:legacy": "cargo run --manifest-path rust/Cargo.toml --locked --features legacy-advisor --bin urban-recreation-legacy"
   },

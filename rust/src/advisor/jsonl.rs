@@ -1,9 +1,9 @@
 //! Strict, one-shot JSONL protocol for embedding the current Rust advisor.
 //!
 //! V1 is intentionally only the first-mover search.  It keeps the wire boundary small,
-//! validates observed card identities against the effective catalog, and reconstructs the
-//! supplied history through the same fully-executable catalog projection as the terminal
-//! advisor.  Nothing on stdout is ever a diagnostic or a terminal frame.
+//! validates observed card identities against the prepared catalog/registry sources, and
+//! reconstructs the supplied history through the same fully-executable catalog projection
+//! as the terminal advisor.  Nothing on stdout is ever a diagnostic or a terminal frame.
 
 use std::error::Error;
 use std::fmt;
@@ -21,7 +21,7 @@ use crate::effect_registry::EffectRegistryV1;
 use crate::engine::{
     BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CatalogCombatStatMatchInputV1,
     CatalogCombatStatMatchV1, CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-    MatchStatus, PlayerId, HAND_SIZE,
+    CatalogCombatStatSourceDispositionV1, MatchStatus, PlayerId, HAND_SIZE,
 };
 
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -400,7 +400,6 @@ fn prepare_game(
     let registry = EffectRegistryV1::load(root.join("captures/abilities.json"))
         .map_err(|error| JsonlWorkerError::Preparation(error.to_string()))?;
     validate_provenance(request, &catalog, &registry)?;
-    validate_observed_cards(request, &catalog)?;
 
     let input = CatalogCombatStatMatchInputV1 {
         battle_rule_id: request.battle_rule_id,
@@ -417,6 +416,7 @@ fn prepare_game(
         CatalogCombatStatProjectionV1::RequireFullyExecutableDraws,
     )
     .map_err(|error| JsonlWorkerError::Preparation(error.to_string()))?;
+    validate_observed_cards(request, &prepared)?;
     let mut game = prepared.new_game();
     let mut expected_first = if request.history.is_empty() {
         request.first_mover.engine()
@@ -506,39 +506,84 @@ fn fnv1a64(value: u64) -> String {
 
 fn validate_observed_cards(
     request: &Request,
-    catalog: &EffectiveCardCatalog,
+    combat_match: &CatalogCombatStatMatchV1,
 ) -> Result<(), JsonlWorkerError> {
     for player in PlayerId::ALL {
         for (slot, observed) in request.players.by_player(player).hand.iter().enumerate() {
-            let actual = catalog.get(observed.key()).ok_or_else(|| {
-                protocol(&format!(
-                    "players.{}.hand[{slot}] is not in the effective catalog",
-                    player_name(player)
-                ))
-            })?;
-            let ability = if request.night {
-                actual.night_ability.as_ref().unwrap_or(&actual.ability)
-            } else {
-                &actual.ability
-            };
-            let bonus = if request.night {
-                actual.night_bonus.as_ref().unwrap_or(&actual.bonus)
-            } else {
-                &actual.bonus
-            };
-            if observed.ability_id != actual.ability_id
-                || observed.ability != *ability
-                || observed.bonus_id != actual.bonus_id
-                || observed.bonus != *bonus
-            {
+            let prepared = &combat_match.preparation()[player][slot];
+            if prepared.key != observed.key() {
                 return Err(protocol(&format!(
-                    "players.{}.hand[{slot}] observed ability/bonus identity differs from catalog",
+                    "players.{}.hand[{slot}] does not match the prepared catalog card",
                     player_name(player)
                 )));
             }
+            validate_observed_source(
+                player,
+                slot,
+                "ability",
+                observed.ability_id,
+                &observed.ability,
+                "No Ability",
+                &prepared.ability,
+                true,
+            )?;
+            validate_observed_source(
+                player,
+                slot,
+                "bonus",
+                observed.bonus_id,
+                &observed.bonus,
+                "No Bonus",
+                &prepared.bonus,
+                false,
+            )?;
         }
     }
     Ok(())
+}
+
+/// The live wire cannot represent an absent source as `None`: TypeScript normalisation
+/// writes the exact `0`/`No Ability` or `0`/`No Bonus` sentinel instead.  Once a source is
+/// present, its text is still exact evidence, while the ID follows the same authority split
+/// as captured replay grading: printed abilities retain catalog identity and clan bonuses
+/// retain the registry definition selected by preparation.  Registry aliases are provenance,
+/// not interchangeable execution identities.
+#[allow(clippy::too_many_arguments)]
+fn validate_observed_source(
+    player: PlayerId,
+    slot: usize,
+    source_kind: &'static str,
+    observed_id: u32,
+    observed_description: &str,
+    absent_description: &'static str,
+    prepared: &CatalogCombatStatSourceDispositionV1,
+    require_catalog_identity: bool,
+) -> Result<(), JsonlWorkerError> {
+    let mismatch = || {
+        protocol(&format!(
+            "players.{}.hand[{slot}] observed {source_kind} identity differs from the prepared catalog source",
+            player_name(player)
+        ))
+    };
+    let identity = match prepared {
+        CatalogCombatStatSourceDispositionV1::Absent => {
+            if observed_id == 0 && observed_description == absent_description {
+                return Ok(());
+            }
+            return Err(mismatch());
+        }
+        CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
+        | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => identity,
+    };
+    if observed_description != identity.description {
+        return Err(mismatch());
+    }
+    let identity_matches = if require_catalog_identity {
+        identity.catalog_id == Some(observed_id)
+    } else {
+        observed_id == identity.registry_definition_id
+    };
+    identity_matches.then_some(()).ok_or_else(mismatch)
 }
 
 const fn player_name(player: PlayerId) -> &'static str {
@@ -654,8 +699,51 @@ mod tests {
     use crate::advisor::input::repository_root;
     use crate::catalog::{CardKey, EffectiveCardCatalog};
     use crate::effect_registry::EffectRegistryV1;
-    use crate::engine::{BaseRulesRoundInput, BaseRulesSelection, ByPlayer, PlayerId};
+    use crate::engine::{
+        BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CatalogCombatStatMatchInputV1,
+        CatalogCombatStatMatchV1, CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
+        CatalogCombatStatSourceDispositionV1, PlayerId, HAND_SIZE,
+    };
     use serde_json::{json, Value};
+
+    fn observed_source(
+        source: &CatalogCombatStatSourceDispositionV1,
+        absent_description: &str,
+        require_catalog_identity: bool,
+    ) -> (u32, String) {
+        let identity = match source {
+            CatalogCombatStatSourceDispositionV1::Absent => {
+                return (0, absent_description.to_owned());
+            }
+            CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
+            | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => identity,
+        };
+        let id = if require_catalog_identity {
+            identity
+                .catalog_id
+                .expect("the daytime fixture has printed ability identities")
+        } else {
+            identity.registry_definition_id
+        };
+        (id, identity.description.clone())
+    }
+
+    fn prepared_wire_card(
+        catalog: &EffectiveCardCatalog,
+        prepared: &CatalogCombatStatMatchV1,
+        player: PlayerId,
+        slot: usize,
+    ) -> Value {
+        let source = &prepared.preparation()[player][slot];
+        let card = catalog.get(source.key).unwrap();
+        let (ability_id, ability) = observed_source(&source.ability, "No Ability", true);
+        let (bonus_id, bonus) = observed_source(&source.bonus, "No Bonus", false);
+        json!({
+            "id": card.id, "level": card.level,
+            "ability_id": ability_id, "ability": ability,
+            "bonus_id": bonus_id, "bonus": bonus,
+        })
+    }
 
     fn valid_request() -> Value {
         let root = repository_root();
@@ -665,14 +753,46 @@ mod tests {
         )
         .unwrap();
         let registry = EffectRegistryV1::load(root.join("captures/abilities.json")).unwrap();
-        let card = |key| {
-            let card = catalog.get(key).unwrap();
-            json!({
-                "id": card.id, "level": card.level,
-                "ability_id": card.ability_id, "ability": card.ability,
-                "bonus_id": card.bonus_id, "bonus": card.bonus,
-            })
-        };
+        let p1 = [
+            CardKey::new(123, 1),
+            CardKey::new(124, 1),
+            CardKey::new(138, 1),
+            CardKey::new(139, 1),
+        ];
+        let p2 = [
+            CardKey::new(441, 1),
+            CardKey::new(444, 1),
+            CardKey::new(445, 1),
+            CardKey::new(447, 1),
+        ];
+        let prepared = CatalogCombatStatMatchV1::new(
+            CatalogCombatStatMatchInputV1 {
+                battle_rule_id: 10,
+                night: false,
+                players: ByPlayer::new(
+                    CatalogCombatStatPlayerInputV1 {
+                        initial_life: 14,
+                        initial_pillz: 0,
+                        hand: p1,
+                    },
+                    CatalogCombatStatPlayerInputV1 {
+                        initial_life: 14,
+                        initial_pillz: 0,
+                        hand: p2,
+                    },
+                ),
+            },
+            &catalog,
+            &registry,
+            CatalogCombatStatProjectionV1::RequireFullyExecutableDraws,
+        )
+        .unwrap();
+        let p1_hand = (0..HAND_SIZE)
+            .map(|slot| prepared_wire_card(&catalog, &prepared, PlayerId::P1, slot))
+            .collect::<Vec<_>>();
+        let p2_hand = (0..HAND_SIZE)
+            .map(|slot| prepared_wire_card(&catalog, &prepared, PlayerId::P2, slot))
+            .collect::<Vec<_>>();
         json!({
             "protocol_version": 1,
             "request_id": "fixture-1",
@@ -687,11 +807,51 @@ mod tests {
                 "effect_registry_schema_version": registry.schema_version(),
             },
             "players": {
-                "p1": {"initial": {"life": 14, "pillz": 0}, "current": {"life": 14, "pillz": 0}, "played": [false, false, false, false], "hand": [card(CardKey::new(123, 1)), card(CardKey::new(124, 1)), card(CardKey::new(138, 1)), card(CardKey::new(139, 1))]},
-                "p2": {"initial": {"life": 14, "pillz": 0}, "current": {"life": 14, "pillz": 0}, "played": [false, false, false, false], "hand": [card(CardKey::new(441, 1)), card(CardKey::new(444, 1)), card(CardKey::new(445, 1)), card(CardKey::new(447, 1))]},
+                "p1": {"initial": {"life": 14, "pillz": 0}, "current": {"life": 14, "pillz": 0}, "played": [false, false, false, false], "hand": p1_hand},
+                "p2": {"initial": {"life": 14, "pillz": 0}, "current": {"life": 14, "pillz": 0}, "played": [false, false, false, false], "hand": p2_hand},
             },
             "history": [],
             "budget_ms": 50,
+        })
+    }
+
+    fn capture_1024673_opening_request() -> Value {
+        let root = repository_root();
+        let catalog = EffectiveCardCatalog::load(
+            root.join("data/data.json"),
+            root.join("data/battle_card_overrides.json"),
+        )
+        .unwrap();
+        let registry = EffectRegistryV1::load(root.join("captures/abilities.json")).unwrap();
+        json!({
+            "protocol_version": 1,
+            "request_id": "capture-1024673-opening",
+            "mode": "first",
+            "us": "p1",
+            "first_mover": "p1",
+            "battle_rule_id": 10,
+            "night": true,
+            "provenance": {
+                "effective_catalog_fingerprint_fnv1a64": format!("{:016x}", catalog.source_fingerprint_fnv1a64().value()),
+                "effect_registry_fingerprint_fnv1a64": format!("{:016x}", registry.source_fingerprint_fnv1a64().value()),
+                "effect_registry_schema_version": registry.schema_version(),
+            },
+            "players": {
+                "p1": {"initial": {"life": 12, "pillz": 12}, "current": {"life": 12, "pillz": 12}, "played": [false, false, false, false], "hand": [
+                    {"id": 1983, "level": 5, "ability_id": 1848, "ability": "Symmetry: -3 Opp Power, Min 2", "bonus_id": 1844, "bonus": "Asymmetry: Damage +3"},
+                    {"id": 1985, "level": 2, "ability_id": 1850, "ability": "Courage: -2 Opp Pow. & Dam., Min 2", "bonus_id": 1844, "bonus": "Asymmetry: Damage +3"},
+                    {"id": 1986, "level": 3, "ability_id": 0, "ability": "No Ability", "bonus_id": 1844, "bonus": "Asymmetry: Damage +3"},
+                    {"id": 2179, "level": 3, "ability_id": 2535, "ability": "Support: -1 Opp Attack, Min 0", "bonus_id": 1844, "bonus": "Asymmetry: Damage +3"}
+                ]},
+                "p2": {"initial": {"life": 12, "pillz": 12}, "current": {"life": 12, "pillz": 12}, "played": [false, false, false, false], "hand": [
+                    {"id": 189, "level": 2, "ability_id": 73, "ability": "Stop Opp. Ability", "bonus_id": 6, "bonus": "-12 Opp Attack, Min 8"},
+                    {"id": 413, "level": 1, "ability_id": 4299, "ability": "-2 Opp Power, Min 4", "bonus_id": 6, "bonus": "-12 Opp Attack, Min 8"},
+                    {"id": 2349, "level": 3, "ability_id": 3366, "ability": "Equalizer: -1 Opp Power, Min 0", "bonus_id": 333, "bonus": "Stop Opp. Bonus"},
+                    {"id": 1962, "level": 2, "ability_id": 1825, "ability": "-4 Opp Power, Min 0", "bonus_id": 333, "bonus": "Stop Opp. Bonus"}
+                ]},
+            },
+            "history": [],
+            "budget_ms": 1,
         })
     }
 
@@ -771,6 +931,29 @@ mod tests {
             }
         }
         assert_eq!(lines.last().unwrap()["kind"], "final");
+    }
+
+    #[test]
+    fn capture_1024673_accepts_registry_bonus_identity_and_rejects_catalog_id() {
+        let request = capture_1024673_opening_request();
+        assert_eq!(request["players"]["p1"]["hand"][0]["bonus_id"], 1844);
+        let (result, stdout, stderr) = invoke(request.clone());
+        result.unwrap();
+        assert!(stderr.is_empty());
+        assert_eq!(
+            serde_json::from_str::<Value>(stdout.lines().last().unwrap()).unwrap()["kind"],
+            "final"
+        );
+
+        // The catalog's printed Asymmetry clan-bonus id is 54, but the capture supplies
+        // the selected registry definition 1844.  Same text is not enough to make the
+        // catalog id an acceptable capture identity.
+        let mut malformed = request;
+        malformed["players"]["p1"]["hand"][0]["bonus_id"] = json!(54);
+        let (result, stdout, _) = invoke(malformed);
+        let error = result.unwrap_err();
+        assert!(error.contains("players.p1.hand[0] observed bonus identity"));
+        assert!(stdout.is_empty());
     }
 
     #[test]

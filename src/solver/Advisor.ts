@@ -5,6 +5,8 @@
 //   deno task advise --replay 901613 # review a captured battle, decision by decision
 //   deno task advise --replay 901613 --budget 5
 //   deno task advise --workers 1     # leave solving on the main thread
+//   deno task advise --rust=compare  # keep TS authoritative and compare supported FIRST decisions
+//   deno task advise --rust=use      # show protocol-validated Rust results for supported FIRST decisions
 //   deno task advise --preview-safe  # inspect the zero-risk shortlist without a live game
 //   deno task advise --preview-results # compare the available game-over banner styles
 //
@@ -33,6 +35,19 @@ import { type HandOf } from "../game/types/CardTypes.ts";
 import { Turn } from "../game/types/Types.ts";
 import Search from "./Search.ts";
 import ParallelSearch from "./ParallelSearch.ts";
+import {
+  CompletedRustSearch,
+  DenoCommandRunner,
+  runRustAdvisor,
+  RustAdvisorCancelledError,
+  type RustAdvisorRunner,
+  RustAdvisorTimeoutError,
+} from "./RustAdvisor.ts";
+import {
+  normaliseRustAdvisorInput,
+  type RustAdvisorInputResult,
+} from "./RustAdvisorInput.ts";
+import { SearchMode } from "./Search.ts";
 import {
   ALT_SCREEN_OFF,
   ALT_SCREEN_ON,
@@ -85,6 +100,8 @@ interface Position {
   board: ViewBoard;
   /** Set when the replayed position disagrees with the server's own life / pillz. */
   warning?: string;
+  /** One disposable Rust process for this exact capture decision, if requested. */
+  rust?: RustDecisionJob;
 }
 
 const stdout = Deno.stdout;
@@ -106,7 +123,9 @@ export function writeAllSync(
 // left the previous frame's blank area and Auto Queue button below it.
 const write = (s: string) => writeAllSync(stdout, enc.encode(s));
 let stopControlInput = () => {};
-let exitAdvisor = () => Deno.exit(0);
+let exitAdvisor: () => void | Promise<void> = () => Deno.exit(0);
+// Assigned by liveMode so Ctrl+C kills a disposable Rust child before Deno leaves.
+let stopRustDecision = async () => {};
 
 /** The engine logs heavily in the battle path; none of it may reach the screen. */
 function silenceEngine() {
@@ -298,6 +317,8 @@ export interface AdvisorOptions {
   top?: number;
   /** CPU workers used by each solve. One keeps the old in-process path. */
   workers: number;
+  /** Experimental Rust worker policy. TypeScript remains the default and fallback. */
+  rust: "off" | "compare" | "use";
 }
 
 export function parseArgs(argv: string[]): AdvisorOptions {
@@ -305,6 +326,7 @@ export function parseArgs(argv: string[]): AdvisorOptions {
     feed: FEED,
     budget: 0,
     workers: 3,
+    rust: "off",
     resultStyle: "classic",
   };
   for (let i = 0; i < argv.length; i++) {
@@ -314,7 +336,15 @@ export function parseArgs(argv: string[]): AdvisorOptions {
     else if (a === "--feed") opts.feed = argv[++i];
     else if (a === "--top") opts.top = Number(argv[++i]);
     else if (a === "--workers") opts.workers = Number(argv[++i]);
-    else if (a === "--preview-safe") opts.preview = "safe";
+    else if (a === "--rust" || a.startsWith("--rust=")) {
+      const value = (a === "--rust" ? argv[++i] : a.slice("--rust=".length)) as
+        | AdvisorOptions["rust"]
+        | undefined;
+      if (value !== "off" && value !== "compare" && value !== "use") {
+        throw new Error("--rust must be one of: off, compare, use");
+      }
+      opts.rust = value;
+    } else if (a === "--preview-safe") opts.preview = "safe";
     else if (a === "--preview-results") opts.preview = "results";
     else if (a === "--result-style") {
       const style = argv[++i] as ResultStyle;
@@ -352,6 +382,249 @@ const createSearch = (
 const cancelSearch = (search: Search) => {
   if (search instanceof ParallelSearch) search.cancel();
 };
+
+const RUST_WORKER_BASENAME =
+  "rust/target/release/urban-recreation-advisor-jsonl";
+const RUST_TIMEOUT_GRACE_MS = 750;
+const RUST_SCORE_TOLERANCE = 0.005;
+
+/** Resolve only the prebuilt worker.  The advisor must never turn a live decision into cargo. */
+export async function rustWorkerCommand(): Promise<string> {
+  const exe = `${RUST_WORKER_BASENAME}.exe`;
+  const portable = RUST_WORKER_BASENAME;
+  // Windows builds conventionally have .exe; retaining the extensionless fallback also
+  // makes a checked-out prebuilt worker usable under Deno's non-Windows hosts.
+  for (
+    const command of Deno.build.os === "windows"
+      ? [exe, portable]
+      : [portable, exe]
+  ) {
+    try {
+      if ((await Deno.stat(command)).isFile) return command;
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+    }
+  }
+  // Let Deno.Command report the ordinary, concise missing-worker error if neither exists.
+  return Deno.build.os === "windows" ? exe : portable;
+}
+
+const rustBudgetMs = (opts: AdvisorOptions) =>
+  Math.min(30_000, opts.budget > 0 ? opts.budget * 1000 : 1_000);
+
+const boundedRustStatus = (status: string) =>
+  status.replace(/[\x00-\x1f\x7f-\x9f]+/g, " ").slice(0, 110);
+
+/**
+ * Compare the complete, independently validated Rust answer with the complete TS answer.
+ * The tolerance is deliberately below one displayed percentage point, while still allowing
+ * harmless floating point fold-order differences.
+ */
+export function compareRustSearches(ts: Search, rust: Search): string {
+  const close = (a: number, b: number) =>
+    Math.abs(a - b) <= RUST_SCORE_TOLERANCE;
+  const byKey = new Map(
+    rust.candidates.map((candidate) => [candidate.key, candidate]),
+  );
+  if (byKey.size !== ts.candidates.length) return "rust differs";
+  for (const candidate of ts.candidates) {
+    const other = byKey.get(candidate.key);
+    if (
+      other === undefined || !close(candidate.average, other.average) ||
+      !close(candidate.minimax, other.minimax) ||
+      !close(ts.ceiling(candidate), rust.ceiling(other)) ||
+      ts.shownPercent(candidate.average) !== rust.shownPercent(other.average) ||
+      ts.shownPercent(candidate.minimax) !== rust.shownPercent(other.minimax) ||
+      ts.shownPercent(ts.ceiling(candidate)) !==
+        rust.shownPercent(rust.ceiling(other)) ||
+      !close(ts.koShare(candidate), rust.koShare(other)) ||
+      !close(ts.koedShare(candidate), rust.koedShare(other))
+    ) return "rust differs";
+  }
+  return ts.best()?.key === rust.best()?.key ? "rust match" : "rust differs";
+}
+
+export interface RustDecisionJobOptions {
+  readonly mode: "compare" | "use";
+  readonly key: string;
+  readonly requestId: string;
+  readonly game: Game;
+  readonly getSearch: () => Search;
+  readonly replaceSearch: (search: Search) => void;
+  readonly isCurrent: () => boolean;
+  readonly normalise: () => Promise<RustAdvisorInputResult>;
+  readonly runner: RustAdvisorRunner | (() => Promise<RustAdvisorRunner>);
+  readonly budgetMs: number;
+  readonly changed?: () => void;
+}
+
+/**
+ * Owns one worker for one Position key.  This small boundary keeps process lifetime and
+ * late-result checks testable without needing a capture feed or terminal.
+ */
+export class RustDecisionJob {
+  #controller = new AbortController();
+  #status = "rust starting";
+  #transcript?: Awaited<ReturnType<typeof runRustAdvisor>>;
+  #settled = false;
+  #cancelled = false;
+  #runPromise: Promise<void>;
+
+  constructor(private readonly options: RustDecisionJobOptions) {
+    this.#runPromise = this.run();
+  }
+
+  get status() {
+    return this.#status;
+  }
+
+  get waiting() {
+    return !this.#settled && !this.#cancelled;
+  }
+
+  cancel() {
+    if (this.#cancelled) return;
+    this.#cancelled = true;
+    this.#controller.abort(new RustAdvisorCancelledError());
+  }
+
+  async cancelAndWait() {
+    this.cancel();
+    await this.#runPromise;
+  }
+
+  settleCompare(search = this.options.getSearch()) {
+    if (
+      this.options.mode !== "compare" || this.#transcript === undefined ||
+      !search.done || !this.current()
+    ) return;
+    try {
+      this.#status = compareRustSearches(
+        search,
+        new CompletedRustSearch(this.options.game, this.#transcript.final),
+      );
+    } catch (error) {
+      this.#status = boundedRustStatus(
+        `rust rejected; TS fallback: ${(error as Error).message}`,
+      );
+    }
+    this.#settled = true;
+    this.changed();
+  }
+
+  private current() {
+    return !this.#cancelled && !this.#controller.signal.aborted &&
+      this.options.isCurrent();
+  }
+
+  private changed() {
+    this.options.changed?.();
+  }
+
+  private setStatus(status: string) {
+    if (!this.current()) return;
+    this.#status = boundedRustStatus(status);
+    this.changed();
+  }
+
+  private async run() {
+    try {
+      const normalised = await this.options.normalise();
+      if (!this.current()) return;
+      if (!normalised.supported) {
+        this.setStatus(`rust rejected: ${normalised.reason}`);
+        this.#settled = true;
+        return;
+      }
+      this.setStatus("rust running");
+      const runner = typeof this.options.runner === "function"
+        ? await this.options.runner()
+        : this.options.runner;
+      if (!this.current()) return;
+      const source = this.options.getSearch();
+      const transcript = await runRustAdvisor(
+        runner,
+        normalised.request,
+        source.candidates,
+        {
+          signal: this.#controller.signal,
+          timeoutMs: this.options.budgetMs + RUST_TIMEOUT_GRACE_MS,
+        },
+      );
+      if (!this.current()) return;
+      if (this.options.mode === "use") {
+        // Construction repeats the full action-set/sample validation before the swap.
+        const replacement = new CompletedRustSearch(
+          this.options.game,
+          transcript.final,
+        );
+        if (!this.current()) return;
+        const previous = this.options.getSearch();
+        this.options.replaceSearch(replacement);
+        cancelSearch(previous);
+        this.#settled = true;
+        this.setStatus("rust active");
+        return;
+      }
+      this.#transcript = transcript;
+      this.setStatus(source.done ? "rust ready" : "rust ready; TS finishing");
+      this.settleCompare();
+    } catch (error) {
+      if (!this.current()) return;
+      const status = error instanceof RustAdvisorTimeoutError
+        ? "rust timeout; TS fallback"
+        : `rust rejected: ${(error as Error).message}`;
+      this.setStatus(status);
+      this.#settled = true;
+    }
+  }
+}
+
+function cancelPosition(pos: Position) {
+  pos.rust?.cancel();
+  cancelSearch(pos.search);
+}
+
+export function rustDecisionEnabled(
+  rust: AdvisorOptions["rust"],
+  mode: SearchMode,
+): rust is Exclude<AdvisorOptions["rust"], "off"> {
+  return rust !== "off" && mode === SearchMode.FIRST;
+}
+
+function startRustForPosition(
+  pos: Position,
+  rec: Reconstructed,
+  opts: AdvisorOptions,
+  changed?: () => void,
+  runner: RustAdvisorRunner | (() => Promise<RustAdvisorRunner>) = async () =>
+    new DenoCommandRunner({ command: await rustWorkerCommand() }),
+) {
+  // Off must be observationally identical, and V1 deliberately has no SECOND/blind mode.
+  if (!rustDecisionEnabled(opts.rust, pos.search.mode)) return;
+  const mode: "compare" | "use" = opts.rust;
+  const job = new RustDecisionJob({
+    mode,
+    key: pos.key,
+    requestId: `rust:${pos.key}`,
+    game: pos.game,
+    getSearch: () => pos.search,
+    replaceSearch: (search) => pos.search = search,
+    isCurrent: () => pos.rust === job,
+    normalise: () =>
+      normaliseRustAdvisorInput({
+        rec,
+        game: pos.game,
+        decision: { mode: pos.search.mode, us: pos.search.us },
+        requestId: `rust:${pos.key}`,
+        budgetMs: rustBudgetMs(opts),
+      }),
+    runner,
+    budgetMs: rustBudgetMs(opts),
+    changed,
+  });
+  pos.rust = job;
+}
 
 // ---------------------------------------------------------------------------------------
 // Rebuilding the position
@@ -1045,6 +1318,7 @@ async function drive(
       : undefined;
     const detail = [
       extra,
+      pos.rust?.status,
       workerFailure && `worker pool failed (${workerFailure}); using 1 worker`,
     ]
       .filter(Boolean).join("  ·  ");
@@ -1064,8 +1338,9 @@ async function drive(
 
   setRepaint?.(paint);
   paint();
-  while (!pos.search.done && !interrupted()) {
-    await pos.search.workFor(SLICE_MS);
+  while ((!pos.search.done || pos.rust?.waiting) && !interrupted()) {
+    if (!pos.search.done) await pos.search.workFor(SLICE_MS);
+    pos.rust?.settleCompare(pos.search);
     if (Date.now() - painted >= FRAME_MS) paint();
     if (Date.now() > deadline) {
       paint(`stopped at the ${opts.budget}s budget`);
@@ -1073,6 +1348,7 @@ async function drive(
     }
     await new Promise((r) => setTimeout(r, 0)); // let the feed reader run
   }
+  pos.rust?.settleCompare(pos.search);
   paint();
 }
 
@@ -1228,6 +1504,12 @@ async function replayMode(opts: AdvisorOptions) {
       round: built.round,
       board: built.board,
     };
+    startRustForPosition(pos, rec, opts);
+    stopRustDecision = async () => {
+      pos.rust?.cancel();
+      cancelSearch(pos.search);
+      await pos.rust?.cancelAndWait();
+    };
     const label = `replay ${id} · decision ${decisions} · round ${built.round}`;
     await drive(pos, opts, () => label, () => false);
 
@@ -1235,16 +1517,17 @@ async function replayMode(opts: AdvisorOptions) {
     const full = reconstruct(id, all);
     const played = ourMove(full, built.round);
     write(
-      HOME + render(pos.game, search, {
+      HOME + render(pos.game, pos.search, {
         status: label,
         board: pos.board,
         top: opts.top,
-        played: played && gradeMove(search, played),
+        played: played && gradeMove(pos.search, played),
       }) + CLEAR_TO_END,
     );
     // Leave the frame up long enough to read before moving to the next decision.
     await new Promise((r) => setTimeout(r, 1500));
-    cancelSearch(search);
+    await stopRustDecision();
+    stopRustDecision = async () => {};
   }
   if (decisions === 0) {
     write(ALT_SCREEN_OFF);
@@ -1275,6 +1558,12 @@ async function liveMode(opts: AdvisorOptions) {
   >();
   let feedState: FeedState = { connection: "starting" };
   let pos: Position | undefined;
+  stopRustDecision = async () => {
+    if (pos === undefined) return;
+    pos.rust?.cancel();
+    cancelSearch(pos.search);
+    await pos.rust?.cancelAndWait();
+  };
   let pending: { rec: Reconstructed; battleId: number } | undefined;
   let holding: HoldingState | undefined;
   let lastPlayed: PlayedMove | undefined;
@@ -1491,7 +1780,7 @@ async function liveMode(opts: AdvisorOptions) {
     [feedState.error, controlError].filter(Boolean).join(" · ");
 
   const clearDecisionState = () => {
-    if (pos !== undefined) cancelSearch(pos.search);
+    if (pos !== undefined) cancelPosition(pos);
     pos = undefined;
     lastPlayed = undefined;
     history.length = 0;
@@ -1590,7 +1879,7 @@ async function liveMode(opts: AdvisorOptions) {
         // previous solve obsolete. Transient incomplete snapshots do not: cancelling for
         // one of those would recreate the old "never gets anywhere" failure.
         if (built.settled && pos !== undefined && key !== pos.key) {
-          cancelSearch(pos.search);
+          cancelPosition(pos);
         }
         diagnosis = built.why;
         holding = built.holding;
@@ -1615,7 +1904,7 @@ async function liveMode(opts: AdvisorOptions) {
             });
             history.splice(3);
           }
-          cancelSearch(pos.search);
+          cancelPosition(pos);
         }
         // buildPosition has already taken the engine's process-global battle cache, so the
         // previous search must not be stepped again. Nothing else does: the feed reader
@@ -1634,6 +1923,7 @@ async function liveMode(opts: AdvisorOptions) {
           board: built.board,
           warning: built.warning,
         };
+        startRustForPosition(pos, next!.rec, opts, signal);
         opponentRead.selected = undefined;
         opponentRead.hovered = undefined;
         opponentRead.targets!.length = 0;
@@ -1734,8 +2024,9 @@ if (import.meta.main) {
   silenceEngine();
   let managedCapture: Deno.ChildProcess | undefined;
   let alternateScreen = false;
-  const restore = () => {
+  const restore = async () => {
     stopControlInput();
+    await stopRustDecision();
     if (alternateScreen) write(ALT_SCREEN_OFF);
     stopCaptureServer(managedCapture);
     Deno.exit(0);
@@ -1753,6 +2044,7 @@ if (import.meta.main) {
     else await liveMode(opts);
   } finally {
     stopControlInput();
+    await stopRustDecision();
     if (alternateScreen) write(ALT_SCREEN_OFF);
     stopCaptureServer(managedCapture);
   }

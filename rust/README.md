@@ -62,9 +62,21 @@ Round 1 uses a bounded opening estimate, weighted by the TypeScript advisor's li
 of 198 round-one replies captured as of 2026-09-13 (with Laplace +1 for unseen wagers).
 Rounds 2–4 recursively solve exact terminal win/draw/loss values with the conservative pure policy: one response may depend on the
 opponent's visible card, but never on hidden pillz or Fury. Live capture, opening-prior
-refresh, workers, and process integration remain to be ported.
+refresh, and workers remain outside this manual advisor.
 Replay `1024673` is a short end-to-end smoke for the strict catalog, unconditional Stop
 Opp. Ability, server verification, move grading, and the round-two knockout path.
+
+## TypeScript-hosted worker
+
+Build the release worker from the repository root with `deno task rust:worker`. The normal
+advisor keeps Rust off. `deno task advise --rust=compare` keeps the TypeScript result
+authoritative and compares supported FIRST decisions; `--rust=use` replaces it only with a
+structurally validated complete Rust FIRST result in the existing TypeScript TUI, with automatic
+TypeScript fallback on any worker failure or rejection. V1 is one JSONL request per process
+and strictly checks provenance, replayed history, the legal action set, and response bounds;
+that structural validation is not a per-invocation proof of semantic equivalence. Integrated
+SECOND and blind-second decisions remain TypeScript-only; the manual Rust advisor above still
+supports them. This is a narrow backend integration, not a full policy-parity claim.
 
 ## Historical engine usage
 

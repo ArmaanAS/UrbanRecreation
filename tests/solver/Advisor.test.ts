@@ -1,11 +1,119 @@
-import { assertEquals, assertNotEquals } from "@std/assert";
+import { assert, assertEquals, assertNotEquals } from "@std/assert";
 import {
   buildPosition,
   parseArgs,
   positionKey,
+  rustDecisionEnabled,
+  RustDecisionJob,
   writeAllSync,
 } from "@/solver/Advisor.ts";
 import Search from "@/solver/Search.ts";
+import Game from "@/game/Game.ts";
+import Player from "@/game/Player.ts";
+import { HandGenerator } from "@/game/Hand.ts";
+import { Turn } from "@/game/types/Types.ts";
+import type {
+  RustAdvisorRunner,
+  RustFirstRequest,
+} from "@/solver/RustAdvisor.ts";
+import type { RustAdvisorInputResult } from "@/solver/RustAdvisorInput.ts";
+import { SearchMode } from "@/solver/Search.ts";
+
+const rustJobGame = () =>
+  new Game(
+    new Player(12, 3, 0),
+    new Player(12, 3, 1),
+    HandGenerator.handOf(["Natrang", "Natrang", "Natrang", "Natrang"]),
+    HandGenerator.handOf(["Natrang", "Natrang", "Natrang", "Natrang"]),
+    Turn.PLAYER_1,
+    false,
+  );
+
+const workerFinal = (requestId: string, search: Search) =>
+  JSON.stringify({
+    protocol_version: 1,
+    request_id: requestId,
+    sequence: 0,
+    kind: "final",
+    score_frame: "requester",
+    evaluation_kind: "opening_estimate",
+    complete: true,
+    units_done: search.units,
+    units_total: search.units,
+    elapsed_ms: 1,
+    ranked_moves: search.candidates.map((candidate) => ({
+      hand_index: candidate.index,
+      pillz: candidate.pillz,
+      fury: candidate.fury,
+      score: 0,
+      worst: 0,
+      best: 0,
+      samples: search.samples,
+      ko_share: 0,
+      loss_share: 0,
+    })),
+  });
+
+const waitFor = async (predicate: () => boolean) => {
+  for (let i = 0; i < 100; i++) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("timed out waiting for fake Rust worker");
+};
+
+function startFakeRustJob(
+  mode: "compare" | "use",
+  runner: RustAdvisorRunner,
+  normalise: () => Promise<RustAdvisorInputResult> = () =>
+    Promise.resolve(supportedRequest()),
+) {
+  const game = rustJobGame();
+  let search: Search = new Search(game);
+  let current = true;
+  const requestId = "advisor-test";
+  const job = new RustDecisionJob({
+    mode,
+    key: requestId,
+    requestId,
+    game,
+    getSearch: () => search,
+    replaceSearch: (next) => search = next,
+    isCurrent: () => current,
+    normalise,
+    runner,
+    budgetMs: 50,
+  });
+  return {
+    game,
+    job,
+    get search() {
+      return search;
+    },
+    stop: () => current = false,
+  };
+}
+
+function supportedRequest() {
+  return {
+    supported: true as const,
+    request: {
+      protocol_version: 1,
+      request_id: "advisor-test",
+    } as RustFirstRequest,
+  };
+}
+
+const successfulRunner = (search: () => Search): RustAdvisorRunner => ({
+  run(request) {
+    const requestId = JSON.parse(request).request_id;
+    return Promise.resolve({
+      code: 0,
+      stdout: `${workerFinal(requestId, search())}\n`,
+      stderr: "",
+    });
+  },
+});
 
 Deno.test("the terminal writer drains partial synchronous writes", () => {
   const input = new TextEncoder().encode(
@@ -32,6 +140,96 @@ Deno.test("the safe-table preview is available without live-mode options", () =>
   assertEquals(options.resultStyle, "classic");
   assertEquals(options.feed, "http://127.0.0.1:8787/events");
   assertEquals(options.top, undefined);
+  assertEquals(options.rust, "off");
+});
+
+Deno.test("Rust advisor mode is explicit and fails closed on unknown values", () => {
+  assertEquals(parseArgs(["--rust=compare"]).rust, "compare");
+  assertEquals(parseArgs(["--rust", "use"]).rust, "use");
+  assertEquals(parseArgs(["--rust=off"]).rust, "off");
+  for (const args of [["--rust"], ["--rust=maybe"]]) {
+    let rejected = false;
+    try {
+      parseArgs(args);
+    } catch {
+      rejected = true;
+    }
+    assertEquals(rejected, true);
+  }
+});
+
+Deno.test("Rust worker eligibility is off by default and first-mover only", () => {
+  assertEquals(rustDecisionEnabled("off", SearchMode.FIRST), false);
+  assertEquals(rustDecisionEnabled("compare", SearchMode.SECOND), false);
+  assertEquals(rustDecisionEnabled("use", SearchMode.BLIND_SECOND), false);
+  assertEquals(rustDecisionEnabled("compare", SearchMode.FIRST), true);
+});
+
+Deno.test("compare keeps the TypeScript search authoritative", async () => {
+  const runner = successfulRunner(() => state.search);
+  const state = startFakeRustJob("compare", runner);
+  const ts = state.search;
+  await waitFor(() => state.job.status.startsWith("rust ready"));
+  assertEquals(state.search, ts);
+  // A complete TS ranking is the point at which compare publishes match/differs.
+  while (state.search.step()) { /* small opening search */ }
+  state.job.settleCompare();
+  assert(
+    state.job.status === "rust match" || state.job.status === "rust differs",
+  );
+  assertEquals(state.search, ts);
+});
+
+Deno.test("use atomically replaces TypeScript only after a valid complete Rust response", async () => {
+  const runner = successfulRunner(() => state.search);
+  const state = startFakeRustJob("use", runner);
+  const ts = state.search;
+  await waitFor(() => !state.job.waiting);
+  assertNotEquals(state.search, ts);
+  assertEquals(state.search.done, true);
+  assertEquals(state.job.status, "rust active");
+});
+
+Deno.test("a rejected Rust normalisation leaves the TypeScript fallback live", async () => {
+  const neverRuns: RustAdvisorRunner = {
+    run: () => Promise.reject(new Error("runner should not start")),
+  };
+  const state = startFakeRustJob(
+    "use",
+    neverRuns,
+    () =>
+      Promise.resolve({
+        supported: false as const,
+        reason: "test input is unsupported",
+      }),
+  );
+  const ts = state.search;
+  await waitFor(() => !state.job.waiting);
+  assertEquals(state.search, ts);
+  assertEquals(state.job.status.startsWith("rust rejected"), true);
+});
+
+Deno.test("a cancelled position ignores a late Rust result", async () => {
+  let complete!: () => void;
+  const runner: RustAdvisorRunner = {
+    run: () =>
+      new Promise((resolve) =>
+        complete = () =>
+          resolve({
+            code: 0,
+            stdout: `${workerFinal("advisor-test", state.search)}\n`,
+            stderr: "",
+          })
+      ),
+  };
+  const state = startFakeRustJob("use", runner);
+  const ts = state.search;
+  await waitFor(() => state.job.status === "rust running");
+  state.job.cancel();
+  complete();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assertEquals(state.search, ts);
+  assertEquals(state.job.waiting, false);
 });
 
 Deno.test("result banners can be previewed and selected", () => {

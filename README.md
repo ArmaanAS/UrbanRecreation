@@ -60,6 +60,7 @@ The normal Rust build is a library and does not compile the historical HTTP advi
 ```bash
 deno task rust:check
 deno task rust:test
+deno task rust:worker
 deno task rust:advise --plain
 deno task rust:advise --interactive --plain
 deno task rust:advise --replay 877636 --plain
@@ -82,7 +83,19 @@ committed round's power, damage, attack, winner, life, and pillz against the ser
 Battles `877636` and `1024673` are complete supported real draws; the latter exercises
 unconditional Stop Opp. Ability through the real solver/TUI and ends in a round-two KO.
 Rust does not yet ingest the live capture stream, refresh that fixed opening table, run
-searches across workers, expose a process protocol, or claim complete TypeScript policy parity.
+searches across workers, or claim complete TypeScript policy parity.
+
+For the opt-in TypeScript-hosted integration, build the precompiled JSONL worker once with
+`deno task rust:worker`. `deno task advise --rust=compare` keeps TypeScript authoritative
+while comparing supported FIRST decisions; `--rust=use` shows a structurally validated,
+complete
+Rust FIRST result in the existing TypeScript TUI, automatically falling back to TypeScript
+when the worker is unavailable or its result is rejected. Rust is off by default. V1 starts
+one process per JSONL request and strictly validates provenance, replayed history, and every
+legal action plus the response's shape and numeric bounds; it does not prove semantic
+equivalence on each invocation. SECOND and blind-second decisions remain on the TypeScript
+live path. The
+manual Rust advisor still supports those modes.
 
 To inspect the old advisor explicitly:
 

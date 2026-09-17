@@ -19,7 +19,7 @@ independently against the same server results.
 | Observed game behavior | `captures/games/*.json` | Server power, damage, attack, winner, life, and pillz are the parity oracle. |
 | Capture normalization | `scripts/ExtractBattle.ts` and the Rust replay adapter | Both must preserve side identity and the first-mover convention. |
 | Working engine and advisor | TypeScript | Keep this stable while Rust is revived. |
-| Candidate engine and solver backend | `rust/` | Must pass replay parity before advisor integration. |
+| Candidate engine and solver backend | `rust/` | Narrow advisor integration is gated by strict supported-input and result validation; it does not establish replay or policy parity. |
 | Old Rust assets and 10,000-case corpus | Historical baseline only | Useful for detecting accidental behavior changes, not evidence of current game correctness. |
 
 The 53 TypeScript replay mismatches are known gaps in the reference, not expected Rust
@@ -496,7 +496,8 @@ opponent chooses, every unplayed opponent card and hidden wager is a hypothesis 
 row remains one fixed reply. A full hypothesis column is committed transactionally, so a
 deadline or policy cancellation never publishes incomparable rows. The visible card then
 replaces that provisional ranking with the ordinary precise second-mover search. This does
-not add workers, a protocol, live capture, or new engine semantics.
+not add live capture or a worker pool; its JSONL process boundary is used only by the
+TypeScript-hosted FIRST-mode integration below.
 
 The server-backed advisor path loads captures `877636` and `1024673` with `--replay`.
 It derives both exact hands, resources, night state, recording side, and each round's mover
@@ -521,12 +522,23 @@ the current TypeScript behavior deliberately:
 Keep the old Rust solver available as a historical reference until equivalence tests cover
 the intended replacement.
 
-### 5. Integrate Rust behind a process boundary
+### 5. TypeScript-hosted Rust worker (V1)
 
-Use a versioned JSON-lines worker protocol initially. The TypeScript advisor remains the
-owner of capture state, policy selection, cancellation, and terminal rendering. A worker
-process gives clean crash isolation and makes A/B comparison straightforward. In-process
-FFI is only worth considering after the protocol and engine are stable.
+V1 now uses a versioned, one-request-per-process JSONL worker. Build it with
+`deno task rust:worker`. The TypeScript advisor remains the owner of live capture state,
+policy selection, cancellation, and terminal rendering. Rust is off by default;
+`deno task advise --rust=compare` keeps TypeScript authoritative while comparing supported
+FIRST decisions, and `--rust=use` installs only a structurally validated complete Rust FIRST result
+in the existing TypeScript TUI. A launch, protocol, provenance, history, action, completion,
+or result-validation failure automatically leaves or returns the decision to TypeScript.
+
+The narrow boundary is intentional: the worker strictly validates canonical-input
+provenance, replays supplied history, and checks the legal action set and response bounds
+against TypeScript's FIRST matrix. This does not prove semantic equivalence on each request.
+Integrated live SECOND and blind-second decisions remain TypeScript-only,
+although the manual Rust advisor supports both. This is neither a full replay-parity nor a
+complete TypeScript-policy-parity claim. In-process FFI remains a later consideration only
+after this protocol and engine behavior have stayed stable.
 
 ## Performance measurement
 
@@ -540,6 +552,11 @@ Measure engine and solver performance separately:
 
 A faster answer from a different policy or a smaller tree is not an implementation speedup.
 Correctness and semantic equivalence are gates before headline comparisons.
+
+One local, fixture-specific `--rust=compare --workers 1` run on battle `877636`'s exact
+round-two FIRST decision reported `rust match`: Rust search took about 46 ms versus about
+2.1 s for single-threaded TypeScript. Those are solver-reported search times from one local
+run, not process-startup measurements or a universal benchmark.
 
 ## Working commands
 
