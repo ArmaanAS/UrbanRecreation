@@ -89,6 +89,20 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         &[141, 189, 226, 492, 1125, 1146, 1161, 1224, 4500],
     ),
     (
+        "uncapped Life per Damage with Revenge/Confidence forms",
+        &[141, 189, 226, 492, 1125, 1224, 1661, 1810, 4500],
+    ),
+    (
+        "predicate-carrying plain permanents (Symmetry/Asymmetry/Revenge)",
+        &[3301, 5092, 5692, 5693],
+    ),
+    (
+        "uncapped Life per Damage + predicate-carrying plain permanents",
+        &[
+            141, 189, 226, 492, 1125, 1224, 1661, 1810, 3301, 4500, 5092, 5692, 5693,
+        ],
+    ),
+    (
         "permanent Life + Life per Damage",
         &[
             141, 189, 206, 226, 325, 492, 509, 566, 582, 649, 682, 751, 898, 963, 1125, 1146, 1161,

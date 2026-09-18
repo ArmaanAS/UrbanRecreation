@@ -20,14 +20,15 @@ use crate::engine::combat_stat_compiler::{
     classify_heal_life_on_victory, classify_komboka_victory_pillz_and_life,
     classify_poison_opponent_life_on_victory, classify_reanimate_life,
     classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
-    classify_victory_opponent_life, classify_victory_opponent_pillz,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
-    classify_victory_pillz_per_damage, compact_effect, has_defeat_life_shape,
-    has_heal_life_on_victory_shape, has_poison_opponent_life_on_victory_shape,
-    has_reanimate_life_shape, has_regen_life_on_victory_shape,
-    has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
-    has_victory_opponent_pillz_shape, has_victory_pillz_per_damage_shape, has_victory_pillz_shape,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_victory_life_per_damage, classify_victory_opponent_life,
+    classify_victory_opponent_pillz, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
+    compact_effect, has_defeat_life_shape, has_heal_life_on_victory_shape,
+    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
+    has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
+    has_victory_life_shape, has_victory_opponent_pillz_shape, has_victory_pillz_per_damage_shape,
+    has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -827,6 +828,24 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some((life_per_damage, predicate)) =
+        classify_victory_life_per_damage(definition, source_kind)
+    {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                    life_per_damage,
+                },
+                predicate,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate,
+                effect: CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage },
+            },
+        });
+    }
     if let Some(life) = classify_defeat_life(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -861,60 +880,65 @@ fn prepare_combat_stat_source(
     }
     // The four admitted permanent grammars. Each plan is ordinary post-round work at the
     // source; the engine position carries the latch from the round it wins onward.
-    if let Some((life, maximum)) = classify_heal_life_on_victory(definition, source_kind) {
+    if let Some((life, maximum, predicate)) = classify_heal_life_on_victory(definition, source_kind)
+    {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::HealLifeOnVictory { life, maximum },
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
                 effect: CombatStatEffectV1::HealLifeOnVictory { life, maximum },
             },
         });
     }
-    if let Some((life, maximum)) = classify_regen_life_on_victory(definition, source_kind) {
+    if let Some((life, maximum, predicate)) =
+        classify_regen_life_on_victory(definition, source_kind)
+    {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::RegenLifeOnVictory { life, maximum },
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
                 effect: CombatStatEffectV1::RegenLifeOnVictory { life, maximum },
             },
         });
     }
-    if let Some((life, minimum)) = classify_poison_opponent_life_on_victory(definition, source_kind)
+    if let Some((life, minimum, predicate)) =
+        classify_poison_opponent_life_on_victory(definition, source_kind)
     {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
                 effect: CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
             },
         });
     }
-    if let Some((life, minimum)) = classify_toxin_opponent_life_on_victory(definition, source_kind)
+    if let Some((life, minimum, predicate)) =
+        classify_toxin_opponent_life_on_victory(definition, source_kind)
     {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
                 effect: CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
             },
         });

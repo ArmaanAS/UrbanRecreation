@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 31;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 32;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -377,6 +377,45 @@ pub(crate) fn classify_victory_pillz_per_damage(
 /// Structural half of the Pillz-per-Damage boundary, over any hand-slot condition.
 pub(crate) fn has_victory_pillz_per_damage_shape(definition: &EffectDefinitionV1) -> bool {
     victory_pillz_per_damage_shape_matches(definition.structured_input())
+}
+
+/// Recognize the uncapped `+N Life Per Damage` conversion and its `Revenge:` and
+/// `Confidence:` forms: the winner's own Life rises by N for every point of final resolved
+/// Damage its card dealt. Anita's Courage form stays identity-locked because it is the one
+/// record whose position field carries the condition; these carry theirs, if any, in the
+/// previous-round field. Exact text and shape over every same-text record, card abilities
+/// only. Returns `(life_per_damage, predicate)`.
+pub(crate) fn classify_victory_life_per_damage(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, CombatStatPredicateV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability
+        || !has_victory_life_per_damage_shape(definition)
+    {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (predicate, text) = match input.previous_round_requirement {
+        PreviousRoundRequirementV1::Any => (
+            CombatStatPredicateV1::Always,
+            format!("+{} Life Per Damage", input.value),
+        ),
+        PreviousRoundRequirementV1::Lose => (
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+            format!("Revenge: +{} Life Per Damage", input.value),
+        ),
+        PreviousRoundRequirementV1::Win => (
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            format!("Confidence: +{} Life Per Dmg.", input.value),
+        ),
+    };
+    (definition.description() == text).then_some((input.value, predicate))
+}
+
+/// Structural half of the Life-per-Damage boundary, over any previous-round condition.
+pub(crate) fn has_victory_life_per_damage_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && victory_life_per_damage_shape_matches(input)
 }
 
 /// Recognize the immediate, surviving Defeat Life grammar. This deliberately admits card
@@ -804,12 +843,55 @@ pub(crate) fn argos_defeat_capped_pillz_identity_matches(
 pub(crate) fn classify_heal_life_on_victory(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
-) -> Option<(u16, u16)> {
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
     let input = definition.structured_input();
+    let (predicate, prefix) = permanent_condition(input)?;
     (source_kind == CombatStatEffectSourceV1::Ability
         && has_heal_life_on_victory_shape(definition)
-        && definition.description() == format!("Heal {} Max. {}", input.value, input.value_max))
-    .then_some((input.value, input.value_max))
+        && definition.description()
+            == format!("{prefix}Heal {} Max. {}", input.value, input.value_max))
+    .then_some((input.value, input.value_max, predicate))
+}
+
+/// The one condition a plain permanent may carry, and the prefix its text then prints. The
+/// plain record carries none; `Symmetry:`/`Asymmetry:` sit in the hand-slot field and
+/// `Revenge:`/`Confidence:` in the previous-round field, exactly as they do on fixed numeric
+/// abilities. The latch is judged once, in the latching round, so the predicate is
+/// evaluated where every plan predicate is and the latched effect itself carries none.
+fn permanent_condition(
+    input: &StructuredEffectV1,
+) -> Option<(CombatStatPredicateV1, &'static str)> {
+    match (input.previous_round_requirement, input.index_requirement) {
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any) => {
+            Some((CombatStatPredicateV1::Always, ""))
+        }
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Symmetry) => {
+            Some((CombatStatPredicateV1::SelectedHandSlotsMatch, "Symmetry: "))
+        }
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Asymmetry) => Some((
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            "Asymmetry: ",
+        )),
+        (PreviousRoundRequirementV1::Lose, IndexRequirementV1::Any) => {
+            Some((CombatStatPredicateV1::OwnerLostPreviousRound, "Revenge: "))
+        }
+        (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any) => {
+            Some((CombatStatPredicateV1::OwnerWonPreviousRound, "Confidence: "))
+        }
+        _ => None,
+    }
+}
+
+/// True for every predicate a permanent's plan may carry.
+pub(crate) fn permanent_predicate_admitted(predicate: CombatStatPredicateV1) -> bool {
+    matches!(
+        predicate,
+        CombatStatPredicateV1::Always
+            | CombatStatPredicateV1::SelectedHandSlotsMatch
+            | CombatStatPredicateV1::SelectedHandSlotsDiffer
+            | CombatStatPredicateV1::OwnerLostPreviousRound
+            | CombatStatPredicateV1::OwnerWonPreviousRound
+    )
 }
 
 /// Structural half of the Heal boundary. Replay preparation uses this to reject a source
@@ -823,12 +905,14 @@ pub(crate) fn has_heal_life_on_victory_shape(definition: &EffectDefinitionV1) ->
 pub(crate) fn classify_regen_life_on_victory(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
-) -> Option<(u16, u16)> {
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
     let input = definition.structured_input();
+    let (predicate, prefix) = permanent_condition(input)?;
     (source_kind == CombatStatEffectSourceV1::Ability
         && has_regen_life_on_victory_shape(definition)
-        && definition.description() == format!("Regen {}, Max. {}", input.value, input.value_max))
-    .then_some((input.value, input.value_max))
+        && definition.description()
+            == format!("{prefix}Regen {}, Max. {}", input.value, input.value_max))
+    .then_some((input.value, input.value_max, predicate))
 }
 
 pub(crate) fn has_regen_life_on_victory_shape(definition: &EffectDefinitionV1) -> bool {
@@ -841,11 +925,13 @@ pub(crate) fn has_regen_life_on_victory_shape(definition: &EffectDefinitionV1) -
 pub(crate) fn classify_poison_opponent_life_on_victory(
     definition: &EffectDefinitionV1,
     _source_kind: CombatStatEffectSourceV1,
-) -> Option<(u16, u16)> {
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
     let input = definition.structured_input();
+    let (predicate, prefix) = permanent_condition(input)?;
     (has_poison_opponent_life_on_victory_shape(definition)
-        && definition.description() == format!("Poison {}, Min {}", input.value, input.value_min))
-    .then_some((input.value, input.value_min))
+        && definition.description()
+            == format!("{prefix}Poison {}, Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min, predicate))
 }
 
 pub(crate) fn has_poison_opponent_life_on_victory_shape(definition: &EffectDefinitionV1) -> bool {
@@ -857,12 +943,14 @@ pub(crate) fn has_poison_opponent_life_on_victory_shape(definition: &EffectDefin
 pub(crate) fn classify_toxin_opponent_life_on_victory(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
-) -> Option<(u16, u16)> {
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
     let input = definition.structured_input();
+    let (predicate, prefix) = permanent_condition(input)?;
     (source_kind == CombatStatEffectSourceV1::Ability
         && has_toxin_opponent_life_on_victory_shape(definition)
-        && definition.description() == format!("Toxin {}, Min {}", input.value, input.value_min))
-    .then_some((input.value, input.value_min))
+        && definition.description()
+            == format!("{prefix}Toxin {}, Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min, predicate))
 }
 
 pub(crate) fn has_toxin_opponent_life_on_victory_shape(definition: &EffectDefinitionV1) -> bool {
@@ -913,6 +1001,7 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_victory_pillz(definition, source_kind).is_some()
         || classify_victory_opponent_pillz(definition, source_kind).is_some()
         || classify_victory_pillz_per_damage(definition, source_kind).is_some()
+        || classify_victory_life_per_damage(definition, source_kind).is_some()
     {
         return None;
     }
@@ -1420,6 +1509,37 @@ fn victory_pillz_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
         && !input.is_immediate_permanent
 }
 
+fn victory_life_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value_min == 0
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::ConvertDamageToLife
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
 fn defeat_life_shape_matches(input: &StructuredEffectV1, minimum: u16) -> bool {
     input.value_min == minimum
         && input.value_max == 0
@@ -1632,9 +1752,8 @@ fn permanent_life_neutral_shape_matches(
 ) -> bool {
     input.value_condition == 0
         && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && permanent_condition(input).is_some()
         && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
@@ -2904,9 +3023,10 @@ mod tests {
             (5341, "Heal 1 Max. 18", (1, 18)),
         ] {
             let definition = registry.lookup_capture(id, description).unwrap();
+            let (life, maximum) = expected;
             assert_eq!(
                 classify_heal_life_on_victory(definition, CombatStatEffectSourceV1::Ability),
-                Some(expected),
+                Some((life, maximum, CombatStatPredicateV1::Always)),
                 "{id} {description}"
             );
             assert_eq!(
@@ -2920,11 +3040,20 @@ mod tests {
                 "{id} {description} must never be an ordinary one-round effect"
             );
         }
+        // The hand-slot prefix is admitted as the plan's predicate since revision 32.
+        assert_eq!(
+            classify_heal_life_on_victory(
+                registry
+                    .lookup_capture(5692, "Asymmetry: Heal 1 Max. 16")
+                    .unwrap(),
+                CombatStatEffectSourceV1::Ability,
+            ),
+            Some((1, 16, CombatStatPredicateV1::SelectedHandSlotsDiffer))
+        );
         // Other latch conditions are other texts and other structured fields.
         for (id, description) in [
             (1625, "Defeat : Heal 1 Max. 13"),
             (898, "Defeat : Heal 1 Max. 15"),
-            (5692, "Asymmetry: Heal 1 Max. 16"),
             (
                 5578,
                 "[clan:26][clan:37][clan:55][clan:10] Defeat: Heal 1, Max 14",
@@ -2989,7 +3118,7 @@ mod tests {
                     definition,
                     CombatStatEffectSourceV1::Ability
                 ),
-                Some((1, 0)),
+                Some((1, 0, CombatStatPredicateV1::Always)),
                 "{id}"
             );
             assert_eq!(
@@ -3031,9 +3160,10 @@ mod tests {
                 CombatStatEffectSourceV1::Ability,
                 CombatStatEffectSourceV1::Bonus,
             ] {
+                let (life, minimum) = expected;
                 assert_eq!(
                     classify_poison_opponent_life_on_victory(definition, source_kind),
-                    Some(expected),
+                    Some((life, minimum, CombatStatPredicateV1::Always)),
                     "{id} {source_kind:?}"
                 );
                 assert_eq!(
@@ -3048,9 +3178,10 @@ mod tests {
             (3433, "Regen 2, Max. 8", (2, 8)),
         ] {
             let definition = registry.lookup_capture(id, description).unwrap();
+            let (life, maximum) = expected;
             assert_eq!(
                 classify_regen_life_on_victory(definition, CombatStatEffectSourceV1::Ability),
-                Some(expected),
+                Some((life, maximum, CombatStatPredicateV1::Always)),
                 "{id}"
             );
             assert_eq!(
@@ -3066,11 +3197,38 @@ mod tests {
                 None
             );
         }
-        // Every prefixed form is another text, whatever its structured fields say.
+        // Since revision 32 a hand-slot or previous-round prefix is the plan's predicate.
+        assert_eq!(
+            classify_toxin_opponent_life_on_victory(
+                registry
+                    .lookup_capture(5092, "Symmetry: Toxin 3, Min 0")
+                    .unwrap(),
+                CombatStatEffectSourceV1::Ability,
+            ),
+            Some((3, 0, CombatStatPredicateV1::SelectedHandSlotsMatch))
+        );
+        assert_eq!(
+            classify_poison_opponent_life_on_victory(
+                registry
+                    .lookup_capture(3301, "Revenge: Poison 2, Min 0")
+                    .unwrap(),
+                CombatStatEffectSourceV1::Ability,
+            ),
+            Some((2, 0, CombatStatPredicateV1::OwnerLostPreviousRound))
+        );
+        assert_eq!(
+            classify_regen_life_on_victory(
+                registry
+                    .lookup_capture(5693, "Asymmetry: Regen 1, Max. 17")
+                    .unwrap(),
+                CombatStatEffectSourceV1::Ability,
+            ),
+            Some((1, 17, CombatStatPredicateV1::SelectedHandSlotsDiffer))
+        );
+        // Every other prefixed form is another text with another structured condition.
         for (id, description) in [
             (2497, "Killshot: Toxin 1, Min 0"),
             (4210, "Victory Or Defeat: Toxin 1, Min 0"),
-            (5092, "Symmetry: Toxin 3, Min 0"),
             (5316, "Unison : Toxin 1, Min 0"),
             (
                 5613,
@@ -3078,12 +3236,10 @@ mod tests {
             ),
             (1266, "Growth: Poison 1, Min 2"),
             (1282, "Growth: Poison 1, Min 1"),
-            (3301, "Revenge: Poison 2, Min 0"),
             (4033, "Unison : Poison 1, Min 2"),
             (4124, "Backlash: Poison 1, Min 3"),
             (4561, "Defeat: Poison 1, Min 3"),
             (5594, "Perfect: Regen 1, Max. 17"),
-            (5693, "Asymmetry: Regen 1, Max. 17"),
         ] {
             let definition = registry.lookup_capture(id, description).unwrap();
             for source_kind in [

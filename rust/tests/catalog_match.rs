@@ -1332,11 +1332,9 @@ fn strict_catalog_match_admits_the_plain_heal_grammar_and_latches_it_on_a_win() 
         }) if hand_slot.get() == 0 && description == "Heal 1 Max. 20"
     ));
 
-    // The other latch conditions are other grammars and stay closed.
-    for (catalog_id, description) in [
-        (1625, "Defeat : Heal 1 Max. 13"),
-        (5692, "Asymmetry: Heal 1 Max. 16"),
-    ] {
+    // A losing-round latch is another grammar and stays closed; the hand-slot and
+    // previous-round prefixes are admitted as predicates since revision 32 (below).
+    for (catalog_id, description) in [(1625, "Defeat : Heal 1 Max. 13")] {
         let conditional = catalog_with_ability_alias(CardKey::new(123, 1), catalog_id, description);
         assert!(matches!(
             CatalogCombatStatMatchV1::new(
@@ -1502,8 +1500,8 @@ fn strict_catalog_match_bridges_the_active_freaks_poison_bonus_and_admits_toxin_
         assert_eq!(*effect, expected);
     }
 
-    // The prefixed grammars stay closed: Demusa's Symmetry Toxin and Hachi's Growth Poison.
-    for (key, catalog_id) in [(CardKey::new(2620, 2), 5092), (CardKey::new(1449, 2), 1266)] {
+    // The round-scaled prefix stays closed: Hachi's Growth Poison.
+    for (key, catalog_id) in [(CardKey::new(1449, 2), 1266)] {
         assert!(matches!(
             CatalogCombatStatMatchV1::new(
                 input([key, CardKey::new(123, 1), CardKey::new(124, 1), CardKey::new(138, 1)], opponent, false),
@@ -3078,10 +3076,114 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
             877950, 878011, 878056, 924257, 924320, 924413, 925254, 925674, 925719, 925796, 943111,
             946112, 947228, 949750, 956608, 970972, 1011643, 1011712, 1023274, 1024673, 1025102,
             1025525, 1058366, 1059030, 1059454, 1060052, 1060199, 1061897, 1065812, 1069813,
-            1070207, 1072715, 1078906, 1079482, 1080877, 1081463, 1089346, 1090607, 1091235,
-            1091585, 1092294, 1092369, 1092454, 1092909, 1092992, 1130833,
+            1070101, 1070207, 1072715, 1078906, 1079482, 1080877, 1081463, 1089121, 1089346,
+            1090607, 1091235, 1091585, 1092294, 1092369, 1092454, 1092909, 1092992, 1093399,
+            1130577, 1130833,
         ])
     );
+}
+
+#[test]
+fn strict_catalog_match_prepares_life_per_damage_and_prefixed_permanents_with_predicates() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+
+    for (key, catalog_id, expected, predicate) in [
+        (
+            CardKey::new(673, 3),
+            492,
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+            CombatStatPredicateV1::Always,
+        ),
+        (
+            CardKey::new(358, 4),
+            189,
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 2 },
+            CombatStatPredicateV1::Always,
+        ),
+        (
+            CardKey::new(1817, 3),
+            1661,
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+        ),
+        (
+            CardKey::new(1949, 2),
+            1810,
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+        ),
+        (
+            CardKey::new(2335, 2),
+            3301,
+            CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory {
+                life: 2,
+                minimum: 0,
+            },
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+        ),
+        (
+            CardKey::new(2620, 2),
+            5092,
+            CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory {
+                life: 3,
+                minimum: 0,
+            },
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+        ),
+        (
+            CardKey::new(2683, 2),
+            5692,
+            CombatStatPostRoundEffectV1::HealLifeOnVictory {
+                life: 1,
+                maximum: 16,
+            },
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        ),
+        (
+            CardKey::new(2683, 3),
+            5693,
+            CombatStatPostRoundEffectV1::RegenLifeOnVictory {
+                life: 1,
+                maximum: 17,
+            },
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        ),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate: actual,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as a post-round plan")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert!(identity.registry_alias_ids.contains(&catalog_id));
+        assert_eq!(*effect, expected);
+        assert_eq!(*actual, predicate);
+        assert!(matches!(
+            prepared.new_game().card_plans()[PlayerId::P1][0].ability,
+            CombatStatSourcePlanV1::Execute { predicate: p, .. } if p == predicate
+        ));
+    }
 }
 
 #[test]

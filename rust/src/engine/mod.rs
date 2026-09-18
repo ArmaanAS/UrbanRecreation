@@ -461,6 +461,9 @@ pub(super) enum PostRoundEffect {
     /// `+1 Pillz Per Damage`: the winner's own Pillz rise by the final resolved Damage its
     /// card dealt, Fury and combat modifiers included.
     GainPillzEqualToFinalDamageOnVictory,
+    /// `+N Life Per Damage`: the winner's own Life rises by N for every point of that same
+    /// final resolved Damage.
+    GainLifePerFinalDamageOnVictory(u16),
     GainLifeOnDefeat(u16),
     ReanimateLife(u16),
     GainLifeOnVictoryOrDefeat {
@@ -702,6 +705,25 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainPillzEqualToFinalDamageOnVictory => {}
+                    // The Life conversion is Anita's arithmetic without her Courage: the
+                    // winner gains N per point of final damage while living, and the
+                    // opponent's knockout changes nothing (1089830/2: 12 + 4 while the
+                    // target falls to zero). Its Revenge and Confidence forms are plan
+                    // predicates judged before the effect is handed here.
+                    PostRoundEffect::GainLifePerFinalDamageOnVictory(per_damage)
+                        if owner == winner && position.players[owner].life > 0 =>
+                    {
+                        let gain = prepared[owner]
+                            .result
+                            .damage
+                            .checked_mul(per_damage)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(gain)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainLifePerFinalDamageOnVictory(_) => {}
                     // The reviewed Victory Or Defeat Life sources are ordinary Life
                     // gains, not Reanimate: a living owner gains after either outcome,
                     // while a KO remains terminal.  Keep the addition checked so the

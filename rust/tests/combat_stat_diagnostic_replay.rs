@@ -187,7 +187,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // the engine test instead.
     (1092454, 2),
     (1092992, 4),
-    (1092141, 1),
+    (1092141, 2),
     (1092201, 2),
     (1060341, 1),
     (1060510, 3),
@@ -222,6 +222,15 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1024732, 1),
     (1058151, 1),
     (1089933, 2),
+    // Revision 32 `+N Life Per Damage`. Nyema's `492` pays her final 3 Damage beside the
+    // Jungo Victory Life in 1089121/2 (9 + 3 + 2 = 14), and Jautya's `4500` takes 7 to 10 in
+    // 1092141/1, the round that had kept that draw to a one-round prefix. Kenny Cr's `+2`
+    // form pays nothing on a loss in 1093399/2 (a rule-3 draw). The Revenge and Confidence
+    // forms and the predicate-carrying permanents have no reachable server round - 877476,
+    // 1025279, 924853 and 1130454 all open on an unadmitted source - so their conditions
+    // are pinned by the engine tests.
+    (1089121, 4),
+    (1093399, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -388,6 +397,40 @@ fn victory_pillz_per_damage_entry(id: u32, index: &str) -> serde_json::Value {
     entry
 }
 
+fn victory_life_per_damage_entry(id: u32, life: u16, previous_round: &str) -> serde_json::Value {
+    let description = match previous_round {
+        "lose" => format!("Revenge: +{life} Life Per Damage"),
+        "win" => format!("Confidence: +{life} Life Per Dmg."),
+        _ => format!("+{life} Life Per Damage"),
+    };
+    let mut entry = numeric_entry(id, &description, "both", life, 0);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["previousRoundRequirement"] = serde_json::json!(previous_round);
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry["abilityData"]["specialAction"] = serde_json::json!("convert_dmg_to_life");
+    entry
+}
+
+fn prefixed_toxin_entry(
+    id: u32,
+    description: &str,
+    index: &str,
+    previous: &str,
+) -> serde_json::Value {
+    let mut entry = numeric_entry(id, description, "both", 3, 0);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["indexRequirement"] = serde_json::json!(index);
+    entry["abilityData"]["previousRoundRequirement"] = serde_json::json!(previous);
+    entry["abilityData"]["sideAffected"] = serde_json::json!("opponent");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("life");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("decrease");
+    entry["abilityData"]["isPermanent"] = serde_json::json!(true);
+    entry["abilityData"]["isImmediatePermanent"] = serde_json::json!(true);
+    entry
+}
+
 fn defeat_life_entry(id: u32, life: u16) -> serde_json::Value {
     let mut entry = numeric_entry(id, &format!("Defeat: +{life} Life"), "both", life, 1);
     entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
@@ -518,8 +561,8 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_two_hundred_and_seventy_three_unique_sequential_prefix_rounds(
-) {
+fn fixed_server_backed_gate_is_exactly_two_hundred_and_eighty_two_unique_sequential_prefix_rounds()
+{
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -555,28 +598,28 @@ fn fixed_server_backed_gate_is_exactly_two_hundred_and_seventy_three_unique_sequ
             }
         }
     }
-    assert_eq!(rounds, 273);
+    assert_eq!(rounds, 282);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 7, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 61, 73, 86, 90, 93, 94, 130, 156, 197,
-            202, 206, 225, 257, 266, 274, 292, 310, 316, 333, 334, 339, 343, 360, 367, 368, 372,
-            377, 391, 401, 412, 417, 421, 432, 442, 455, 461, 469, 478, 503, 520, 532, 536, 549,
-            555, 566, 569, 570, 577, 578, 585, 587, 612, 649, 656, 680, 682, 713, 717, 727, 729,
-            739, 741, 751, 759, 778, 801, 809, 826, 837, 844, 852, 854, 862, 871, 883, 888, 916,
-            938, 959, 963, 980, 1020, 1034, 1041, 1047, 1051, 1053, 1054, 1090, 1091, 1098, 1131,
-            1150, 1158, 1163, 1188, 1197, 1229, 1241, 1293, 1297, 1303, 1310, 1330, 1335, 1338,
-            1341, 1342, 1345, 1350, 1355, 1359, 1372, 1375, 1385, 1388, 1396, 1399, 1415, 1417,
-            1418, 1420, 1464, 1469, 1501, 1508, 1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634,
-            1688, 1694, 1699, 1706, 1714, 1722, 1770, 1805, 1806, 1823, 1825, 1833, 1840, 1844,
-            1845, 1848, 1850, 1852, 2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329, 2375, 2412,
-            2528, 2535, 2556, 2573, 2628, 2657, 2660, 2835, 2881, 2944, 2965, 2992, 3004, 3040,
-            3048, 3118, 3197, 3222, 3284, 3386, 3393, 3487, 3526, 3597, 3677, 3829, 3852, 3864,
-            3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301, 4330, 4389, 4399, 4414, 4417,
-            4458, 4461, 4464, 4571, 4625, 4708, 4711, 4718, 4722, 4730, 4757, 4824, 4908, 4951,
-            4954, 4966, 4983, 5025, 5026, 5085, 5169, 5170, 5195, 5237, 5258, 5273, 5332, 5333,
-            5360, 5366, 5404, 5406, 5415, 5462, 5498, 5520, 5525, 5531, 5532, 5549, 5763, 5835,
-            5841, 5849, 5852, 5859, 5901
+            6, 7, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 61, 73, 86, 90, 93, 94, 130, 156, 189,
+            197, 202, 206, 225, 257, 266, 274, 292, 310, 316, 333, 334, 339, 343, 360, 367, 368,
+            372, 377, 391, 401, 412, 417, 421, 432, 442, 445, 455, 461, 469, 478, 492, 503, 511,
+            520, 532, 536, 549, 555, 566, 569, 570, 577, 578, 585, 587, 612, 649, 656, 680, 682,
+            713, 717, 727, 729, 739, 741, 751, 759, 778, 801, 809, 826, 837, 844, 852, 854, 862,
+            871, 883, 888, 916, 938, 959, 963, 980, 1020, 1034, 1041, 1047, 1051, 1053, 1054, 1090,
+            1091, 1098, 1131, 1150, 1158, 1163, 1188, 1197, 1229, 1241, 1293, 1297, 1303, 1310,
+            1330, 1335, 1338, 1341, 1342, 1345, 1350, 1355, 1359, 1372, 1375, 1385, 1388, 1396,
+            1399, 1415, 1417, 1418, 1420, 1464, 1469, 1501, 1508, 1513, 1518, 1534, 1536, 1578,
+            1580, 1628, 1634, 1688, 1694, 1699, 1706, 1714, 1722, 1770, 1805, 1806, 1823, 1825,
+            1833, 1840, 1844, 1845, 1848, 1850, 1852, 2021, 2028, 2073, 2277, 2286, 2299, 2321,
+            2329, 2375, 2412, 2528, 2535, 2556, 2573, 2628, 2657, 2660, 2661, 2835, 2881, 2944,
+            2965, 2992, 3004, 3040, 3048, 3118, 3197, 3222, 3284, 3386, 3393, 3487, 3526, 3597,
+            3677, 3829, 3852, 3864, 3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301, 4330,
+            4389, 4399, 4414, 4417, 4458, 4461, 4464, 4500, 4571, 4623, 4625, 4708, 4711, 4718,
+            4722, 4730, 4757, 4824, 4908, 4951, 4954, 4966, 4983, 5025, 5026, 5085, 5169, 5170,
+            5195, 5237, 5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406, 5415, 5439, 5462, 5498,
+            5520, 5525, 5531, 5532, 5549, 5763, 5835, 5841, 5849, 5852, 5859, 5901
         ])
     );
     assert_eq!(
@@ -884,7 +927,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 31);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 32);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -940,7 +983,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        31
+        32
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -2507,6 +2550,192 @@ fn victory_pillz_per_damage_compiler_admits_the_plain_and_symmetry_abilities_onl
     assert!(matches!(
         prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
         CombatStatSourcePlanV1::RejectIfSelected { source_id: 1090 }
+    ));
+}
+
+#[test]
+fn life_per_damage_and_prefixed_permanents_carry_the_predicate_their_prefix_names() {
+    let catalog = catalog();
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    let with_ability = |id: u32, description: &str| {
+        let mut source = source.clone();
+        source.players[0].hand[slot].source_ability = Some(SourceModifier {
+            id,
+            description: description.to_owned(),
+        });
+        source
+    };
+    let plan_of = |source: ReplayCaseV1, registry: &EffectRegistryV1| {
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, registry, PROJECTION).unwrap();
+        (
+            prepared.preparation()[PlayerId::P1][slot].ability.clone(),
+            prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        )
+    };
+
+    // The three Life-per-Damage grammars.
+    for (id, life, previous, description, predicate) in [
+        (
+            492,
+            1,
+            "any",
+            "+1 Life Per Damage",
+            CombatStatPredicateV1::Always,
+        ),
+        (
+            189,
+            2,
+            "any",
+            "+2 Life Per Damage",
+            CombatStatPredicateV1::Always,
+        ),
+        (
+            1661,
+            1,
+            "lose",
+            "Revenge: +1 Life Per Damage",
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+        ),
+        (
+            1810,
+            1,
+            "win",
+            "Confidence: +1 Life Per Dmg.",
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+        ),
+    ] {
+        let registry = one_entry_registry(victory_life_per_damage_entry(id, life, previous));
+        let (disposition, plan) = plan_of(with_ability(id, description), &registry);
+        match disposition {
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                effect,
+                predicate: actual,
+                ..
+            } => {
+                assert_eq!(
+                    effect,
+                    urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                        life_per_damage: life
+                    }
+                );
+                assert_eq!(actual, predicate);
+            }
+            other => panic!("{description} was not prepared as Life per Damage: {other:?}"),
+        }
+        assert!(matches!(
+            plan,
+            CombatStatSourcePlanV1::Execute { predicate: p, .. } if p == predicate
+        ));
+    }
+
+    // Anita's Courage record keeps its identity lock: the same text under another id, and
+    // a capped or Bonus-slot Life conversion, reject when selected.
+    let mut anita_alias = victory_life_per_damage_entry(843, 1, "any");
+    anita_alias["description"] = serde_json::json!("Courage: +1 Life Per Dmg");
+    anita_alias["abilityData"]["positionRequirement"] = serde_json::json!("attacker");
+    let (_, plan) = plan_of(
+        with_ability(843, "Courage: +1 Life Per Dmg"),
+        &one_entry_registry(anita_alias),
+    );
+    assert!(matches!(
+        plan,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 843 }
+    ));
+    let mut capped = victory_life_per_damage_entry(1146, 1, "any");
+    capped["description"] = serde_json::json!("+1 Life Per Damage Max. 8");
+    capped["abilityData"]["valueMax"] = serde_json::json!(8);
+    let (_, plan) = plan_of(
+        with_ability(1146, "+1 Life Per Damage Max. 8"),
+        &one_entry_registry(capped),
+    );
+    assert!(matches!(
+        plan,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 1146 }
+    ));
+    let mut bonus = source.clone();
+    bonus.players[0].hand[slot].source_bonus = Some(SourceModifier {
+        id: 492,
+        description: "+1 Life Per Damage".to_owned(),
+    });
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        bonus,
+        &catalog,
+        &one_entry_registry(victory_life_per_damage_entry(492, 1, "any")),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].bonus,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 492 }
+    ));
+
+    // A permanent under a hand-slot or previous-round prefix latches under that predicate;
+    // the prefix has to agree with the structured field, and any other condition is still a
+    // hazard when the complete permanent shape sits beneath it.
+    let registry = one_entry_registry(prefixed_toxin_entry(
+        5092,
+        "Symmetry: Toxin 3, Min 0",
+        "symmetry",
+        "any",
+    ));
+    let (disposition, plan) = plan_of(with_ability(5092, "Symmetry: Toxin 3, Min 0"), &registry);
+    assert!(matches!(
+        disposition,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory {
+                life: 3,
+                minimum: 0
+            },
+            predicate: CombatStatPredicateV1::SelectedHandSlotsMatch,
+            ..
+        }
+    ));
+    assert!(matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            predicate: CombatStatPredicateV1::SelectedHandSlotsMatch,
+            ..
+        }
+    ));
+    let registry = one_entry_registry(prefixed_toxin_entry(
+        5092,
+        "Symmetry: Toxin 3, Min 0",
+        "any",
+        "lose",
+    ));
+    let (_, plan) = plan_of(with_ability(5092, "Symmetry: Toxin 3, Min 0"), &registry);
+    assert!(matches!(
+        plan,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 5092 }
+    ));
+    // Two conditions at once is no admitted grammar; under plain Toxin text it is the
+    // same-text hazard every malformed plain permanent is.
+    let mut both = prefixed_toxin_entry(900_301, "Symmetry: Toxin 3, Min 0", "symmetry", "lose");
+    both["description"] = serde_json::json!("Toxin 3, Min 0");
+    let (disposition, plan) = plan_of(
+        with_ability(900_301, "Toxin 3, Min 0"),
+        &one_entry_registry(both),
+    );
+    assert!(matches!(
+        disposition,
+        CombatStatProjectionDispositionV1::Disabled {
+            reason: CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        plan,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 900_301 }
     ));
 }
 

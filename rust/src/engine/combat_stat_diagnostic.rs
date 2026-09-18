@@ -10,8 +10,9 @@ use super::combat_resolution::{
 use super::combat_stat_compiler::{
     anita_courage_damage_to_life_identity_matches, argos_defeat_capped_pillz_identity_matches,
     equalizer_opponent_life_on_victory_identity_matches,
-    komboka_victory_pillz_and_life_identity_matches, victory_opponent_life_identity_matches,
-    victory_opponent_life_predicate, victory_or_defeat_pillz_identity_matches,
+    komboka_victory_pillz_and_life_identity_matches, permanent_predicate_admitted,
+    victory_opponent_life_identity_matches, victory_opponent_life_predicate,
+    victory_or_defeat_pillz_identity_matches,
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
@@ -104,6 +105,11 @@ pub enum CombatStatPostRoundEffectV1 {
     /// `+1 Pillz Per Damage` and its `Symmetry:` form: the winner's own Pillz rise by the
     /// final resolved Damage its card dealt. The predicate carries the hand-slot condition.
     GainPillzEqualToFinalDamageOnVictory,
+    /// `+N Life Per Damage` and its `Revenge:`/`Confidence:` forms: the winner's own Life
+    /// rises by `life_per_damage` for every point of final resolved Damage.
+    GainLifePerFinalDamageOnVictory {
+        life_per_damage: u16,
+    },
     GainLifeOnDefeat {
         life: u16,
     },
@@ -222,6 +228,11 @@ pub enum CombatStatEffectV1 {
     /// The winner's own Pillz rise by its card's final resolved Damage. Unconditional or
     /// under the Symmetry hand-slot predicate; Ability slot only.
     GainPillzEqualToFinalDamageOnVictory,
+    /// The winner's own Life rises by `life_per_damage` per point of final resolved Damage.
+    /// Unconditional or under a previous-round predicate; Ability slot only.
+    GainLifePerFinalDamageOnVictory {
+        life_per_damage: u16,
+    },
     /// Ordinary Defeat Life applies only after a surviving loss. The hot path retains the
     /// exact positive magnitude but no strings or registry access.
     GainLifeOnDefeat {
@@ -416,6 +427,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     VictoryOpponentPillzPredicate,
     VictoryPillzPerDamageSource,
     VictoryPillzPerDamagePredicate,
+    VictoryLifePerDamageSource,
+    VictoryLifePerDamageMagnitude,
+    VictoryLifePerDamagePredicate,
     DefeatLifeSource,
     DefeatLifeMagnitude,
     DefeatLifePredicate,
@@ -1038,7 +1052,7 @@ fn validate_combat_stat_source_plan(
                     InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
                 ));
             }
-            if predicate != CombatStatPredicateV1::Always {
+            if !permanent_predicate_admitted(predicate) {
                 return Err(invalid_combat_stat_execute(
                     player,
                     hand_slot,
@@ -1074,7 +1088,7 @@ fn validate_combat_stat_source_plan(
                     InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
                 ));
             }
-            if predicate != CombatStatPredicateV1::Always {
+            if !permanent_predicate_admitted(predicate) {
                 return Err(invalid_combat_stat_execute(
                     player,
                     hand_slot,
@@ -1106,7 +1120,7 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::HealLifeMagnitude,
             ));
         }
-        if predicate != CombatStatPredicateV1::Always {
+        if !permanent_predicate_admitted(predicate) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -1520,6 +1534,41 @@ fn validate_combat_stat_source_plan(
                 source,
                 source_id,
                 InvalidCombatStatPlanReasonV1::VictoryPillzPerDamagePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if let CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage } = effect {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryLifePerDamageSource,
+            ));
+        }
+        if life_per_damage == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryLifePerDamageMagnitude,
+            ));
+        }
+        if !matches!(
+            predicate,
+            CombatStatPredicateV1::Always
+                | CombatStatPredicateV1::OwnerLostPreviousRound
+                | CombatStatPredicateV1::OwnerWonPreviousRound
+        ) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryLifePerDamagePredicate,
             ));
         }
         return Ok(());
@@ -2009,6 +2058,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainPillzOnVictory { .. }
         | CombatStatEffectV1::ReduceOpponentPillzOnVictory { .. }
         | CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory
+        | CombatStatEffectV1::GainLifePerFinalDamageOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
         | CombatStatEffectV1::ReanimateLife { .. }
         | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
@@ -2060,6 +2110,11 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzEqualToFinalDamageOnVictory),
         ),
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::GainLifePerFinalDamageOnVictory(life_per_damage),
+            ))
+        }
         CombatStatEffectV1::GainLifeOnDefeat { life } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainLifeOnDefeat(life),
         )),

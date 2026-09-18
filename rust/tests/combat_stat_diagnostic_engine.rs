@@ -1136,6 +1136,255 @@ fn symmetry_pillz_per_damage_pays_only_when_both_selected_slots_match() {
     assert_eq!(report.players[PlayerId::P1].pillz, 17);
 }
 
+/// P1 slot 0 carries one post-round ability plan; every other source is absent and both
+/// hands are 6/3.
+fn single_ability_spec(
+    key: CardKey,
+    source_id: u32,
+    predicate: CombatStatPredicateV1,
+    effect: CombatStatEffectV1,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].hand[0].key = key;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(source_id, predicate, effect);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+const LIFE_PER_DAMAGE_TWO: CombatStatEffectV1 =
+    CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 2 };
+
+#[test]
+fn life_per_damage_plan_is_ability_only_positive_and_plain_or_previous_round() {
+    let key = CardKey::new(358, 4);
+    let mut bonus =
+        single_ability_spec(key, 189, CombatStatPredicateV1::Always, LIFE_PER_DAMAGE_TWO);
+    bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    bonus.cards[PlayerId::P1][0].bonus =
+        execute(189, CombatStatPredicateV1::Always, LIFE_PER_DAMAGE_TWO);
+    bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(bonus),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryLifePerDamageSource,
+            ..
+        })
+    ));
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(single_ability_spec(
+            key,
+            189,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 0 },
+        )),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryLifePerDamageMagnitude,
+            ..
+        })
+    ));
+    for predicate in [
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+    ] {
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(single_ability_spec(
+                key,
+                189,
+                predicate,
+                LIFE_PER_DAMAGE_TWO
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::VictoryLifePerDamagePredicate,
+                ..
+            })
+        ));
+    }
+}
+
+#[test]
+fn life_per_damage_pays_n_per_final_damage_point_and_revenge_waits_for_a_loss() {
+    // +2 per point of a 5-Damage Fury hit: 20 + 10, while the opponent takes the 5. The
+    // opponent's knockout in capture 1089830/2 changed nothing either.
+    let spec = single_ability_spec(
+        CardKey::new(358, 4),
+        189,
+        CombatStatPredicateV1::Always,
+        LIFE_PER_DAMAGE_TWO,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let start = diag.position().clone();
+    let (report, undo) = diag
+        .make(input(PlayerId::P1, (0, 2, true), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.cards[PlayerId::P1].damage, 5);
+    assert_eq!(report.players[PlayerId::P1].life, 30);
+    assert_eq!(report.players[PlayerId::P2].life, 15);
+    diag.unmake(undo);
+    assert_eq!(diag.position(), &start);
+
+    // A loss pays nothing, as Kenny Cr in 1093399/2.
+    let spec = single_ability_spec(
+        CardKey::new(358, 4),
+        189,
+        CombatStatPredicateV1::Always,
+        LIFE_PER_DAMAGE_TWO,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 2, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 17);
+
+    // Revenge: La Garra's +1 pays only in a round after her owner lost one. Round 1 is a
+    // win with no previous round, so nothing; round 2 follows a loss and pays the 3.
+    let spec = single_ability_spec(
+        CardKey::new(1817, 3),
+        1661,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P1].life, 20);
+    let (second, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    assert!(!second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P1].life, 17);
+    let spec = single_ability_spec(
+        CardKey::new(1817, 3),
+        1661,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    let (revenge, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(revenge.cards[PlayerId::P1].won);
+    assert_eq!(revenge.players[PlayerId::P1].life, 17 + 3);
+}
+
+#[test]
+fn prefixed_permanents_latch_only_when_their_predicate_holds_in_the_latching_round() {
+    // Demusa's Symmetry Toxin: slot 0 against slot 0 latches and pays at once; against slot
+    // 1 the win latches nothing and no later round pays.
+    let toxin = CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+        life: 3,
+        minimum: 0,
+    };
+    let spec = single_ability_spec(
+        CardKey::new(2620, 2),
+        5092,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+        toxin,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 20 - 3 - 3);
+    assert_eq!(diag.position().latched[PlayerId::P1].len(), 1);
+    let spec = single_ability_spec(
+        CardKey::new(2620, 2),
+        5092,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+        toxin,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (1, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+    assert!(diag.position().latched[PlayerId::P1].is_empty());
+    let (later, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (0, 2, false)))
+        .unwrap();
+    assert_eq!(later.players[PlayerId::P2].life, 17);
+
+    // Becos Pill's Revenge Poison latches only in a winning round after a loss, then waits
+    // a round before paying like every Poison.
+    let poison = CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+        life: 2,
+        minimum: 0,
+    };
+    let spec = single_ability_spec(
+        CardKey::new(2335, 2),
+        3301,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        poison,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(diag.position().latched[PlayerId::P1].is_empty());
+    let spec = single_ability_spec(
+        CardKey::new(2335, 2),
+        3301,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        poison,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    let (latch, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(latch.cards[PlayerId::P1].won);
+    assert_eq!(latch.players[PlayerId::P2].life, 17);
+    assert_eq!(diag.position().latched[PlayerId::P1].len(), 1);
+    let (pays, _) = diag
+        .make(input(PlayerId::P1, (2, 2, false), (2, 0, false)))
+        .unwrap();
+    assert_eq!(pays.players[PlayerId::P2].life, 17 - 3 - 2);
+
+    // The plan validator admits exactly those predicates for a permanent.
+    for predicate in [
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatPredicateV1::OwnerMovesSecond,
+    ] {
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(single_ability_spec(
+                CardKey::new(2620, 2),
+                5092,
+                predicate,
+                toxin
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::PermanentLifePredicate,
+                ..
+            })
+        ));
+    }
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(single_ability_spec(
+            CardKey::new(2683, 2),
+            5692,
+            CombatStatPredicateV1::OwnerMovesFirst,
+            CombatStatEffectV1::HealLifeOnVictory {
+                life: 1,
+                maximum: 16
+            }
+        )),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::HealLifePredicate,
+            ..
+        })
+    ));
+}
+
 fn anita_spec(power: u16, damage: u16) -> CombatStatDiagnosticMatchSpecV1 {
     let mut base = base_spec(power, damage);
     base.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);
