@@ -514,6 +514,7 @@ fn prepare_diagnostic_source(
                     | SupportedEffectV1::ProtectOwnCombatStat { .. }
                     | SupportedEffectV1::ProtectOwnAbility
                     | SupportedEffectV1::ProtectOwnBonus
+                    | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
             ) {
                 let reason = if source_kind == DiagnosticEffectSourceV1::Ability {
                     DiagnosticDisabledReasonV1::OrdinaryAbility {
@@ -654,7 +655,8 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<DiagnosticCombatEffectV1>
         // clan-bonus projection has never admitted a control channel of its own.
         SupportedEffectV1::ProtectOwnCombatStat { .. }
         | SupportedEffectV1::ProtectOwnAbility
-        | SupportedEffectV1::ProtectOwnBonus => None,
+        | SupportedEffectV1::ProtectOwnBonus
+        | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. } => None,
         SupportedEffectV1::CancelOpponentCombatStatModifiers { stat } => Some(
             DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers {
                 stat: compact_stat(stat),

@@ -81,6 +81,10 @@ pub enum DiagnosticCombatEffectV1 {
     ProtectOwnAbility,
     /// The owner's own Bonus survives an opposing Stop.
     ProtectOwnBonus,
+    /// The owner's own stat is replaced by the opposing selected card's printed value.
+    CopyOpponentPrintedCombatStat {
+        stat: DiagnosticCombatStatV1,
+    },
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and

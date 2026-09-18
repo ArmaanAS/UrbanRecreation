@@ -2867,3 +2867,127 @@ fn a_restored_source_does_not_fire_a_stop_of_its_own() {
         .unwrap();
     assert_eq!(report.cards[PlayerId::P2].power, 9);
 }
+
+/// Battle 1025031 r0: Natasha copies Nantosuelte's *printed* 4 Damage, not the 7 its
+/// Asymmetry bonus had made of it, and her own `Damage +2` then produces the reported 6.
+#[test]
+fn a_stat_copy_takes_the_printed_value_and_runs_before_own_increases() {
+    let base = base_spec(8, 1);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1513,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CopyOpponentPrintedCombatStat {
+            stat: CombatStatAttributeV1::Damage,
+        },
+    );
+    cards[PlayerId::P1][0].bonus = execute(
+        43,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 2),
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    // The opposing card raises its own printed 1 Damage to 4; the copy must not see 4.
+    cards[PlayerId::P2][0].ability = execute(
+        1844,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 3),
+    );
+    let mut game = game(base, cards);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].damage, 4);
+    // Copied printed 1, then its own +2. Reading the opponent's resolved 4 would give 6.
+    assert_eq!(report.cards[PlayerId::P1].damage, 3);
+}
+
+/// Battle 1065812 r1: Joana copies Sue's printed 6 Power and Sue's own `-1 Opp Power And
+/// Damage, Min 3` then leaves the reported 5, so the copy lands before opposing reductions.
+#[test]
+fn a_stat_copy_lands_before_an_opposing_reduction() {
+    let base = base_spec(5, 5);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        421,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CopyOpponentPrintedCombatStat {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    cards[PlayerId::P2][0].ability = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::PowerAndDamage, 1, 3),
+    );
+    let mut game = game(base, cards);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 4);
+}
+
+/// A stopped Copy copies nothing, and the pair grammar writes both stats at once.
+#[test]
+fn a_stopped_stat_copy_copies_nothing_and_the_pair_writes_both() {
+    let base = base_spec(6, 2);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        5525,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CopyOpponentPrintedCombatStat {
+            stat: CombatStatAttributeV1::PowerAndDamage,
+        },
+    );
+    let mut pair = game(base.clone(), cards.clone());
+    let (report, _) = pair
+        .make(input(PlayerId::P1, (0, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 6);
+    assert_eq!(report.cards[PlayerId::P1].damage, 2);
+
+    let mut stopped = cards;
+    stopped[PlayerId::P2][1].ability = execute(
+        40,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut game = game(base, stopped);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 6);
+    assert_eq!(report.cards[PlayerId::P1].damage, 2);
+}
+
+/// An Asymmetry Copy adopts only when the two selected hand slots differ. Every captured
+/// Asymmetry Copy reached its capture already rewritten to the source it adopted, so the
+/// negative branch rests on the structured `indexRequirement` this predicate already
+/// serves elsewhere rather than on a round of its own.
+#[test]
+fn an_asymmetry_copy_adopts_only_on_differing_hand_slots() {
+    for (p2_slot, expected) in [(1_u8, 5_u16), (0, 3)] {
+        let mut spec = copy_spec(
+            CopiedSourceKindV1::Bonus,
+            execute(
+                202,
+                CombatStatPredicateV1::Always,
+                own(CombatStatAttributeV1::Damage, 2),
+            ),
+        );
+        spec.cards[PlayerId::P1][0].ability = conditional_copy(
+            2482,
+            CopiedSourceKindV1::Bonus,
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        );
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let (report, _) = game
+            .make(input(PlayerId::P1, (0, 0, false), (p2_slot, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].damage,
+            expected,
+            "opposing slot {p2_slot}",
+        );
+    }
+}

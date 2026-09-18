@@ -258,6 +258,40 @@ fn add_protection(mask: &mut StatMask, source: ResolutionSourcePlan) {
     }
 }
 
+/// `Copy: Opp. <stat>` overwrites rather than adds, so it runs before every modifier and
+/// reads the opposing card's printed value, not its resolved one. Battle 1025031 r0 pins
+/// both halves: Natasha copies Nantosuelte's printed 4 Damage - not the 7 its Asymmetry
+/// bonus had made of it - and her own `Damage +2` then produces the reported 6. Since both
+/// sides read printed values, two simultaneous copies cannot depend on their order.
+fn apply_printed_stat_copy(
+    origin: PlayerId,
+    source: ResolutionSourcePlan,
+    opponent_cancellation: StatMask,
+    printed: ByPlayer<(u16, u16)>,
+    power: &mut ByPlayer<u16>,
+    damage: &mut ByPlayer<u16>,
+) {
+    let Some(DiagnosticCombatEffectV1::CopyOpponentPrintedCombatStat { stat }) = source.effect
+    else {
+        return;
+    };
+    let (opponent_power, opponent_damage) = printed[origin.other()];
+    if matches!(
+        stat,
+        DiagnosticCombatStatV1::Power | DiagnosticCombatStatV1::PowerAndDamage
+    ) && !opponent_cancellation.contains(DiagnosticCombatStatV1::Power)
+    {
+        power[origin] = opponent_power;
+    }
+    if matches!(
+        stat,
+        DiagnosticCombatStatV1::Damage | DiagnosticCombatStatV1::PowerAndDamage
+    ) && !opponent_cancellation.contains(DiagnosticCombatStatV1::Damage)
+    {
+        damage[origin] = opponent_damage;
+    }
+}
+
 pub(super) fn prepare_combat_resolution(
     validated: ByPlayer<ValidatedSelection>,
     selected_plans: ByPlayer<ResolutionCardPlan>,
@@ -305,6 +339,39 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         validated[PlayerId::P1].card.damage,
         validated[PlayerId::P2].card.damage,
     );
+
+    let printed = ByPlayer::new(
+        (
+            validated[PlayerId::P1].card.power,
+            validated[PlayerId::P1].card.damage,
+        ),
+        (
+            validated[PlayerId::P2].card.power,
+            validated[PlayerId::P2].card.damage,
+        ),
+    );
+    for origin in PlayerId::ALL {
+        if live[origin].bonus {
+            apply_printed_stat_copy(
+                origin,
+                selected_plans[origin].bonus,
+                cancellations[origin.other()],
+                printed,
+                &mut power,
+                &mut damage,
+            );
+        }
+        if live[origin].ability {
+            apply_printed_stat_copy(
+                origin,
+                selected_plans[origin].ability,
+                cancellations[origin.other()],
+                printed,
+                &mut power,
+                &mut damage,
+            );
+        }
+    }
 
     // Source compilation is Bonus then Ability. Own increases retain that stable order.
     for origin in PlayerId::ALL {

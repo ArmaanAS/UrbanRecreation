@@ -2472,7 +2472,7 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
     ));
 
     let mut unsupported = p1;
-    unsupported[0] = CardKey::new(576, 3); // Randy: Copy: Opp. Power, a deferred grammar.
+    unsupported[0] = CardKey::new(157, 3); // Noon Steevens: Tune Out, a deferred grammar.
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(unsupported, p2, false),
@@ -2662,8 +2662,9 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
         eligible,
         BTreeSet::from([
             830285, 869944, 875098, 875322, 877636, 877687, 877812, 877950, 878011, 924257, 925254,
-            925674, 925719, 970972, 1011712, 1024673, 1059030, 1059454, 1060199, 1061897, 1069813,
-            1070207, 1078906, 1081463, 1089346, 1090607, 1091235,
+            925674, 925719, 943111, 946112, 947228, 970972, 1011712, 1024673, 1059030, 1059454,
+            1060199, 1061897, 1065812, 1069813, 1070207, 1078906, 1081463, 1089346, 1090607,
+            1091235, 1092909,
         ])
     );
 }

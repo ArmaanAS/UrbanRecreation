@@ -96,6 +96,22 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877687, 4),
     (924257, 4),
     (1070207, 1),
+    // Revision 24 stat Copy. 1025031/0 pins both halves of the rule at once: Natasha copies
+    // Nantosuelte's printed 4 Damage rather than the 7 its Asymmetry bonus had made of it,
+    // and her own Damage +2 then produces the reported 6. 1065812/1 copies into an opposing
+    // reduction - Joana takes Sue's printed 6 Power and Sue's own -1 leaves the reported 5 -
+    // and 1069345/0 does the same for the Power And Damage pair. 876635/1 is the plain case,
+    // Javert at Keya's printed 8 Power.
+    (876635, 2),
+    (1025031, 3),
+    (1065812, 4),
+    (1069345, 1),
+    // The two remaining draws the same revision makes catalog-eligible. Neither plays a Copy
+    // grammar in these rounds: every selected Asymmetry Copy in the corpus reaches the
+    // capture already rewritten to the source it adopted, so admitting it moves catalog
+    // eligibility without moving any replayed round.
+    (946112, 2),
+    (947228, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -352,7 +368,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_one_hundred_and_twenty_four_unique_sequential_prefix_rounds()
+fn fixed_server_backed_gate_is_exactly_one_hundred_and_thirty_nine_unique_sequential_prefix_rounds()
 {
     let catalog = catalog();
     let registry = registry();
@@ -389,19 +405,20 @@ fn fixed_server_backed_gate_is_exactly_one_hundred_and_twenty_four_unique_sequen
             }
         }
     }
-    assert_eq!(rounds, 124);
+    assert_eq!(rounds, 139);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 36, 37, 38, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 257, 266, 274,
-            292, 310, 316, 333, 367, 368, 377, 391, 401, 412, 461, 469, 478, 520, 536, 577, 578,
-            585, 612, 680, 713, 717, 727, 741, 759, 801, 844, 862, 871, 883, 888, 916, 938, 980,
-            1034, 1047, 1131, 1158, 1163, 1241, 1293, 1303, 1310, 1330, 1335, 1338, 1341, 1342,
-            1355, 1359, 1372, 1375, 1388, 1396, 1399, 1415, 1418, 1420, 1464, 1518, 1534, 1536,
-            1578, 1628, 1634, 1688, 1694, 1699, 1714, 1770, 1805, 1806, 1844, 1845, 1848, 1850,
-            2073, 2299, 2329, 2375, 2412, 2535, 2657, 2881, 2944, 2965, 3284, 3487, 3677, 3864,
-            3865, 3897, 4041, 4216, 4297, 4299, 4389, 4399, 4417, 4458, 4464, 4571, 4708, 4711,
-            4718, 4722, 4757, 4966, 5026, 5085, 5169, 5273, 5404, 5462, 5498, 5520, 5531, 5763,
+            6, 36, 37, 38, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 225, 257, 266,
+            274, 292, 310, 316, 333, 367, 368, 377, 391, 401, 412, 421, 461, 469, 478, 520, 536,
+            569, 577, 578, 585, 612, 680, 713, 717, 727, 741, 759, 801, 844, 852, 862, 871, 883,
+            888, 916, 938, 980, 1034, 1047, 1131, 1158, 1163, 1241, 1293, 1303, 1310, 1330, 1335,
+            1338, 1341, 1342, 1355, 1359, 1372, 1375, 1388, 1396, 1399, 1415, 1418, 1420, 1464,
+            1469, 1513, 1518, 1534, 1536, 1578, 1628, 1634, 1688, 1694, 1699, 1714, 1722, 1770,
+            1805, 1806, 1844, 1845, 1848, 1850, 2028, 2073, 2299, 2329, 2375, 2412, 2535, 2556,
+            2657, 2881, 2944, 2965, 2992, 3040, 3284, 3487, 3677, 3864, 3865, 3897, 4041, 4216,
+            4297, 4299, 4389, 4399, 4417, 4458, 4461, 4464, 4571, 4708, 4711, 4718, 4722, 4757,
+            4966, 5026, 5085, 5169, 5237, 5273, 5404, 5462, 5498, 5520, 5525, 5531, 5549, 5763,
             5849, 5852, 5859,
         ])
     );
@@ -409,7 +426,7 @@ fn fixed_server_backed_gate_is_exactly_one_hundred_and_twenty_four_unique_sequen
         disabled_ids,
         BTreeSet::from([
             206, 594, 682, 809, 854, 935, 1501, 1508, 1852, 2222, 2317, 4303, 4459, 4657, 4695,
-            4747, 5283,
+            4747, 4937, 5283,
         ])
     );
     assert_eq!(absent, 6);
@@ -607,7 +624,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 23);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 24);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -663,7 +680,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        23
+        24
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2

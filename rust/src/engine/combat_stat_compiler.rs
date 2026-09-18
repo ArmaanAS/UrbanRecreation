@@ -9,14 +9,14 @@ use super::{
     CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPredicateV1,
 };
 
-/// Every Copy grammar this projection admits, as the exact printed text it requires.
-/// `Reprisal:` and `Revenge:` reuse predicates the projection already resolves before a
-/// round is prepared, so they gate the adoption itself rather than needing new context.
-/// Every other conditional (`Asymmetry`, `Unison`, `Confidence`, `Bet > N`) and every
-/// stat-copying variant (`Copy: Opp. Power`, `Copy: Opp. Damage`, `Copy: Power And Damage
-/// Opp.`) keeps its own deferred grammar. Note the site's own inconsistent punctuation: a
-/// copied Bonus loses the second colon under `Reprisal`/`Revenge` but an Ability keeps it.
-const COPY_OPPONENT_SOURCE_GRAMMARS: [(&str, CopiedSourceKindV1, CombatStatPredicateV1); 6] = [
+/// Every source-copying Copy grammar this projection admits, as the exact printed text it
+/// requires. `Reprisal:`, `Revenge:` and `Asymmetry:` reuse predicates the projection
+/// already resolves before a round is prepared, so they gate the adoption itself rather
+/// than needing new context. `Unison` (a draw-level clan-mate count), `Confidence`,
+/// `Bet > N` and the clan-gated `Asy.` variant keep their own deferred grammars. Note the
+/// site's own inconsistent punctuation: a copied Bonus loses the second colon under
+/// `Reprisal`/`Revenge` but keeps it under `Asymmetry`.
+const COPY_OPPONENT_SOURCE_GRAMMARS: [(&str, CopiedSourceKindV1, CombatStatPredicateV1); 8] = [
     (
         "Copy: Opp. Ability",
         CopiedSourceKindV1::Ability,
@@ -47,6 +47,16 @@ const COPY_OPPONENT_SOURCE_GRAMMARS: [(&str, CopiedSourceKindV1, CombatStatPredi
         CopiedSourceKindV1::Bonus,
         CombatStatPredicateV1::OwnerLostPreviousRound,
     ),
+    (
+        "Asymmetry: Copy: Opp. Ability",
+        CopiedSourceKindV1::Ability,
+        CombatStatPredicateV1::SelectedHandSlotsDiffer,
+    ),
+    (
+        "Asymmetry: Copy: Opp. Bonus",
+        CopiedSourceKindV1::Bonus,
+        CombatStatPredicateV1::SelectedHandSlotsDiffer,
+    ),
 ];
 
 /// True for every printed text the Copy compiler recognizes, so the catalog boundary can
@@ -63,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 23;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 24;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -92,22 +102,30 @@ fn copy_opponent_source_shape_matches(
     // Exactly one structured field may carry the condition, and it must be the one the
     // printed prefix names. Everything else stays neutral, so an unfamiliar nested context
     // cannot ride in beside a familiar prefix.
-    let (position, previous_round) = match predicate {
-        CombatStatPredicateV1::Always => {
-            (PositionRequirementV1::Both, PreviousRoundRequirementV1::Any)
-        }
+    let (position, previous_round, index) = match predicate {
+        CombatStatPredicateV1::Always => (
+            PositionRequirementV1::Both,
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Any,
+        ),
         CombatStatPredicateV1::OwnerMovesSecond => (
             PositionRequirementV1::Defender,
             PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Any,
         ),
         CombatStatPredicateV1::OwnerLostPreviousRound => (
             PositionRequirementV1::Both,
             PreviousRoundRequirementV1::Lose,
+            IndexRequirementV1::Any,
+        ),
+        CombatStatPredicateV1::SelectedHandSlotsDiffer => (
+            PositionRequirementV1::Both,
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Asymmetry,
         ),
         CombatStatPredicateV1::OwnerMovesFirst
         | CombatStatPredicateV1::OwnerWonPreviousRound
-        | CombatStatPredicateV1::SelectedHandSlotsMatch
-        | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
+        | CombatStatPredicateV1::SelectedHandSlotsMatch => return false,
     };
     input.value == 0
         && input.value_min == 0
@@ -116,7 +134,7 @@ fn copy_opponent_source_shape_matches(
         && input.position_requirement == position
         && input.previous_round_requirement == previous_round
         && input.current_round_requirement == CurrentRoundRequirementV1::Any
-        && input.index_requirement == IndexRequirementV1::Any
+        && input.index_requirement == index
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
@@ -743,7 +761,8 @@ fn admitted_supported_effect(
         // bonus. The registry's exact-description gate is what keeps the family narrow.
         SupportedEffectV1::ProtectOwnCombatStat { .. }
         | SupportedEffectV1::ProtectOwnAbility
-        | SupportedEffectV1::ProtectOwnBonus => true,
+        | SupportedEffectV1::ProtectOwnBonus
+        | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. } => true,
         SupportedEffectV1::ModifyCombatStat {
             side,
             stat,
@@ -1360,7 +1379,8 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | SupportedEffectV1::CancelOpponentCombatStatModifiers { .. }
         | SupportedEffectV1::ProtectOwnCombatStat { .. }
         | SupportedEffectV1::ProtectOwnAbility
-        | SupportedEffectV1::ProtectOwnBonus => return false,
+        | SupportedEffectV1::ProtectOwnBonus
+        | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. } => return false,
     };
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Growth => "Growth: ",
@@ -1492,6 +1512,11 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
         }
         SupportedEffectV1::ProtectOwnAbility => Some(CombatStatEffectV1::ProtectOwnAbility),
         SupportedEffectV1::ProtectOwnBonus => Some(CombatStatEffectV1::ProtectOwnBonus),
+        SupportedEffectV1::CopyOpponentPrintedCombatStat { stat } => {
+            Some(CombatStatEffectV1::CopyOpponentPrintedCombatStat {
+                stat: compact_stat(stat),
+            })
+        }
     }
 }
 
@@ -1632,6 +1657,18 @@ mod tests {
                 CopiedSourceKindV1::Ability,
                 CombatStatPredicateV1::OwnerLostPreviousRound,
             ),
+            (
+                3291,
+                "Asymmetry: Copy: Opp. Ability",
+                CopiedSourceKindV1::Ability,
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ),
+            (
+                2482,
+                "Asymmetry: Copy: Opp. Bonus",
+                CopiedSourceKindV1::Bonus,
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ),
         ] {
             assert_eq!(
                 classify_copy_opponent_source(registry.lookup_capture(id, description).unwrap()),
@@ -1639,13 +1676,18 @@ mod tests {
                 "grammar {id}",
             );
         }
-        // Every other conditional, and every stat-copying variant, keeps its own deferred
-        // grammar. `4126` matters in particular: it is a Reprisal Copy, but of a stat.
+        // Every other conditional keeps its own deferred grammar, and a stat-copying
+        // variant is never a source copy: since revision 24 the unconditional ones are
+        // admitted as their own effect, and `4126` matters in particular because it is a
+        // Reprisal Copy, but of a stat.
         for (id, description) in [
-            (2482, "Asymmetry: Copy: Opp. Bonus"),
             (3994, "Unison : Copy: Opp. Ability"),
             (1409, "Confidence: Copy: Opp. Power"),
             (5304, "Bet > 3 Pillz: Copy: Opp. Ability"),
+            (
+                5073,
+                "[clan:46][clan:58][clan:40][clan:55][clan:42][clan:50] Asy. : Copy: Opp. Ability",
+            ),
             (315, "Copy: Opp. Power"),
             (1513, "Copy: Opp. Damage"),
             (2673, "Copy: Power And Damage Opp."),

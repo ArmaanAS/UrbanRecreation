@@ -48,18 +48,9 @@ const FILLER: [CardKey; 8] = [
 /// an id that no definition owns can never appear as a blocker. A family drops to zero once
 /// its slice lands, which is the intended way to see that it is done.
 const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
-    (
-        "conditional Copy: Asymmetry/Unison",
-        &[
-            2482, 3291, 3355, 3368, 4556, 4991, 3994, 4141, 4767, 5073, 5108,
-        ],
-    ),
-    (
-        "stat Copy: Power/Damage/exchange",
-        &[
-            315, 346, 394, 421, 1409, 1513, 1588, 1592, 1710, 2673, 3986, 4126, 4956, 5525,
-        ],
-    ),
+    ("conditional Copy: Unison", &[3994, 4141, 4767, 5108, 5073]),
+    ("conditional stat Copy", &[1409, 4126, 4956]),
+    ("Power/Damage Exchange", &[1588, 1592]),
     ("conditional Victory opponent-Life", &[4533, 1730]),
 ];
 

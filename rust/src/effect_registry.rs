@@ -256,6 +256,10 @@ pub enum SupportedEffectV1 {
     ProtectOwnCombatStat {
         stat: CombatStatV1,
     },
+    /// The owner's own stat is replaced by the opposing character's printed value.
+    CopyOpponentPrintedCombatStat {
+        stat: CombatStatV1,
+    },
     /// The owner's own Ability cannot be stopped by the opposing character.
     ProtectOwnAbility,
     /// The owner's own Bonus cannot be stopped by the opposing character.
@@ -1038,6 +1042,23 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
                 None
             }
         }
+        // A stat Copy names the side it writes to, always the owner's own, and carries no
+        // magnitude. `Power Exchange` and `Damage Exchange` use the same action with
+        // `sideAffected: both` and swap the two values instead, so they are refused here
+        // by side rather than by grammar.
+        (AttributeActionV1::Copy, SpecialActionV1::None, Some(stat)) => {
+            if input.side_affected != AffectedSideV1::Player {
+                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
+                    side: input.side_affected,
+                });
+                None
+            } else if input.value == 0 && input.value_min == 0 && input.value_max == 0 {
+                Some(SupportedEffectV1::CopyOpponentPrintedCombatStat { stat })
+            } else {
+                reasons.insert(UnsupportedReasonV1::NonZeroControlValues);
+                None
+            }
+        }
         // Protection names the side it defends, always the owner's own. It carries no
         // magnitude of its own: a non-zero value would be a different, unreviewed shape.
         (AttributeActionV1::Protect, SpecialActionV1::None, Some(stat)) => {
@@ -1198,6 +1219,15 @@ fn unreviewed_description_context(
         }
         SupportedEffectV1::ProtectOwnAbility => description == "Protection: Ability",
         SupportedEffectV1::ProtectOwnBonus => description == "Protection: Bonus",
+        // Note the site's own word order for the pair. Every conditional prefix -
+        // `Confidence:`, `Reprisal:`, `Versus [clan:...]` - is a different description and
+        // is refused here, so a condition cannot ride in on an unconditional grammar.
+        SupportedEffectV1::CopyOpponentPrintedCombatStat { stat } => match stat {
+            CombatStatV1::Power => description == "Copy: Opp. Power",
+            CombatStatV1::Damage => description == "Copy: Opp. Damage",
+            CombatStatV1::PowerAndDamage => description == "Copy: Power And Damage Opp.",
+            CombatStatV1::Attack => false,
+        },
     };
     (!reviewed).then_some(DescriptionContextV1::OtherUnreviewedGrammar)
 }
@@ -1687,6 +1717,38 @@ mod tests {
                 registry.get(id).unwrap().compiled().supported(),
                 None,
                 "effect {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_stat_copy_compiles_only_the_three_unconditional_printed_grammars() {
+        let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
+
+        for (ids, stat) in [
+            (
+                [315, 346, 394, 421, 4315, 4361, 4461].as_slice(),
+                CombatStatV1::Power,
+            ),
+            ([1513, 1710, 3986].as_slice(), CombatStatV1::Damage),
+            ([2673, 5525].as_slice(), CombatStatV1::PowerAndDamage),
+        ] {
+            for &id in ids {
+                assert_eq!(
+                    registry.get(id).unwrap().compiled().supported(),
+                    Some(SupportedEffectV1::CopyOpponentPrintedCombatStat { stat }),
+                    "effect {id}",
+                );
+            }
+        }
+
+        // A conditional prefix is a different description, and Exchange is the same action
+        // with `sideAffected: both` - a swap of two cards' values, not a copy into one.
+        for id in [1409, 4126, 4956, 1588, 1592, 1713] {
+            assert_eq!(
+                registry.get(id).unwrap().compiled().supported(),
+                None,
+                "effect {id}",
             );
         }
     }
