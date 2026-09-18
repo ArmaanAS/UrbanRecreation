@@ -73,13 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 26;
-
-/// Lianah Ld level 3's printed `Heal 1 Max. 20`, the one permanent Life identity this
-/// projection executes. The other plain `Heal N Max. M` records share its exact structured
-/// shape and stay closed only for want of a reviewed slice, not for any known difference.
-pub(crate) const LIANAH_HEAL_LIFE_REGISTRY_ID: u32 = 3526;
-pub(crate) const LIANAH_HEAL_LIFE_DESCRIPTION: &str = "Heal 1 Max. 20";
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 27;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -724,31 +718,30 @@ pub(crate) fn argos_defeat_capped_pillz_identity_matches(
     (source_kind, definition_id) == (CombatStatEffectSourceV1::Ability, 1158)
 }
 
-/// Strictly recognize Lianah Ld's printed Heal. It is the projection's first repeating
-/// effect: the round its card wins latches it and pays nothing, and every later round then
-/// pays `life` while the owner is below `maximum`. Returns `(life, maximum)`.
+/// Recognize the plain `Heal N Max. M` grammar, the projection's repeating own-Life effect:
+/// the round its card wins latches it and pays nothing, and every later round then pays
+/// `life` while the owner is below `maximum`. Like generic Victory Life it is admitted by
+/// exact printed text and complete structured shape rather than an id list, because the
+/// registry carries eight structurally identical records of it; the printed numbers are
+/// authority and a record whose text disagrees with its own magnitude or cap is refused.
+/// Card abilities only: no clan bonus prints a Heal. `Defeat : Heal`, `Asymmetry: Heal` and
+/// the clan-gated form are different texts with different latch conditions and stay closed.
+/// Returns `(life, maximum)`.
 pub(crate) fn classify_heal_life_on_victory(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(u16, u16)> {
     let input = definition.structured_input();
-    (heal_life_on_victory_identity_matches(source_kind, definition.id())
-        && definition.description() == LIANAH_HEAL_LIFE_DESCRIPTION
-        && definition.description() == format!("Heal {} Max. {}", input.value, input.value_max)
-        && heal_life_on_victory_shape_matches(input))
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_heal_life_on_victory_shape(definition)
+        && definition.description() == format!("Heal {} Max. {}", input.value, input.value_max))
     .then_some((input.value, input.value_max))
 }
 
-/// Shared identity gate for compiler output and caller-provided compact plans.
-pub(crate) fn heal_life_on_victory_identity_matches(
-    source_kind: CombatStatEffectSourceV1,
-    definition_id: u32,
-) -> bool {
-    (source_kind, definition_id)
-        == (
-            CombatStatEffectSourceV1::Ability,
-            LIANAH_HEAL_LIFE_REGISTRY_ID,
-        )
+/// Structural half of the Heal boundary. Replay preparation uses this to reject a source
+/// carrying the exact permanent shape under malformed text instead of disabling it.
+pub(crate) fn has_heal_life_on_victory_shape(definition: &EffectDefinitionV1) -> bool {
+    heal_life_on_victory_shape_matches(definition.structured_input())
 }
 
 pub(crate) fn classify_combat_stat_effect(
@@ -2636,28 +2629,45 @@ mod tests {
     }
 
     #[test]
-    fn heal_life_admits_only_lianahs_ability_3526_and_its_full_permanent_shape() {
+    fn heal_life_admits_the_plain_ability_grammar_by_text_and_full_permanent_shape() {
         let registry = registry();
-        let lianah = registry.lookup_capture(3526, "Heal 1 Max. 20").unwrap();
-        assert_eq!(
-            classify_heal_life_on_victory(lianah, CombatStatEffectSourceV1::Ability),
-            Some((1, 20))
-        );
-        assert_eq!(
-            classify_heal_life_on_victory(lianah, CombatStatEffectSourceV1::Bonus),
-            None
-        );
-        assert_eq!(
-            classify_combat_stat_effect(lianah, CombatStatEffectSourceV1::Ability),
-            None
-        );
-        // Same grammar, same shape, other identities: closed until their own slice.
+        // Every plain record in the registry, each with its own printed numbers.
+        for (id, description, expected) in [
+            (649, "Heal 1 Max. 6", (1, 6)),
+            (751, "Heal 2 Max. 10", (2, 10)),
+            (963, "Heal 1 Max. 15", (1, 15)),
+            (1501, "Heal 2 Max. 10", (2, 10)),
+            (3118, "Heal 1 Max. 18", (1, 18)),
+            (3526, "Heal 1 Max. 20", (1, 20)),
+            (4625, "Heal 1 Max. 15", (1, 15)),
+            (5341, "Heal 1 Max. 18", (1, 18)),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_heal_life_on_victory(definition, CombatStatEffectSourceV1::Ability),
+                Some(expected),
+                "{id} {description}"
+            );
+            assert_eq!(
+                classify_heal_life_on_victory(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} {description} as a bonus"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id} {description} must never be an ordinary one-round effect"
+            );
+        }
+        // Other latch conditions are other texts and other structured fields.
         for (id, description) in [
-            (963, "Heal 1 Max. 15"),
-            (3118, "Heal 1 Max. 18"),
-            (751, "Heal 2 Max. 10"),
             (1625, "Defeat : Heal 1 Max. 13"),
+            (898, "Defeat : Heal 1 Max. 15"),
             (5692, "Asymmetry: Heal 1 Max. 16"),
+            (
+                5578,
+                "[clan:26][clan:37][clan:55][clan:10] Defeat: Heal 1, Max 14",
+            ),
         ] {
             assert_eq!(
                 classify_heal_life_on_victory(

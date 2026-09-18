@@ -20,9 +20,9 @@ use crate::engine::combat_stat_compiler::{
     classify_heal_life_on_victory, classify_komboka_victory_pillz_and_life,
     classify_reanimate_life, classify_victory_life, classify_victory_opponent_life,
     classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
-    has_defeat_life_shape, has_reanimate_life_shape, has_victory_life_shape,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
-    LIANAH_HEAL_LIFE_DESCRIPTION, LIANAH_HEAL_LIFE_REGISTRY_ID,
+    has_defeat_life_shape, has_heal_life_on_victory_shape, has_reanimate_life_shape,
+    has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -809,8 +809,8 @@ fn prepare_combat_stat_source(
             });
         }
     }
-    // The one admitted permanent. Its plan is ordinary post-round work at the source; the
-    // engine position carries the latch from the round it wins onward.
+    // The one admitted permanent grammar. Its plan is ordinary post-round work at the
+    // source; the engine position carries the latch from the round it wins onward.
     if let Some((life, maximum)) = classify_heal_life_on_victory(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -927,12 +927,12 @@ fn prepare_combat_stat_source(
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
             && input.attribute_affected == AttributeAffectedV1::LifeAndPillz
             && input.attribute_action == AttributeActionV1::Increase);
-    // Lianah's identity or exact text under any other shape, slot or id is a near-miss of
-    // the admitted Heal and must reject when selected. The other plain `Heal N Max. M`
-    // identities are a deferred slice and keep their visible-but-disabled record, exactly
-    // as every other unadmitted permanent does.
-    let unadmitted_heal_life = source.id == LIANAH_HEAL_LIFE_REGISTRY_ID
-        || source.description == LIANAH_HEAL_LIFE_DESCRIPTION;
+    // A near-miss of the admitted Heal grammar is a selected hazard: plain `Heal` text in
+    // a Bonus slot or over a malformed structure, or the complete permanent shape under
+    // text whose numbers disagree with it. `Defeat`, `Asymmetry` and clan-gated Heals are
+    // other grammars and keep their visible-but-disabled record like every other permanent.
+    let unadmitted_heal_life =
+        source.description.starts_with("Heal ") || has_heal_life_on_victory_shape(definition);
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {

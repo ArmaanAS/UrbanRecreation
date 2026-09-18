@@ -178,8 +178,21 @@ fn lianah_spec(p1_life: u16) -> CombatStatDiagnosticMatchSpecV1 {
 }
 
 #[test]
-fn heal_plan_is_exactly_identity_card_effect_and_predicate_locked() {
+fn heal_plan_is_ability_only_positive_below_its_cap_and_unconditional() {
     assert!(CombatStatDiagnosticV1::new(lianah_spec(12)).is_ok());
+    // Generic by grammar: any id and any card may carry it, with any positive numbers.
+    let mut other = lianah_spec(12);
+    other.base_rules.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);
+    other.cards[PlayerId::P1][0].key = CardKey::new(448, 3);
+    other.cards[PlayerId::P1][0].ability = execute(
+        963,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 2,
+            maximum: 10,
+        },
+    );
+    assert!(CombatStatDiagnosticV1::new(other).is_ok());
 
     let mut bonus = lianah_spec(12);
     bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
@@ -188,33 +201,25 @@ fn heal_plan_is_exactly_identity_card_effect_and_predicate_locked() {
     assert!(matches!(
         CombatStatDiagnosticV1::new(bonus),
         Err(CombatStatPlanErrorV1::InvalidExecute {
-            reason: InvalidCombatStatPlanReasonV1::HealLifeIdentity,
+            reason: InvalidCombatStatPlanReasonV1::HealLifeSource,
             source: CombatStatEffectSourceV1::Bonus,
-            ..
-        })
-    ));
-
-    let mut other_card = lianah_spec(12);
-    other_card.base_rules.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);
-    other_card.cards[PlayerId::P1][0].key = CardKey::new(448, 3);
-    assert!(matches!(
-        CombatStatDiagnosticV1::new(other_card),
-        Err(CombatStatPlanErrorV1::InvalidExecute {
-            reason: InvalidCombatStatPlanReasonV1::HealLifeCard,
             ..
         })
     ));
 
     for effect in [
         CombatStatEffectV1::HealLifeOnVictory {
-            life: 2,
+            life: 0,
             maximum: 20,
         },
         CombatStatEffectV1::HealLifeOnVictory {
             life: 1,
-            maximum: 15,
+            maximum: 1,
         },
-        CombatStatEffectV1::GainLifeOnVictory { life: 1 },
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 3,
+            maximum: 2,
+        },
     ] {
         let mut wrong_effect = lianah_spec(12);
         wrong_effect.cards[PlayerId::P1][0].ability =
@@ -222,7 +227,7 @@ fn heal_plan_is_exactly_identity_card_effect_and_predicate_locked() {
         assert!(matches!(
             CombatStatDiagnosticV1::new(wrong_effect),
             Err(CombatStatPlanErrorV1::InvalidExecute {
-                reason: InvalidCombatStatPlanReasonV1::HealLifeEffect,
+                reason: InvalidCombatStatPlanReasonV1::HealLifeMagnitude,
                 ..
             })
         ));
@@ -235,18 +240,6 @@ fn heal_plan_is_exactly_identity_card_effect_and_predicate_locked() {
         CombatStatDiagnosticV1::new(wrong_predicate),
         Err(CombatStatPlanErrorV1::InvalidExecute {
             reason: InvalidCombatStatPlanReasonV1::HealLifePredicate,
-            ..
-        })
-    ));
-
-    // The effect cannot appear under any other id, on Lianah's own card or elsewhere.
-    let mut other_id = lianah_spec(12);
-    other_id.cards[PlayerId::P1][0].ability = execute(963, CombatStatPredicateV1::Always, HEAL);
-    assert!(matches!(
-        CombatStatDiagnosticV1::new(other_id),
-        Err(CombatStatPlanErrorV1::InvalidExecute {
-            reason: InvalidCombatStatPlanReasonV1::HealLifeIdentity,
-            source_id: 963,
             ..
         })
     ));

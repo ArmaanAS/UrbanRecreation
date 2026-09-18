@@ -1129,7 +1129,7 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
 }
 
 #[test]
-fn strict_catalog_match_admits_only_lianahs_exact_heal_and_latches_it_on_a_win() {
+fn strict_catalog_match_admits_the_plain_heal_grammar_and_latches_it_on_a_win() {
     let catalog = catalog();
     let registry = registry();
     let (_, opponent) = fully_supported_hands();
@@ -1240,12 +1240,83 @@ fn strict_catalog_match_admits_only_lianahs_exact_heal_and_latches_it_on_a_win()
         .is_err());
     }
 
-    // Another card carrying the exact text and id cannot borrow the latch.
-    let lookalike = catalog_with_ability_alias(CardKey::new(123, 1), 3526, "Heal 1 Max. 20");
+    // Every other plain record is the same grammar and is admitted with its own numbers:
+    // Campbell level 4 (`963`) and level 3 (`4625`), Bose (`1501`), Loretta (`751`).
+    for (key, catalog_id, description, life, maximum) in [
+        (CardKey::new(1137, 4), 963, "Heal 1 Max. 15", 1, 15),
+        (CardKey::new(1137, 3), 4625, "Heal 1 Max. 15", 1, 15),
+        (CardKey::new(1672, 2), 1501, "Heal 2 Max. 10", 2, 10),
+        (CardKey::new(929, 2), 751, "Heal 2 Max. 10", 2, 10),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?} {description}: {error}"));
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity, effect, ..
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} {description} was not prepared as a latching Heal")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        // The text resolves to one definition; structurally identical records such as
+        // Campbell's `4625` are its aliases, and the row's id must be one of them.
+        assert!(identity.registry_alias_ids.contains(&catalog_id));
+        assert!(identity
+            .registry_alias_ids
+            .contains(&identity.registry_definition_id));
+        assert_eq!(identity.description, description);
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::HealLifeOnVictory { life, maximum }
+        );
+    }
+
+    // Campbell level 2 prints the same text under `4624`, an id the registry never
+    // captured, so it is refused: the row must be a real alias of the resolved definition.
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(1137, 2),
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1)
+                ],
+                opponent,
+                false
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(4624),
+            ..
+        })
+    ));
+
+    // A same-text row under a numeric identity that is not a registry alias of that text
+    // cannot latch: description equality alone is never authority for a Life effect.
+    let mismatch = catalog_with_ability_alias(CardKey::new(123, 1), 963, "Heal 1 Max. 20");
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input([CardKey::new(123, 1), CardKey::new(124, 1), CardKey::new(138, 1), CardKey::new(139, 1)], opponent, false),
-            &lookalike,
+            &mismatch,
             &registry,
             PROJECTION,
         ),
@@ -1253,38 +1324,34 @@ fn strict_catalog_match_admits_only_lianahs_exact_heal_and_latches_it_on_a_win()
             player: PlayerId::P1,
             hand_slot,
             source_kind: CombatStatEffectSourceV1::Ability,
-            catalog_id: Some(3526),
+            catalog_id: Some(963),
             ref description,
             registry_definition_id: 3526,
             ..
         }) if hand_slot.get() == 0 && description == "Heal 1 Max. 20"
     ));
 
-    // The same grammar under another identity stays closed: Campbell's `Heal 1 Max. 15`.
-    let sibling = catalog_with_ability_alias(CardKey::new(123, 1), 963, "Heal 1 Max. 15");
-    assert!(matches!(
-        CatalogCombatStatMatchV1::new(
-            input(
-                [
-                    CardKey::new(123, 1),
-                    CardKey::new(124, 1),
-                    CardKey::new(138, 1),
-                    CardKey::new(139, 1)
-                ],
-                opponent,
-                false
+    // The other latch conditions are other grammars and stay closed.
+    for (catalog_id, description) in [
+        (1625, "Defeat : Heal 1 Max. 13"),
+        (5692, "Asymmetry: Heal 1 Max. 16"),
+    ] {
+        let conditional = catalog_with_ability_alias(CardKey::new(123, 1), catalog_id, description);
+        assert!(matches!(
+            CatalogCombatStatMatchV1::new(
+                input([CardKey::new(123, 1), CardKey::new(124, 1), CardKey::new(138, 1), CardKey::new(139, 1)], opponent, false),
+                &conditional,
+                &registry,
+                PROJECTION,
             ),
-            &sibling,
-            &registry,
-            PROJECTION,
-        ),
-        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player: PlayerId::P1,
-            source_kind: CombatStatEffectSourceV1::Ability,
-            catalog_id: Some(963),
-            ..
-        })
-    ));
+            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                player: PlayerId::P1,
+                source_kind: CombatStatEffectSourceV1::Ability,
+                catalog_id: Some(actual),
+                ..
+            }) if actual == catalog_id
+        ));
+    }
 }
 
 #[test]
@@ -2841,10 +2908,10 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
         eligible,
         BTreeSet::from([
             830285, 869944, 874520, 875098, 875322, 877636, 877687, 877773, 877812, 877860, 877950,
-            878011, 878056, 924257, 925254, 925674, 925719, 925796, 943111, 946112, 947228, 949750,
-            970972, 1011712, 1024673, 1058366, 1059030, 1059454, 1060052, 1060199, 1061897,
-            1065812, 1069813, 1070207, 1072715, 1078906, 1079482, 1081463, 1089346, 1090607,
-            1091235, 1092909, 1130833,
+            878011, 878056, 924257, 924320, 925254, 925674, 925719, 925796, 943111, 946112, 947228,
+            949750, 970972, 1011712, 1024673, 1058366, 1059030, 1059454, 1060052, 1060199, 1061897,
+            1065812, 1069813, 1070207, 1072715, 1078906, 1079482, 1080877, 1081463, 1089346,
+            1090607, 1091235, 1092909, 1130833,
         ])
     );
 }

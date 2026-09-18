@@ -143,6 +143,20 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877773, 4),
     (877860, 4),
     (878056, 4),
+    // Revision 27 widens the latch to the plain `Heal N Max. M` grammar. 1080877 is the
+    // paying draw: Campbell's `Heal 1 Max. 15` latches in round 0 and pays one Life after
+    // each of rounds 1, 2 and 3 - beside Scott Ld's VOD in round 1 and in the round 2 where
+    // Spidee's Reprisal SOA stops Lobo's Reanimate but not the already-latched Heal.
+    // 1059895 does the same for `4625` after Campbell wins a 61-61 tie on level: round 1
+    // pays beside a VOD, round 2 beside Cleo's Defeat Life, round 3 after a loss (Lennard's
+    // Killshot stays visible-but-disabled there and did not trigger: 24 against 19). 924669/0
+    // is a latch round paying nothing (Pere Barali wins into Uuber's VOD reduction), and
+    // 875375/0 and 1025525/0 are losing Heals that never latch.
+    (1080877, 4),
+    (1059895, 4),
+    (924669, 1),
+    (875375, 1),
+    (1025525, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -399,8 +413,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_one_hundred_and_eighty_nine_unique_sequential_prefix_rounds()
-{
+fn fixed_server_backed_gate_is_exactly_two_hundred_unique_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -436,33 +449,34 @@ fn fixed_server_backed_gate_is_exactly_one_hundred_and_eighty_nine_unique_sequen
             }
         }
     }
-    assert_eq!(rounds, 189);
+    assert_eq!(rounds, 200);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
             6, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 225,
             257, 266, 274, 292, 310, 316, 333, 367, 368, 372, 377, 391, 401, 412, 417, 421, 461,
-            469, 478, 520, 532, 536, 569, 577, 578, 585, 587, 612, 680, 713, 717, 727, 739, 741,
-            759, 778, 801, 837, 844, 852, 862, 871, 883, 888, 916, 938, 959, 980, 1034, 1047, 1091,
-            1098, 1131, 1158, 1163, 1241, 1293, 1303, 1310, 1330, 1335, 1338, 1341, 1342, 1350,
-            1355, 1359, 1372, 1375, 1388, 1396, 1399, 1415, 1418, 1420, 1464, 1469, 1513, 1518,
-            1534, 1536, 1578, 1628, 1634, 1688, 1694, 1699, 1714, 1722, 1770, 1805, 1806, 1823,
-            1844, 1845, 1848, 1850, 2021, 2028, 2073, 2277, 2286, 2299, 2329, 2375, 2412, 2528,
-            2535, 2556, 2657, 2660, 2835, 2881, 2944, 2965, 2992, 3004, 3040, 3048, 3222, 3284,
-            3386, 3393, 3487, 3526, 3677, 3829, 3852, 3864, 3865, 3897, 4041, 4216, 4286, 4297,
-            4299, 4301, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464, 4571, 4708, 4711, 4718,
-            4722, 4757, 4908, 4954, 4966, 5025, 5026, 5085, 5169, 5237, 5273, 5332, 5333, 5366,
-            5404, 5415, 5462, 5498, 5520, 5525, 5531, 5549, 5763, 5841, 5849, 5852, 5859,
+            469, 478, 520, 532, 536, 569, 577, 578, 585, 587, 612, 649, 680, 713, 717, 727, 739,
+            741, 751, 759, 778, 801, 837, 844, 852, 862, 871, 883, 888, 916, 938, 959, 963, 980,
+            1020, 1034, 1047, 1091, 1098, 1131, 1158, 1163, 1241, 1293, 1303, 1310, 1330, 1335,
+            1338, 1341, 1342, 1350, 1355, 1359, 1372, 1375, 1388, 1396, 1399, 1415, 1418, 1420,
+            1464, 1469, 1501, 1513, 1518, 1534, 1536, 1578, 1628, 1634, 1688, 1694, 1699, 1714,
+            1722, 1770, 1805, 1806, 1823, 1844, 1845, 1848, 1850, 2021, 2028, 2073, 2277, 2286,
+            2299, 2329, 2375, 2412, 2528, 2535, 2556, 2657, 2660, 2835, 2881, 2944, 2965, 2992,
+            3004, 3040, 3048, 3118, 3222, 3284, 3386, 3393, 3487, 3526, 3677, 3829, 3852, 3864,
+            3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301, 4330, 4389, 4399, 4414, 4417,
+            4458, 4461, 4464, 4571, 4625, 4708, 4711, 4718, 4722, 4757, 4908, 4951, 4954, 4966,
+            5025, 5026, 5085, 5169, 5237, 5273, 5332, 5333, 5366, 5404, 5415, 5462, 5498, 5520,
+            5525, 5531, 5549, 5763, 5835, 5841, 5849, 5852, 5859,
         ])
     );
     assert_eq!(
         disabled_ids,
         BTreeSet::from([
-            206, 594, 682, 809, 854, 935, 1150, 1501, 1508, 1852, 2222, 2317, 4303, 4459, 4657,
+            206, 594, 682, 809, 854, 935, 1150, 1231, 1508, 1852, 2222, 2317, 4303, 4459, 4657,
             4695, 4747, 4937, 5283,
         ])
     );
-    assert_eq!(absent, 6);
+    assert_eq!(absent, 7);
 }
 
 #[test]
@@ -761,7 +775,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 26);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 27);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -817,7 +831,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        26
+        27
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2

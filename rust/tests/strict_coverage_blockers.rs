@@ -49,6 +49,10 @@ const FILLER: [CardKey; 8] = [
 /// its slice lands, which is the intended way to see that it is done.
 const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     (
+        "plain Heal N Max. M on the existing latch",
+        &[649, 751, 963, 1501, 3118, 4625, 5341],
+    ),
+    (
         "permanent Life (Poison/Heal/Toxin/Regen)",
         &[
             206, 325, 509, 566, 582, 649, 682, 751, 898, 963, 1197, 1266, 1282, 1345, 1385, 1458,
