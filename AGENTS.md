@@ -52,12 +52,13 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 ## Current priorities (Sept 2026)
 
 1. Capture many real PvP games and make the engine reproduce them (`tests/replay/`).
-   As of 2026-09-17: **359 battles captured, 352 replay-ready, 304 replay exactly** (life,
-   pillz, power, damage, attack, winner per round), **48 mismatch**, and 7 incomplete/Dojo
-   captures ignored. Four open cases have already been investigated (874590, 874712,
-   901004, 1093173); the other 44 are fresh regression targets from the expanded corpus and
+   As of 2026-09-17: **359 battles captured, 352 replay-ready, 310 replay exactly** (life,
+   pillz, power, damage, attack, winner per round), **42 mismatch**, and 7 incomplete/Dojo
+   captures ignored. Three open cases have already been investigated (874590, 874712,
+   1093173); the other 39 are fresh regression targets from the expanded corpus and
    remain untriaged. This is fresh ground truth rather than evidence that earlier working
-   replays regressed.
+   replays regressed. The triage table is the authority here - this line has gone stale
+   before, so re-run the suite rather than quoting it.
    The corpus grew by 31 on 2026-09-17 because commit `b7a56d1` had archived 29 battle
    captures without ever extracting them; `deno task extract` is byte-identical for every
    game already committed, so run it before trusting a count here.
