@@ -15,12 +15,13 @@ use crate::effect_registry::{
 };
 use crate::engine::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_combat_stat_effect, classify_defeat_life, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_opponent_life,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
-    has_defeat_life_shape, has_reanimate_life_shape, has_victory_life_shape,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_combat_stat_effect, classify_defeat_life, classify_defeat_opponent_life,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
+    classify_victory_opponent_life, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
+    has_reanimate_life_shape, has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -668,6 +669,22 @@ fn prepare_combat_stat_source(
                 source_id: source.id,
                 predicate,
                 effect: CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+            },
+        });
+    }
+    // Its losing-side sibling shares the channel and carries no condition of its own
+    // beyond the outcome the engine already resolves.
+    if let Some((life, minimum)) = classify_defeat_opponent_life(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
             },
         });
     }

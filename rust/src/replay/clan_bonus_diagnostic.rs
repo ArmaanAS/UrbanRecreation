@@ -646,7 +646,8 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<DiagnosticCombatEffectV1>
                 MagnitudeMultiplierV1::Support => DiagnosticMagnitudeV1::SourceBonusSupport,
                 MagnitudeMultiplierV1::Growth
                 | MagnitudeMultiplierV1::Degrowth
-                | MagnitudeMultiplierV1::OpponentStars => return None,
+                | MagnitudeMultiplierV1::OpponentStars
+                | MagnitudeMultiplierV1::OpponentDamage => return None,
             },
         }),
         SupportedEffectV1::StopOpponentAbility => None,

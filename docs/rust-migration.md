@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 24 for the current scope.
+Replay provenance records compiler/policy semantic revision 25 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 24.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 25.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -711,7 +711,7 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 24 records this semantic boundary together with the exact
+context. Compiler/policy revision 25 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
@@ -757,7 +757,7 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Conditional Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 24, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 25, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
@@ -768,22 +768,25 @@ Every one of the other 2,538 slots matches captured bonus presence and descripti
 On 2026-09-17, the deterministic strict-coverage regression scanned all 359 captured
 complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captured
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
-`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 32 capture ids
-are eligible: `830285`, `869944`, `875098`, `875322`, `877636`, `877687`, `877812`,
-`877950`, `878011`, `924257`, `925254`, `925674`, `925719`, `943111`, `946112`, `947228`,
-`970972`, `1011712`, `1024673`, `1059030`, `1059454`, `1060199`, `1061897`, `1065812`,
-`1069813`, `1070207`, `1078906`, `1081463`, `1089346`, `1090607`, `1091235`, and `1092909`.
+`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 39 capture ids
+are eligible: `830285`, `869944`, `874520`, `875098`, `875322`, `877636`, `877687`,
+`877812`, `877950`, `878011`, `924257`, `925254`, `925674`, `925719`, `925796`, `943111`,
+`946112`, `947228`, `949750`, `970972`, `1011712`, `1024673`, `1058366`, `1059030`,
+`1059454`, `1060052`, `1060199`, `1061897`, `1065812`, `1069813`, `1070207`, `1072715`,
+`1078906`, `1081463`, `1089346`, `1090607`, `1091235`, `1092909`, and `1130833`.
 Revision 21 added `878011`, `925254`, and `1078906` to revision 20's fourteen; revision 22
 then added `875098`, `875322`, `1011712`, `1059030`, `1059454`, and `1090607`; revision 23
 added `877687`, `924257`, `1070207` and `1091235`, the four the report had predicted for
 Protection; revision 24 added `943111`, `946112`, `947228`, `1065812` and `1092909`, the
-five predicted for the two Copy families together.
+five predicted for the two Copy families together; revision 25 added `874520`, `925796`,
+`949750`, `1058366`, `1060052`, `1072715` and `1130833`, the seven predicted for Attack per
+opposing Damage and Defeat opponent-Life.
 That is six for two families the report had predicted would unlock three each, because six
 draws were blocked by *both* families at once — which is exactly why reach and unlock are
 measured separately, and why the measurement has to be rerun rather than added up. Catalog
 eligibility is a strict whole-draw admission measurement, not proof of full engine or
 TypeScript solver parity;
-the 139-round immutable diagnostic gate supplies the separately checked sequential replay
+the 177-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
 
 Semantic revision 23 adds Protection, the projection's first defensive control channel.
@@ -866,6 +869,42 @@ and four respectively. The negative branch - matching hand slots adopt nothing -
 same structured `indexRequirement` the projection already reads for numeric Symmetry and
 Asymmetry effects, and `rust/tests/combat_stat_diagnostic_engine.rs` says so where it pins it.
 
+Semantic revision 25 takes the two families the reach table suggested and the measurement
+confirmed: `+N Attack Per Opp. Damage` unlocks 3 draws, `Defeat: -N Opp. Life, Min M` 4, and
+together 7 with no overlap.
+
+The Attack conversion is an ordinary own-Attack increase with a new magnitude. The registry
+keeps its link in `specialAction: convert_opp_dmg_to_atk` rather than in one of the
+`is*Linked` flags, so it needs its own compile arm, and the printed text names the link
+after the magnitude - `+2 Attack Per Opp. Damage` - which is checked whole rather than as a
+prefix. `+N Attack Per Opp. Power` is a different special action with no reviewed round and
+stays closed.
+
+What the magnitude reads is the point. The Attack phase sees the opposing Damage as it
+stands after every Power/Damage modifier and before Fury, which is exactly where TypeScript
+moved it on 2026-09-17. Battle 1130726 r3 is the round that separates the two readings:
+Goran's +2 is worth 4 against a Fury Uuber, not 8, for the 24 Attack the server reported
+against 28. That round is not strict-eligible, so the gate cannot carry it; the engine test
+does, beside a reduction case showing that an opposing Damage reduction *is* counted because
+it resolves before this phase. Eleven gate rounds pin the magnitude itself, including
+1066077/1, where Spidee's Reprisal Stop Opp. Ability leaves Adytia Ld at a plain 8 x 4.
+
+Whether the multiplier is the opponent's printed Damage or its resolved Damage minus Fury
+remains formally open: no captured round both modifies the opposing Damage and converts it.
+This implements the resolved reading, which is what the TypeScript reference does, and
+`docs/replay-triage.md` records the same limit from the other side.
+
+`Defeat: -N Opp. Life, Min M` is the losing-side sibling of the Victory reduction and shares
+its post-round channel, so it needed admission rather than machinery. It is admitted by
+exact printed text and a neutral structured shape - the registry carries six structurally
+identical records across four Min values - and the printed numbers are authority: a record
+whose text disagrees with its own magnitude or bound is refused rather than trusted either
+way. The owner having lost is the whole trigger, so an owner taken to zero still pays it
+out, as the reviewed Victory Or Defeat reduction does, while a target already at or below
+Min is left untouched rather than pulled up to it. 925796/0, 925999/0 and 945989/1 are three
+independent losses that each pay 2; 874520/0 is the same card winning instead, which pins
+the trigger rather than the magnitude.
+
 ### Choosing the next slice
 
 Reach and unlock rank differently, and only unlock is worth acting on. Strict construction
@@ -883,33 +922,32 @@ An id named in a candidate family must be a real registry definition, or the fam
 under-reports: an id no definition owns can never appear as a blocker. The list carried
 `990` for conditional Copy until 2026-09-17, so that family was only ever scored by `958`.
 
-On 2026-09-18 at revision 24 it scanned 359 complete draws: 32 eligible and 10 refused
-structurally, by a Leader or a duplicate character rather than by a missing effect. That
-measurement also settled how to split the previous slice: unconditional stat Copy unlocked
-3 draws on its own, Asymmetry source Copy 2, and the two together 5 rather than the 5 a
-naive sum would predict only by coincidence - they share no draws, which is worth checking
-rather than assuming. Unison Copy, conditional stat Copy and Exchange each unlocked 0.
+On 2026-09-18 at revision 25 it scanned 359 complete draws: 39 eligible and 10 refused
+structurally, by a Leader or a duplicate character rather than by a missing effect. The
+report now also prints the blocker sets themselves, smallest first, which is what a family
+proposal should be built from: a group is worth proposing only when it covers one of those
+sets whole, and anything else merely co-occurs with a blocker that is still there.
 
-The named candidates are now nearly exhausted. What is left of them unlocks: conditional
-Victory opponent-Life 1, and Unison Copy, conditional stat Copy and Exchange 0 each. `4533`
-still has no selected observation in the corpus at all, and `1730` still needs round-scaled
-magnitude on a post-round plan.
+The measurements that chose the last two slices are worth keeping as a record of how the
+counts behave. Revision 24's two Copy families unlocked 3 and 2 and together 5; revision
+25's two unlocked 3 and 4 and together 7. Neither pair shared a draw, unlike the revision-22
+pair that shared six - so neither additivity nor overlap can be assumed, and the split has
+to be measured each time.
 
-The next slice therefore has to be chosen from reach rather than from the candidate list,
-and reach is not value: a source that no draw depends on *alone* unlocks nothing by itself,
-so the honest next step is to pick a plausible group from the head of the reach table and
-measure it as a family before writing any code. The head is `1852` `Symmetry: +1 Pillz Per
-Damage` in 25 draws, `455` `+2 Pillz` and `2284` `+2 Attack Per Opp. Damage` in 20 each,
-`1592` `Power Exchange` in 17, `1197` `Toxin 1, Min 0` in 14 and `923` `+1 Attack Per Life
-Left` in 13. Two natural groupings suggest themselves: the fixed own-Pillz gains
-(`455`/`337`) with the Pillz-per-Damage conversions, and the per-opponent-stat Attack
-conversions (`2284`/`1732`/`923`).
+What is left ranks clearly, and for the first time the largest remaining family is also the
+one with a genuinely new mechanism behind it. Permanent Life - Poison, Heal, Toxin and Regen
+- unlocks 12 draws on its own and 16 together with the Life-per-Damage conversions, which is
+more than everything else combined. It is also the projection's first *repeating* effect: it
+latches in the round its card is played and then applies at the end of every later round,
+which the TypeScript engine models with `Ability.latches()` and a per-round repeat bucket
+this projection has no equivalent of. The three Pillz families together unlock 4, opposing
+Pillz reduction 2, and everything else 1 or 0.
 
-`2284`/`1732` `+N Attack Per Opp. Damage` carries a prerequisite. The TypeScript engine's
-handling of it changed on 2026-09-17: the multiplier reads the opponent's Damage before
-Fury, not after. Any Rust slice admitting that shape has to match, and
-`docs/replay-triage.md` records which of the two readings the evidence pins and which it
-does not.
+So the next slice is a choice between reach and mechanism cost: permanent Life is where the
+draws are, and it needs a latch model rather than another admission. Nothing smaller comes
+close, so the honest sequencing is to design the latch first and admit the narrowest
+permanent family that exercises it - `3526` `Heal 1 Max. 20` blocks four draws entirely on
+its own and has captured rounds behind it.
 
 The two families revision 22 took were cheaper than this section predicted. It claimed a
 post-round plan carries no predicate and that adding one was the shared change both needed;

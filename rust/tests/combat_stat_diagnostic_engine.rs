@@ -2991,3 +2991,99 @@ fn an_asymmetry_copy_adopts_only_on_differing_hand_slots() {
         );
     }
 }
+
+/// `+N Attack Per Opp. Damage` scales by the opposing card's Damage as the Attack phase
+/// sees it: resolved, but before Fury. Battle 1130726 r3 is the one that separates the
+/// two - Goran's +2 is worth 4 against a Fury Uuber, not 8.
+#[test]
+fn attack_per_opponent_damage_reads_the_damage_before_fury() {
+    let base = base_spec(8, 2);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        4806,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Attack,
+            CombatStatOperationV1::Increase,
+            2,
+            None,
+            None,
+            CombatStatMagnitudeV1::OpponentDamage,
+        ),
+    );
+    let mut plain = game(base.clone(), cards.clone());
+    let (report, _) = plain
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 36); // 8 x 4 + 2 x 2
+
+    let mut furious = game(base.clone(), cards.clone());
+    let (report, _) = furious
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, true)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].damage, 4); // 2 printed + 2 Fury
+    assert_eq!(report.cards[PlayerId::P1].attack, 36); // still 2 x 2, not 2 x 4
+
+    // A reduction of the opposing Damage does count: it is resolved before this phase.
+    let mut reduced = cards;
+    reduced[PlayerId::P1][0].bonus = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Damage, 1, 0),
+    );
+    reduced[PlayerId::P1][0].source_bonus_support_count = 1;
+    let mut game = game(base, reduced);
+    let (report, _) = game
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].damage, 1);
+    assert_eq!(report.cards[PlayerId::P1].attack, 34); // 32 + 2 x 1
+}
+
+/// `Defeat: -N Opp. Life, Min M` pays out when its owner loses the round, leaves a target
+/// already at or below the Min alone, and still pays after its owner is taken to zero.
+#[test]
+fn defeat_opponent_life_triggers_on_a_loss_and_respects_its_minimum() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        959,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnDefeat {
+            life: 2,
+            minimum: 1,
+        },
+    );
+    // Losing pays.
+    let mut losing = game(base.clone(), cards.clone());
+    let (report, _) = losing
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].won, false);
+    assert_eq!(report.players[PlayerId::P2].life, 18);
+
+    // Winning does not.
+    let mut winning = game(base.clone(), cards.clone());
+    let (report, _) = winning
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].won, true);
+    assert_eq!(report.players[PlayerId::P1].life, 20);
+    // Only the 3 combat damage it just dealt, with nothing added by the ability.
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+
+    // A target at the Min keeps its life, and a KO'd owner still pays out.
+    let mut spec = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    };
+    spec.base_rules.players[PlayerId::P1].initial_life = 3;
+    spec.base_rules.players[PlayerId::P2].initial_life = 1;
+    let mut clamped = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = clamped
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 0);
+    assert_eq!(report.players[PlayerId::P2].life, 1);
+}

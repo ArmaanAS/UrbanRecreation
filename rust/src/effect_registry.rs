@@ -232,6 +232,9 @@ pub enum MagnitudeMultiplierV1 {
     Growth,
     Degrowth,
     OpponentStars,
+    /// Scaled by the opposing selected card's Damage as resolved for that round, before
+    /// Fury is added to it.
+    OpponentDamage,
 }
 
 /// Compact, string-free building blocks safe to copy into later round plans.
@@ -1012,6 +1015,38 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
                 })
             }
         }
+        // `+N Attack Per Opp. Damage` is an ordinary own-Attack increase whose magnitude
+        // is linked to the opposing card rather than to a count of the owner's own hand.
+        // The registry keeps that link in `specialAction`, not in one of the `is*Linked`
+        // flags, so it needs an arm of its own rather than a flag on the arm above.
+        (
+            AttributeActionV1::Increase,
+            SpecialActionV1::ConvertOpponentDamageToAttack,
+            Some(CombatStatV1::Attack),
+        ) => {
+            if input.side_affected != AffectedSideV1::Player {
+                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
+                    side: input.side_affected,
+                });
+                None
+            } else if input.value == 0 {
+                reasons.insert(UnsupportedReasonV1::ZeroMagnitude);
+                None
+            } else if input.value_min != 0 || input.value_max != 0 {
+                reasons.insert(UnsupportedReasonV1::IncompatibleBounds);
+                None
+            } else {
+                Some(SupportedEffectV1::ModifyCombatStat {
+                    side: AffectedSideV1::Player,
+                    stat: CombatStatV1::Attack,
+                    operation: StatOperationV1::Increase,
+                    value: input.value,
+                    minimum: None,
+                    maximum: None,
+                    multiplier: MagnitudeMultiplierV1::OpponentDamage,
+                })
+            }
+        }
         (AttributeActionV1::None, SpecialActionV1::StopAbility, _)
             if input.attribute_affected == AttributeAffectedV1::None =>
         {
@@ -1249,12 +1284,22 @@ fn reviewed_stat_description(
         CombatStatV1::Power => "Power",
         CombatStatV1::PowerAndDamage => "Power And Damage",
     };
+    // This one names its link after the magnitude instead of before it, so it is checked
+    // whole rather than as a prefix on the shared shape below.
+    if multiplier == MagnitudeMultiplierV1::OpponentDamage {
+        return side == AffectedSideV1::Player
+            && operation == StatOperationV1::Increase
+            && minimum.is_none()
+            && maximum.is_none()
+            && description == format!("+{value} Attack Per Opp. Damage");
+    }
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Fixed => "",
         MagnitudeMultiplierV1::Support => "Support: ",
         MagnitudeMultiplierV1::Growth => "Growth: ",
         MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
         MagnitudeMultiplierV1::OpponentStars => "Equalizer: ",
+        MagnitudeMultiplierV1::OpponentDamage => return false,
     };
     let expected = match (side, operation) {
         (AffectedSideV1::Player, StatOperationV1::Increase) => {
@@ -1717,6 +1762,37 @@ mod tests {
                 registry.get(id).unwrap().compiled().supported(),
                 None,
                 "effect {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn attack_per_opponent_damage_compiles_with_its_own_magnitude() {
+        let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
+
+        for (id, value) in [(2284, 2), (4806, 2), (1732, 3), (5025, 3), (3866, 4)] {
+            assert_eq!(
+                registry.get(id).unwrap().compiled().supported(),
+                Some(SupportedEffectV1::ModifyCombatStat {
+                    side: AffectedSideV1::Player,
+                    stat: CombatStatV1::Attack,
+                    operation: StatOperationV1::Increase,
+                    value,
+                    minimum: None,
+                    maximum: None,
+                    multiplier: MagnitudeMultiplierV1::OpponentDamage,
+                }),
+                "effect {id}",
+            );
+        }
+
+        // The Power conversion is a different special action with no reviewed round, and
+        // the Revenge-prefixed one is conditional on top of that.
+        for id in [1785, 4661, 1719] {
+            assert_eq!(
+                registry.get(id).unwrap().compiled().supported(),
+                None,
+                "effect {id}",
             );
         }
     }

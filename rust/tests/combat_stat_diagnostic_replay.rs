@@ -112,6 +112,29 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // eligibility without moving any replayed round.
     (946112, 2),
     (947228, 3),
+    // Revision 25 Attack per opposing Damage. Kalija's +2 is worth 6 against a 3-Damage
+    // card in 1090691/0 and 12 against a 6-Damage one in 1092066/2; Taka's +3 reaches 23
+    // from 14 in 1090418/1, Sunscale's 16 from 7 in 1079482/1, and HU0-M31's 58 from 49 in
+    // 1130833/2. 1066077/1 is the negative case: Spidee's Reprisal Stop Opp. Ability
+    // leaves Adytia Ld at a plain 8 x 4. 925899/0 has the conversion and an opposing
+    // Equalizer in the same round, 40 + 4 - 12 = 32.
+    (925899, 2),
+    (1066077, 2),
+    (1079482, 3),
+    (1090418, 2),
+    (1090691, 2),
+    (1092066, 3),
+    (1130833, 4),
+    (949750, 4),
+    // Revision 25 Defeat opponent-Life. Waller pays 2 after losing in 925796/0, D. Carver
+    // in 925999/0 and C Wing in 945989/1; 874520/0 is the same card winning instead, which
+    // pins the trigger rather than the magnitude.
+    (874520, 4),
+    (925796, 2),
+    (925999, 1),
+    (945989, 2),
+    (1060052, 4),
+    (1072715, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -368,8 +391,8 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_one_hundred_and_thirty_nine_unique_sequential_prefix_rounds()
-{
+fn fixed_server_backed_gate_is_exactly_one_hundred_and_seventy_seven_unique_sequential_prefix_rounds(
+) {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -405,28 +428,30 @@ fn fixed_server_backed_gate_is_exactly_one_hundred_and_thirty_nine_unique_sequen
             }
         }
     }
-    assert_eq!(rounds, 139);
+    assert_eq!(rounds, 177);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 36, 37, 38, 39, 40, 42, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 225, 257, 266,
-            274, 292, 310, 316, 333, 367, 368, 377, 391, 401, 412, 421, 461, 469, 478, 520, 536,
-            569, 577, 578, 585, 612, 680, 713, 717, 727, 741, 759, 801, 844, 852, 862, 871, 883,
-            888, 916, 938, 980, 1034, 1047, 1131, 1158, 1163, 1241, 1293, 1303, 1310, 1330, 1335,
-            1338, 1341, 1342, 1355, 1359, 1372, 1375, 1388, 1396, 1399, 1415, 1418, 1420, 1464,
-            1469, 1513, 1518, 1534, 1536, 1578, 1628, 1634, 1688, 1694, 1699, 1714, 1722, 1770,
-            1805, 1806, 1844, 1845, 1848, 1850, 2028, 2073, 2299, 2329, 2375, 2412, 2535, 2556,
-            2657, 2881, 2944, 2965, 2992, 3040, 3284, 3487, 3677, 3864, 3865, 3897, 4041, 4216,
-            4297, 4299, 4389, 4399, 4417, 4458, 4461, 4464, 4571, 4708, 4711, 4718, 4722, 4757,
-            4966, 5026, 5085, 5169, 5237, 5273, 5404, 5462, 5498, 5520, 5525, 5531, 5549, 5763,
-            5849, 5852, 5859,
+            6, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 225,
+            257, 266, 274, 292, 310, 316, 333, 367, 368, 372, 377, 391, 401, 412, 421, 461, 469,
+            478, 520, 536, 569, 577, 578, 585, 587, 612, 680, 713, 717, 727, 741, 759, 778, 801,
+            837, 844, 852, 862, 871, 883, 888, 916, 938, 959, 980, 1034, 1047, 1091, 1131, 1158,
+            1163, 1241, 1293, 1303, 1310, 1330, 1335, 1338, 1341, 1342, 1355, 1359, 1372, 1375,
+            1388, 1396, 1399, 1415, 1418, 1420, 1464, 1469, 1513, 1518, 1534, 1536, 1578, 1628,
+            1634, 1688, 1694, 1699, 1714, 1722, 1770, 1805, 1806, 1823, 1844, 1845, 1848, 1850,
+            2021, 2028, 2073, 2286, 2299, 2329, 2375, 2412, 2535, 2556, 2657, 2660, 2835, 2881,
+            2944, 2965, 2992, 3004, 3040, 3222, 3284, 3386, 3393, 3487, 3677, 3829, 3852, 3864,
+            3865, 3897, 4041, 4216, 4297, 4299, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464,
+            4571, 4708, 4711, 4718, 4722, 4757, 4908, 4966, 5025, 5026, 5085, 5169, 5237, 5273,
+            5332, 5333, 5366, 5404, 5415, 5462, 5498, 5520, 5525, 5531, 5549, 5763, 5841, 5849,
+            5852, 5859,
         ])
     );
     assert_eq!(
         disabled_ids,
         BTreeSet::from([
-            206, 594, 682, 809, 854, 935, 1501, 1508, 1852, 2222, 2317, 4303, 4459, 4657, 4695,
-            4747, 4937, 5283,
+            206, 594, 682, 809, 854, 935, 1150, 1501, 1508, 1852, 2222, 2317, 3526, 4303, 4459,
+            4657, 4695, 4747, 4937, 5283,
         ])
     );
     assert_eq!(absent, 6);
@@ -624,7 +649,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 24);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 25);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -680,7 +705,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        24
+        25
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2

@@ -429,6 +429,12 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         )?;
     }
 
+    // The Attack phase reads the opposing Damage as it stands here: every Power/Damage
+    // modifier has run, and Fury has not. Battle 1130726 r3 is what fixes that order -
+    // Goran's "+2 Attack Per Opp. Damage" is worth +4 against a Fury Uuber, whose printed
+    // 2 Damage becomes 4 only where the damage is dealt.
+    let pre_fury_damage = damage;
+
     // Fury is added after Power/Damage modifiers.
     for player in PlayerId::ALL {
         if validated[player].selection.fury {
@@ -464,6 +470,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
+                pre_fury_damage[origin.other()],
                 &mut attack,
             )?;
         }
@@ -477,6 +484,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
+                pre_fury_damage[origin.other()],
                 &mut attack,
             )?;
         }
@@ -500,6 +508,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
             protections[origin.other()],
             rounds_played,
             opponent_stars[origin],
+            pre_fury_damage[origin.other()],
             &mut attack,
         )?;
     }
@@ -683,6 +692,7 @@ fn apply_ordered_attack_reductions(
     target_protection: StatMask,
     rounds_played: u8,
     opponent_stars: u16,
+    opponent_damage: u16,
     attack: &mut ByPlayer<u32>,
 ) -> Result<(), CombatResolutionError> {
     let bonus_min = attack_reduction_min(bonus.effect);
@@ -697,6 +707,7 @@ fn apply_ordered_attack_reductions(
             target_protection,
             rounds_played,
             opponent_stars,
+            opponent_damage,
             attack,
         )?;
         apply_attack_effect(
@@ -708,6 +719,7 @@ fn apply_ordered_attack_reductions(
             target_protection,
             rounds_played,
             opponent_stars,
+            opponent_damage,
             attack,
         )
     } else {
@@ -720,6 +732,7 @@ fn apply_ordered_attack_reductions(
             target_protection,
             rounds_played,
             opponent_stars,
+            opponent_damage,
             attack,
         )?;
         apply_attack_effect(
@@ -731,6 +744,7 @@ fn apply_ordered_attack_reductions(
             target_protection,
             rounds_played,
             opponent_stars,
+            opponent_damage,
             attack,
         )
     }
@@ -818,6 +832,7 @@ fn apply_power_damage_effect(
         source.support_count,
         rounds_played,
         opponent_stars,
+        0,
     )?;
     let protected = |stat| {
         expected_side == DiagnosticAffectedSideV1::Opponent && target_protection.contains(stat)
@@ -864,6 +879,7 @@ fn apply_attack_effect(
     target_protection: StatMask,
     rounds_played: u8,
     opponent_stars: u16,
+    opponent_damage: u16,
     attack: &mut ByPlayer<u32>,
 ) -> Result<(), CombatResolutionError> {
     let Some(DiagnosticCombatEffectV1::ModifyCombatStat {
@@ -898,6 +914,7 @@ fn apply_attack_effect(
         source.support_count,
         rounds_played,
         opponent_stars,
+        opponent_damage,
     )?;
     attack[target] = apply_u32_modifier(
         origin,
@@ -917,6 +934,9 @@ fn effect_amount(
     support_count: u16,
     rounds_played: u8,
     opponent_stars: u16,
+    // The opposing card's Damage as the Attack phase sees it: resolved, but before Fury.
+    // Zero on the Power/Damage path, which never applies an Attack effect.
+    opponent_damage: u16,
 ) -> Result<u32, CombatResolutionError> {
     let multiplier = match multiplier {
         DiagnosticMagnitudeV1::Fixed => 1,
@@ -929,6 +949,7 @@ fn effect_amount(
             },
         )?),
         DiagnosticMagnitudeV1::OpponentStars => u32::from(opponent_stars),
+        DiagnosticMagnitudeV1::OpponentDamage => u32::from(opponent_damage),
     };
     u32::from(value)
         .checked_mul(multiplier)

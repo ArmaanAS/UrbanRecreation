@@ -54,6 +54,8 @@ pub enum DiagnosticMagnitudeV1 {
     Growth,
     Degrowth,
     OpponentStars,
+    /// Scaled by the opposing selected card's resolved Damage, before Fury.
+    OpponentDamage,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.

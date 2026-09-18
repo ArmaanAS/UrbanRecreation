@@ -48,10 +48,49 @@ const FILLER: [CardKey; 8] = [
 /// an id that no definition owns can never appear as a blocker. A family drops to zero once
 /// its slice lands, which is the intended way to see that it is done.
 const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
-    ("conditional Copy: Unison", &[3994, 4141, 4767, 5108, 5073]),
+    (
+        "permanent Life (Poison/Heal/Toxin/Regen)",
+        &[
+            206, 325, 509, 566, 582, 649, 682, 751, 898, 963, 1197, 1266, 1282, 1345, 1385, 1458,
+            1501, 1508, 1625, 1790, 1840, 2497, 3088, 3118, 3301, 3433, 3526, 3603, 4033, 4124,
+            4210, 4561, 4625, 4730, 5037, 5092, 5098, 5316, 5341, 5578, 5594, 5613, 5638, 5639,
+            5640, 5692, 5693, 5901,
+        ],
+    ),
+    (
+        "Life per Damage",
+        &[141, 189, 226, 492, 1125, 1146, 1161, 1224, 4500],
+    ),
+    (
+        "permanent Life + Life per Damage",
+        &[
+            141, 189, 206, 226, 325, 492, 509, 566, 582, 649, 682, 751, 898, 963, 1125, 1146, 1161,
+            1197, 1224, 1266, 1282, 1345, 1385, 1458, 1501, 1508, 1625, 1790, 1840, 2497, 3088,
+            3118, 3301, 3433, 3526, 3603, 4033, 4124, 4210, 4500, 4561, 4625, 4730, 5037, 5092,
+            5098, 5316, 5341, 5578, 5594, 5613, 5638, 5639, 5640, 5692, 5693, 5901,
+        ],
+    ),
+    (
+        "own fixed Pillz",
+        &[337, 455, 503, 1054, 1150, 1229, 2262, 2525, 4855, 5258],
+    ),
+    (
+        "opposing Pillz reduction",
+        &[334, 339, 343, 360, 570, 854, 3541, 5532, 5682],
+    ),
+    ("Pillz per Damage", &[809, 1051, 1090, 1852]),
+    (
+        "the three Pillz families together",
+        &[
+            334, 337, 339, 343, 360, 455, 503, 570, 809, 854, 1051, 1054, 1090, 1150, 1229, 1852,
+            2262, 2525, 3541, 4855, 5258, 5532, 5682,
+        ],
+    ),
+    ("Attack per opposing Power", &[1719, 1785, 4661]),
+    ("conditional Copy: Unison", &[3994, 4141, 4767, 5073, 5108]),
     ("conditional stat Copy", &[1409, 4126, 4956]),
     ("Power/Damage Exchange", &[1588, 1592]),
-    ("conditional Victory opponent-Life", &[4533, 1730]),
+    ("conditional Victory opponent-Life", &[1730, 4533]),
 ];
 
 fn root_path(path: &str) -> PathBuf {
@@ -210,6 +249,38 @@ fn report_strict_coverage_blockers() {
     for (id, (description, ids)) in ranked.iter().take(15) {
         println!("{:4}  {id:5}  {description}", ids.len());
     }
+    // What the cheapest remaining draws actually need. A family is worth proposing
+    // only when it covers one of these sets whole; anything else merely co-occurs.
+    {
+        let mut by_set: BTreeMap<Vec<u32>, Vec<u64>> = BTreeMap::new();
+        for (capture, blockers) in &per_capture {
+            by_set
+                .entry(blockers.iter().copied().collect())
+                .or_default()
+                .push(*capture);
+        }
+        let mut sets: Vec<_> = by_set.iter().collect();
+        sets.sort_by_key(|(ids, captures)| (ids.len(), std::cmp::Reverse(captures.len())));
+        println!("\n-- blocker sets, smallest first --");
+        for (ids, captures) in sets.iter().take(12) {
+            let described: Vec<String> = ids
+                .iter()
+                .map(|id| {
+                    format!(
+                        "{id} {}",
+                        reach.get(id).map(|(d, _)| d.as_str()).unwrap_or("?")
+                    )
+                })
+                .collect();
+            println!(
+                "  {} draw(s) need [{}]  e.g. {:?}",
+                captures.len(),
+                described.join(" | "),
+                &captures[..captures.len().min(3)]
+            );
+        }
+    }
+
     println!("\n-- unlock: draws whose every remaining blocker is in the family --");
     for (name, ids) in CANDIDATE_FAMILIES {
         let unlocked = per_capture

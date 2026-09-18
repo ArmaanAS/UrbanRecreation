@@ -61,6 +61,8 @@ pub enum CombatStatMagnitudeV1 {
     Growth,
     Degrowth,
     OpponentStars,
+    /// Scaled by the opposing selected card's resolved Damage, before Fury.
+    OpponentDamage,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -107,6 +109,12 @@ pub enum CombatStatPostRoundEffectV1 {
     },
     /// The two reviewed unconditional Victory opponent-Life reductions.
     ReduceOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// The losing-side sibling: the owner lost the round, so the opposing player's Life is
+    /// reduced, bounded below by `minimum`.
+    ReduceOpponentLifeOnDefeat {
         life: u16,
         minimum: u16,
     },
@@ -192,6 +200,12 @@ pub enum CombatStatEffectV1 {
     /// Unconditional Victory-only opponent-Life reduction with a fixed magnitude and
     /// lower bound, admitted solely for the two reviewed identities.
     ReduceOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// Defeat-only opponent-Life reduction: the owner having lost is the trigger, and a
+    /// target already at or below `minimum` is left alone.
+    ReduceOpponentLifeOnDefeat {
         life: u16,
         minimum: u16,
     },
@@ -1671,6 +1685,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 CombatStatMagnitudeV1::Growth => DiagnosticMagnitudeV1::Growth,
                 CombatStatMagnitudeV1::Degrowth => DiagnosticMagnitudeV1::Degrowth,
                 CombatStatMagnitudeV1::OpponentStars => DiagnosticMagnitudeV1::OpponentStars,
+                CombatStatMagnitudeV1::OpponentDamage => DiagnosticMagnitudeV1::OpponentDamage,
             },
         },
         CombatStatEffectV1::StopOpponentAbility => DiagnosticCombatEffectV1::StopOpponentAbility,
@@ -1718,7 +1733,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReanimateLife { .. }
         | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
-        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. } => return None,
+        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+        | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. } => return None,
     })
 }
 
@@ -1761,6 +1777,11 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum } => {
             Some(PostRoundSourceEffect::Fixed(
                 PostRoundEffect::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
+            ))
+        }
+        CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::ReduceOpponentLifeOnDefeat { life, minimum },
             ))
         }
         CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star, minimum } => {

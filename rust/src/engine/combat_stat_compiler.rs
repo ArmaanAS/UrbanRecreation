@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 24;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 25;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -625,6 +625,57 @@ fn victory_opponent_life_shape_matches(
 /// Recognize the two reviewed Equalizer opponent-Life effects.  This is a Victory-only
 /// post-round reduction whose magnitude is bound from the revealed opposing card's stars
 /// after source liveness is known, rather than a normal combat-stat modifier.
+/// `Defeat: -N Opp. Life, Min M` is the losing-side sibling of the Victory reduction and
+/// shares its execution channel. Like generic Victory Life it is admitted by exact printed
+/// text and a neutral structured shape rather than by an id list: the registry carries six
+/// structurally identical records across four Min values, and the printed text has to agree
+/// with both numbers before either is used.
+pub(crate) fn classify_defeat_opponent_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (life, minimum) = (input.value, input.value_min);
+    (life > 0
+        && definition.description() == format!("Defeat: -{life} Opp. Life, Min {minimum}")
+        && defeat_opponent_life_shape_matches(input))
+    .then_some((life, minimum))
+}
+
+fn defeat_opponent_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Lose
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Opponent
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Decrease
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
 pub(crate) fn classify_equalizer_opponent_life_on_victory(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -680,6 +731,10 @@ pub(crate) fn classify_combat_stat_effect(
     // Unconditional Victory opponent-Life is post-round resource work with its own
     // execution channel; generic numeric admission must never reinterpret it.
     if classify_victory_opponent_life(definition, source_kind).is_some() {
+        return None;
+    }
+    // The losing-side opponent-Life reduction has the same post-round execution channel.
+    if classify_defeat_opponent_life(definition, source_kind).is_some() {
         return None;
     }
     // Recovery has its own post-round execution channel. Keep it out of this combat-stat
@@ -1387,7 +1442,8 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
         MagnitudeMultiplierV1::Fixed
         | MagnitudeMultiplierV1::Support
-        | MagnitudeMultiplierV1::OpponentStars => return false,
+        | MagnitudeMultiplierV1::OpponentStars
+        | MagnitudeMultiplierV1::OpponentDamage => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -1496,6 +1552,7 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 MagnitudeMultiplierV1::Growth => CombatStatMagnitudeV1::Growth,
                 MagnitudeMultiplierV1::Degrowth => CombatStatMagnitudeV1::Degrowth,
                 MagnitudeMultiplierV1::OpponentStars => CombatStatMagnitudeV1::OpponentStars,
+                MagnitudeMultiplierV1::OpponentDamage => CombatStatMagnitudeV1::OpponentDamage,
             },
         }),
         SupportedEffectV1::StopOpponentAbility => Some(CombatStatEffectV1::StopOpponentAbility),
@@ -1585,6 +1642,65 @@ mod tests {
                     CombatStatEffectSourceV1::Ability,
                 ),
                 "mutated field {field}",
+            );
+        }
+    }
+
+    #[test]
+    fn defeat_opponent_life_is_admitted_by_grammar_and_stays_ability_only() {
+        let registry = registry();
+
+        for (id, description, minimum) in [
+            (1165, "Defeat: -2 Opp. Life, Min 0", 0),
+            (959, "Defeat: -2 Opp. Life, Min 1", 1),
+            (5434, "Defeat: -2 Opp. Life, Min 1", 1),
+            (587, "Defeat: -2 Opp. Life, Min 2", 2),
+            (5332, "Defeat: -2 Opp. Life, Min 3", 3),
+            (5333, "Defeat: -2 Opp. Life, Min 3", 3),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_defeat_opponent_life(definition, CombatStatEffectSourceV1::Ability),
+                Some((2, minimum)),
+                "definition {id}",
+            );
+            // No clan bonus prints this text, so a bonus claiming it is not the same source.
+            assert_eq!(
+                classify_defeat_opponent_life(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} as a bonus",
+            );
+            // It is post-round work, never a combat-stat modifier.
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id} as a combat stat",
+            );
+        }
+
+        // The printed numbers are authority: a record whose text disagrees with its own
+        // structured magnitude or bound is refused rather than trusted either way.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(3)),
+            ("valueMin", serde_json::json!(2)),
+            ("currentRoundRequirement", serde_json::json!("win")),
+        ] {
+            let mut malformed = source.clone();
+            malformed["959"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_defeat_opponent_life(
+                    malformed
+                        .lookup_capture(959, "Defeat: -2 Opp. Life, Min 1")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "malformed {field}",
             );
         }
     }

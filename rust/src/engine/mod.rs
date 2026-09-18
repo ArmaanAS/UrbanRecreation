@@ -379,6 +379,10 @@ pub(super) enum PostRoundEffect {
         life: u16,
         minimum: u16,
     },
+    ReduceOpponentLifeOnDefeat {
+        life: u16,
+        minimum: u16,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -595,6 +599,20 @@ impl BaseRulesGame {
                             .max(minimum);
                     }
                     PostRoundEffect::ReduceOpponentLifeOnVictory { .. } => {}
+                    // The losing-side reduction mirrors it: the owner having lost is the
+                    // trigger, so an owner taken to zero still pays it out, exactly as the
+                    // reviewed Victory Or Defeat reduction does, and a target already at or
+                    // below Min is left untouched rather than pulled up to it.
+                    PostRoundEffect::ReduceOpponentLifeOnDefeat { life, minimum }
+                        if owner != winner && position.players[owner.other()].life > minimum =>
+                    {
+                        let target = owner.other();
+                        position.players[target].life = position.players[target]
+                            .life
+                            .saturating_sub(life)
+                            .max(minimum);
+                    }
+                    PostRoundEffect::ReduceOpponentLifeOnDefeat { .. } => {}
                     // Ordinary Defeat Life is post-damage work for a loss that did not KO
                     // its owner. It deliberately cannot turn a terminal zero back into a
                     // live position.
