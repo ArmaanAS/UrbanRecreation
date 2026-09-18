@@ -13,8 +13,8 @@ use super::combat_stat_compiler::{
     classify_reanimate_life, classify_regen_life_on_victory,
     classify_toxin_opponent_life_on_victory, classify_victory_life, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, classify_victory_pillz, compact_effect,
-    is_copy_opponent_source_description, VictoryOrDefeatLifeEffectV1,
+    classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
+    compact_effect, is_copy_opponent_source_description, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::CopiedSourceKindV1;
@@ -1383,6 +1383,33 @@ fn prepare_catalog_source(
                 definition.id(),
             );
         }
+        // So does the Pillz-per-Damage conversion, whose predicate the printed prefix names.
+        if classify_victory_pillz_per_damage(definition, source_kind).is_some() {
+            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
+                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description: description.to_owned(),
+                    registry_definition_id: definition.id(),
+                    registry_reasons: definition
+                        .compiled()
+                        .unsupported_reasons()
+                        .to_vec()
+                        .into_boxed_slice(),
+                });
+            }
+            return prepare_victory_pillz_per_damage_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
         // Ordinary Defeat Life is generic within its reviewed grammar, but the catalog
         // source must be a real structural alias of the selected registry definition.
         // A same-text row with another numeric identity cannot borrow execution authority.
@@ -1860,6 +1887,72 @@ fn prepare_victory_opponent_pillz_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+        },
+    })
+}
+
+fn prepare_victory_pillz_per_damage_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    let Some(predicate) = classify_victory_pillz_per_damage(definition, source_kind) else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::GainPillzEqualToFinalDamageOnVictory,
+            predicate,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate,
+            effect: CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory,
         },
     })
 }

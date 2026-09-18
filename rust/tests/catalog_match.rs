@@ -3076,12 +3076,100 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
         BTreeSet::from([
             830285, 869944, 874520, 875098, 875155, 875322, 877636, 877687, 877773, 877812, 877860,
             877950, 878011, 878056, 924257, 924320, 924413, 925254, 925674, 925719, 925796, 943111,
-            946112, 947228, 949750, 956608, 970972, 1011712, 1024673, 1058366, 1059030, 1059454,
-            1060052, 1060199, 1061897, 1065812, 1069813, 1070207, 1072715, 1078906, 1079482,
-            1080877, 1081463, 1089346, 1090607, 1091235, 1091585, 1092294, 1092369, 1092454,
-            1092909, 1092992, 1130833,
+            946112, 947228, 949750, 956608, 970972, 1011643, 1011712, 1023274, 1024673, 1025102,
+            1025525, 1058366, 1059030, 1059454, 1060052, 1060199, 1061897, 1065812, 1069813,
+            1070207, 1072715, 1078906, 1079482, 1080877, 1081463, 1089346, 1090607, 1091235,
+            1091585, 1092294, 1092369, 1092454, 1092909, 1092992, 1130833,
         ])
     );
+}
+
+#[test]
+fn strict_catalog_match_prepares_pillz_per_damage_with_the_predicate_its_prefix_names() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+
+    // Spade L2, Grace L3 and Sah Brinak Cr L3 print the three plain records; Ramak L4 prints
+    // the Symmetry form, whose hand-slot condition is the plan's predicate.
+    for (key, catalog_id, predicate) in [
+        (CardKey::new(1262, 2), 1090, CombatStatPredicateV1::Always),
+        (CardKey::new(1222, 3), 1051, CombatStatPredicateV1::Always),
+        (CardKey::new(987, 3), 809, CombatStatPredicateV1::Always),
+        (
+            CardKey::new(1988, 4),
+            1852,
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+        ),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap();
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate: actual,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as Pillz per Damage")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert!(identity.registry_alias_ids.contains(&catalog_id));
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::GainPillzEqualToFinalDamageOnVictory
+        );
+        assert_eq!(*actual, predicate);
+    }
+
+    // Spade wins with a six-Pillz Fury bet and is paid his final Damage, Fury included.
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(1262, 2),
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            opponent,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 6, true),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    let damage = report.cards[PlayerId::P1].damage;
+    assert!(damage >= 2);
+    assert_eq!(report.players[PlayerId::P2].life, 12 - damage);
+    assert_eq!(report.players[PlayerId::P1].pillz, 12 - 9 + damage);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
 }
 
 #[test]

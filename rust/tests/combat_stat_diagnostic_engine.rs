@@ -1005,6 +1005,137 @@ fn opposing_victory_pillz_takes_nothing_on_a_loss_or_when_stopped() {
     assert_eq!(report.players[PlayerId::P2].pillz, 20);
 }
 
+const RAMAK: CardKey = CardKey { id: 1988, level: 4 };
+const PILLZ_PER_DAMAGE: CombatStatEffectV1 =
+    CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory;
+
+/// P1 holds Ramak in slot 0 with `Symmetry: +1 Pillz Per Damage` (or, with `symmetry`
+/// false, a plain `+1 Pillz Per Damage`); every other source is absent and both hands are 6/3.
+fn ramak_spec(symmetry: bool) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].hand[0].key = RAMAK;
+    let mut cards = plans(&base);
+    let (source_id, predicate) = if symmetry {
+        (1852, CombatStatPredicateV1::SelectedHandSlotsMatch)
+    } else {
+        (1090, CombatStatPredicateV1::Always)
+    };
+    cards[PlayerId::P1][0].ability = execute(source_id, predicate, PILLZ_PER_DAMAGE);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+#[test]
+fn pillz_per_damage_plan_is_ability_only_and_unconditional_or_symmetry() {
+    let mut bonus = ramak_spec(false);
+    bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    bonus.cards[PlayerId::P1][0].bonus =
+        execute(1090, CombatStatPredicateV1::Always, PILLZ_PER_DAMAGE);
+    bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(bonus),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryPillzPerDamageSource,
+            ..
+        })
+    ));
+
+    for predicate in [
+        CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+        CombatStatPredicateV1::OwnerMovesFirst,
+    ] {
+        let mut conditional = ramak_spec(false);
+        conditional.cards[PlayerId::P1][0].ability = execute(1090, predicate, PILLZ_PER_DAMAGE);
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(conditional),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::VictoryPillzPerDamagePredicate,
+                ..
+            })
+        ));
+    }
+}
+
+#[test]
+fn pillz_per_damage_pays_the_winner_its_final_damage_and_unmakes_exactly() {
+    // Plain form, asymmetric slots, Fury: 20 - 5 for the bet, + 5 final Damage, as Spade's
+    // 12 - 10 + 5 = 7 in capture 1024592/0.
+    let spec = ramak_spec(false);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let start = diag.position().clone();
+    let start_hash = position_hash(&start);
+    let (report, undo) = diag
+        .make(input(PlayerId::P1, (0, 2, true), (1, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.cards[PlayerId::P1].damage, 5);
+    assert_eq!(report.players[PlayerId::P2].life, 15);
+    assert_eq!(report.players[PlayerId::P1].pillz, 20 - 5 + 5);
+    diag.unmake(undo);
+    assert_eq!(diag.position(), &start);
+    assert_eq!(position_hash(diag.position()), start_hash);
+
+    // An opposing Damage reduction lowers the payment with the Damage.
+    let mut spec = ramak_spec(false);
+    spec.cards[PlayerId::P2][1].ability = execute(
+        4210,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Damage, 2, 1),
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (1, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.cards[PlayerId::P1].damage, 1);
+    assert_eq!(report.players[PlayerId::P1].pillz, 20 - 2 + 1);
+
+    // Losing pays nothing (Grace in 1089933/0), and a stopped source pays nothing.
+    let spec = ramak_spec(false);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (1, 2, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 20);
+    let mut spec = ramak_spec(false);
+    spec.cards[PlayerId::P2][1].ability = execute(
+        4437,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (1, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 18);
+}
+
+#[test]
+fn symmetry_pillz_per_damage_pays_only_when_both_selected_slots_match() {
+    // Slot 0 against slot 0: 20 - 3 + 3, as Ramak's 12 - 5 + 4 = 11 in capture 1023274/1.
+    let spec = ramak_spec(true);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 3, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 20 - 3 + 3);
+
+    // Slot 0 against slot 2: the win is not enough, as in 1011183/3 and 1025102/1.
+    let spec = ramak_spec(true);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 3, false), (2, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 17);
+}
+
 fn anita_spec(power: u16, damage: u16) -> CombatStatDiagnosticMatchSpecV1 {
     let mut base = base_spec(power, damage);
     base.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);

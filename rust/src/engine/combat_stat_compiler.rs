@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 30;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 31;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -348,6 +348,35 @@ pub(crate) fn classify_victory_opponent_pillz(
 pub(crate) fn has_victory_opponent_pillz_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
     input.value > 0 && victory_opponent_pillz_shape_matches(input)
+}
+
+/// Recognize the `+1 Pillz Per Damage` conversion and its `Symmetry:` form: the winner's
+/// own Pillz rise by the final resolved Damage its card dealt. Like Anita's Life conversion
+/// the magnitude is bound at resolution, so it stays outside the numeric compiler; unlike
+/// Anita's it is admitted by exact text and shape over every same-text record, card
+/// abilities only. Returns the one predicate the printed prefix names.
+pub(crate) fn classify_victory_pillz_per_damage(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<CombatStatPredicateV1> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let (predicate, text) = match definition.structured_input().index_requirement {
+        IndexRequirementV1::Any => (CombatStatPredicateV1::Always, "+1 Pillz Per Damage"),
+        IndexRequirementV1::Symmetry => (
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+            "Symmetry: +1 Pillz Per Damage",
+        ),
+        IndexRequirementV1::Asymmetry => return None,
+    };
+    (has_victory_pillz_per_damage_shape(definition) && definition.description() == text)
+        .then_some(predicate)
+}
+
+/// Structural half of the Pillz-per-Damage boundary, over any hand-slot condition.
+pub(crate) fn has_victory_pillz_per_damage_shape(definition: &EffectDefinitionV1) -> bool {
+    victory_pillz_per_damage_shape_matches(definition.structured_input())
 }
 
 /// Recognize the immediate, surviving Defeat Life grammar. This deliberately admits card
@@ -883,6 +912,7 @@ pub(crate) fn classify_combat_stat_effect(
     if classify_victory_life(definition, source_kind).is_some()
         || classify_victory_pillz(definition, source_kind).is_some()
         || classify_victory_opponent_pillz(definition, source_kind).is_some()
+        || classify_victory_pillz_per_damage(definition, source_kind).is_some()
     {
         return None;
     }
@@ -1342,6 +1372,38 @@ fn victory_opponent_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
         && input.attribute_affected == AttributeAffectedV1::Pillz
         && input.attribute_action == AttributeActionV1::Decrease
         && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+fn victory_pillz_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value == 1
+        && input.value_min == 0
+        && input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::Pillz
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::ConvertDamageToPillz
         && !input.is_inverted
         && !input.is_support
         && !input.is_anti_support

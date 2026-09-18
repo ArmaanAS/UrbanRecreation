@@ -22,10 +22,11 @@ use crate::engine::combat_stat_compiler::{
     classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
     classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
-    compact_effect, has_defeat_life_shape, has_heal_life_on_victory_shape,
-    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
-    has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
-    has_victory_life_shape, has_victory_opponent_pillz_shape, has_victory_pillz_shape,
+    classify_victory_pillz_per_damage, compact_effect, has_defeat_life_shape,
+    has_heal_life_on_victory_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape,
+    has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
+    has_victory_opponent_pillz_shape, has_victory_pillz_per_damage_shape, has_victory_pillz_shape,
     VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
@@ -812,6 +813,20 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some(predicate) = classify_victory_pillz_per_damage(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::GainPillzEqualToFinalDamageOnVictory,
+                predicate,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate,
+                effect: CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory,
+            },
+        });
+    }
     if let Some(life) = classify_defeat_life(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -980,6 +995,12 @@ fn prepare_combat_stat_source(
         && source.description.contains("Opp Pillz")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_victory_opponent_pillz_shape(definition);
+    // The Pillz-per-Damage conversion is a closed grammar over one special action: any
+    // record that converts Damage to Pillz, prints the text, or carries the complete shape
+    // under another hand-slot prefix rejects when selected.
+    let unadmitted_victory_pillz_per_damage = source.description.ends_with("Pillz Per Damage")
+        || definition.structured_input().special_action == SpecialActionV1::ConvertDamageToPillz
+        || has_victory_pillz_per_damage_shape(definition);
     // The admitted grammar is deliberately narrower than the deferred family. Capped,
     // compound, and context-prefixed losing-Life forms must still reject when selected;
     // otherwise a near-miss would quietly become a no-op merely because it is not plain
@@ -1048,6 +1069,7 @@ fn prepare_combat_stat_source(
         || unadmitted_victory_life
         || unadmitted_victory_pillz
         || unadmitted_victory_opponent_pillz
+        || unadmitted_victory_pillz_per_damage
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
@@ -1080,6 +1102,7 @@ fn prepare_combat_stat_source(
         || unadmitted_victory_life
         || unadmitted_victory_pillz
         || unadmitted_victory_opponent_pillz
+        || unadmitted_victory_pillz_per_damage
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz

@@ -458,6 +458,9 @@ pub(super) enum PostRoundEffect {
         pillz: u16,
         minimum: u16,
     },
+    /// `+1 Pillz Per Damage`: the winner's own Pillz rise by the final resolved Damage its
+    /// card dealt, Fury and combat modifiers included.
+    GainPillzEqualToFinalDamageOnVictory,
     GainLifeOnDefeat(u16),
     ReanimateLife(u16),
     GainLifeOnVictoryOrDefeat {
@@ -686,6 +689,19 @@ impl BaseRulesGame {
                             .max(minimum);
                     }
                     PostRoundEffect::ReduceOpponentPillzOnVictory { .. } => {}
+                    // The conversion reads the same final damage Anita's does - the
+                    // TypeScript multiplier is `card.damage.final` - and pays a living
+                    // winner. Its Symmetry form is a predicate on the plan, judged before
+                    // this effect is ever handed to the engine.
+                    PostRoundEffect::GainPillzEqualToFinalDamageOnVictory
+                        if owner == winner && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(prepared[owner].result.damage)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainPillzEqualToFinalDamageOnVictory => {}
                     // The reviewed Victory Or Defeat Life sources are ordinary Life
                     // gains, not Reanimate: a living owner gains after either outcome,
                     // while a KO remains terminal.  Keep the addition checked so the

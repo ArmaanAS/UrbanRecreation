@@ -208,6 +208,20 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (924413, 4),
     (956608, 4),
     (1087712, 2),
+    // Revision 31 `+1 Pillz Per Damage`. The unconditional form pays the winner its final
+    // Damage, Fury included: Spade's `1090` takes 12 - 10 + 5 to 7 in 1024592/0 and 12 - 11
+    // + 5 to 6 in 1024732/0. Ramak's `Symmetry:` form pays only when both selected cards sit
+    // in the same hand slot: 12 - 5 + 4 to 11 in 1023274/1 and 12 - 3 + 4 to 13 in 1058151/0
+    // (both slot 3 against slot 3), and nothing in 1011183/3 where the slots differ (and
+    // Impudicus' Stop Opp. Ability bonus would have stopped it anyway), as in 1023396/1 and
+    // 1025102/1 above. A loss pays nothing: Grace's `1051` in 1089933/0, Sah Brinak Cr's
+    // `809` in 1023396/1, Ramak in 1011643/1 and 1025031/2.
+    (1011183, 4),
+    (1023274, 3),
+    (1024592, 2),
+    (1024732, 1),
+    (1058151, 1),
+    (1089933, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -358,6 +372,22 @@ fn victory_opponent_pillz_entry(id: u32, pillz: u16, minimum: u16) -> serde_json
     entry
 }
 
+fn victory_pillz_per_damage_entry(id: u32, index: &str) -> serde_json::Value {
+    let description = match index {
+        "symmetry" => "Symmetry: +1 Pillz Per Damage",
+        "asymmetry" => "Asymmetry: +1 Pillz Per Damage",
+        _ => "+1 Pillz Per Damage",
+    };
+    let mut entry = numeric_entry(id, description, "both", 1, 0);
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["indexRequirement"] = serde_json::json!(index);
+    entry["abilityData"]["sideAffected"] = serde_json::json!("player");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("increase");
+    entry["abilityData"]["specialAction"] = serde_json::json!("convert_dmg_to_pillz");
+    entry
+}
+
 fn defeat_life_entry(id: u32, life: u16) -> serde_json::Value {
     let mut entry = numeric_entry(id, &format!("Defeat: +{life} Life"), "both", life, 1);
     entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
@@ -488,7 +518,8 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_two_hundred_and_sixty_unique_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_two_hundred_and_seventy_three_unique_sequential_prefix_rounds(
+) {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -524,36 +555,37 @@ fn fixed_server_backed_gate_is_exactly_two_hundred_and_sixty_unique_sequential_p
             }
         }
     }
-    assert_eq!(rounds, 260);
+    assert_eq!(rounds, 273);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 7, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 73, 86, 90, 93, 94, 130, 156, 197, 202,
-            206, 225, 257, 266, 274, 292, 310, 316, 333, 334, 339, 343, 360, 367, 368, 372, 377,
-            391, 401, 412, 417, 421, 432, 442, 455, 461, 469, 478, 503, 520, 532, 536, 549, 555,
-            566, 569, 570, 577, 578, 585, 587, 612, 649, 656, 680, 682, 713, 717, 727, 739, 741,
-            751, 759, 778, 801, 826, 837, 844, 852, 854, 862, 871, 883, 888, 916, 938, 959, 963,
-            980, 1020, 1034, 1041, 1047, 1053, 1054, 1091, 1098, 1131, 1150, 1158, 1163, 1197,
-            1229, 1241, 1293, 1297, 1303, 1310, 1330, 1335, 1338, 1341, 1342, 1345, 1350, 1355,
-            1359, 1372, 1375, 1385, 1388, 1396, 1399, 1415, 1417, 1418, 1420, 1464, 1469, 1501,
-            1508, 1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634, 1688, 1694, 1699, 1714, 1722,
-            1770, 1805, 1806, 1823, 1825, 1833, 1840, 1844, 1845, 1848, 1850, 2021, 2028, 2073,
-            2277, 2286, 2299, 2321, 2329, 2375, 2412, 2528, 2535, 2556, 2573, 2628, 2657, 2660,
-            2835, 2881, 2944, 2965, 2992, 3004, 3040, 3048, 3118, 3197, 3222, 3284, 3386, 3393,
-            3487, 3526, 3597, 3677, 3829, 3852, 3864, 3865, 3897, 4041, 4098, 4216, 4286, 4297,
-            4299, 4301, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464, 4571, 4625, 4708, 4711,
-            4718, 4722, 4730, 4757, 4824, 4908, 4951, 4954, 4966, 4983, 5025, 5026, 5085, 5169,
-            5195, 5237, 5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406, 5415, 5462, 5498, 5520,
-            5525, 5531, 5532, 5549, 5763, 5835, 5841, 5849, 5852, 5859, 5901
+            6, 7, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 61, 73, 86, 90, 93, 94, 130, 156, 197,
+            202, 206, 225, 257, 266, 274, 292, 310, 316, 333, 334, 339, 343, 360, 367, 368, 372,
+            377, 391, 401, 412, 417, 421, 432, 442, 455, 461, 469, 478, 503, 520, 532, 536, 549,
+            555, 566, 569, 570, 577, 578, 585, 587, 612, 649, 656, 680, 682, 713, 717, 727, 729,
+            739, 741, 751, 759, 778, 801, 809, 826, 837, 844, 852, 854, 862, 871, 883, 888, 916,
+            938, 959, 963, 980, 1020, 1034, 1041, 1047, 1051, 1053, 1054, 1090, 1091, 1098, 1131,
+            1150, 1158, 1163, 1188, 1197, 1229, 1241, 1293, 1297, 1303, 1310, 1330, 1335, 1338,
+            1341, 1342, 1345, 1350, 1355, 1359, 1372, 1375, 1385, 1388, 1396, 1399, 1415, 1417,
+            1418, 1420, 1464, 1469, 1501, 1508, 1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634,
+            1688, 1694, 1699, 1706, 1714, 1722, 1770, 1805, 1806, 1823, 1825, 1833, 1840, 1844,
+            1845, 1848, 1850, 1852, 2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329, 2375, 2412,
+            2528, 2535, 2556, 2573, 2628, 2657, 2660, 2835, 2881, 2944, 2965, 2992, 3004, 3040,
+            3048, 3118, 3197, 3222, 3284, 3386, 3393, 3487, 3526, 3597, 3677, 3829, 3852, 3864,
+            3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301, 4330, 4389, 4399, 4414, 4417,
+            4458, 4461, 4464, 4571, 4625, 4708, 4711, 4718, 4722, 4730, 4757, 4824, 4908, 4951,
+            4954, 4966, 4983, 5025, 5026, 5085, 5169, 5170, 5195, 5237, 5258, 5273, 5332, 5333,
+            5360, 5366, 5404, 5406, 5415, 5462, 5498, 5520, 5525, 5531, 5532, 5549, 5763, 5835,
+            5841, 5849, 5852, 5859, 5901
         ])
     );
     assert_eq!(
         disabled_ids,
         BTreeSet::from([
-            594, 809, 935, 1231, 1852, 2222, 2317, 4303, 4459, 4657, 4695, 4747, 4937, 4948, 5283,
+            594, 935, 1231, 2222, 2317, 2638, 4303, 4459, 4657, 4695, 4747, 4937, 4948, 5283,
         ])
     );
-    assert_eq!(absent, 12);
+    assert_eq!(absent, 14);
 }
 
 #[test]
@@ -852,7 +884,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 30);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 31);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -908,7 +940,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        30
+        31
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -2362,6 +2394,119 @@ fn victory_opponent_pillz_compiler_admits_the_complete_ability_shape_and_near_mi
     assert!(matches!(
         prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
         CombatStatSourcePlanV1::Disabled { source_id: 2590 }
+    ));
+}
+
+#[test]
+fn victory_pillz_per_damage_compiler_admits_the_plain_and_symmetry_abilities_only() {
+    let catalog = catalog();
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    let with_ability = |id: u32, description: &str| {
+        let mut source = source.clone();
+        source.players[0].hand[slot].source_ability = Some(SourceModifier {
+            id,
+            description: description.to_owned(),
+        });
+        source
+    };
+
+    // The plain and Symmetry forms execute with the predicate their prefix names.
+    for (id, index, description, predicate) in [
+        (
+            1090,
+            "any",
+            "+1 Pillz Per Damage",
+            CombatStatPredicateV1::Always,
+        ),
+        (
+            1852,
+            "symmetry",
+            "Symmetry: +1 Pillz Per Damage",
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+        ),
+    ] {
+        let prepared = CombatStatDiagnosticReplayV1::new(
+            with_ability(id, description),
+            &catalog,
+            &one_entry_registry(victory_pillz_per_damage_entry(id, index)),
+            PROJECTION,
+        )
+        .unwrap();
+        match &prepared.preparation()[PlayerId::P1][slot].ability {
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                effect,
+                predicate: actual,
+                ..
+            } => {
+                assert_eq!(
+                    *effect,
+                    urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainPillzEqualToFinalDamageOnVictory
+                );
+                assert_eq!(*actual, predicate);
+            }
+            other => panic!("{description} was not prepared as Pillz per Damage: {other:?}"),
+        }
+    }
+
+    // The Bonus slot is a hazard: no clan prints the conversion.
+    let mut bonus = source.clone();
+    bonus.players[0].hand[slot].source_bonus = Some(SourceModifier {
+        id: 1090,
+        description: "+1 Pillz Per Damage".to_owned(),
+    });
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        bonus,
+        &catalog,
+        &one_entry_registry(victory_pillz_per_damage_entry(1090, "any")),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][slot].bonus,
+        CombatStatProjectionDispositionV1::Disabled {
+            reason: CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].bonus,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 1090 }
+    ));
+
+    // An unreviewed hand-slot prefix over the complete shape rejects when selected, and so
+    // does a magnitude other than one under the plain text.
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(900_201, "Asymmetry: +1 Pillz Per Damage"),
+        &catalog,
+        &one_entry_registry(victory_pillz_per_damage_entry(900_201, "asymmetry")),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 900_201 }
+    ));
+    let mut doubled = victory_pillz_per_damage_entry(1090, "any");
+    doubled["abilityData"]["value"] = serde_json::json!(2);
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(1090, "+1 Pillz Per Damage"),
+        &catalog,
+        &one_entry_registry(doubled),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 1090 }
     ));
 }
 
@@ -4264,8 +4409,8 @@ fn server_replays_pin_audited_defeat_recover_sources_and_resource_arithmetic() {
     assert_eq!(round.round.players[ai_lycs].pillz, 11); // 12 - 4 + ceil(4 * 2 / 3)
 
     // Arnie's only observed selection is Fury-inclusive. The preceding selected Spade
-    // converts damage to Pillz (id 1090), still intentionally disabled, so this capture is
-    // preparation evidence rather than a whole-prefix gate member.
+    // converts damage to Pillz (id 1090); since revision 31 that conversion executes, so
+    // the two-round prefix replays exactly and 1024592 is a gate member above.
     let fury = diagnostic(1024592, &catalog, &registry);
     let arnie = PlayerId::ALL
         .into_iter()
@@ -4302,13 +4447,17 @@ fn server_replays_pin_audited_defeat_recover_sources_and_resource_arithmetic() {
         .unwrap();
     assert!(matches!(
         fury.preparation()[spade.0][spade.1].ability,
-        CombatStatProjectionDispositionV1::Disabled { ref identity, .. }
-            if identity.id == 1090
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            ref identity,
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainPillzEqualToFinalDamageOnVictory,
+            predicate: CombatStatPredicateV1::Always,
+        } if identity.id == 1090
     ));
-    assert!(matches!(
-        fury.execute_combat_stat_diagnostic_v1_prefix(2),
-        Err(CombatStatDiagnosticReplayErrorV1::Mismatch { .. })
-    ));
+    let fury_report = fury.execute_combat_stat_diagnostic_v1_prefix(2).unwrap();
+    // Spade: 12 - 10 for the Fury bet + 5 final Damage; Arnie then recovers ceil(8 * 2 / 3)
+    // = 6 of his own Fury-inclusive 8 after losing round 1.
+    assert_eq!(fury_report.rounds[0].round.players[spade.0].pillz, 7);
+    assert_eq!(fury_report.rounds[1].round.players[arnie.0].pillz, 5);
 
     let stopped = diagnostic(945585, &catalog, &registry)
         .execute_combat_stat_diagnostic_v1_prefix(1)
