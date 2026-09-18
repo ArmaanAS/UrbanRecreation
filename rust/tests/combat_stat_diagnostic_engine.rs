@@ -726,6 +726,144 @@ fn stopped_or_losing_permanents_never_latch_and_plans_are_slot_and_magnitude_loc
     }
 }
 
+const ARCHIMEDES: CardKey = CardKey { id: 1325, level: 5 };
+const VICTORY_PILLZ: CombatStatEffectV1 = CombatStatEffectV1::GainPillzOnVictory { pillz: 2 };
+
+/// P1 holds Archimedes in slot 0 with his `+2 Pillz`; every other source is absent. Both
+/// hands are 6/3, so the higher bet wins and a tie goes to the first mover.
+fn archimedes_spec() -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].hand[0].key = ARCHIMEDES;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(1150, CombatStatPredicateV1::Always, VICTORY_PILLZ);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+#[test]
+fn victory_pillz_plan_is_ability_only_positive_and_unconditional() {
+    let mut bonus = archimedes_spec();
+    bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    bonus.cards[PlayerId::P1][0].bonus =
+        execute(1150, CombatStatPredicateV1::Always, VICTORY_PILLZ);
+    bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(bonus),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryPillzSource,
+            ..
+        })
+    ));
+
+    let mut zero = archimedes_spec();
+    zero.cards[PlayerId::P1][0].ability = execute(
+        1150,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 0 },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(zero),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryPillzMagnitude,
+            ..
+        })
+    ));
+
+    let mut conditional = archimedes_spec();
+    conditional.cards[PlayerId::P1][0].ability = execute(
+        1150,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+        VICTORY_PILLZ,
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(conditional),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryPillzPredicate,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn victory_pillz_pays_the_winner_after_the_bet_and_unmakes_exactly() {
+    let spec = archimedes_spec();
+    let mut diag = game(spec.base_rules, spec.cards);
+    let start = diag.position().clone();
+    let start_hash = position_hash(&start);
+
+    // Winning with a one-Pillz bet: 20 - 1 + 2, as Archimedes reaches 13 from 12 with a
+    // one-Pillz bet in capture 1093275/0. The opponent's Pillz are untouched.
+    let (report, undo) = diag
+        .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 21);
+    assert_eq!(report.players[PlayerId::P2].pillz, 20);
+    assert_eq!(report.players[PlayerId::P1].life, 20);
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+    diag.unmake(undo);
+    assert_eq!(diag.position(), &start);
+    assert_eq!(position_hash(diag.position()), start_hash);
+
+    // Losing pays nothing, as Archimedes in 1092992/0 and Zaveli in 1060510/1.
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 2, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 20);
+    assert_eq!(report.players[PlayerId::P2].pillz, 18);
+}
+
+#[test]
+fn victory_pillz_still_pays_into_a_ko_but_not_when_stopped_or_after_an_overflow() {
+    // Knocking the opponent out does not suppress the winner's own gain: capture
+    // 1092454/3 has Archimedes at 7 - 5 (a Fury bet of two) + 2 + 1 (VOD) = 5 while his
+    // opponent falls to zero.
+    let mut spec = archimedes_spec();
+    spec.base_rules.players[PlayerId::P2].initial_life = 3;
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, true), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 0);
+    assert_eq!(report.players[PlayerId::P1].pillz, 20 - 5 + 2);
+    assert_eq!(report.status, MatchStatus::Won(PlayerId::P1));
+
+    // Stopped by the opposing selected card: the win is not enough, the source has to be
+    // live, as Markus' Roots bonus shows in 1092066/0.
+    let mut spec = archimedes_spec();
+    spec.cards[PlayerId::P2][0].ability = execute(
+        4437,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 18);
+
+    // An overflow is atomic: nothing of the round is committed.
+    let mut spec = archimedes_spec();
+    spec.base_rules.players[PlayerId::P1].initial_pillz = u16::MAX;
+    spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
+    let mut diag = game(spec.base_rules, spec.cards);
+    let before = diag.position().clone();
+    assert!(matches!(
+        diag.make(input(PlayerId::P1, (0, 0, false), (0, 0, false))),
+        Err(CombatStatDiagnosticErrorV1::BaseRules(
+            BaseRulesError::PillzIncreaseOverflow {
+                player: PlayerId::P1
+            }
+        ))
+    ));
+    assert_eq!(diag.position(), &before);
+}
+
 fn anita_spec(power: u16, damage: u16) -> CombatStatDiagnosticMatchSpecV1 {
     let mut base = base_spec(power, damage);
     base.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);

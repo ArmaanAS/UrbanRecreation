@@ -11,9 +11,10 @@ use urban_recreation_rust::engine::{
     derive_catalog_hand, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
     CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1, CatalogCombatStatMatchV1,
     CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-    CatalogCombatStatSourceDispositionV1, CombatStatEffectSourceV1, CombatStatPostRoundEffectV1,
-    CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1, EffectiveCatalogHandErrorV1,
-    MatchStatus, PlayerId, CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
+    CatalogCombatStatSourceDispositionV1, CombatStatEffectSourceV1, CombatStatEffectV1,
+    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1,
+    EffectiveCatalogHandErrorV1, MatchStatus, PlayerId,
+    CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
 };
 use urban_recreation_rust::replay::{
     load_corpus, COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -3077,9 +3078,107 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
             877950, 878011, 878056, 924257, 924320, 925254, 925674, 925719, 925796, 943111, 946112,
             947228, 949750, 970972, 1011712, 1024673, 1058366, 1059030, 1059454, 1060052, 1060199,
             1061897, 1065812, 1069813, 1070207, 1072715, 1078906, 1079482, 1080877, 1081463,
-            1089346, 1090607, 1091235, 1091585, 1092294, 1092369, 1092909, 1130833,
+            1089346, 1090607, 1091235, 1091585, 1092294, 1092369, 1092454, 1092909, 1092992,
+            1130833,
         ])
     );
+}
+
+#[test]
+fn strict_catalog_match_prepares_plain_victory_pillz_from_the_printed_ability() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+
+    // Archimedes L5 prints `1150`, one of the five same-text `+2 Pillz` records; Corvus Cr
+    // L4 prints `503`, one of the `+3 Pillz` group. Each executes with its printed number
+    // from the Ability slot and leaves the Bonus slot to its own clan.
+    for (key, catalog_id, pillz) in [
+        (CardKey::new(1325, 5), 1150, 2),
+        (CardKey::new(684, 4), 503, 3),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap();
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as plain Victory Pillz")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert!(identity.registry_alias_ids.contains(&catalog_id));
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::GainPillzOnVictory { pillz }
+        );
+        assert_eq!(*predicate, CombatStatPredicateV1::Always);
+        let game = prepared.new_game();
+        assert!(matches!(
+            game.card_plans()[PlayerId::P1][0].ability,
+            CombatStatSourcePlanV1::Execute {
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::GainPillzOnVictory { pillz: p },
+                ..
+            } if p == pillz
+        ));
+    }
+
+    // The two strict draws the candidate-family line measured construct, and Archimedes'
+    // gain pays in a made round: in 1092992 both hands are Riots.
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(1529, 4),
+                CardKey::new(1325, 5),
+                CardKey::new(1730, 2),
+                CardKey::new(2021, 3),
+            ],
+            [
+                CardKey::new(1325, 5),
+                CardKey::new(2413, 3),
+                CardKey::new(2192, 3),
+                CardKey::new(1211, 3),
+            ],
+            true,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(1, 4, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    // 12 - 4 for the bet, + 2 from the ability, + 1 from the Riots VOD on both sides.
+    assert_eq!(report.players[PlayerId::P1].pillz, 12 - 4 + 2 + 1);
+    assert_eq!(report.players[PlayerId::P2].pillz, 12 + 1);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
 }
 
 /// Berzerk is a whole-clan bonus, so a strict hand needs four Berzerk characters to carry

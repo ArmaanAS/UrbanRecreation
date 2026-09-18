@@ -450,6 +450,8 @@ pub(super) enum PostRoundEffect {
     /// resolved damage, so Fury and any already-resolved combat damage modifiers count.
     GainLifeEqualToFinalDamageOnCourageVictory,
     GainLifeOnVictory(u16),
+    /// Plain `+N Pillz`: the round winner's own Pillz rise by the printed amount.
+    GainPillzOnVictory(u16),
     GainLifeOnDefeat(u16),
     ReanimateLife(u16),
     GainLifeOnVictoryOrDefeat {
@@ -649,6 +651,20 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainLifeOnVictory(_) => {}
+                    // Plain Victory Pillz is the same immediate winner-only work on the
+                    // other resource. Like every ordinary own gain it pays a living owner
+                    // only: the TypeScript reference skips a Pillz gain for a player at
+                    // zero, which an earlier owner's repeating Toxin can produce. The
+                    // opponent being knocked out changes nothing (capture 1092454/3).
+                    PostRoundEffect::GainPillzOnVictory(pillz)
+                        if owner == winner && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(pillz)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainPillzOnVictory(_) => {}
                     // The reviewed Victory Or Defeat Life sources are ordinary Life
                     // gains, not Reanimate: a living owner gains after either outcome,
                     // while a KO remains terminal.  Keep the addition checked so the

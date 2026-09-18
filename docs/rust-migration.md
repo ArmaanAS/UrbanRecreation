@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 28 for the current scope.
+Replay provenance records compiler/policy semantic revision 29 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 28.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 29.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -711,7 +711,7 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 28 records this semantic boundary together with the exact
+context. Compiler/policy revision 29 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
@@ -758,7 +758,7 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Conditional Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 28, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 29, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
@@ -769,14 +769,14 @@ Every one of the other 2,538 slots matches captured bonus presence and descripti
 On 2026-09-18, the deterministic strict-coverage regression scanned all 359 captured
 complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captured
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
-`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 49 capture ids
+`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 51 capture ids
 are eligible: `830285`, `869944`, `874520`, `875098`, `875155`, `875322`, `877636`,
 `877687`, `877773`, `877812`, `877860`, `877950`, `878011`, `878056`, `924257`, `924320`,
 `925254`, `925674`, `925719`, `925796`, `943111`, `946112`, `947228`, `949750`, `970972`,
 `1011712`, `1024673`, `1058366`, `1059030`, `1059454`, `1060052`, `1060199`, `1061897`,
 `1065812`, `1069813`, `1070207`, `1072715`, `1078906`, `1079482`, `1080877`, `1081463`,
-`1089346`, `1090607`, `1091235`, `1091585`, `1092294`, `1092369`, `1092909`, and
-`1130833`.
+`1089346`, `1090607`, `1091235`, `1091585`, `1092294`, `1092369`, `1092454`, `1092909`,
+`1092992`, and `1130833`.
 Revision 21 added `878011`, `925254`, and `1078906` to revision 20's fourteen; revision 22
 then added `875098`, `875322`, `1011712`, `1059030`, `1059454`, and `1090607`; revision 23
 added `877687`, `924257`, `1070207` and `1091235`, the four the report had predicted for
@@ -787,13 +787,14 @@ opposing Damage and Defeat opponent-Life; revision 26 added `877773`, `877860`, 
 `1079482`, the four the blocker-set listing had attributed to `3526` alone; revision 27
 added `924320` and `1080877`, the two a candidate-family line for the plain Heal grammar
 had measured before it was admitted; revision 28 added `875155`, `1091585`, `1092294` and
-`1092369`, the one measured for plain Toxin and the three for plain Poison.
+`1092369`, the one measured for plain Toxin and the three for plain Poison; revision 29
+added `1092454` and `1092992`, the two measured for plain `+N Pillz`.
 That is six for two families the report had predicted would unlock three each, because six
 draws were blocked by *both* families at once — which is exactly why reach and unlock are
 measured separately, and why the measurement has to be rerun rather than added up. Catalog
 eligibility is a strict whole-draw admission measurement, not proof of full engine or
 TypeScript solver parity;
-the 219-round immutable diagnostic gate supplies the separately checked sequential replay
+the 243-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
 
 Semantic revision 23 adds Protection, the projection's first defensive control channel.
@@ -1011,6 +1012,40 @@ current-round effects. The gate carries 1092369 and 1092294 in full and prefixes
 selects a clan-gated Equalizer Life ability, and 1059149's rounds sit behind the deferred
 GhosTown night bonus.
 
+Semantic revision 29 admits the plain `+N Pillz` Victory grammar (`337`, `455`, `503`,
+`1054`, `1150`, `1229`, `2262`, `2525`, `4855`, `5258`): the round winner's own Pillz rise
+by the printed amount after the bet has been paid. It is admitted the way Victory Life is -
+exact printed text and the complete structured shape over every same-text registry record,
+printed numbers as authority, the catalog id a structural alias of the definition its text
+resolves to - but from the Ability slot only, since no clan prints it as a bonus. The
+prediction in "Choosing the next slice" held: the post-round channel already moved Pillz for
+Defeat recovery, Victory-or-Defeat, Argos and Komboka, so the engine gained one winner-only
+`GainPillzOnVictory` arm beside Victory Life and no other line changed. Like every ordinary
+own gain it pays a living owner - the TypeScript guard for a player at zero, which an earlier
+owner's repeating Toxin can produce - and a knockout of the opponent changes nothing. The
+near-miss boundary is Victory Life's: `+N Pillz` text over a wrong slot or structure, or the
+complete shape under other text, rejects when selected, while the prefixed forms (`Stop:`,
+`Growth:`, `Degrowth:`, `Confidence:`, `Courage:`, `Brawl:`, `Killshot:`, `Perfect:`,
+`Equalizer:`, `Defeat:` and Victory-or-Defeat), `Support: + 1 Pillz` and the capped `+3 Pillz
+Max. 9` differ structurally and keep their visible-but-disabled records. The same-text
+`+1 Pillz` record over the Victory-or-Defeat shape, which the VOD test had used as an inert
+no-op, is therefore a selected hazard now.
+
+The server pins the arithmetic from both sides. Archimedes' `+2 Pillz` takes 12 - 7 + 2 to 7
+in 1092141/0, where Petra's Stop Opp. Bonus silences the Riots VOD but not the ability;
+12 - 5 + 2 to 9 in 1092201/0; 12 - 9 + 2 + 1 to 6 in 1060341/0; 12 - 1 + 2 to 13 in
+1093275/0; and pays beside the VOD in 1092578/0, 1092773/0 and 1092840/0. Corvus Cr's +3
+reaches 14 in 1092201/1 while Argos' capped Defeat gain lands on the other side, Mercury's
++2 pays in 1090887/0 and Grudj Cr's in 1060510/0 as his Freaks Poison latches. A loss pays
+nothing: Archimedes once per side in 1092992/0 and 1092992/1, Zaveli in 1060510/1, Joy in
+1089626/0, and Grudj Cr in 1025525/1 where the owner is knocked out at 0 Pillz. 1092066/0 is
+the stopped case, where Markus' Roots bonus stops the ability and only the VOD pays. The
+gate grows from 219 to 243 rounds, with 1092992 and 1090887 in full and prefixes of the
+others. 1092454, the other draw the family had measured, stops at two rounds because round
+2 selects a dynamic `Copy: Opp. Ability`, which replay keeps fail-closed; the round where
+Archimedes pays into a knockout (1092454/3: 7 - 5 for a Fury bet of two, + 2, + 1 = 5) is
+pinned by the engine test instead.
+
 What the widening changed in the hazard rule is worth stating. `Growth:`, `Unison :` and
 `Revenge:` Poison carry exactly the plain Poison structure - the registry keeps their
 conditions in the description alone - so with the plain grammar admitted they are the
@@ -1040,7 +1075,7 @@ An id named in a candidate family must be a real registry definition, or the fam
 under-reports: an id no definition owns can never appear as a blocker. The list carried
 `990` for conditional Copy until 2026-09-17, so that family was only ever scored by `958`.
 
-On 2026-09-18 at revision 28 it scanned 359 complete draws: 49 eligible and 10 refused
+On 2026-09-18 at revision 29 it scanned 359 complete draws: 51 eligible and 10 refused
 structurally, by a Leader or a duplicate character rather than by a missing effect. The
 report also prints the blocker sets themselves, smallest first, which is what a family
 proposal should be built from: a group is worth proposing only when it covers one of those
@@ -1048,7 +1083,8 @@ sets whole, and anything else merely co-occurs with a blocker that is still ther
 26 was chosen from that listing - `3526` alone blocked four draws - and unlocked exactly
 those four; revision 27 added the plain Heal grammar as a candidate-family line, read 2, and
 unlocked 2; revision 28 measured plain Toxin at 1 and plain Poison at 3 before admitting
-them and unlocked 4. Those lines now read 0, which is how a landed family is meant to look.
+them and unlocked 4; revision 29 measured own fixed `+N Pillz` at 2 and unlocked 2. Those
+lines now read 0, which is how a landed family is meant to look.
 
 The measurements that chose the last two slices are worth keeping as a record of how the
 counts behave. Revision 24's two Copy families unlocked 3 and 2 and together 5; revision
@@ -1056,24 +1092,29 @@ counts behave. Revision 24's two Copy families unlocked 3 and 2 and together 5; 
 pair that shared six - so neither additivity nor overlap can be assumed, and the split has
 to be measured each time.
 
-For the first time the ranking has turned over. With permanent Life done, the three Pillz
-families together unlock 8 draws - own fixed Pillz 2, opposing Pillz reduction 2, Pillz per
-Damage 2, the rest only in combination - and permanent Life with the Life-per-Damage
-conversions reads 6, of which Life per Damage alone is 3 and the remaining permanents (the
-predicate-carrying Symmetry/Asymmetry/Revenge forms) 2. Six two-draw sets sit at the top of
-the blocker listing: `455` `+2 Pillz`, `1379` `Xantiax: -3 Life, Min. 0`, `1474` `Stop:
-Damage +4`, `1726` `Victory Or Defeat: - 2 Opp. Life Min 1`, `1852` `Symmetry: +1 Pillz Per
-Damage` and `5681` `After [clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`.
+For the first time the ranking has turned over. Before revision 29 the three Pillz families
+together unlocked 8 draws - own fixed Pillz 2, opposing Pillz reduction 2, Pillz per Damage
+2, the rest only in combination. With own fixed Pillz landed the two that remain read
+opposing Pillz reduction 2 and Pillz per Damage 4, together 6: the two draws that had needed
+both `+2 Pillz` and `Symmetry: +1 Pillz Per Damage` now need the conversion alone, so `1852`
+heads the blocker listing as a four-draw set and the `455` two-draw set is gone. Permanent
+Life with the Life-per-Damage conversions still reads 6, of which Life per Damage alone is 3
+and the remaining permanents (the predicate-carrying Symmetry/Asymmetry/Revenge forms) 2.
+Seven two-draw sets follow `1852`: `912` `Defeat: -2 Opp. Pillz, Min 4`, `1379` `Xantiax:
+-3 Life, Min. 0`, `1474` `Stop: Damage +4`, `1488` `Brawl: Power And Damage + 1`, `1726`
+`Victory Or Defeat: - 2 Opp. Life Min 1`, the clan-gated `5113` `+1 Dam./ Life Lost Max. 6`
+and `5681` `After [clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`.
 
 Pillz is a resource the post-round channel already moves - Defeat recovery, Victory-or-
-Defeat Pillz, Argos and Komboka all write it - so own fixed `+N Pillz` is admission-only
-work like Victory Life was, and the reach table has said so for three revisions (`455`
-appears in 20 draws, `337` in 9). Opposing Pillz reduction needs its Min clamp on the other
-player, which the Life reductions already model, and `Symmetry: +1 Pillz Per Damage` is a
-predicate the projection resolves over a magnitude it already binds (Anita's conversion
-reads the same final damage). Measure the three as separate lines before choosing: their
-sum was 8 in combination and 6 alone, so two draws are blocked by more than one of them.
-Rerun the measurement before pricing any of it; the counts have moved after every slice.
+Defeat Pillz, Argos and Komboka all write it - so own fixed `+N Pillz` was admission-only
+work like Victory Life, and revision 29 landed it as one engine arm and one compiler grammar.
+Opposing Pillz reduction needs its Min clamp on the other player, which the Life reductions
+already model, and `+1 Pillz Per Damage` (`809`, `1051`, `1090`, and `1852` under
+`Symmetry:`) is a `convert_dmg_to_pillz` conversion the projection resolves over a magnitude
+it already binds (Anita's `convert_dmg_to_life` reads the same final damage). The two lines
+were measured separately after revision 29 - 2 and 4, together 6, so neither shares a draw
+with the other - but rerun the measurement before pricing either; the counts have moved
+after every slice.
 
 The two families revision 22 took were cheaper than this section predicted. It claimed a
 post-round plan carries no predicate and that adding one was the shared change both needed;
