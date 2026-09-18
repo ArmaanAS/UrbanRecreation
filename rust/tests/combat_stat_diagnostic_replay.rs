@@ -135,6 +135,14 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (945989, 2),
     (1060052, 4),
     (1072715, 3),
+    // Revision 26 permanent Life: Lianah Ld's `Heal 1 Max. 20` is admitted through the
+    // new latch channel. In every one of these complete draws she loses the round she is
+    // played (877773/0, 877860/1, 878056/2; 1079482/0 above), so the gate pins that a
+    // losing Heal never latches and that the rest of each draw plays out unchanged. The
+    // positive branch is pinned by the engine tests and by the capture evidence below.
+    (877773, 4),
+    (877860, 4),
+    (878056, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -391,8 +399,8 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_one_hundred_and_seventy_seven_unique_sequential_prefix_rounds(
-) {
+fn fixed_server_backed_gate_is_exactly_one_hundred_and_eighty_nine_unique_sequential_prefix_rounds()
+{
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -428,30 +436,30 @@ fn fixed_server_backed_gate_is_exactly_one_hundred_and_seventy_seven_unique_sequ
             }
         }
     }
-    assert_eq!(rounds, 177);
+    assert_eq!(rounds, 189);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
             6, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 73, 90, 93, 94, 130, 156, 197, 202, 225,
-            257, 266, 274, 292, 310, 316, 333, 367, 368, 372, 377, 391, 401, 412, 421, 461, 469,
-            478, 520, 536, 569, 577, 578, 585, 587, 612, 680, 713, 717, 727, 741, 759, 778, 801,
-            837, 844, 852, 862, 871, 883, 888, 916, 938, 959, 980, 1034, 1047, 1091, 1131, 1158,
-            1163, 1241, 1293, 1303, 1310, 1330, 1335, 1338, 1341, 1342, 1355, 1359, 1372, 1375,
-            1388, 1396, 1399, 1415, 1418, 1420, 1464, 1469, 1513, 1518, 1534, 1536, 1578, 1628,
-            1634, 1688, 1694, 1699, 1714, 1722, 1770, 1805, 1806, 1823, 1844, 1845, 1848, 1850,
-            2021, 2028, 2073, 2286, 2299, 2329, 2375, 2412, 2535, 2556, 2657, 2660, 2835, 2881,
-            2944, 2965, 2992, 3004, 3040, 3222, 3284, 3386, 3393, 3487, 3677, 3829, 3852, 3864,
-            3865, 3897, 4041, 4216, 4297, 4299, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464,
-            4571, 4708, 4711, 4718, 4722, 4757, 4908, 4966, 5025, 5026, 5085, 5169, 5237, 5273,
-            5332, 5333, 5366, 5404, 5415, 5462, 5498, 5520, 5525, 5531, 5549, 5763, 5841, 5849,
-            5852, 5859,
+            257, 266, 274, 292, 310, 316, 333, 367, 368, 372, 377, 391, 401, 412, 417, 421, 461,
+            469, 478, 520, 532, 536, 569, 577, 578, 585, 587, 612, 680, 713, 717, 727, 739, 741,
+            759, 778, 801, 837, 844, 852, 862, 871, 883, 888, 916, 938, 959, 980, 1034, 1047, 1091,
+            1098, 1131, 1158, 1163, 1241, 1293, 1303, 1310, 1330, 1335, 1338, 1341, 1342, 1350,
+            1355, 1359, 1372, 1375, 1388, 1396, 1399, 1415, 1418, 1420, 1464, 1469, 1513, 1518,
+            1534, 1536, 1578, 1628, 1634, 1688, 1694, 1699, 1714, 1722, 1770, 1805, 1806, 1823,
+            1844, 1845, 1848, 1850, 2021, 2028, 2073, 2277, 2286, 2299, 2329, 2375, 2412, 2528,
+            2535, 2556, 2657, 2660, 2835, 2881, 2944, 2965, 2992, 3004, 3040, 3048, 3222, 3284,
+            3386, 3393, 3487, 3526, 3677, 3829, 3852, 3864, 3865, 3897, 4041, 4216, 4286, 4297,
+            4299, 4301, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464, 4571, 4708, 4711, 4718,
+            4722, 4757, 4908, 4954, 4966, 5025, 5026, 5085, 5169, 5237, 5273, 5332, 5333, 5366,
+            5404, 5415, 5462, 5498, 5520, 5525, 5531, 5549, 5763, 5841, 5849, 5852, 5859,
         ])
     );
     assert_eq!(
         disabled_ids,
         BTreeSet::from([
-            206, 594, 682, 809, 854, 935, 1150, 1501, 1508, 1852, 2222, 2317, 3526, 4303, 4459,
-            4657, 4695, 4747, 4937, 5283,
+            206, 594, 682, 809, 854, 935, 1150, 1501, 1508, 1852, 2222, 2317, 4303, 4459, 4657,
+            4695, 4747, 4937, 5283,
         ])
     );
     assert_eq!(absent, 6);
@@ -638,6 +646,110 @@ fn server_replays_pin_jungo_victory_life_bonus_on_independent_wins() {
     }
 }
 
+/// Which engine player owns `card_id` in `round_index`, that player's captured Life after
+/// the round, and the card's hand slot.
+fn owner_life_and_slot(
+    prepared: &CombatStatDiagnosticReplayV1,
+    round_index: usize,
+    card_id: u32,
+) -> (PlayerId, u16, usize) {
+    let round = &prepared.replay().rounds[round_index];
+    let play = round
+        .plays
+        .iter()
+        .find(|play| play.card.id == card_id)
+        .unwrap_or_else(|| {
+            panic!(
+                "battle {} round {round_index} is missing card {card_id}",
+                prepared.battle_id()
+            )
+        });
+    let owner = match play.engine_player {
+        EnginePlayer::P1 => PlayerId::P1,
+        EnginePlayer::P2 => PlayerId::P2,
+    };
+    (
+        owner,
+        round.expected_player_states[owner.index()].life,
+        usize::from(play.hand_index),
+    )
+}
+
+/// The server evidence behind the Heal latch. None of these three draws is strict-eligible
+/// (878093 and 1091985 select unadmitted grammars in their first round, 877733 a Unison
+/// Pillz-and-Life in its second), so they cannot join the gate; their captured Life is what
+/// the engine tests reproduce.
+#[test]
+fn lianah_heal_capture_evidence_pins_the_latch_round_the_repeat_and_the_stop() {
+    let catalog = catalog();
+    let registry = registry();
+    let is_lianah_heal = |disposition: &CombatStatProjectionDispositionV1| {
+        matches!(
+            disposition,
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::HealLifeOnVictory {
+                    life: 1,
+                    maximum: 20,
+                },
+                predicate: CombatStatPredicateV1::Always,
+            } if identity.id == 3526 && identity.description == "Heal 1 Max. 20"
+        )
+    };
+
+    // 878093: Lianah wins round 0 on 12 Life and stays on 12 - the latch round pays nothing.
+    // Round 1 is won by Buck with a KO, and the owner still ends it on 13: the repeat pays
+    // whatever card is played, and a KO of the opponent does not skip it.
+    let latched = diagnostic(878093, &catalog, &registry);
+    let (owner, life_after_latch, slot) = owner_life_and_slot(&latched, 0, 978);
+    assert!(is_lianah_heal(&latched.preparation()[owner][slot].ability));
+    assert_eq!(life_after_latch, 12);
+    assert_eq!(
+        latched.replay().rounds[1].expected_player_states[owner.index()].life,
+        13
+    );
+    assert_eq!(
+        latched.replay().rounds[1].expected_player_states[owner.other().index()].life,
+        0
+    );
+
+    // 1091985: Lianah wins round 1 with Fury and KOs the opponent. The server reports the
+    // permanent Life increase for that round as quantity 0 and the owner stays on 12.
+    let terminal = diagnostic(1091985, &catalog, &registry);
+    let (owner, life, slot) = owner_life_and_slot(&terminal, 1, 978);
+    assert!(is_lianah_heal(&terminal.preparation()[owner][slot].ability));
+    assert_eq!(life, 12);
+    assert_eq!(
+        terminal.replay().rounds[1].expected_player_states[owner.other().index()].life,
+        0
+    );
+
+    // 877733: Lianah wins round 0 against Pr Balthazar's Stop Opp. Ability. A stopped Heal
+    // never latches, so her owner is still on 12 after round 1 and takes Agnes' 4 Damage
+    // to 8 in round 2 with only Eugene's Defeat: +2 Life bringing it back to 10.
+    let stopped = diagnostic(877733, &catalog, &registry);
+    let (owner, life, slot) = owner_life_and_slot(&stopped, 0, 978);
+    assert!(is_lianah_heal(&stopped.preparation()[owner][slot].ability));
+    assert_eq!(life, 12);
+    let (stopper, _, stopper_slot) = owner_life_and_slot(&stopped, 0, 1457);
+    assert_eq!(stopper, owner.other());
+    assert!(matches!(
+        stopped.preparation()[stopper][stopper_slot].ability,
+        CombatStatProjectionDispositionV1::Execute {
+            effect: SupportedEffectV1::StopOpponentAbility,
+            predicate: CombatStatPredicateV1::Always,
+            ..
+        }
+    ));
+    let owner_life =
+        |round: usize| stopped.replay().rounds[round].expected_player_states[owner.index()].life;
+    assert_eq!([owner_life(1), owner_life(2), owner_life(3)], [12, 10, 5]);
+    // Round 0 itself replays: the stopped Heal is live-checked and refused there.
+    let report = stopped.execute_combat_stat_diagnostic_v1_prefix(1).unwrap();
+    assert!(report.final_position.latched[owner].is_empty());
+    assert_eq!(report.final_position.players[owner].life, 12);
+}
+
 #[test]
 fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
     let catalog = catalog();
@@ -649,7 +761,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 25);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 26);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -705,7 +817,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        25
+        26
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2

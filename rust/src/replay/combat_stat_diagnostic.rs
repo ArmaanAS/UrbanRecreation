@@ -17,11 +17,12 @@ use crate::engine::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_combat_stat_effect, classify_defeat_life, classify_defeat_opponent_life,
     classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
-    classify_victory_opponent_life, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
-    has_reanimate_life_shape, has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_heal_life_on_victory, classify_komboka_victory_pillz_and_life,
+    classify_reanimate_life, classify_victory_life, classify_victory_opponent_life,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
+    has_defeat_life_shape, has_reanimate_life_shape, has_victory_life_shape,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    LIANAH_HEAL_LIFE_DESCRIPTION, LIANAH_HEAL_LIFE_REGISTRY_ID,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -808,6 +809,22 @@ fn prepare_combat_stat_source(
             });
         }
     }
+    // The one admitted permanent. Its plan is ordinary post-round work at the source; the
+    // engine position carries the latch from the round it wins onward.
+    if let Some((life, maximum)) = classify_heal_life_on_victory(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::HealLifeOnVictory { life, maximum },
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::HealLifeOnVictory { life, maximum },
+            },
+        });
+    }
     if let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) {
         let compact_effect = compact_effect(effect).ok_or(
             CombatStatDiagnosticPreparationErrorV1::UnsupportedCompiledShape {
@@ -910,6 +927,12 @@ fn prepare_combat_stat_source(
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
             && input.attribute_affected == AttributeAffectedV1::LifeAndPillz
             && input.attribute_action == AttributeActionV1::Increase);
+    // Lianah's identity or exact text under any other shape, slot or id is a near-miss of
+    // the admitted Heal and must reject when selected. The other plain `Heal N Max. M`
+    // identities are a deferred slice and keep their visible-but-disabled record, exactly
+    // as every other unadmitted permanent does.
+    let unadmitted_heal_life = source.id == LIANAH_HEAL_LIFE_REGISTRY_ID
+        || source.description == LIANAH_HEAL_LIFE_DESCRIPTION;
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {
@@ -924,6 +947,7 @@ fn prepare_combat_stat_source(
         || unadmitted_anita_courage_damage_to_life
         || unadmitted_victory_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
+        || unadmitted_heal_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
     } else if unadmitted_post_round_recovery {
@@ -953,6 +977,7 @@ fn prepare_combat_stat_source(
         || unadmitted_anita_courage_damage_to_life
         || unadmitted_victory_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
+        || unadmitted_heal_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {
             source_id: source.id,

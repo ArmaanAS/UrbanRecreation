@@ -157,6 +157,56 @@ pub struct BaseRulesPlayerState {
     pub pillz: u16,
 }
 
+/// A permanent effect that an earlier round latched for one player. It applies at the end
+/// of every later round for the rest of the match, whatever those rounds' outcomes and
+/// whichever card its owner then plays. The round that latched it applies nothing: the
+/// TypeScript reference marks Heal `delayed`, and the server reports the latch round's
+/// permanent Life change as quantity 0 (battle 1091985 r1).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum LatchedEffectV1 {
+    /// `Heal N Max. M`: the owner gains N Life while below M, never past M, and only while
+    /// still living. A player already at or above M is left exactly where they are.
+    HealLife { life: u16, maximum: u16 },
+}
+
+/// The permanents one player has latched so far, in latch order, which is also the order
+/// they are applied in. Each card is played once and this projection latches at most one
+/// source per card, so the hand size bounds the list.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct LatchedEffectsV1 {
+    effects: [Option<LatchedEffectV1>; HAND_SIZE],
+}
+
+impl LatchedEffectsV1 {
+    pub const EMPTY: Self = Self {
+        effects: [None; HAND_SIZE],
+    };
+
+    pub fn iter(&self) -> impl Iterator<Item = LatchedEffectV1> + '_ {
+        self.effects.iter().flatten().copied()
+    }
+
+    pub fn len(&self) -> usize {
+        self.effects.iter().flatten().count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.effects.iter().all(Option::is_none)
+    }
+
+    /// Append in latch order. `Err` returns the effect when the list is already full, which
+    /// a well-formed plan cannot reach.
+    fn push(&mut self, effect: LatchedEffectV1) -> Result<(), LatchedEffectV1> {
+        match self.effects.iter_mut().find(|slot| slot.is_none()) {
+            Some(slot) => {
+                *slot = Some(effect);
+                Ok(())
+            }
+            None => Err(effect),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MatchStatus {
     Playing,
@@ -176,6 +226,10 @@ pub struct BaseRulesPosition {
     /// This is part of the structural position so temporal predicates and future
     /// transposition keys cannot conflate otherwise identical states.
     pub previous_round_winner: Option<PlayerId>,
+    /// Permanents latched by completed rounds, per owner. They are mutable match state
+    /// like Life: two positions that agree on everything else but differ here play out
+    /// differently, so they belong to the structural position and its undo snapshot.
+    pub latched: ByPlayer<LatchedEffectsV1>,
     pub status: MatchStatus,
 }
 
@@ -273,6 +327,11 @@ pub enum BaseRulesError {
     LifeIncreaseOverflow {
         player: PlayerId,
     },
+    /// More permanents latched for one player than the hand can play. Unreachable from a
+    /// validated plan; kept as an error rather than a panic so the commit stays atomic.
+    LatchedEffectOverflow {
+        player: PlayerId,
+    },
 }
 
 impl fmt::Display for BaseRulesError {
@@ -317,6 +376,9 @@ impl fmt::Display for BaseRulesError {
             }
             Self::LifeIncreaseOverflow { player } => {
                 write!(formatter, "{player:?} life increase overflow")
+            }
+            Self::LatchedEffectOverflow { player } => {
+                write!(formatter, "{player:?} latched more permanents than cards")
             }
         }
     }
@@ -383,6 +445,12 @@ pub(super) enum PostRoundEffect {
         life: u16,
         minimum: u16,
     },
+    /// `Heal N Max. M` on a live source whose owner wins this round: latch it into the
+    /// owner's position so every later round pays it. This round itself pays nothing.
+    LatchHealLifeOnVictory {
+        life: u16,
+        maximum: u16,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -413,6 +481,7 @@ impl BaseRulesGame {
                 played: ByPlayer::new([false; HAND_SIZE], [false; HAND_SIZE]),
                 rounds_played: 0,
                 previous_round_winner: None,
+                latched: ByPlayer::new(LatchedEffectsV1::EMPTY, LatchedEffectsV1::EMPTY),
                 status,
             },
         }
@@ -634,6 +703,35 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::ReanimateLife(_) => {}
+                    // Heal latches in the round its card wins and pays nothing in that
+                    // round. From here on it belongs to the owner, not to the card, and
+                    // the repeat loop below pays it after every later round.
+                    PostRoundEffect::LatchHealLifeOnVictory { life, maximum }
+                        if owner == winner =>
+                    {
+                        position.latched[owner]
+                            .push(LatchedEffectV1::HealLife { life, maximum })
+                            .map_err(|_| BaseRulesError::LatchedEffectOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::LatchHealLifeOnVictory { .. } => {}
+                }
+            }
+            // Permanents latched by earlier rounds repeat now, after this owner's own
+            // current-round effects and before the other owner's, which is the TypeScript
+            // reference's END order: each side's fresh effects, then its `repeat` bucket.
+            // Reading the pre-round position keeps anything latched just above out of this
+            // round. A KO is terminal: a player at zero is never revived by a repeat.
+            for effect in self.position.latched[owner].iter() {
+                match effect {
+                    LatchedEffectV1::HealLife { life, maximum } => {
+                        let current = position.players[owner].life;
+                        if current > 0 && current < maximum {
+                            position.players[owner].life = current
+                                .checked_add(life)
+                                .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?
+                                .min(maximum);
+                        }
+                    }
                 }
             }
         }

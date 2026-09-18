@@ -157,6 +157,296 @@ fn vod_spec(
     }
 }
 
+const LIANAH: CardKey = CardKey { id: 978, level: 3 };
+const HEAL: CombatStatEffectV1 = CombatStatEffectV1::HealLifeOnVictory {
+    life: 1,
+    maximum: 20,
+};
+
+/// P1 holds Lianah Ld in slot 0 with her Heal; every other source is absent. Both hands
+/// are 6/3, so the higher bet wins and a tie goes to the first mover.
+fn lianah_spec(p1_life: u16) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_life = p1_life;
+    base.players[PlayerId::P1].hand[0].key = LIANAH;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(3526, CombatStatPredicateV1::Always, HEAL);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+#[test]
+fn heal_plan_is_exactly_identity_card_effect_and_predicate_locked() {
+    assert!(CombatStatDiagnosticV1::new(lianah_spec(12)).is_ok());
+
+    let mut bonus = lianah_spec(12);
+    bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    bonus.cards[PlayerId::P1][0].bonus = execute(3526, CombatStatPredicateV1::Always, HEAL);
+    bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(bonus),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::HealLifeIdentity,
+            source: CombatStatEffectSourceV1::Bonus,
+            ..
+        })
+    ));
+
+    let mut other_card = lianah_spec(12);
+    other_card.base_rules.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);
+    other_card.cards[PlayerId::P1][0].key = CardKey::new(448, 3);
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(other_card),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::HealLifeCard,
+            ..
+        })
+    ));
+
+    for effect in [
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 2,
+            maximum: 20,
+        },
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 15,
+        },
+        CombatStatEffectV1::GainLifeOnVictory { life: 1 },
+    ] {
+        let mut wrong_effect = lianah_spec(12);
+        wrong_effect.cards[PlayerId::P1][0].ability =
+            execute(3526, CombatStatPredicateV1::Always, effect);
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_effect),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::HealLifeEffect,
+                ..
+            })
+        ));
+    }
+
+    let mut wrong_predicate = lianah_spec(12);
+    wrong_predicate.cards[PlayerId::P1][0].ability =
+        execute(3526, CombatStatPredicateV1::OwnerMovesFirst, HEAL);
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(wrong_predicate),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::HealLifePredicate,
+            ..
+        })
+    ));
+
+    // The effect cannot appear under any other id, on Lianah's own card or elsewhere.
+    let mut other_id = lianah_spec(12);
+    other_id.cards[PlayerId::P1][0].ability = execute(963, CombatStatPredicateV1::Always, HEAL);
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(other_id),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::HealLifeIdentity,
+            source_id: 963,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn heal_latches_on_a_win_pays_nothing_that_round_and_one_life_after_every_later_round() {
+    let spec = lianah_spec(18);
+    let mut game = game(spec.base_rules, spec.cards);
+    let start = game.position().clone();
+    let start_hash = position_hash(&start);
+
+    // Round 1: Lianah wins. Nothing is paid, but the position now carries the latch.
+    let (first, undo_first) = game
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P1].life, 18);
+    assert_eq!(first.players[PlayerId::P2].life, 17);
+    assert_eq!(game.position().latched[PlayerId::P1].len(), 1);
+    assert!(game.position().latched[PlayerId::P2].is_empty());
+    let after_first = game.position().clone();
+    let after_first_hash = position_hash(&after_first);
+    assert_ne!(after_first_hash, start_hash);
+
+    // Round 2: P1 loses with a card that has no ability at all. Damage lands first, then
+    // the latched Heal pays its one Life.
+    let (second, undo_second) = game
+        .make(input(PlayerId::P2, (1, 0, false), (1, 3, false)))
+        .unwrap();
+    assert!(!second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P1].life, 18 - 3 + 1);
+    assert_eq!(game.position().latched[PlayerId::P1].len(), 1);
+
+    // Round 3: P1 wins again; the repeat still pays and nothing latches twice.
+    let (third, undo_third) = game
+        .make(input(PlayerId::P1, (2, 1, false), (2, 0, false)))
+        .unwrap();
+    assert!(third.cards[PlayerId::P1].won);
+    assert_eq!(third.players[PlayerId::P1].life, 17);
+    assert_eq!(game.position().latched[PlayerId::P1].len(), 1);
+
+    // Round 4: another loss, another payment; the match then ends on Life.
+    let (fourth, undo_fourth) = game
+        .make(input(PlayerId::P2, (3, 0, false), (3, 2, false)))
+        .unwrap();
+    assert_eq!(fourth.players[PlayerId::P1].life, 17 - 3 + 1);
+    assert_eq!(fourth.players[PlayerId::P2].life, 20 - 3 - 3);
+    assert_eq!(fourth.status, MatchStatus::Won(PlayerId::P1));
+
+    // Undo walks the latch back out exactly.
+    game.unmake(undo_fourth);
+    game.unmake(undo_third);
+    game.unmake(undo_second);
+    assert_eq!(game.position(), &after_first);
+    assert_eq!(position_hash(game.position()), after_first_hash);
+    game.unmake(undo_first);
+    assert_eq!(game.position(), &start);
+    assert_eq!(position_hash(game.position()), start_hash);
+    assert!(game.position().latched[PlayerId::P1].is_empty());
+}
+
+#[test]
+fn heal_is_capped_at_its_maximum_and_never_lowers_a_higher_life() {
+    // 19 -> 20 -> 20: a player at the cap is left exactly where they are.
+    let spec = lianah_spec(19);
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P1].life, 20);
+    let (third, _) = diag
+        .make(input(PlayerId::P1, (2, 2, false), (2, 0, false)))
+        .unwrap();
+    assert_eq!(third.players[PlayerId::P1].life, 20);
+
+    // A player already above the cap is not pulled down to it.
+    let spec = lianah_spec(25);
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P1].life, 25);
+}
+
+#[test]
+fn heal_pays_after_the_rounds_own_victory_life_and_the_cap_sees_that_order() {
+    // The owner is on 18 with the latch. Winning with a `+2 Life` bonus pays that first,
+    // taking Life to 20, and the repeat then finds the cap already reached: 20, not 21.
+    let mut spec = lianah_spec(18);
+    spec.cards[PlayerId::P1][1].bonus = execute(
+        401,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 2 },
+    );
+    spec.cards[PlayerId::P1][1].source_bonus_support_count = 1;
+    let mut game = game(spec.base_rules, spec.cards);
+    game.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    let (second, _) = game
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert!(second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P1].life, 20);
+}
+
+#[test]
+fn heal_does_not_latch_on_a_loss_or_when_stopped_and_never_revives_a_ko() {
+    // Losing the round it is played: no latch, so nothing is paid later.
+    let spec = lianah_spec(17);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 2, false)))
+        .unwrap();
+    assert!(!first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P1].life, 14);
+    assert!(diag.position().latched[PlayerId::P1].is_empty());
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P1].life, 14);
+
+    // Stopped in its own round: the win is not enough, the source has to be live then. A
+    // later round without the Stop does not resurrect it.
+    let mut spec = lianah_spec(17);
+    spec.cards[PlayerId::P2][0].ability = execute(
+        4437,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert!(diag.position().latched[PlayerId::P1].is_empty());
+    let (second, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P1].life, 17 - 3);
+
+    // A latched owner taken to zero stays at zero: the repeat is ordinary Life, not
+    // Reanimate, and the KO is terminal.
+    let spec = lianah_spec(3);
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    let (second, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P1].life, 0);
+    assert_eq!(second.status, MatchStatus::Won(PlayerId::P2));
+}
+
+#[test]
+fn heal_pays_in_the_round_that_kos_the_opponent_as_in_capture_878093() {
+    // Lianah Ld (8 + 2 Power, 3 Damage) beats Madlocks 40 to 36 on three pillz each and
+    // takes the opponent to 9. Buck then wins the second round with 9 Damage for the KO,
+    // and the server left Lianah's owner on 13: the latched Heal paid at the end of the
+    // round that ended the match.
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_life = 12;
+    base.players[PlayerId::P2].initial_life = 12;
+    base.players[PlayerId::P1].hand[0] = urban_recreation_rust::engine::BaseRulesCardSpec {
+        key: LIANAH,
+        clan_id: 10,
+        power: 10,
+        damage: 3,
+    };
+    base.players[PlayerId::P1].hand[1].power = 6;
+    base.players[PlayerId::P1].hand[1].damage = 7;
+    base.players[PlayerId::P2].hand[0].power = 9;
+    base.players[PlayerId::P2].hand[0].damage = 2;
+    base.players[PlayerId::P2].hand[1].power = 7;
+    base.players[PlayerId::P2].hand[1].damage = 6;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(3526, CombatStatPredicateV1::Always, HEAL);
+    let mut game = game(base, cards);
+    let (first, _) = game
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(first.cards[PlayerId::P1].attack, 40);
+    assert_eq!(first.cards[PlayerId::P2].attack, 36);
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P1].life, 12);
+    assert_eq!(first.players[PlayerId::P2].life, 9);
+    let (second, _) = game
+        .make(input(PlayerId::P2, (1, 6, true), (1, 1, false)))
+        .unwrap();
+    assert!(second.cards[PlayerId::P1].won);
+    assert_eq!(second.cards[PlayerId::P1].damage, 9);
+    assert_eq!(second.players[PlayerId::P2].life, 0);
+    assert_eq!(second.players[PlayerId::P1].life, 13);
+    assert_eq!(second.status, MatchStatus::Won(PlayerId::P1));
+}
+
 fn anita_spec(power: u16, damage: u16) -> CombatStatDiagnosticMatchSpecV1 {
     let mut base = base_spec(power, damage);
     base.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);

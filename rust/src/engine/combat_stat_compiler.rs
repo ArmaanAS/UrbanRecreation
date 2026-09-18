@@ -73,7 +73,13 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 25;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 26;
+
+/// Lianah Ld level 3's printed `Heal 1 Max. 20`, the one permanent Life identity this
+/// projection executes. The other plain `Heal N Max. M` records share its exact structured
+/// shape and stay closed only for want of a reviewed slice, not for any known difference.
+pub(crate) const LIANAH_HEAL_LIFE_REGISTRY_ID: u32 = 3526;
+pub(crate) const LIANAH_HEAL_LIFE_DESCRIPTION: &str = "Heal 1 Max. 20";
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -718,11 +724,44 @@ pub(crate) fn argos_defeat_capped_pillz_identity_matches(
     (source_kind, definition_id) == (CombatStatEffectSourceV1::Ability, 1158)
 }
 
+/// Strictly recognize Lianah Ld's printed Heal. It is the projection's first repeating
+/// effect: the round its card wins latches it and pays nothing, and every later round then
+/// pays `life` while the owner is below `maximum`. Returns `(life, maximum)`.
+pub(crate) fn classify_heal_life_on_victory(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (heal_life_on_victory_identity_matches(source_kind, definition.id())
+        && definition.description() == LIANAH_HEAL_LIFE_DESCRIPTION
+        && definition.description() == format!("Heal {} Max. {}", input.value, input.value_max)
+        && heal_life_on_victory_shape_matches(input))
+    .then_some((input.value, input.value_max))
+}
+
+/// Shared identity gate for compiler output and caller-provided compact plans.
+pub(crate) fn heal_life_on_victory_identity_matches(
+    source_kind: CombatStatEffectSourceV1,
+    definition_id: u32,
+) -> bool {
+    (source_kind, definition_id)
+        == (
+            CombatStatEffectSourceV1::Ability,
+            LIANAH_HEAL_LIFE_REGISTRY_ID,
+        )
+}
+
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
     if classify_anita_courage_damage_to_life(definition, source_kind) {
+        return None;
+    }
+    // A permanent is post-round work with its own latch channel. The registry already
+    // refuses it as `Permanent`, but keep the guard so a later widening cannot turn it
+    // into an ordinary one-round effect.
+    if classify_heal_life_on_victory(definition, source_kind).is_some() {
         return None;
     }
     if classify_copy_opponent_source(definition).is_some() {
@@ -1327,6 +1366,42 @@ fn argos_defeat_capped_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
         && !input.is_clanmates_count_linked
         && !input.is_anti_clanmates_count_linked
         && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+/// The complete structured shape every plain `Heal N Max. M` record carries: an own-Life
+/// increase of `value` on a won round, capped at `value_max`, permanent but not immediate.
+/// `valueMin` is 1 on every such record and is not a floor the effect ever reads.
+fn heal_life_on_victory_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value > 0
+        && input.value_min == 1
+        && input.value_max > input.value
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Player
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && input.is_permanent
         && !input.is_immediate_permanent
 }
 
@@ -2555,6 +2630,69 @@ mod tests {
                         .unwrap(),
                     CombatStatEffectSourceV1::Ability,
                 ),
+                "mutated field {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn heal_life_admits_only_lianahs_ability_3526_and_its_full_permanent_shape() {
+        let registry = registry();
+        let lianah = registry.lookup_capture(3526, "Heal 1 Max. 20").unwrap();
+        assert_eq!(
+            classify_heal_life_on_victory(lianah, CombatStatEffectSourceV1::Ability),
+            Some((1, 20))
+        );
+        assert_eq!(
+            classify_heal_life_on_victory(lianah, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        assert_eq!(
+            classify_combat_stat_effect(lianah, CombatStatEffectSourceV1::Ability),
+            None
+        );
+        // Same grammar, same shape, other identities: closed until their own slice.
+        for (id, description) in [
+            (963, "Heal 1 Max. 15"),
+            (3118, "Heal 1 Max. 18"),
+            (751, "Heal 2 Max. 10"),
+            (1625, "Defeat : Heal 1 Max. 13"),
+            (5692, "Asymmetry: Heal 1 Max. 16"),
+        ] {
+            assert_eq!(
+                classify_heal_life_on_victory(
+                    registry.lookup_capture(id, description).unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "{id} {description}"
+            );
+        }
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("valueMax", serde_json::json!(19)),
+            ("valueMin", serde_json::json!(0)),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("indexRequirement", serde_json::json!("asymmetry")),
+            ("isPermanent", serde_json::json!(false)),
+            ("isImmediatePermanent", serde_json::json!(true)),
+            ("sideAffected", serde_json::json!("opponent")),
+            ("attributeAffected", serde_json::json!("pillz")),
+        ] {
+            let mut malformed = source.clone();
+            malformed["3526"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_heal_life_on_victory(
+                    malformed.lookup_capture(3526, "Heal 1 Max. 20").unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
                 "mutated field {field}"
             );
         }

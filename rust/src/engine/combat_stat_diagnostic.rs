@@ -9,9 +9,10 @@ use super::combat_resolution::{
 };
 use super::combat_stat_compiler::{
     anita_courage_damage_to_life_identity_matches, argos_defeat_capped_pillz_identity_matches,
-    equalizer_opponent_life_on_victory_identity_matches,
+    equalizer_opponent_life_on_victory_identity_matches, heal_life_on_victory_identity_matches,
     komboka_victory_pillz_and_life_identity_matches, victory_opponent_life_identity_matches,
     victory_opponent_life_predicate, victory_or_defeat_pillz_identity_matches,
+    LIANAH_HEAL_LIFE_REGISTRY_ID,
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
@@ -118,6 +119,12 @@ pub enum CombatStatPostRoundEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// `Heal N Max. M`: won rounds latch it, every later round pays `life` while the owner
+    /// is below `maximum`. Lianah Ld's `3526` is the only admitted identity.
+    HealLifeOnVictory {
+        life: u16,
+        maximum: u16,
+    },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -208,6 +215,14 @@ pub enum CombatStatEffectV1 {
     ReduceOpponentLifeOnDefeat {
         life: u16,
         minimum: u16,
+    },
+    /// The projection's first repeating effect. A won round latches it into the owner's
+    /// position and pays nothing itself; the base engine then pays `life` at the end of
+    /// every later round while the owner is living and below `maximum`, whatever card is
+    /// played and whoever wins. Stop liveness is judged once, in the latching round.
+    HealLifeOnVictory {
+        life: u16,
+        maximum: u16,
     },
 }
 
@@ -320,6 +335,10 @@ pub enum InvalidCombatStatPlanReasonV1 {
     AnitaCourageDamageToLifeEffect,
     AnitaCourageDamageToLifeIdentity,
     AnitaCourageDamageToLifePredicate,
+    HealLifeCard,
+    HealLifeEffect,
+    HealLifeIdentity,
+    HealLifePredicate,
     CopyOpponentSourceIdentity,
     CopyOpponentSourceTarget,
     VictoryOpponentLifeIdentity,
@@ -806,6 +825,9 @@ fn victory_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffect
 }
 
 const ANITA_COURAGE_DAMAGE_TO_LIFE_CARD: CardKey = CardKey { id: 448, level: 3 };
+/// Lianah Ld level 3. Her lower levels print `Heal 1 Max. 14` and `Heal 1 Max. 17` under
+/// ids the registry has never captured, so they cannot borrow this one's authority.
+const LIANAH_HEAL_LIFE_CARD: CardKey = CardKey { id: 978, level: 3 };
 
 fn equalizer_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
     matches!(
@@ -922,6 +944,61 @@ fn validate_combat_stat_source_plan(
             source,
             source_id,
             InvalidCombatStatPlanReasonV1::AnitaCourageDamageToLifeIdentity,
+        ));
+    }
+    // Lianah Ld's Heal is one printed Ability identity on one card, with one magnitude and
+    // one cap. Another id, slot, card, number or predicate cannot latch a permanent.
+    if source_id == LIANAH_HEAL_LIFE_REGISTRY_ID {
+        if !heal_life_on_victory_identity_matches(source, source_id) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::HealLifeIdentity,
+            ));
+        }
+        if card_key != LIANAH_HEAL_LIFE_CARD {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::HealLifeCard,
+            ));
+        }
+        if effect
+            != (CombatStatEffectV1::HealLifeOnVictory {
+                life: 1,
+                maximum: 20,
+            })
+        {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::HealLifeEffect,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::HealLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if matches!(effect, CombatStatEffectV1::HealLifeOnVictory { .. }) {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::HealLifeIdentity,
         ));
     }
     // Every reviewed Victory opponent-Life identity is source-kind, magnitude and predicate
@@ -1734,7 +1811,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
-        | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. } => return None,
+        | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
+        | CombatStatEffectV1::HealLifeOnVictory { .. } => return None,
     })
 }
 
@@ -1784,6 +1862,9 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
                 PostRoundEffect::ReduceOpponentLifeOnDefeat { life, minimum },
             ))
         }
+        CombatStatEffectV1::HealLifeOnVictory { life, maximum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::LatchHealLifeOnVictory { life, maximum }),
+        ),
         CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star, minimum } => {
             Some(
                 PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerOpponentStars {

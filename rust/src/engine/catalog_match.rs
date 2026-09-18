@@ -8,11 +8,12 @@ use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_combat_stat_effect, classify_copy_opponent_source, classify_defeat_life,
     classify_defeat_opponent_life, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_opponent_life,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
-    is_copy_opponent_source_description, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
+    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
+    classify_victory_opponent_life, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, compact_effect, is_copy_opponent_source_description,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    LIANAH_HEAL_LIFE_DESCRIPTION, LIANAH_HEAL_LIFE_REGISTRY_ID,
 };
 use super::CopiedSourceKindV1;
 use super::{
@@ -42,6 +43,7 @@ const ANITA_COURAGE_DAMAGE_TO_LIFE_REGISTRY_ID: u32 = 274;
 const ARGOS_DEFEAT_CAPPED_PILLZ_DESCRIPTION: &str = "Defeat: +2 Pillz Max. 11";
 const ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID: u32 = 1158;
 const LOBO_REANIMATE_REGISTRY_ID: u32 = 4951;
+const LIANAH_HEAL_LIFE_CARD: CardKey = CardKey { id: 978, level: 3 };
 const BERZERK_CLAN_ID: u32 = 46;
 const BERZERK_CATALOG_BONUS_ID: u32 = 44;
 const BERZERK_VICTORY_OPPONENT_LIFE_REGISTRY_ID: u32 = 680;
@@ -995,6 +997,48 @@ fn prepare_catalog_source(
                 .into_boxed_slice(),
         });
     }
+    // The one admitted permanent is Lianah Ld level 3's printed Ability. Her lower levels
+    // print other caps under ids the registry never captured, and no other card, slot or
+    // same-text row can borrow the latch.
+    if description == LIANAH_HEAL_LIFE_DESCRIPTION {
+        if card_key == LIANAH_HEAL_LIFE_CARD
+            && source_kind == CombatStatEffectSourceV1::Ability
+            && catalog_id == Some(LIANAH_HEAL_LIFE_REGISTRY_ID)
+        {
+            return prepare_heal_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+            );
+        }
+        let definition = registry
+            .lookup_description(description)
+            .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description: description.to_owned(),
+                source,
+            })?
+            .definition();
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    }
     if description == ARGOS_DEFEAT_CAPPED_PILLZ_DESCRIPTION {
         if source_kind == CombatStatEffectSourceV1::Ability
             && catalog_id == Some(ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID)
@@ -1905,6 +1949,71 @@ fn prepare_defeat_recover_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+        },
+    })
+}
+
+fn prepare_heal_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(LIANAH_HEAL_LIFE_REGISTRY_ID, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    let Some((life, maximum)) = classify_heal_life_on_victory(definition, source_kind) else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::HealLifeOnVictory { life, maximum },
+            predicate: CombatStatPredicateV1::Always,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::HealLifeOnVictory { life, maximum },
         },
     })
 }

@@ -122,6 +122,26 @@ fn catalog_with_anita_courage_life_alias(key: CardKey) -> EffectiveCardCatalog {
     EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
 }
 
+fn catalog_with_ability_alias(
+    key: CardKey,
+    ability_id: u32,
+    ability: &str,
+) -> EffectiveCardCatalog {
+    let mut rows: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("data/data.json")).unwrap()).unwrap();
+    let row = rows
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|row| row["id"] == key.id && row["level"] == key.level)
+        .unwrap();
+    row["ability_id"] = serde_json::json!(ability_id);
+    row["ability"] = serde_json::json!(ability);
+    let rows = serde_json::to_vec(&rows).unwrap();
+    let overrides = fs::read(root_path("data/battle_card_overrides.json")).unwrap();
+    EffectiveCardCatalog::from_readers(rows.as_slice(), overrides.as_slice()).unwrap()
+}
+
 fn catalog_with_anita_courage_life_bonus() -> EffectiveCardCatalog {
     let mut rows: serde_json::Value =
         serde_json::from_slice(&fs::read(root_path("data/data.json")).unwrap()).unwrap();
@@ -1106,6 +1126,165 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
     assert_eq!(report.players[PlayerId::P1].pillz, 12);
     game.unmake(undo);
     assert_eq!(game.position(), &before);
+}
+
+#[test]
+fn strict_catalog_match_admits_only_lianahs_exact_heal_and_latches_it_on_a_win() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let lianah = CardKey::new(978, 3);
+    let hand = [
+        lianah,
+        CardKey::new(123, 1),
+        CardKey::new(124, 1),
+        CardKey::new(138, 1),
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(hand, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity,
+        effect,
+        predicate,
+    } = &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Lianah Ld L3 was not prepared as a latching Heal")
+    };
+    assert_eq!(identity.catalog_id, Some(3526));
+    assert_eq!(identity.registry_definition_id, 3526);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [3526]);
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 20
+        }
+    );
+    assert_eq!(*predicate, CombatStatPredicateV1::Always);
+    assert!(matches!(
+        prepared.match_spec().cards[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 3526,
+            predicate: CombatStatPredicateV1::Always,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::HealLifeOnVictory {
+                life: 1,
+                maximum: 20
+            },
+        }
+    ));
+
+    // The strict match plays the latch: a won round pays nothing, the next round pays one
+    // Life after that round's damage, and undo restores the latch-free position exactly.
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let before_hash = position_hash(&before);
+    let (first, undo_first) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 3, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P1].life, 12);
+    assert_eq!(game.position().latched[PlayerId::P1].len(), 1);
+    let after_first = game.position().clone();
+    let after_first_hash = position_hash(&after_first);
+    let (second, undo_second) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P2,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(1, 0, false),
+                BaseRulesSelection::new(1, 4, false),
+            ),
+        })
+        .unwrap();
+    assert!(second.cards[PlayerId::P2].won);
+    assert_eq!(
+        second.players[PlayerId::P1].life,
+        12 - second.cards[PlayerId::P2].damage + 1
+    );
+    game.unmake(undo_second);
+    assert_eq!(game.position(), &after_first);
+    assert_eq!(position_hash(game.position()), after_first_hash);
+    game.unmake(undo_first);
+    assert_eq!(game.position(), &before);
+    assert_eq!(position_hash(game.position()), before_hash);
+    assert!(game.position().latched[PlayerId::P1].is_empty());
+
+    // Lianah's lower levels print `Heal 1 Max. 14` and `Heal 1 Max. 17` under ids the
+    // registry never captured; neither level constructs.
+    for key in [CardKey::new(978, 1), CardKey::new(978, 2)] {
+        assert!(CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1)
+                ],
+                opponent,
+                false
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .is_err());
+    }
+
+    // Another card carrying the exact text and id cannot borrow the latch.
+    let lookalike = catalog_with_ability_alias(CardKey::new(123, 1), 3526, "Heal 1 Max. 20");
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input([CardKey::new(123, 1), CardKey::new(124, 1), CardKey::new(138, 1), CardKey::new(139, 1)], opponent, false),
+            &lookalike,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(3526),
+            ref description,
+            registry_definition_id: 3526,
+            ..
+        }) if hand_slot.get() == 0 && description == "Heal 1 Max. 20"
+    ));
+
+    // The same grammar under another identity stays closed: Campbell's `Heal 1 Max. 15`.
+    let sibling = catalog_with_ability_alias(CardKey::new(123, 1), 963, "Heal 1 Max. 15");
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                    CardKey::new(139, 1)
+                ],
+                opponent,
+                false
+            ),
+            &sibling,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(963),
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -2661,10 +2840,11 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
     assert_eq!(
         eligible,
         BTreeSet::from([
-            830285, 869944, 874520, 875098, 875322, 877636, 877687, 877812, 877950, 878011, 924257,
-            925254, 925674, 925719, 925796, 943111, 946112, 947228, 949750, 970972, 1011712,
-            1024673, 1058366, 1059030, 1059454, 1060052, 1060199, 1061897, 1065812, 1069813,
-            1070207, 1072715, 1078906, 1081463, 1089346, 1090607, 1091235, 1092909, 1130833,
+            830285, 869944, 874520, 875098, 875322, 877636, 877687, 877773, 877812, 877860, 877950,
+            878011, 878056, 924257, 925254, 925674, 925719, 925796, 943111, 946112, 947228, 949750,
+            970972, 1011712, 1024673, 1058366, 1059030, 1059454, 1060052, 1060199, 1061897,
+            1065812, 1069813, 1070207, 1072715, 1078906, 1079482, 1081463, 1089346, 1090607,
+            1091235, 1092909, 1130833,
         ])
     );
 }
