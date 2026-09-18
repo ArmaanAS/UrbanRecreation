@@ -3075,13 +3075,93 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
         eligible,
         BTreeSet::from([
             830285, 869944, 874520, 875098, 875155, 875322, 877636, 877687, 877773, 877812, 877860,
-            877950, 878011, 878056, 924257, 924320, 925254, 925674, 925719, 925796, 943111, 946112,
-            947228, 949750, 970972, 1011712, 1024673, 1058366, 1059030, 1059454, 1060052, 1060199,
-            1061897, 1065812, 1069813, 1070207, 1072715, 1078906, 1079482, 1080877, 1081463,
-            1089346, 1090607, 1091235, 1091585, 1092294, 1092369, 1092454, 1092909, 1092992,
-            1130833,
+            877950, 878011, 878056, 924257, 924320, 924413, 925254, 925674, 925719, 925796, 943111,
+            946112, 947228, 949750, 956608, 970972, 1011712, 1024673, 1058366, 1059030, 1059454,
+            1060052, 1060199, 1061897, 1065812, 1069813, 1070207, 1072715, 1078906, 1079482,
+            1080877, 1081463, 1089346, 1090607, 1091235, 1091585, 1092294, 1092369, 1092454,
+            1092909, 1092992, 1130833,
         ])
     );
+}
+
+#[test]
+fn strict_catalog_match_prepares_plain_opposing_victory_pillz_from_the_printed_ability() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+
+    // Dalhia Cr L5 prints `339` and Yomi Ld L1 prints `5532`; each executes with its own
+    // printed magnitude and floor from the Ability slot.
+    for (key, catalog_id, pillz, minimum) in [
+        (CardKey::new(519, 5), 339, 3, 4),
+        (CardKey::new(1511, 1), 5532, 2, 1),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap();
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as plain opposing Victory Pillz")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert!(identity.registry_alias_ids.contains(&catalog_id));
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum }
+        );
+        assert_eq!(*predicate, CombatStatPredicateV1::Always);
+    }
+
+    // Dalhia Cr wins with a six-Pillz bet: the opponent's 12 fall to 9, hers to 6.
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(519, 5),
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            opponent,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (report, undo) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 6, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 6);
+    assert_eq!(report.players[PlayerId::P2].pillz, 9);
+    game.unmake(undo);
+    assert_eq!(game.position(), &before);
 }
 
 #[test]

@@ -46,7 +46,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (946400, 1),
     (1058366, 3),
     (1061897, 4),
-    (946288, 1),
+    (946288, 3),
     (1092660, 1),
     (1093500, 2),
     (1092909, 2),
@@ -197,6 +197,17 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1092773, 1),
     (1092840, 3),
     (1093275, 1),
+    // Revision 30 plain `-N Opp Pillz. Min M`. Dalhia Cr's `339` takes Callie from 12 - 5
+    // to exactly the Min of 4 in 1131294/0 (a rule-3 draw), and in 1091644/1 finds AI-Lycs
+    // already on the Min after his Defeat recovery (6 - 6, recover 4) and changes nothing.
+    // A loss takes nothing: Yomi Ld in 924413/0, Gil Cr in 956608/0 (rule 2), Baldovino in
+    // 1087712/0, Hawkins Cr in 1131294/1 and Andsom in 946288/2 while his target is
+    // knocked out at 0 Pillz. Thorpah Cr's losing `854` in 1023396/0 is already above.
+    (1091644, 2),
+    (1131294, 3),
+    (924413, 4),
+    (956608, 4),
+    (1087712, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -332,6 +343,21 @@ fn victory_pillz_entry(id: u32, pillz: u16) -> serde_json::Value {
     entry
 }
 
+fn victory_opponent_pillz_entry(id: u32, pillz: u16, minimum: u16) -> serde_json::Value {
+    let mut entry = numeric_entry(
+        id,
+        &format!("-{pillz} Opp Pillz. Min {minimum}"),
+        "both",
+        pillz,
+        minimum,
+    );
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("opponent");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("decrease");
+    entry
+}
+
 fn defeat_life_entry(id: u32, life: u16) -> serde_json::Value {
     let mut entry = numeric_entry(id, &format!("Defeat: +{life} Life"), "both", life, 1);
     entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
@@ -462,8 +488,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_two_hundred_and_forty_three_unique_sequential_prefix_rounds()
-{
+fn fixed_server_backed_gate_is_exactly_two_hundred_and_sixty_unique_sequential_prefix_rounds() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -499,36 +524,36 @@ fn fixed_server_backed_gate_is_exactly_two_hundred_and_forty_three_unique_sequen
             }
         }
     }
-    assert_eq!(rounds, 243);
+    assert_eq!(rounds, 260);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
             6, 7, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 73, 86, 90, 93, 94, 130, 156, 197, 202,
-            206, 225, 257, 266, 274, 292, 310, 316, 333, 367, 368, 372, 377, 391, 401, 412, 417,
-            421, 432, 442, 455, 461, 469, 478, 503, 520, 532, 536, 569, 577, 578, 585, 587, 612,
-            649, 656, 680, 682, 713, 717, 727, 739, 741, 751, 759, 778, 801, 826, 837, 844, 852,
-            862, 871, 883, 888, 916, 938, 959, 963, 980, 1020, 1034, 1041, 1047, 1053, 1054, 1091,
-            1098, 1131, 1150, 1158, 1163, 1197, 1229, 1241, 1293, 1297, 1303, 1310, 1330, 1335,
-            1338, 1341, 1342, 1345, 1350, 1355, 1359, 1372, 1375, 1385, 1388, 1396, 1399, 1415,
-            1418, 1420, 1464, 1469, 1501, 1508, 1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634,
-            1688, 1694, 1699, 1714, 1722, 1770, 1805, 1806, 1823, 1833, 1840, 1844, 1845, 1848,
-            1850, 2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329, 2375, 2412, 2528, 2535, 2556,
-            2573, 2657, 2660, 2835, 2881, 2944, 2965, 2992, 3004, 3040, 3048, 3118, 3197, 3222,
-            3284, 3386, 3393, 3487, 3526, 3677, 3829, 3852, 3864, 3865, 3897, 4041, 4098, 4216,
-            4286, 4297, 4299, 4301, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464, 4571, 4625,
-            4708, 4711, 4718, 4722, 4730, 4757, 4824, 4908, 4951, 4954, 4966, 4983, 5025, 5026,
-            5085, 5169, 5195, 5237, 5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406, 5415, 5462,
-            5498, 5520, 5525, 5531, 5549, 5763, 5835, 5841, 5849, 5852, 5859, 5901
+            206, 225, 257, 266, 274, 292, 310, 316, 333, 334, 339, 343, 360, 367, 368, 372, 377,
+            391, 401, 412, 417, 421, 432, 442, 455, 461, 469, 478, 503, 520, 532, 536, 549, 555,
+            566, 569, 570, 577, 578, 585, 587, 612, 649, 656, 680, 682, 713, 717, 727, 739, 741,
+            751, 759, 778, 801, 826, 837, 844, 852, 854, 862, 871, 883, 888, 916, 938, 959, 963,
+            980, 1020, 1034, 1041, 1047, 1053, 1054, 1091, 1098, 1131, 1150, 1158, 1163, 1197,
+            1229, 1241, 1293, 1297, 1303, 1310, 1330, 1335, 1338, 1341, 1342, 1345, 1350, 1355,
+            1359, 1372, 1375, 1385, 1388, 1396, 1399, 1415, 1417, 1418, 1420, 1464, 1469, 1501,
+            1508, 1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634, 1688, 1694, 1699, 1714, 1722,
+            1770, 1805, 1806, 1823, 1825, 1833, 1840, 1844, 1845, 1848, 1850, 2021, 2028, 2073,
+            2277, 2286, 2299, 2321, 2329, 2375, 2412, 2528, 2535, 2556, 2573, 2628, 2657, 2660,
+            2835, 2881, 2944, 2965, 2992, 3004, 3040, 3048, 3118, 3197, 3222, 3284, 3386, 3393,
+            3487, 3526, 3597, 3677, 3829, 3852, 3864, 3865, 3897, 4041, 4098, 4216, 4286, 4297,
+            4299, 4301, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464, 4571, 4625, 4708, 4711,
+            4718, 4722, 4730, 4757, 4824, 4908, 4951, 4954, 4966, 4983, 5025, 5026, 5085, 5169,
+            5195, 5237, 5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406, 5415, 5462, 5498, 5520,
+            5525, 5531, 5532, 5549, 5763, 5835, 5841, 5849, 5852, 5859, 5901
         ])
     );
     assert_eq!(
         disabled_ids,
         BTreeSet::from([
-            594, 809, 854, 935, 1231, 1852, 2222, 2317, 4303, 4459, 4657, 4695, 4747, 4937, 4948,
-            5283,
+            594, 809, 935, 1231, 1852, 2222, 2317, 4303, 4459, 4657, 4695, 4747, 4937, 4948, 5283,
         ])
     );
-    assert_eq!(absent, 10);
+    assert_eq!(absent, 12);
 }
 
 #[test]
@@ -827,7 +852,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 29);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 30);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -883,7 +908,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        29
+        30
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -2214,6 +2239,129 @@ fn victory_pillz_compiler_admits_the_complete_ability_shape_and_near_misses_reje
     assert!(matches!(
         prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
         CombatStatSourcePlanV1::Disabled { source_id: 1139 }
+    ));
+}
+
+#[test]
+fn victory_opponent_pillz_compiler_admits_the_complete_ability_shape_and_near_misses_reject() {
+    let catalog = catalog();
+    const ID: u32 = 339;
+    const DESCRIPTION: &str = "-3 Opp Pillz. Min 4";
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    let with_ability = |id: u32, description: &str| {
+        let mut source = source.clone();
+        source.players[0].hand[slot].source_ability = Some(SourceModifier {
+            id,
+            description: description.to_owned(),
+        });
+        source
+    };
+
+    // The Ability slot executes with the printed magnitude and floor.
+    let registry = one_entry_registry(victory_opponent_pillz_entry(ID, 3, 4));
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(ID, DESCRIPTION),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            effect:
+                urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory {
+                    pillz: 3,
+                    minimum: 4
+                },
+            predicate: CombatStatPredicateV1::Always,
+            ..
+        }
+    ));
+
+    // The same record in the Bonus slot is a hazard: no clan prints it.
+    let mut bonus = source.clone();
+    bonus.players[0].hand[slot].source_bonus = Some(SourceModifier {
+        id: ID,
+        description: DESCRIPTION.to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(bonus, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][slot].bonus,
+        CombatStatProjectionDispositionV1::Disabled {
+            reason: CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].bonus,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
+    ));
+
+    // A condition mutation under the familiar text rejects when selected.
+    let mut malformed = victory_opponent_pillz_entry(ID, 3, 4);
+    malformed["abilityData"]["currentRoundRequirement"] = serde_json::json!("any");
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(ID, DESCRIPTION),
+        &catalog,
+        &one_entry_registry(malformed),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
+    ));
+
+    // So does the complete structure under near-miss text.
+    const MALFORMED_DESCRIPTION: &str = "-3 opp pillz. min 4";
+    let mut malformed = victory_opponent_pillz_entry(ID, 3, 4);
+    malformed["description"] = serde_json::json!(MALFORMED_DESCRIPTION);
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(ID, MALFORMED_DESCRIPTION),
+        &catalog,
+        &one_entry_registry(malformed),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
+    ));
+
+    // The round-scaled `Growth:` sibling differs structurally and keeps its ordinary
+    // disabled record.
+    const GROWTH: &str = "Growth: -1 Opp Pillz. Min 0";
+    let mut growth = victory_opponent_pillz_entry(2590, 1, 0);
+    growth["description"] = serde_json::json!(GROWTH);
+    growth["abilityData"]["isOverdrive"] = serde_json::json!(true);
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(2590, GROWTH),
+        &catalog,
+        &one_entry_registry(growth),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][slot].ability,
+        CombatStatProjectionDispositionV1::Disabled {
+            reason: CombatStatDisabledReasonV1::OrdinaryAbility { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        CombatStatSourcePlanV1::Disabled { source_id: 2590 }
     ));
 }
 

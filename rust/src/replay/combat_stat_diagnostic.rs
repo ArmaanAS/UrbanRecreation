@@ -20,13 +20,13 @@ use crate::engine::combat_stat_compiler::{
     classify_heal_life_on_victory, classify_komboka_victory_pillz_and_life,
     classify_poison_opponent_life_on_victory, classify_reanimate_life,
     classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
-    classify_victory_opponent_life, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, classify_victory_pillz, compact_effect,
-    has_defeat_life_shape, has_heal_life_on_victory_shape,
+    classify_victory_opponent_life, classify_victory_opponent_pillz,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
+    compact_effect, has_defeat_life_shape, has_heal_life_on_victory_shape,
     has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
     has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
-    has_victory_life_shape, has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    has_victory_life_shape, has_victory_opponent_pillz_shape, has_victory_pillz_shape,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
@@ -795,6 +795,23 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some((pillz, minimum)) = classify_victory_opponent_pillz(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory {
+                    pillz,
+                    minimum,
+                },
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+            },
+        });
+    }
     if let Some(life) = classify_defeat_life(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -956,6 +973,13 @@ fn prepare_combat_stat_source(
         && source.description.ends_with(" Pillz")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_victory_pillz_shape(definition);
+    // The opposing reduction has the same two-sided boundary. `Stop:`, `Growth:`, `Brawl:`,
+    // `Bet > N Pillz:`, `Defeat:` and clan-gated forms differ structurally and stay
+    // visible-but-disabled; the dotted `Opp. Pillz` compounds are other grammars entirely.
+    let unadmitted_victory_opponent_pillz = (source.description.starts_with('-')
+        && source.description.contains("Opp Pillz")
+        && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
+        || has_victory_opponent_pillz_shape(definition);
     // The admitted grammar is deliberately narrower than the deferred family. Capped,
     // compound, and context-prefixed losing-Life forms must still reject when selected;
     // otherwise a near-miss would quietly become a no-op merely because it is not plain
@@ -1023,6 +1047,7 @@ fn prepare_combat_stat_source(
         || unadmitted_equalizer_opponent_life
         || unadmitted_victory_life
         || unadmitted_victory_pillz
+        || unadmitted_victory_opponent_pillz
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
@@ -1054,6 +1079,7 @@ fn prepare_combat_stat_source(
         || unadmitted_equalizer_opponent_life
         || unadmitted_victory_life
         || unadmitted_victory_pillz
+        || unadmitted_victory_opponent_pillz
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz

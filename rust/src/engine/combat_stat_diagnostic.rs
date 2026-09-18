@@ -95,6 +95,12 @@ pub enum CombatStatPostRoundEffectV1 {
     GainPillzOnVictory {
         pillz: u16,
     },
+    /// Plain `-N Opp Pillz. Min M`: the winner takes `pillz` from the opposing player, never
+    /// below `minimum`. Admitted by exact text and shape from the Ability slot.
+    ReduceOpponentPillzOnVictory {
+        pillz: u16,
+        minimum: u16,
+    },
     GainLifeOnDefeat {
         life: u16,
     },
@@ -203,6 +209,12 @@ pub enum CombatStatEffectV1 {
     /// slot. The hot plan retains its exact positive magnitude and nothing else.
     GainPillzOnVictory {
         pillz: u16,
+    },
+    /// Victory-only reduction of the opposing player's Pillz with a fixed magnitude and lower
+    /// bound, admitted only by the cold structured compiler from the Ability slot.
+    ReduceOpponentPillzOnVictory {
+        pillz: u16,
+        minimum: u16,
     },
     /// Ordinary Defeat Life applies only after a surviving loss. The hot path retains the
     /// exact positive magnitude but no strings or registry access.
@@ -393,6 +405,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     VictoryPillzSource,
     VictoryPillzMagnitude,
     VictoryPillzPredicate,
+    VictoryOpponentPillzSource,
+    VictoryOpponentPillzMagnitude,
+    VictoryOpponentPillzPredicate,
     DefeatLifeSource,
     DefeatLifeMagnitude,
     DefeatLifePredicate,
@@ -1447,6 +1462,36 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    if let CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, .. } = effect {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentPillzSource,
+            ));
+        }
+        if pillz == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentPillzMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentPillzPredicate,
+            ));
+        }
+        return Ok(());
+    }
     if let CombatStatEffectV1::GainLifeOnDefeat { life } = effect {
         if source != CombatStatEffectSourceV1::Ability {
             return Err(invalid_combat_stat_execute(
@@ -1930,6 +1975,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentLifeOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnVictory { .. }
         | CombatStatEffectV1::GainPillzOnVictory { .. }
+        | CombatStatEffectV1::ReduceOpponentPillzOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
         | CombatStatEffectV1::ReanimateLife { .. }
         | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
@@ -1973,6 +2019,11 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::GainPillzOnVictory { pillz } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainPillzOnVictory(pillz),
         )),
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::ReduceOpponentPillzOnVictory { pillz, minimum },
+            ))
+        }
         CombatStatEffectV1::GainLifeOnDefeat { life } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainLifeOnDefeat(life),
         )),

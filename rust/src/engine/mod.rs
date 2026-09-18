@@ -452,6 +452,12 @@ pub(super) enum PostRoundEffect {
     GainLifeOnVictory(u16),
     /// Plain `+N Pillz`: the round winner's own Pillz rise by the printed amount.
     GainPillzOnVictory(u16),
+    /// Plain `-N Opp Pillz. Min M`: the round winner takes `pillz` from the opposing
+    /// player's remaining Pillz, never below `minimum`.
+    ReduceOpponentPillzOnVictory {
+        pillz: u16,
+        minimum: u16,
+    },
     GainLifeOnDefeat(u16),
     ReanimateLife(u16),
     GainLifeOnVictoryOrDefeat {
@@ -665,6 +671,21 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainPillzOnVictory(_) => {}
+                    // The opposing reduction is Victory-only and reads the target's Pillz
+                    // after both bets have been paid, which is where the TypeScript
+                    // reference applies END modifiers. A target already at or below Min is
+                    // left alone rather than pulled up to it (1091644/1: AI-Lycs recovers to
+                    // 4 under Min 4 and Dalhia Cr's -3 changes nothing).
+                    PostRoundEffect::ReduceOpponentPillzOnVictory { pillz, minimum }
+                        if owner == winner && position.players[owner.other()].pillz > minimum =>
+                    {
+                        let target = owner.other();
+                        position.players[target].pillz = position.players[target]
+                            .pillz
+                            .saturating_sub(pillz)
+                            .max(minimum);
+                    }
+                    PostRoundEffect::ReduceOpponentPillzOnVictory { .. } => {}
                     // The reviewed Victory Or Defeat Life sources are ordinary Life
                     // gains, not Reanimate: a living owner gains after either outcome,
                     // while a KO remains terminal.  Keep the addition checked so the

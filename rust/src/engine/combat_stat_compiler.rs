@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 29;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 30;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -326,6 +326,28 @@ pub(crate) fn classify_victory_pillz(
 pub(crate) fn has_victory_pillz_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
     input.value > 0 && victory_pillz_shape_matches(input)
+}
+
+/// Recognize the plain `-N Opp Pillz. Min M` Victory grammar: the winner takes N Pillz
+/// from the opposing player, never below M, after that player's bet has been paid. Exact
+/// text and complete structured shape over every same-text registry record, card
+/// abilities only. Returns `(pillz, minimum)`.
+pub(crate) fn classify_victory_opponent_pillz(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_victory_opponent_pillz_shape(definition)
+        && definition.description()
+            == format!("-{} Opp Pillz. Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min))
+}
+
+/// Structural half of the opposing Victory Pillz boundary.
+pub(crate) fn has_victory_opponent_pillz_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && victory_opponent_pillz_shape_matches(input)
 }
 
 /// Recognize the immediate, surviving Defeat Life grammar. This deliberately admits card
@@ -860,6 +882,7 @@ pub(crate) fn classify_combat_stat_effect(
     }
     if classify_victory_life(definition, source_kind).is_some()
         || classify_victory_pillz(definition, source_kind).is_some()
+        || classify_victory_opponent_pillz(definition, source_kind).is_some()
     {
         return None;
     }
@@ -1287,6 +1310,37 @@ fn victory_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
         && input.side_affected == AffectedSideV1::Player
         && input.attribute_affected == AttributeAffectedV1::Pillz
         && input.attribute_action == AttributeActionV1::Increase
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+fn victory_opponent_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Opponent
+        && input.attribute_affected == AttributeAffectedV1::Pillz
+        && input.attribute_action == AttributeActionV1::Decrease
         && input.special_action == SpecialActionV1::None
         && !input.is_inverted
         && !input.is_support

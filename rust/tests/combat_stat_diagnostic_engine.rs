@@ -864,6 +864,147 @@ fn victory_pillz_still_pays_into_a_ko_but_not_when_stopped_or_after_an_overflow(
     assert_eq!(diag.position(), &before);
 }
 
+const DALHIA: CardKey = CardKey { id: 519, level: 5 };
+const OPPONENT_PILLZ: CombatStatEffectV1 = CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+    pillz: 3,
+    minimum: 4,
+};
+
+/// P1 holds Dalhia Cr in slot 0 with her `-3 Opp Pillz. Min 4`; every other source is
+/// absent and both hands are 6/3.
+fn dalhia_spec(p2_pillz: u16) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].hand[0].key = DALHIA;
+    base.players[PlayerId::P2].initial_pillz = p2_pillz;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(339, CombatStatPredicateV1::Always, OPPONENT_PILLZ);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+#[test]
+fn opposing_victory_pillz_plan_is_ability_only_positive_and_unconditional() {
+    let mut bonus = dalhia_spec(20);
+    bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    bonus.cards[PlayerId::P1][0].bonus =
+        execute(339, CombatStatPredicateV1::Always, OPPONENT_PILLZ);
+    bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(bonus),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentPillzSource,
+            ..
+        })
+    ));
+
+    let mut zero = dalhia_spec(20);
+    zero.cards[PlayerId::P1][0].ability = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 0,
+            minimum: 4,
+        },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(zero),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentPillzMagnitude,
+            ..
+        })
+    ));
+
+    let mut conditional = dalhia_spec(20);
+    conditional.cards[PlayerId::P1][0].ability = execute(
+        339,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+        OPPONENT_PILLZ,
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(conditional),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentPillzPredicate,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn opposing_victory_pillz_reads_the_target_after_its_bet_clamps_at_the_floor_and_unmakes() {
+    // Above the floor: the target's 20 - 2 for its own bet become 15.
+    let spec = dalhia_spec(20);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let start = diag.position().clone();
+    let start_hash = position_hash(&start);
+    let (report, undo) = diag
+        .make(input(PlayerId::P1, (0, 3, false), (0, 2, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 17);
+    assert_eq!(report.players[PlayerId::P2].pillz, 15);
+    diag.unmake(undo);
+    assert_eq!(diag.position(), &start);
+    assert_eq!(position_hash(diag.position()), start_hash);
+
+    // Reaching the floor exactly, as Callie's 12 - 5 - 3 = 4 in capture 1131294/0.
+    let spec = dalhia_spec(12);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 6, false), (0, 5, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 4);
+
+    // Crossing the floor stops on it.
+    let spec = dalhia_spec(6);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 4);
+
+    // A target already at or below the floor is left alone rather than pulled up to it,
+    // as AI-Lycs stays on his recovered 4 in 1091644/1.
+    for p2_pillz in [4, 2] {
+        let spec = dalhia_spec(p2_pillz);
+        let mut diag = game(spec.base_rules, spec.cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P2].pillz, p2_pillz);
+    }
+}
+
+#[test]
+fn opposing_victory_pillz_takes_nothing_on_a_loss_or_when_stopped() {
+    // Losing the round: Yomi Ld in 924413/0, Gil Cr in 956608/0.
+    let spec = dalhia_spec(20);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 2, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 18);
+
+    // Stopped by the opposing selected card.
+    let mut spec = dalhia_spec(20);
+    spec.cards[PlayerId::P2][0].ability = execute(
+        4437,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 20);
+}
+
 fn anita_spec(power: u16, damage: u16) -> CombatStatDiagnosticMatchSpecV1 {
     let mut base = base_spec(power, damage);
     base.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);
