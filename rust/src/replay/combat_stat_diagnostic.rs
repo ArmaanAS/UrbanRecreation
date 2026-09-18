@@ -18,10 +18,13 @@ use crate::engine::combat_stat_compiler::{
     classify_combat_stat_effect, classify_defeat_life, classify_defeat_opponent_life,
     classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
     classify_heal_life_on_victory, classify_komboka_victory_pillz_and_life,
-    classify_reanimate_life, classify_victory_life, classify_victory_opponent_life,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
-    has_defeat_life_shape, has_heal_life_on_victory_shape, has_reanimate_life_shape,
-    has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_victory_opponent_life, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, compact_effect, has_defeat_life_shape,
+    has_heal_life_on_victory_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape,
+    has_toxin_opponent_life_on_victory_shape, has_victory_life_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
@@ -809,7 +812,7 @@ fn prepare_combat_stat_source(
             });
         }
     }
-    // The one admitted permanent grammar. Its plan is ordinary post-round work at the
+    // The four admitted permanent grammars. Each plan is ordinary post-round work at the
     // source; the engine position carries the latch from the round it wins onward.
     if let Some((life, maximum)) = classify_heal_life_on_victory(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
@@ -822,6 +825,50 @@ fn prepare_combat_stat_source(
                 source_id: source.id,
                 predicate: CombatStatPredicateV1::Always,
                 effect: CombatStatEffectV1::HealLifeOnVictory { life, maximum },
+            },
+        });
+    }
+    if let Some((life, maximum)) = classify_regen_life_on_victory(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::RegenLifeOnVictory { life, maximum },
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::RegenLifeOnVictory { life, maximum },
+            },
+        });
+    }
+    if let Some((life, minimum)) = classify_poison_opponent_life_on_victory(definition, source_kind)
+    {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
+            },
+        });
+    }
+    if let Some((life, minimum)) = classify_toxin_opponent_life_on_victory(definition, source_kind)
+    {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
             },
         });
     }
@@ -927,12 +974,21 @@ fn prepare_combat_stat_source(
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
             && input.attribute_affected == AttributeAffectedV1::LifeAndPillz
             && input.attribute_action == AttributeActionV1::Increase);
-    // A near-miss of the admitted Heal grammar is a selected hazard: plain `Heal` text in
-    // a Bonus slot or over a malformed structure, or the complete permanent shape under
-    // text whose numbers disagree with it. `Defeat`, `Asymmetry` and clan-gated Heals are
-    // other grammars and keep their visible-but-disabled record like every other permanent.
-    let unadmitted_heal_life =
-        source.description.starts_with("Heal ") || has_heal_life_on_victory_shape(definition);
+    // A near-miss of an admitted permanent grammar is a selected hazard: its plain text in
+    // the wrong slot or over a malformed structure, or its complete permanent shape under
+    // text whose numbers or grammar disagree with it - which is what `Growth:`, `Unison :`
+    // and `Revenge:` Poison are, structurally indistinguishable from the plain record.
+    // `Defeat`, `Killshot`, `Symmetry`, `Asymmetry`, `Perfect`, `Backlash`, Victory-or-Defeat
+    // and clan-gated forms differ in their structured fields and keep the visible-but-
+    // disabled record every other permanent has.
+    let unadmitted_heal_life = source.description.starts_with("Heal ")
+        || source.description.starts_with("Regen ")
+        || source.description.starts_with("Poison ")
+        || source.description.starts_with("Toxin ")
+        || has_heal_life_on_victory_shape(definition)
+        || has_regen_life_on_victory_shape(definition)
+        || has_poison_opponent_life_on_victory_shape(definition)
+        || has_toxin_opponent_life_on_victory_shape(definition);
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {

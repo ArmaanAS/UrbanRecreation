@@ -9,10 +9,12 @@ use super::combat_stat_compiler::{
     classify_combat_stat_effect, classify_copy_opponent_source, classify_defeat_life,
     classify_defeat_opponent_life, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_komboka_victory_pillz_and_life, classify_reanimate_life, classify_victory_life,
-    classify_victory_opponent_life, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, compact_effect, is_copy_opponent_source_description,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory,
+    classify_toxin_opponent_life_on_victory, classify_victory_life, classify_victory_opponent_life,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, compact_effect,
+    is_copy_opponent_source_description, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::CopiedSourceKindV1;
 use super::{
@@ -93,6 +95,10 @@ const JUNGO_CLAN_ID: u32 = 43;
 const JUNGO_CATALOG_BONUS_ID: u32 = 41;
 const JUNGO_VICTORY_LIFE_BONUS_REGISTRY_ID: u32 = 401;
 const JUNGO_VICTORY_LIFE_DESCRIPTION: &str = "+2 Life";
+const FREAKS_CLAN_ID: u32 = 40;
+const FREAKS_CATALOG_BONUS_ID: u32 = 38;
+const FREAKS_POISON_BONUS_REGISTRY_ID: u32 = 206;
+const FREAKS_POISON_DESCRIPTION: &str = "Poison 2, Min 3";
 const ROOTS_CLAN_ID: u32 = 29;
 const ROOTS_CATALOG_BONUS_ID: u32 = 28;
 const ROOTS_STOP_ABILITY_BONUS_REGISTRY_ID: u32 = 41;
@@ -1274,6 +1280,23 @@ fn prepare_catalog_source(
             JUNGO_VICTORY_LIFE_BONUS_REGISTRY_ID,
         );
     }
+    // Freaks' catalog bonus id is likewise not a capture-registry id. The same bridge:
+    // active effective clan, Bonus slot and exact printed text, to the captured `206`.
+    if description == FREAKS_POISON_DESCRIPTION
+        && source_kind == CombatStatEffectSourceV1::Bonus
+        && effective_clan_id == FREAKS_CLAN_ID
+        && catalog_id == Some(FREAKS_CATALOG_BONUS_ID)
+    {
+        return prepare_permanent_life_source(
+            registry,
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description,
+            FREAKS_POISON_BONUS_REGISTRY_ID,
+        );
+    }
     // Every other generic Victory Life source must carry an actual registry identity in
     // the catalog. Description equality alone is never authority to execute a Life effect.
     if let Ok(match_) = registry.lookup_description(description) {
@@ -1362,10 +1385,14 @@ fn prepare_catalog_source(
                 definition.id(),
             );
         }
-        // The plain Heal grammar follows the Victory Life rule: the catalog row must be a
-        // structural alias of the registry definition its text resolves to. A same-text
-        // row under another numeric identity cannot latch a permanent.
-        if classify_heal_life_on_victory(definition, source_kind).is_some() {
+        // The plain permanent grammars follow the Victory Life rule: the catalog row must
+        // be a structural alias of the registry definition its text resolves to. A
+        // same-text row under another numeric identity cannot latch a permanent.
+        if classify_heal_life_on_victory(definition, source_kind).is_some()
+            || classify_regen_life_on_victory(definition, source_kind).is_some()
+            || classify_poison_opponent_life_on_victory(definition, source_kind).is_some()
+            || classify_toxin_opponent_life_on_victory(definition, source_kind).is_some()
+        {
             if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
                 return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
                     player,
@@ -1381,7 +1408,7 @@ fn prepare_catalog_source(
                         .into_boxed_slice(),
                 });
             }
-            return prepare_heal_life_source(
+            return prepare_permanent_life_source(
                 registry,
                 player,
                 hand_slot,
@@ -1938,7 +1965,10 @@ fn prepare_defeat_recover_source(
     })
 }
 
-fn prepare_heal_life_source(
+/// One of the four plain permanent grammars, already resolved to the registry definition
+/// that owns it. The typed pair is rebuilt here from the same classifiers so a definition
+/// that matches none of them is refused rather than guessed.
+fn prepare_permanent_life_source(
     registry: &EffectRegistryV1,
     player: PlayerId,
     hand_slot: HandSlot,
@@ -1957,7 +1987,36 @@ fn prepare_heal_life_source(
             description: description.to_owned(),
             source,
         })?;
-    let Some((life, maximum)) = classify_heal_life_on_victory(definition, source_kind) else {
+    let classified = if let Some((life, maximum)) =
+        classify_heal_life_on_victory(definition, source_kind)
+    {
+        Some((
+            CombatStatPostRoundEffectV1::HealLifeOnVictory { life, maximum },
+            CombatStatEffectV1::HealLifeOnVictory { life, maximum },
+        ))
+    } else if let Some((life, maximum)) = classify_regen_life_on_victory(definition, source_kind) {
+        Some((
+            CombatStatPostRoundEffectV1::RegenLifeOnVictory { life, maximum },
+            CombatStatEffectV1::RegenLifeOnVictory { life, maximum },
+        ))
+    } else if let Some((life, minimum)) =
+        classify_poison_opponent_life_on_victory(definition, source_kind)
+    {
+        Some((
+            CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
+            CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
+        ))
+    } else if let Some((life, minimum)) =
+        classify_toxin_opponent_life_on_victory(definition, source_kind)
+    {
+        Some((
+            CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
+            CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
+        ))
+    } else {
+        None
+    };
+    let Some((public_effect, compact_effect)) = classified else {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player,
             hand_slot,
@@ -1993,13 +2052,13 @@ fn prepare_heal_life_source(
                 registry_definition_id: definition.id(),
                 registry_alias_ids,
             },
-            effect: CombatStatPostRoundEffectV1::HealLifeOnVictory { life, maximum },
+            effect: public_effect,
             predicate: CombatStatPredicateV1::Always,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::HealLifeOnVictory { life, maximum },
+            effect: compact_effect,
         },
     })
 }

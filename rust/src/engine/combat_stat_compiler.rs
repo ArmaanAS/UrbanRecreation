@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 27;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 28;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -744,6 +744,57 @@ pub(crate) fn has_heal_life_on_victory_shape(definition: &EffectDefinitionV1) ->
     heal_life_on_victory_shape_matches(definition.structured_input())
 }
 
+/// `Regen N, Max. M`: Heal's immediate sibling, admitted the same way. Note the site's
+/// comma, which Heal's text does not carry. Returns `(life, maximum)`.
+pub(crate) fn classify_regen_life_on_victory(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_regen_life_on_victory_shape(definition)
+        && definition.description() == format!("Regen {}, Max. {}", input.value, input.value_max))
+    .then_some((input.value, input.value_max))
+}
+
+pub(crate) fn has_regen_life_on_victory_shape(definition: &EffectDefinitionV1) -> bool {
+    permanent_own_life_shape_matches(definition.structured_input(), true)
+}
+
+/// `Poison N, Min M`: the opposing player loses N Life at the end of every round after the
+/// latch, never below M. Freaks print it as their clan bonus, so both slots are admitted.
+/// Returns `(life, minimum)`.
+pub(crate) fn classify_poison_opponent_life_on_victory(
+    definition: &EffectDefinitionV1,
+    _source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (has_poison_opponent_life_on_victory_shape(definition)
+        && definition.description() == format!("Poison {}, Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min))
+}
+
+pub(crate) fn has_poison_opponent_life_on_victory_shape(definition: &EffectDefinitionV1) -> bool {
+    permanent_opponent_life_shape_matches(definition.structured_input(), false)
+}
+
+/// `Toxin N, Min M`: Poison that also pays in its latching round. Card abilities only.
+/// Returns `(life, minimum)`.
+pub(crate) fn classify_toxin_opponent_life_on_victory(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_toxin_opponent_life_on_victory_shape(definition)
+        && definition.description() == format!("Toxin {}, Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min))
+}
+
+pub(crate) fn has_toxin_opponent_life_on_victory_shape(definition: &EffectDefinitionV1) -> bool {
+    permanent_opponent_life_shape_matches(definition.structured_input(), true)
+}
+
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -754,7 +805,11 @@ pub(crate) fn classify_combat_stat_effect(
     // A permanent is post-round work with its own latch channel. The registry already
     // refuses it as `Permanent`, but keep the guard so a later widening cannot turn it
     // into an ordinary one-round effect.
-    if classify_heal_life_on_victory(definition, source_kind).is_some() {
+    if classify_heal_life_on_victory(definition, source_kind).is_some()
+        || classify_regen_life_on_victory(definition, source_kind).is_some()
+        || classify_poison_opponent_life_on_victory(definition, source_kind).is_some()
+        || classify_toxin_opponent_life_on_victory(definition, source_kind).is_some()
+    {
         return None;
     }
     if classify_copy_opponent_source(definition).is_some() {
@@ -1366,10 +1421,43 @@ fn argos_defeat_capped_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
 /// increase of `value` on a won round, capped at `value_max`, permanent but not immediate.
 /// `valueMin` is 1 on every such record and is not a floor the effect ever reads.
 fn heal_life_on_victory_shape_matches(input: &StructuredEffectV1) -> bool {
+    permanent_own_life_shape_matches(input, false)
+}
+
+/// Heal and Regen share one shape apart from `isImmediatePermanent`, which is the only
+/// structured trace of whether the latching round pays.
+fn permanent_own_life_shape_matches(input: &StructuredEffectV1, immediate: bool) -> bool {
     input.value > 0
         && input.value_min == 1
         && input.value_max > input.value
-        && input.value_condition == 0
+        && permanent_life_neutral_shape_matches(
+            input,
+            AffectedSideV1::Player,
+            AttributeActionV1::Increase,
+            immediate,
+        )
+}
+
+/// Poison and Toxin likewise: an opposing-Life decrease of `value` bounded below by
+/// `value_min`, with no cap, distinguished only by `isImmediatePermanent`.
+fn permanent_opponent_life_shape_matches(input: &StructuredEffectV1, immediate: bool) -> bool {
+    input.value > 0
+        && input.value_max == 0
+        && permanent_life_neutral_shape_matches(
+            input,
+            AffectedSideV1::Opponent,
+            AttributeActionV1::Decrease,
+            immediate,
+        )
+}
+
+fn permanent_life_neutral_shape_matches(
+    input: &StructuredEffectV1,
+    side: AffectedSideV1,
+    action: AttributeActionV1,
+    immediate: bool,
+) -> bool {
+    input.value_condition == 0
         && input.position_requirement == PositionRequirementV1::Both
         && input.previous_round_requirement == PreviousRoundRequirementV1::Any
         && input.current_round_requirement == CurrentRoundRequirementV1::Win
@@ -1378,9 +1466,9 @@ fn heal_life_on_victory_shape_matches(input: &StructuredEffectV1) -> bool {
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
         && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
+        && input.side_affected == side
         && input.attribute_affected == AttributeAffectedV1::Life
-        && input.attribute_action == AttributeActionV1::Increase
+        && input.attribute_action == action
         && input.special_action == SpecialActionV1::None
         && !input.is_inverted
         && !input.is_support
@@ -1395,7 +1483,7 @@ fn heal_life_on_victory_shape_matches(input: &StructuredEffectV1) -> bool {
         && !input.is_clanmates_count_linked
         && !input.is_anti_clanmates_count_linked
         && input.is_permanent
-        && !input.is_immediate_permanent
+        && input.is_immediate_permanent == immediate
 }
 
 fn komboka_victory_pillz_and_life_shape_matches(input: &StructuredEffectV1) -> bool {
@@ -2704,6 +2792,208 @@ mod tests {
                 ),
                 None,
                 "mutated field {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn toxin_poison_and_regen_admit_their_plain_grammars_and_refuse_every_prefixed_form() {
+        let registry = registry();
+        for (id, description) in [
+            (1197, "Toxin 1, Min 0"),
+            (1508, "Toxin 1, Min 0"),
+            (1840, "Toxin 1, Min 0"),
+            (4730, "Toxin 1, Min 0"),
+            (5037, "Toxin 1, Min 0"),
+            (5098, "Toxin 1, Min 0"),
+            (5638, "Toxin 1, Min 0"),
+            (5639, "Toxin 1, Min 0"),
+            (5640, "Toxin 1, Min 0"),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_toxin_opponent_life_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                Some((1, 0)),
+                "{id}"
+            );
+            assert_eq!(
+                classify_toxin_opponent_life_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Bonus
+                ),
+                None,
+                "{id} as a bonus"
+            );
+            assert_eq!(
+                classify_poison_opponent_life_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id} is not Poison"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None
+            );
+        }
+        for (id, description, expected) in [
+            (206, "Poison 2, Min 3", (2, 3)),
+            (325, "Poison 1, Min 5", (1, 5)),
+            (509, "Poison 2, Min 1", (2, 1)),
+            (566, "Poison 1, Min 0", (1, 0)),
+            (582, "Poison 2, Min 4", (2, 4)),
+            (682, "Poison 1, Min 2", (1, 2)),
+            (1345, "Poison 2, Min 4", (2, 4)),
+            (1385, "Poison 2, Min 2", (2, 2)),
+            (3088, "Poison 1, Min 0", (1, 0)),
+            (3603, "Poison 1, Min 0", (1, 0)),
+            (5901, "Poison 1, Min 2", (1, 2)),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            for source_kind in [
+                CombatStatEffectSourceV1::Ability,
+                CombatStatEffectSourceV1::Bonus,
+            ] {
+                assert_eq!(
+                    classify_poison_opponent_life_on_victory(definition, source_kind),
+                    Some(expected),
+                    "{id} {source_kind:?}"
+                );
+                assert_eq!(
+                    classify_toxin_opponent_life_on_victory(definition, source_kind),
+                    None
+                );
+                assert_eq!(classify_combat_stat_effect(definition, source_kind), None);
+            }
+        }
+        for (id, description, expected) in [
+            (1458, "Regen 3, Max. 6", (3, 6)),
+            (3433, "Regen 2, Max. 8", (2, 8)),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_regen_life_on_victory(definition, CombatStatEffectSourceV1::Ability),
+                Some(expected),
+                "{id}"
+            );
+            assert_eq!(
+                classify_regen_life_on_victory(definition, CombatStatEffectSourceV1::Bonus),
+                None
+            );
+            assert_eq!(
+                classify_heal_life_on_victory(definition, CombatStatEffectSourceV1::Ability),
+                None
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None
+            );
+        }
+        // Every prefixed form is another text, whatever its structured fields say.
+        for (id, description) in [
+            (2497, "Killshot: Toxin 1, Min 0"),
+            (4210, "Victory Or Defeat: Toxin 1, Min 0"),
+            (5092, "Symmetry: Toxin 3, Min 0"),
+            (5316, "Unison : Toxin 1, Min 0"),
+            (
+                5613,
+                "[clan:55][clan:50][clan:49][clan:44][clan:60] Toxin 1, Min 1",
+            ),
+            (1266, "Growth: Poison 1, Min 2"),
+            (1282, "Growth: Poison 1, Min 1"),
+            (3301, "Revenge: Poison 2, Min 0"),
+            (4033, "Unison : Poison 1, Min 2"),
+            (4124, "Backlash: Poison 1, Min 3"),
+            (4561, "Defeat: Poison 1, Min 3"),
+            (5594, "Perfect: Regen 1, Max. 17"),
+            (5693, "Asymmetry: Regen 1, Max. 17"),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            for source_kind in [
+                CombatStatEffectSourceV1::Ability,
+                CombatStatEffectSourceV1::Bonus,
+            ] {
+                assert_eq!(
+                    classify_toxin_opponent_life_on_victory(definition, source_kind),
+                    None,
+                    "{id}"
+                );
+                assert_eq!(
+                    classify_poison_opponent_life_on_victory(definition, source_kind),
+                    None,
+                    "{id}"
+                );
+                assert_eq!(
+                    classify_regen_life_on_victory(definition, source_kind),
+                    None,
+                    "{id}"
+                );
+            }
+        }
+        // Immediacy is the one structured field that tells Toxin from Poison and Regen from
+        // Heal; flipping it on a record makes its own text a lie and closes it.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (id, description, field, value) in [
+            (
+                "1197",
+                "Toxin 1, Min 0",
+                "isImmediatePermanent",
+                serde_json::json!(false),
+            ),
+            (
+                "206",
+                "Poison 2, Min 3",
+                "isImmediatePermanent",
+                serde_json::json!(true),
+            ),
+            ("206", "Poison 2, Min 3", "valueMin", serde_json::json!(2)),
+            (
+                "206",
+                "Poison 2, Min 3",
+                "sideAffected",
+                serde_json::json!("player"),
+            ),
+            (
+                "1458",
+                "Regen 3, Max. 6",
+                "isImmediatePermanent",
+                serde_json::json!(false),
+            ),
+            ("1458", "Regen 3, Max. 6", "valueMax", serde_json::json!(7)),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            let definition = malformed
+                .lookup_capture(id.parse().unwrap(), description)
+                .unwrap();
+            assert_eq!(
+                classify_toxin_opponent_life_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id} {field}"
+            );
+            assert_eq!(
+                classify_poison_opponent_life_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Bonus
+                ),
+                None,
+                "{id} {field}"
+            );
+            assert_eq!(
+                classify_regen_life_on_victory(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id} {field}"
             );
         }
     }

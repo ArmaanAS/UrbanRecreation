@@ -440,6 +440,292 @@ fn heal_pays_in_the_round_that_kos_the_opponent_as_in_capture_878093() {
     assert_eq!(second.status, MatchStatus::Won(PlayerId::P1));
 }
 
+/// P1 slot 0 carries `effect` in the Ability slot under `source_id`; everything else is
+/// absent, both hands 6/3, both players on `life`.
+fn permanent_spec(
+    source_id: u32,
+    effect: CombatStatEffectV1,
+    life: u16,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_life = life;
+    base.players[PlayerId::P2].initial_life = life;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(source_id, CombatStatPredicateV1::Always, effect);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+const TOXIN: CombatStatEffectV1 = CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+    life: 1,
+    minimum: 0,
+};
+const POISON: CombatStatEffectV1 = CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+    life: 2,
+    minimum: 3,
+};
+const REGEN: CombatStatEffectV1 = CombatStatEffectV1::RegenLifeOnVictory {
+    life: 3,
+    maximum: 6,
+};
+
+#[test]
+fn toxin_pays_in_its_latching_round_after_damage_and_keeps_paying_after_its_owner_is_ko() {
+    // Round 1: P1 wins with 3 Damage and the Toxin takes one more at once: 12 - 3 - 1 = 8,
+    // as Zis does to AI-Lycs' owner in 963039/0.
+    let spec = permanent_spec(1508, TOXIN, 12);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let start = diag.position().clone();
+    let (first, undo_first) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P2].life, 8);
+    assert_eq!(first.players[PlayerId::P1].life, 12);
+    assert_eq!(diag.position().latched[PlayerId::P1].len(), 1);
+    // Round 2: P1 loses; the Toxin still pays on P2 after P1 takes damage.
+    let (second, undo_second) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    assert!(!second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P1].life, 9);
+    assert_eq!(second.players[PlayerId::P2].life, 7);
+    diag.unmake(undo_second);
+    diag.unmake(undo_first);
+    assert_eq!(diag.position(), &start);
+
+    // The owner being knocked out does not spare the target: on 3 Life, P1 latches in
+    // round 1 (P2 to 12 - 3 - 1 = 8), loses round 2 to a KO, and P2 still drops to 7, as
+    // Fridlia Cr's Toxin does to Miyo's owner in 1091585/2.
+    let mut spec = permanent_spec(1840, TOXIN, 12);
+    spec.base_rules.players[PlayerId::P1].initial_life = 3;
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    let (second, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P1].life, 0);
+    assert_eq!(second.players[PlayerId::P2].life, 7);
+    assert_eq!(second.status, MatchStatus::Won(PlayerId::P2));
+}
+
+#[test]
+fn toxin_can_end_the_match_after_the_rounds_own_effects_as_in_capture_963039() {
+    // Uuber's Victory-or-Defeat reduction lands first and takes the opponent from 2 to 1;
+    // the Toxin latched a round earlier then takes the last point, as Regan's reduction
+    // and Zis' Toxin do in 963039/2. Toxin first would have left them on 1.
+    let mut spec = permanent_spec(1508, TOXIN, 12);
+    spec.base_rules.players[PlayerId::P2].initial_life = 6;
+    spec.cards[PlayerId::P1][1].ability = execute(
+        1628,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+            life: 1,
+            minimum: 1,
+        },
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(first.players[PlayerId::P2].life, 6 - 3 - 1);
+    let (second, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    assert!(!second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P2].life, 0);
+    assert_eq!(second.status, MatchStatus::Won(PlayerId::P1));
+    assert_eq!(second.players[PlayerId::P1].life, 9);
+}
+
+#[test]
+fn poison_waits_a_round_stops_at_its_minimum_and_stacks_from_the_bonus_slot() {
+    // A Freaks-style bonus Poison: latch round pays nothing, later rounds pay 2, never
+    // below Min 3, and a second latched Poison is its own payment.
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P2].initial_life = 12;
+    let mut cards = plans(&base);
+    for slot in 0..2 {
+        cards[PlayerId::P1][slot].bonus = execute(206, CombatStatPredicateV1::Always, POISON);
+        cards[PlayerId::P1][slot].source_bonus_support_count = 1;
+    }
+    let mut diag = game(base, cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P2].life, 9);
+    // Round 2: a second Poison latches; only the first pays: 9 - 3 - 2 = 4.
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert!(second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P2].life, 4);
+    assert_eq!(diag.position().latched[PlayerId::P1].len(), 2);
+    // Round 3: P1 loses; both Poisons pay, the first to the Min 3 and the second nothing,
+    // as the two Freaks latches report 2 and 0 in 926420/3.
+    let (third, _) = diag
+        .make(input(PlayerId::P2, (2, 0, false), (2, 2, false)))
+        .unwrap();
+    assert!(!third.cards[PlayerId::P1].won);
+    assert_eq!(third.players[PlayerId::P2].life, 3);
+    // Round 4: at the Min already, nothing moves; a target at 2 under Min 3 would also
+    // stay put (1060510/2).
+    let (fourth, _) = diag
+        .make(input(PlayerId::P2, (3, 0, false), (3, 2, false)))
+        .unwrap();
+    assert_eq!(fourth.players[PlayerId::P2].life, 3);
+}
+
+#[test]
+fn poison_pays_in_the_round_its_owner_is_knocked_out_as_in_capture_1092294() {
+    // Araaknat's `Poison 2, Min 2` latches on 3 Life; the latch round pays nothing, and the
+    // round that knocks its owner out still pays the two.
+    let mut spec = permanent_spec(
+        1385,
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+            life: 2,
+            minimum: 2,
+        },
+        12,
+    );
+    spec.base_rules.players[PlayerId::P1].initial_life = 3;
+    let mut diag_ko = game(spec.base_rules, spec.cards);
+    let (first, _) = diag_ko
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(first.players[PlayerId::P2].life, 9);
+    let (second, _) = diag_ko
+        .make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P1].life, 0);
+    assert_eq!(second.players[PlayerId::P2].life, 7);
+    assert_eq!(second.status, MatchStatus::Won(PlayerId::P2));
+}
+
+#[test]
+fn regen_pays_in_its_latching_round_and_is_capped_as_in_capture_1059149() {
+    // Padre Frollo on 5 wins: Regen 3 pays at once but stops at Max 6; a later round at
+    // the cap pays nothing; a player above the cap is left alone.
+    let mut spec = permanent_spec(1458, REGEN, 5);
+    spec.base_rules.players[PlayerId::P2].initial_life = 20;
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P1].life, 6);
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P1].life, 6);
+    // Losing 3 from 6 leaves 3, and the repeat brings it straight back to the cap.
+    let (third, _) = diag
+        .make(input(PlayerId::P2, (2, 0, false), (2, 2, false)))
+        .unwrap();
+    assert_eq!(third.players[PlayerId::P1].life, 6);
+
+    let spec = permanent_spec(1458, REGEN, 12);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(first.players[PlayerId::P1].life, 12);
+}
+
+#[test]
+fn stopped_or_losing_permanents_never_latch_and_plans_are_slot_and_magnitude_locked() {
+    // A bonus Poison stopped by Stop Opp. Bonus in its winning round never latches.
+    let mut base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].bonus = execute(206, CombatStatPredicateV1::Always, POISON);
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    cards[PlayerId::P2][0].ability = execute(
+        130,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    base.players[PlayerId::P2].initial_life = 12;
+    let mut diag = game(base, cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert!(diag.position().latched[PlayerId::P1].is_empty());
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P2].life, 12 - 3 - 3);
+
+    // A losing Toxin latches nothing and pays nothing, in its round or later.
+    let spec = permanent_spec(1197, TOXIN, 12);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 2, false)))
+        .unwrap();
+    assert!(!first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P2].life, 12);
+    assert!(diag.position().latched[PlayerId::P1].is_empty());
+
+    // Regen and Toxin are abilities only; Poison may be a bonus; magnitudes are positive
+    // and Regen's cap exceeds its magnitude; none carries a condition of its own.
+    for (id, effect) in [(1458, REGEN), (1197, TOXIN)] {
+        let mut bonus = permanent_spec(id, effect, 12);
+        bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+        bonus.cards[PlayerId::P1][0].bonus = execute(id, CombatStatPredicateV1::Always, effect);
+        bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(bonus),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::PermanentLifeSource,
+                source: CombatStatEffectSourceV1::Bonus,
+                ..
+            })
+        ));
+    }
+    for effect in [
+        CombatStatEffectV1::RegenLifeOnVictory {
+            life: 0,
+            maximum: 6,
+        },
+        CombatStatEffectV1::RegenLifeOnVictory {
+            life: 6,
+            maximum: 6,
+        },
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+            life: 0,
+            minimum: 3,
+        },
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+            life: 0,
+            minimum: 0,
+        },
+    ] {
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(permanent_spec(1, effect, 12)),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
+                ..
+            })
+        ));
+    }
+    for effect in [REGEN, POISON, TOXIN] {
+        let mut conditional = permanent_spec(1, effect, 12);
+        conditional.cards[PlayerId::P1][0].ability =
+            execute(1, CombatStatPredicateV1::OwnerMovesFirst, effect);
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(conditional),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::PermanentLifePredicate,
+                ..
+            })
+        ));
+    }
+}
+
 fn anita_spec(power: u16, damage: u16) -> CombatStatDiagnosticMatchSpecV1 {
     let mut base = base_spec(power, damage);
     base.players[PlayerId::P1].hand[0].key = CardKey::new(448, 3);

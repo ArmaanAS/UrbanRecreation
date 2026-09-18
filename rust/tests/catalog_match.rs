@@ -1355,6 +1355,172 @@ fn strict_catalog_match_admits_the_plain_heal_grammar_and_latches_it_on_a_win() 
 }
 
 #[test]
+fn strict_catalog_match_bridges_the_active_freaks_poison_bonus_and_admits_toxin_and_regen() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+
+    // Four ability-less Freaks: the active clan bonus is the only source, bridged from
+    // catalog bonus 38 to the captured definition 206.
+    let freaks = [
+        CardKey::new(378, 1),
+        CardKey::new(379, 1),
+        CardKey::new(380, 1),
+        CardKey::new(381, 1),
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(freaks, opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    for slot in 0..4 {
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity, effect, ..
+        } = &prepared.preparation()[PlayerId::P1][slot].bonus
+        else {
+            panic!("active Freaks bonus in slot {slot} was not executable")
+        };
+        assert_eq!(identity.catalog_id, Some(38));
+        assert_eq!(identity.registry_definition_id, 206);
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory {
+                life: 2,
+                minimum: 3
+            }
+        );
+    }
+    // The strict match plays it: a won round latches and pays nothing, the next round pays
+    // two after that round's damage, and undo walks it back.
+    let mut game = prepared.new_game();
+    let before = game.position().clone();
+    let (first, undo_first) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P1,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, 6, false),
+                BaseRulesSelection::new(0, 0, false),
+            ),
+        })
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    let after_first = first.players[PlayerId::P2].life;
+    assert_eq!(after_first, 12 - first.cards[PlayerId::P1].damage);
+    assert_eq!(game.position().latched[PlayerId::P1].len(), 1);
+    let (second, undo_second) = game
+        .make(BaseRulesRoundInput {
+            first_mover: PlayerId::P2,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(1, 0, false),
+                BaseRulesSelection::new(1, 4, false),
+            ),
+        })
+        .unwrap();
+    assert!(second.cards[PlayerId::P2].won);
+    assert_eq!(second.players[PlayerId::P2].life, after_first - 2);
+    game.unmake(undo_second);
+    game.unmake(undo_first);
+    assert_eq!(game.position(), &before);
+
+    // A single Freaks card in a foreign hand has no active bonus and nothing to bridge.
+    let lone = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(378, 1),
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            opponent,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        lone.preparation()[PlayerId::P1][0].bonus,
+        CatalogCombatStatSourceDispositionV1::Absent
+    ));
+
+    // Printed abilities: Zis' Toxin, H4rp3r's Poison, Towesky's Regen, each with its own
+    // numbers and its Bonus slot untouched.
+    for (key, catalog_id, expected) in [
+        (
+            CardKey::new(1682, 3),
+            1508,
+            CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory {
+                life: 1,
+                minimum: 0,
+            },
+        ),
+        (
+            CardKey::new(2709, 1),
+            5901,
+            CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory {
+                life: 1,
+                minimum: 2,
+            },
+        ),
+        (
+            CardKey::new(2366, 2),
+            3433,
+            CombatStatPostRoundEffectV1::RegenLifeOnVictory {
+                life: 2,
+                maximum: 8,
+            },
+        ),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    key,
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity, effect, ..
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as a latching permanent")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert!(identity.registry_alias_ids.contains(&catalog_id));
+        assert_eq!(*effect, expected);
+    }
+
+    // The prefixed grammars stay closed: Demusa's Symmetry Toxin and Hachi's Growth Poison.
+    for (key, catalog_id) in [(CardKey::new(2620, 2), 5092), (CardKey::new(1449, 2), 1266)] {
+        assert!(matches!(
+            CatalogCombatStatMatchV1::new(
+                input([key, CardKey::new(123, 1), CardKey::new(124, 1), CardKey::new(138, 1)], opponent, false),
+                &catalog,
+                &registry,
+                PROJECTION,
+            ),
+            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                player: PlayerId::P1,
+                source_kind: CombatStatEffectSourceV1::Ability,
+                catalog_id: Some(actual),
+                ..
+            }) if actual == catalog_id
+        ));
+    }
+}
+
+#[test]
 fn strict_catalog_match_admits_only_anitas_exact_courage_damage_life_ability() {
     let catalog = catalog();
     let registry = registry();
@@ -2907,11 +3073,11 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
     assert_eq!(
         eligible,
         BTreeSet::from([
-            830285, 869944, 874520, 875098, 875322, 877636, 877687, 877773, 877812, 877860, 877950,
-            878011, 878056, 924257, 924320, 925254, 925674, 925719, 925796, 943111, 946112, 947228,
-            949750, 970972, 1011712, 1024673, 1058366, 1059030, 1059454, 1060052, 1060199, 1061897,
-            1065812, 1069813, 1070207, 1072715, 1078906, 1079482, 1080877, 1081463, 1089346,
-            1090607, 1091235, 1092909, 1130833,
+            830285, 869944, 874520, 875098, 875155, 875322, 877636, 877687, 877773, 877812, 877860,
+            877950, 878011, 878056, 924257, 924320, 925254, 925674, 925719, 925796, 943111, 946112,
+            947228, 949750, 970972, 1011712, 1024673, 1058366, 1059030, 1059454, 1060052, 1060199,
+            1061897, 1065812, 1069813, 1070207, 1072715, 1078906, 1079482, 1080877, 1081463,
+            1089346, 1090607, 1091235, 1091585, 1092294, 1092369, 1092909, 1130833,
         ])
     );
 }

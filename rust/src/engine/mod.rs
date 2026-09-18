@@ -157,16 +157,38 @@ pub struct BaseRulesPlayerState {
     pub pillz: u16,
 }
 
-/// A permanent effect that an earlier round latched for one player. It applies at the end
-/// of every later round for the rest of the match, whatever those rounds' outcomes and
-/// whichever card its owner then plays. The round that latched it applies nothing: the
-/// TypeScript reference marks Heal `delayed`, and the server reports the latch round's
-/// permanent Life change as quantity 0 (battle 1091985 r1).
+/// A permanent effect that a round latched for one player. It applies at the end of every
+/// later round for the rest of the match, whatever those rounds' outcomes, whichever card
+/// its owner then plays, and even in the round its owner is knocked out (1073107 r3,
+/// 1092294 r3). Whether the latching round itself pays is a property of the effect: the
+/// TypeScript reference marks Heal and Poison `delayed` while Toxin and Regen pay at once,
+/// and the server agrees - Lianah's Heal reports quantity 0 in its latch round (1091985 r1)
+/// while Galactea's Toxin already takes one Life in hers (1091904 r1).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LatchedEffectV1 {
     /// `Heal N Max. M`: the owner gains N Life while below M, never past M, and only while
     /// still living. A player already at or above M is left exactly where they are.
     HealLife { life: u16, maximum: u16 },
+    /// `Regen N, Max. M`: Heal that also pays in the latching round (1059149 r2: 5 to 6
+    /// under Max 6, then 0 at the cap).
+    RegenLife { life: u16, maximum: u16 },
+    /// `Poison N, Min M`: the opposing player loses N Life while above M, never below M
+    /// (1060510 r2 stays at 2 under Min 3), from the round after the latch.
+    PoisonOpponentLife { life: u16, minimum: u16 },
+    /// `Toxin N, Min M`: Poison that also pays in the latching round. With Min 0 it can end
+    /// the match: 963039 r2 takes the opponent from 3 to 1 by Regan's reduction and then to
+    /// 0 by the Toxin.
+    ToxinOpponentLife { life: u16, minimum: u16 },
+}
+
+impl LatchedEffectV1 {
+    /// Whether the round that latches this effect also pays it.
+    pub const fn pays_in_latching_round(self) -> bool {
+        match self {
+            Self::HealLife { .. } | Self::PoisonOpponentLife { .. } => false,
+            Self::RegenLife { .. } | Self::ToxinOpponentLife { .. } => true,
+        }
+    }
 }
 
 /// The permanents one player has latched so far, in latch order, which is also the order
@@ -445,12 +467,10 @@ pub(super) enum PostRoundEffect {
         life: u16,
         minimum: u16,
     },
-    /// `Heal N Max. M` on a live source whose owner wins this round: latch it into the
-    /// owner's position so every later round pays it. This round itself pays nothing.
-    LatchHealLifeOnVictory {
-        life: u16,
-        maximum: u16,
-    },
+    /// A permanent on a live source whose owner wins this round: latch it into the owner's
+    /// position so every later round pays it. Whether this round pays it too is the
+    /// effect's own property.
+    LatchOnVictory(LatchedEffectV1),
 }
 
 #[derive(Clone, Copy)]
@@ -703,33 +723,49 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::ReanimateLife(_) => {}
-                    // Heal latches in the round its card wins and pays nothing in that
-                    // round. From here on it belongs to the owner, not to the card, and
-                    // the repeat loop below pays it after every later round.
-                    PostRoundEffect::LatchHealLifeOnVictory { life, maximum }
-                        if owner == winner =>
-                    {
+                    // A permanent latches in the round its card wins. From here on it
+                    // belongs to the owner, not to the card, and the repeat loop below
+                    // pays it after every later round - and after this one, if it is the
+                    // kind that pays at once.
+                    PostRoundEffect::LatchOnVictory(effect) if owner == winner => {
                         position.latched[owner]
-                            .push(LatchedEffectV1::HealLife { life, maximum })
+                            .push(effect)
                             .map_err(|_| BaseRulesError::LatchedEffectOverflow { player: owner })?;
                     }
-                    PostRoundEffect::LatchHealLifeOnVictory { .. } => {}
+                    PostRoundEffect::LatchOnVictory(_) => {}
                 }
             }
-            // Permanents latched by earlier rounds repeat now, after this owner's own
-            // current-round effects and before the other owner's, which is the TypeScript
-            // reference's END order: each side's fresh effects, then its `repeat` bucket.
-            // Reading the pre-round position keeps anything latched just above out of this
-            // round. A KO is terminal: a player at zero is never revived by a repeat.
-            for effect in self.position.latched[owner].iter() {
+            // Latched permanents repeat now, after this owner's own current-round effects
+            // and before the other owner's, which is the TypeScript reference's END order:
+            // each side's fresh effects, then its `repeat` bucket in latch order. Anything
+            // latched just above sits past the pre-round length and pays this round only if
+            // its kind does. A KO is terminal for the owner's own gains - a player at zero
+            // is never revived - while an opposing reduction still lands on a living target
+            // whether or not its owner was just knocked out.
+            let latched_before = self.position.latched[owner].len();
+            let latched = position.latched[owner];
+            for (index, effect) in latched.iter().enumerate() {
+                if index >= latched_before && !effect.pays_in_latching_round() {
+                    continue;
+                }
                 match effect {
-                    LatchedEffectV1::HealLife { life, maximum } => {
+                    LatchedEffectV1::HealLife { life, maximum }
+                    | LatchedEffectV1::RegenLife { life, maximum } => {
                         let current = position.players[owner].life;
                         if current > 0 && current < maximum {
                             position.players[owner].life = current
                                 .checked_add(life)
                                 .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?
                                 .min(maximum);
+                        }
+                    }
+                    LatchedEffectV1::PoisonOpponentLife { life, minimum }
+                    | LatchedEffectV1::ToxinOpponentLife { life, minimum } => {
+                        let target = owner.other();
+                        let current = position.players[target].life;
+                        if current > minimum {
+                            position.players[target].life =
+                                current.saturating_sub(life).max(minimum);
                         }
                     }
                 }

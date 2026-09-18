@@ -17,8 +17,8 @@ use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
     DiagnosticCombatEffectV1, DiagnosticCombatStatV1, DiagnosticMagnitudeV1,
-    DiagnosticStatOperationV1, HandSlot, PlayerId, PostRoundEffect, PostRoundSourceEffect,
-    ValidatedSelection, HAND_SIZE,
+    DiagnosticStatOperationV1, HandSlot, LatchedEffectV1, PlayerId, PostRoundEffect,
+    PostRoundSourceEffect, ValidatedSelection, HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -124,6 +124,22 @@ pub enum CombatStatPostRoundEffectV1 {
         life: u16,
         maximum: u16,
     },
+    /// `Regen N, Max. M`: Heal that also pays in its latching round.
+    RegenLifeOnVictory {
+        life: u16,
+        maximum: u16,
+    },
+    /// `Poison N, Min M`: from the round after the latch, the opposing player loses `life`
+    /// while above `minimum`. Admitted from either slot; Freaks print it as their bonus.
+    PoisonOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// `Toxin N, Min M`: Poison that also pays in its latching round. Ability slot only.
+    ToxinOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -222,6 +238,22 @@ pub enum CombatStatEffectV1 {
     HealLifeOnVictory {
         life: u16,
         maximum: u16,
+    },
+    /// Heal's immediate sibling: the latching round pays too.
+    RegenLifeOnVictory {
+        life: u16,
+        maximum: u16,
+    },
+    /// The opposing player loses `life` at the end of every round after the latch while
+    /// above `minimum`, including a round in which the owner is knocked out.
+    PoisonOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// Poison's immediate sibling. With Min 0 the repeat itself can end the match.
+    ToxinOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
     },
 }
 
@@ -337,6 +369,10 @@ pub enum InvalidCombatStatPlanReasonV1 {
     HealLifeSource,
     HealLifeMagnitude,
     HealLifePredicate,
+    /// Regen and Toxin are card abilities only; Poison may also be the Freaks bonus.
+    PermanentLifeSource,
+    PermanentLifeMagnitude,
+    PermanentLifePredicate,
     CopyOpponentSourceIdentity,
     CopyOpponentSourceTarget,
     VictoryOpponentLifeIdentity,
@@ -944,6 +980,77 @@ fn validate_combat_stat_source_plan(
     // Heal is generic by grammar, like Victory Life: the cold compiler's exact text and
     // shape are the authority, so the string-free plan can only require the Ability slot, a
     // positive magnitude below a positive cap, and no condition of its own.
+    // The other three permanents follow the same generic-by-grammar rule. Poison is the one
+    // permanent a clan prints as its bonus, so it alone is open to both slots.
+    match effect {
+        CombatStatEffectV1::RegenLifeOnVictory { life, maximum } => {
+            if source != CombatStatEffectSourceV1::Ability {
+                return Err(invalid_combat_stat_execute(
+                    player,
+                    hand_slot,
+                    source,
+                    source_id,
+                    InvalidCombatStatPlanReasonV1::PermanentLifeSource,
+                ));
+            }
+            if life == 0 || maximum <= life {
+                return Err(invalid_combat_stat_execute(
+                    player,
+                    hand_slot,
+                    source,
+                    source_id,
+                    InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
+                ));
+            }
+            if predicate != CombatStatPredicateV1::Always {
+                return Err(invalid_combat_stat_execute(
+                    player,
+                    hand_slot,
+                    source,
+                    source_id,
+                    InvalidCombatStatPlanReasonV1::PermanentLifePredicate,
+                ));
+            }
+            return Ok(());
+        }
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, .. }
+        | CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, .. } => {
+            if source != CombatStatEffectSourceV1::Ability
+                && !matches!(
+                    effect,
+                    CombatStatEffectV1::PoisonOpponentLifeOnVictory { .. }
+                )
+            {
+                return Err(invalid_combat_stat_execute(
+                    player,
+                    hand_slot,
+                    source,
+                    source_id,
+                    InvalidCombatStatPlanReasonV1::PermanentLifeSource,
+                ));
+            }
+            if life == 0 {
+                return Err(invalid_combat_stat_execute(
+                    player,
+                    hand_slot,
+                    source,
+                    source_id,
+                    InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
+                ));
+            }
+            if predicate != CombatStatPredicateV1::Always {
+                return Err(invalid_combat_stat_execute(
+                    player,
+                    hand_slot,
+                    source,
+                    source_id,
+                    InvalidCombatStatPlanReasonV1::PermanentLifePredicate,
+                ));
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
     if let CombatStatEffectV1::HealLifeOnVictory { life, maximum } = effect {
         if source != CombatStatEffectSourceV1::Ability {
             return Err(invalid_combat_stat_execute(
@@ -1785,7 +1892,10 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
-        | CombatStatEffectV1::HealLifeOnVictory { .. } => return None,
+        | CombatStatEffectV1::HealLifeOnVictory { .. }
+        | CombatStatEffectV1::RegenLifeOnVictory { .. }
+        | CombatStatEffectV1::PoisonOpponentLifeOnVictory { .. }
+        | CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. } => return None,
     })
 }
 
@@ -1835,8 +1945,25 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
                 PostRoundEffect::ReduceOpponentLifeOnDefeat { life, minimum },
             ))
         }
-        CombatStatEffectV1::HealLifeOnVictory { life, maximum } => Some(
-            PostRoundSourceEffect::Fixed(PostRoundEffect::LatchHealLifeOnVictory { life, maximum }),
+        CombatStatEffectV1::HealLifeOnVictory { life, maximum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::LatchOnVictory(LatchedEffectV1::HealLife { life, maximum }),
+            ))
+        }
+        CombatStatEffectV1::RegenLifeOnVictory { life, maximum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::LatchOnVictory(LatchedEffectV1::RegenLife { life, maximum }),
+            ))
+        }
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, minimum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnVictory(
+                LatchedEffectV1::PoisonOpponentLife { life, minimum },
+            )),
+        ),
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, minimum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnVictory(
+                LatchedEffectV1::ToxinOpponentLife { life, minimum },
+            )),
         ),
         CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star, minimum } => {
             Some(

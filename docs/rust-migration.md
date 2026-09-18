@@ -243,7 +243,7 @@ all four selected Riots cards receive the bonus, with the resulting resource seq
 against the capture. That KO observation exposed a narrow TypeScript guard error: the
 reference engine now permits this exact bonus Pillz gain after the owner reaches zero life,
 fixing eight captured replays while lethal Kubra compound-Defeat controls remain suppressed.
-Replay provenance records compiler/policy semantic revision 27 for the current scope.
+Replay provenance records compiler/policy semantic revision 28 for the current scope.
 
 The four revision-10 gate rounds exercise the exact same-text ability family without
 turning description equality into authority. Bonnie Ld level 2 (`946288`, registry `5085`)
@@ -364,7 +364,7 @@ registry alias, except for the explicit active-Jungo bridge from catalog bonus `
 registry definition `401`. That bridge is clan-, source-kind-, id-, description-, and
 structure-gated; captures `877860/1` and `878011/1` independently pin winning Jungo bonus
 arithmetic. Metadata retains the catalog id, resolved definition id, and complete alias set.
-A mismatch rejects the strict draw. Compiler/policy provenance is revision 27.
+A mismatch rejects the strict draw. Compiler/policy provenance is revision 28.
 
 Semantic revision 13 adds only exact unconditional `Stop Opp. Ability`. The registry shape
 must be player-targeted `stop_ability` with neutral attribute/action, zero control values,
@@ -711,14 +711,14 @@ The combat-stat plan validates Support context by effective clan rather than cap
 id: it counts distinct character ids in the immutable draw that share the source card's
 effective clan. Executable ability Support and active bonus Support carry independently
 validated counts, so either source can be absent or stopped without borrowing the other's
-context. Compiler/policy revision 27 records this semantic boundary together with the exact
+context. Compiler/policy revision 28 records this semantic boundary together with the exact
 Equalizer multiplier, the bounded Confidence/Revenge/Frozn slice, the identity-locked
 Defeat-recovery post-round plan, the identity-locked Victory-or-Defeat Pillz family with its
 both-owner post-round execution semantics, Argos' identity-locked capped Defeat gain, and the
 exact-structured positive Victory Life and Victory-or-Defeat Life plans, the identity-locked
 Equalizer opponent-Life plan, Anita's identity-locked final-damage Courage conversion, the
-two reviewed unconditional Victory opponent-Life reductions, and the latched plain
-`Heal N Max. M` grammar.
+two reviewed unconditional Victory opponent-Life reductions, and the four latched plain
+permanent Life grammars.
 
 `CatalogCombatStatMatchV1` is the first strict, replay-independent constructor intended for
 future solver work. Its input contains battle-rule id, explicit day/night state, initial
@@ -758,7 +758,7 @@ unless the catalog explicitly supplies one; its public
 identity records `None`, while the compact plan uses the resolved registry definition id.
 Conditional Copy, global effects, unsupported temporal effects, and all other
 uncompiled sources fail closed. Provenance combines the effective-catalog source fingerprint,
-registry schema and source fingerprint, compiler/policy revision 27, and catalog-context
+registry schema and source fingerprint, compiler/policy revision 28, and catalog-context
 policy revision 3.
 
 The complete 322-game replay-ready corpus supplies a construction oracle: 2,576 card slots
@@ -769,13 +769,14 @@ Every one of the other 2,538 slots matches captured bonus presence and descripti
 On 2026-09-18, the deterministic strict-coverage regression scanned all 359 captured
 complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captured
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
-`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 45 capture ids
-are eligible: `830285`, `869944`, `874520`, `875098`, `875322`, `877636`, `877687`,
-`877773`, `877812`, `877860`, `877950`, `878011`, `878056`, `924257`, `924320`, `925254`,
-`925674`, `925719`, `925796`, `943111`, `946112`, `947228`, `949750`, `970972`, `1011712`,
-`1024673`, `1058366`, `1059030`, `1059454`, `1060052`, `1060199`, `1061897`, `1065812`,
-`1069813`, `1070207`, `1072715`, `1078906`, `1079482`, `1080877`, `1081463`, `1089346`,
-`1090607`, `1091235`, `1092909`, and `1130833`.
+`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 49 capture ids
+are eligible: `830285`, `869944`, `874520`, `875098`, `875155`, `875322`, `877636`,
+`877687`, `877773`, `877812`, `877860`, `877950`, `878011`, `878056`, `924257`, `924320`,
+`925254`, `925674`, `925719`, `925796`, `943111`, `946112`, `947228`, `949750`, `970972`,
+`1011712`, `1024673`, `1058366`, `1059030`, `1059454`, `1060052`, `1060199`, `1061897`,
+`1065812`, `1069813`, `1070207`, `1072715`, `1078906`, `1079482`, `1080877`, `1081463`,
+`1089346`, `1090607`, `1091235`, `1091585`, `1092294`, `1092369`, `1092909`, and
+`1130833`.
 Revision 21 added `878011`, `925254`, and `1078906` to revision 20's fourteen; revision 22
 then added `875098`, `875322`, `1011712`, `1059030`, `1059454`, and `1090607`; revision 23
 added `877687`, `924257`, `1070207` and `1091235`, the four the report had predicted for
@@ -785,13 +786,14 @@ five predicted for the two Copy families together; revision 25 added `874520`, `
 opposing Damage and Defeat opponent-Life; revision 26 added `877773`, `877860`, `878056` and
 `1079482`, the four the blocker-set listing had attributed to `3526` alone; revision 27
 added `924320` and `1080877`, the two a candidate-family line for the plain Heal grammar
-had measured before it was admitted.
+had measured before it was admitted; revision 28 added `875155`, `1091585`, `1092294` and
+`1092369`, the one measured for plain Toxin and the three for plain Poison.
 That is six for two families the report had predicted would unlock three each, because six
 draws were blocked by *both* families at once — which is exactly why reach and unlock are
 measured separately, and why the measurement has to be rerun rather than added up. Catalog
 eligibility is a strict whole-draw admission measurement, not proof of full engine or
 TypeScript solver parity;
-the 200-round immutable diagnostic gate supplies the separately checked sequential replay
+the 219-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
 
 Semantic revision 23 adds Protection, the projection's first defensive control channel.
@@ -976,6 +978,51 @@ Defeat Life, round 3 after a loss. `924669/0` is a latch round paying nothing wh
 VOD reduction lands, and `875375/0` and `1025525/0` are losing Heals that never latch. Every
 other plain Heal round in the corpus sits behind an unadmitted grammar in the same draw.
 
+Semantic revision 28 puts the other three plain permanents on the same latch and closes
+the family's mechanism: `Regen N, Max. M` (`1458`, `3433`), `Poison N, Min M` (`206`, `325`,
+`509`, `566`, `582`, `682`, `1345`, `1385`, `3088`, `3603`, `5901`) and `Toxin N, Min M`
+(`1197`, `1508`, `1840`, `4730`, `5037`, `5098`, `5638`, `5639`, `5640`), each admitted by
+exact text and complete structured shape like Heal. Two things needed adding. The latched
+effect now carries its own kind, and the kind decides whether the latching round pays: the
+structured records tell Toxin from Poison and Regen from Heal only by
+`isImmediatePermanent`, which is the field the TypeScript `delayed` flag was reading all
+along, so the compiler requires it to agree with the text. And the repeat loop walks the
+post-latch list rather than the pre-round one, skipping only what was latched this round
+and does not pay at once, so a Toxin pays in its own round in latch order behind the older
+permanents. Poison is the one permanent a clan prints as its bonus, so it alone is open to
+both slots, with the Freaks catalog bonus `38` bridged to the captured `206` exactly as
+Jungo's `41` is to `401`; Regen and Toxin are card abilities only.
+
+The server pins each part, and the immediacy most of all. Galactea's Toxin takes one Life
+in the round it wins (1091904/1: 12 - 1 Damage - 1), Zis' takes one beside three Damage
+(963039/0: 12 to 8), Dr Elisa's beside two (1090531/0: 12 to 9), and Padre Frollo's Regen
+brings 5 back to the cap of 6 in the round after he wins (1059149/2), then reports 0 at the
+cap (1059149/3). Poison waits: Sofilia's Freaks bonus latches in 1092369/1 and pays two in
+round 2, and the bonus latched in 1023274/0 pays nothing that round and two in the next.
+The floor holds from both sides - 1060510/2 leaves a target on 2 under Min 3, and the two
+Freaks latches in 926420/3 report 2 and then 0 once the target sits at 3 - and so does the
+cap. A latched reduction outlives its owner's knockout: Fridlia Cr's Toxin pays in
+1091585/2 and Araaknat's Poison in 1092294/3 while their owners are taken to zero. And the
+repeat can end the match: in 963039/2 Regan's Victory-or-Defeat reduction takes the
+opponent from 3 to 1 and Zis' Toxin, latched two rounds earlier, takes the last point; Toxin
+first would have left them on 1, which is why the repeats run after each owner's
+current-round effects. The gate carries 1092369 and 1092294 in full and prefixes of
+963039, 926226, 1090531, 1091585 and 1091904; 1073107 cannot enter because its first round
+selects a clan-gated Equalizer Life ability, and 1059149's rounds sit behind the deferred
+GhosTown night bonus.
+
+What the widening changed in the hazard rule is worth stating. `Growth:`, `Unison :` and
+`Revenge:` Poison carry exactly the plain Poison structure - the registry keeps their
+conditions in the description alone - so with the plain grammar admitted they are the
+complete shape under other text and now reject when selected, where before they were
+visible-but-disabled. Every other prefixed permanent differs in a structured field
+(`Defeat` in the round requirement, `Killshot` and `Perfect` in their own requirements,
+`Symmetry`/`Asymmetry` in the index requirement, `Backlash` in the side, the clan-gated
+forms in the clan list) and keeps its disabled record; so do Dope, Consume, Repair, Combust
+and Mindwipe, which are Pillz or compound permanents and not this family. The
+Symmetry/Asymmetry/Revenge forms would ride the predicates the projection already resolves
+and the coverage line for them reads 1; they are admission-only work when a draw needs them.
+
 ### Choosing the next slice
 
 Reach and unlock rank differently, and only unlock is worth acting on. Strict construction
@@ -993,14 +1040,15 @@ An id named in a candidate family must be a real registry definition, or the fam
 under-reports: an id no definition owns can never appear as a blocker. The list carried
 `990` for conditional Copy until 2026-09-17, so that family was only ever scored by `958`.
 
-On 2026-09-18 at revision 27 it scanned 359 complete draws: 45 eligible and 10 refused
+On 2026-09-18 at revision 28 it scanned 359 complete draws: 49 eligible and 10 refused
 structurally, by a Leader or a duplicate character rather than by a missing effect. The
 report also prints the blocker sets themselves, smallest first, which is what a family
 proposal should be built from: a group is worth proposing only when it covers one of those
 sets whole, and anything else merely co-occurs with a blocker that is still there. Revision
 26 was chosen from that listing - `3526` alone blocked four draws - and unlocked exactly
 those four; revision 27 added the plain Heal grammar as a candidate-family line, read 2, and
-unlocked 2. That line now reads 0, which is how a landed family is meant to look.
+unlocked 2; revision 28 measured plain Toxin at 1 and plain Poison at 3 before admitting
+them and unlocked 4. Those lines now read 0, which is how a landed family is meant to look.
 
 The measurements that chose the last two slices are worth keeping as a record of how the
 counts behave. Revision 24's two Copy families unlocked 3 and 2 and together 5; revision
@@ -1008,23 +1056,24 @@ counts behave. Revision 24's two Copy families unlocked 3 and 2 and together 5; 
 pair that shared six - so neither additivity nor overlap can be assumed, and the split has
 to be measured each time.
 
-What is left still ranks clearly. The rest of permanent Life - Poison, Toxin, Regen and
-the conditional Heals - unlocks 6 draws on its own and 10 together with the Life-per-Damage
-conversions, still more than everything else combined; the three Pillz families together
-unlock 4, opposing Pillz reduction 2, and everything else 1 or 0. No single source blocks
-more than two draws: the smallest sets are `1474` `Stop: Damage +4` and `5681` `After
-[clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`, two draws each, then eleven singletons.
+For the first time the ranking has turned over. With permanent Life done, the three Pillz
+families together unlock 8 draws - own fixed Pillz 2, opposing Pillz reduction 2, Pillz per
+Damage 2, the rest only in combination - and permanent Life with the Life-per-Damage
+conversions reads 6, of which Life per Damage alone is 3 and the remaining permanents (the
+predicate-carrying Symmetry/Asymmetry/Revenge forms) 2. Six two-draw sets sit at the top of
+the blocker listing: `455` `+2 Pillz`, `1379` `Xantiax: -3 Life, Min. 0`, `1474` `Stop:
+Damage +4`, `1726` `Victory Or Defeat: - 2 Opp. Life Min 1`, `1852` `Symmetry: +1 Pillz Per
+Damage` and `5681` `After [clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`.
 
-The latch exists and the plain Heal grammar is on it, so what remains of permanent Life is
-latch variants. Poison and Toxin are opponent-targeted decreases with a Min, and Toxin and
-Regen pay in the latching round where Heal and Poison do not - a difference the structured
-records carry only in their description and the TypeScript `delayed` flag encodes, so it has
-to be pinned by capture arithmetic (`1091904` r1-r3 has Galactea's `Toxin 1, Min 0` paying
-in its own round and the two after it). `1197` `Toxin 1, Min 0` alone appears in 14 draws
-and `206` `Poison 2, Min 3` in 8, so measure them as separate family lines before choosing.
-Rerun the measurement before pricing any of it: the Life-per-Damage overlap and the three
-Pillz families have not moved in three revisions, and the two-draw sets are cheap enough to
-take alongside.
+Pillz is a resource the post-round channel already moves - Defeat recovery, Victory-or-
+Defeat Pillz, Argos and Komboka all write it - so own fixed `+N Pillz` is admission-only
+work like Victory Life was, and the reach table has said so for three revisions (`455`
+appears in 20 draws, `337` in 9). Opposing Pillz reduction needs its Min clamp on the other
+player, which the Life reductions already model, and `Symmetry: +1 Pillz Per Damage` is a
+predicate the projection resolves over a magnitude it already binds (Anita's conversion
+reads the same final damage). Measure the three as separate lines before choosing: their
+sum was 8 in combination and 6 alone, so two draws are blocked by more than one of them.
+Rerun the measurement before pricing any of it; the counts have moved after every slice.
 
 The two families revision 22 took were cheaper than this section predicted. It claimed a
 post-round plan carries no predicate and that adding one was the shared change both needed;
