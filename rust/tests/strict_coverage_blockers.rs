@@ -132,6 +132,42 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ("conditional stat Copy", &[1409, 4126, 4956]),
     ("Power/Damage Exchange", &[1588, 1592]),
     ("conditional Victory opponent-Life", &[1730, 4533]),
+    (
+        "plain Victory -N Opp. Life, Min M grammar",
+        &[
+            512, 524, 594, 602, 680, 769, 842, 935, 1002, 1399, 3491, 3571, 3716, 4948,
+        ],
+    ),
+    (
+        "Victory Or Defeat -N Opp. Life, Min M grammar",
+        &[1386, 1628, 1726, 3367, 4331],
+    ),
+    (
+        "Victory + Victory-or-Defeat opponent-Life reduction",
+        &[
+            512, 524, 594, 602, 680, 769, 842, 935, 1002, 1386, 1399, 1628, 1726, 3367, 3491, 3571,
+            3716, 4331, 4948,
+        ],
+    ),
+    (
+        "predicate-carrying fixed Victory Life",
+        &[814, 2113, 2638, 3546],
+    ),
+    ("capped Life per Damage", &[1146, 1161]),
+    (
+        "opponent-Life reduction + predicate-carrying Victory Life",
+        &[
+            512, 524, 594, 602, 680, 769, 814, 842, 935, 1002, 1386, 1399, 1628, 1726, 2113, 2638,
+            3367, 3491, 3546, 3571, 3716, 4331, 4948,
+        ],
+    ),
+    (
+        "opponent-Life reduction + predicate Victory Life + capped Life per Damage",
+        &[
+            512, 524, 594, 602, 680, 769, 814, 842, 935, 1002, 1146, 1161, 1386, 1399, 1628, 1726,
+            2113, 2638, 3367, 3491, 3546, 3571, 3716, 4331, 4948,
+        ],
+    ),
 ];
 
 fn root_path(path: &str) -> PathBuf {

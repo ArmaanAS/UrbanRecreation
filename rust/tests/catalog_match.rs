@@ -3073,12 +3073,12 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
         eligible,
         BTreeSet::from([
             830285, 869944, 874520, 875098, 875155, 875322, 877636, 877687, 877773, 877812, 877860,
-            877950, 878011, 878056, 924257, 924320, 924413, 925254, 925674, 925719, 925796, 943111,
-            946112, 947228, 949750, 956608, 970972, 1011643, 1011712, 1023274, 1024673, 1025102,
-            1025525, 1058366, 1059030, 1059454, 1060052, 1060199, 1061897, 1065812, 1069813,
-            1070101, 1070207, 1072715, 1078906, 1079482, 1080877, 1081463, 1089121, 1089346,
-            1090607, 1091235, 1091585, 1092294, 1092369, 1092454, 1092909, 1092992, 1093399,
-            1130577, 1130833,
+            877950, 878011, 878056, 924257, 924320, 924413, 925254, 925674, 925719, 925796, 926367,
+            943111, 946112, 947228, 949750, 956608, 962243, 963039, 970972, 1011643, 1011712,
+            1023274, 1024673, 1025102, 1025525, 1058366, 1059030, 1059454, 1060052, 1060199,
+            1061897, 1065812, 1069506, 1069813, 1070101, 1070207, 1072715, 1078906, 1079482,
+            1080877, 1081463, 1089121, 1089346, 1090607, 1091235, 1091585, 1092294, 1092369,
+            1092454, 1092909, 1092992, 1093399, 1130577, 1130833,
         ])
     );
 }
@@ -3463,7 +3463,7 @@ fn berzerk_hand() -> [CardKey; 4] {
 }
 
 #[test]
-fn strict_catalog_match_admits_only_the_two_reviewed_victory_opponent_life_identities() {
+fn strict_catalog_match_pins_the_printed_and_bonus_victory_opponent_life_authorities() {
     let catalog = catalog();
     let registry = registry();
     let (_, opponent) = fully_supported_hands();
@@ -3544,6 +3544,74 @@ fn strict_catalog_match_admits_only_the_two_reviewed_victory_opponent_life_ident
         CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
             life: 2,
             minimum: 2
+        }
+    );
+}
+
+#[test]
+fn strict_catalog_match_admits_the_opponent_life_grammar_on_both_outcome_channels() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let with = |key: CardKey| {
+        [
+            key,
+            CardKey::new(123, 1),
+            CardKey::new(124, 1),
+            CardKey::new(138, 1),
+        ]
+    };
+
+    // Every printed ability that carries the plain reduction prepares under the ordinary
+    // structural-alias rule, not from a card list.
+    for (key, catalog_id, life, minimum) in [
+        (CardKey::new(774, 4), 594, 3, 0),   // Zinfrid.
+        (CardKey::new(782, 4), 602, 4, 0),   // Dregn Cr.
+        (CardKey::new(1603, 4), 4948, 5, 1), // Surstorming.
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(with(key), opponent, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity, effect, ..
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as a Victory opponent-Life reduction")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert_eq!(identity.registry_definition_id, catalog_id);
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+        );
+    }
+
+    // Regan's Victory-or-Defeat form is the same grammar on the channel that pays whatever
+    // the outcome.
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(with(CardKey::new(1878, 2)), opponent, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity, effect, ..
+    } = &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Regan L2 was not prepared as Victory-or-Defeat opponent-Life")
+    };
+    assert_eq!(identity.catalog_id, Some(1726));
+    assert_eq!(identity.registry_definition_id, 1726);
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+            life: 2,
+            minimum: 1
         }
     );
 }

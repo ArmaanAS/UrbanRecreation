@@ -870,23 +870,25 @@ fn equalizer_opponent_life_id_is_reserved(source_id: u32) -> bool {
     matches!(source_id, 1415 | 4458)
 }
 
-/// Both reviewed unconditional Victory opponent-Life identities are reserved whatever a
-/// caller claims, so neither magnitude can be smuggled onto the other id or onto a
-/// generic plan.
+/// The Victory opponent-Life ids that stay identity-locked whatever a caller claims: the
+/// one clan Bonus and the three conditional abilities. Their magnitudes cannot be smuggled
+/// onto another id, and no other magnitude can ride theirs. Every remaining printed ability
+/// goes through the plain grammar below.
 fn victory_opponent_life_id_is_reserved(source_id: u32) -> bool {
-    matches!(source_id, 680 | 1399 | 3016 | 4301 | 4708)
+    matches!(source_id, 680 | 3016 | 4301 | 4708)
+}
+
+/// The conditional siblings this slice deliberately leaves out. `4533` has no selected
+/// observation anywhere in the corpus and `1730` is a round-scaled magnitude rather than a
+/// predicate, so neither may ride the plain grammar however a caller labels it.
+fn victory_opponent_life_id_is_deferred(source_id: u32) -> bool {
+    matches!(source_id, 1730 | 4533)
 }
 
 fn victory_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
     matches!(
         (source_id, effect),
         (
-            1399,
-            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
-                life: 5,
-                minimum: 5
-            }
-        ) | (
             680,
             CombatStatEffectV1::ReduceOpponentLifeOnVictory {
                 life: 2,
@@ -1165,17 +1167,39 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
-    if matches!(
-        effect,
-        CombatStatEffectV1::ReduceOpponentLifeOnVictory { .. }
-    ) {
-        return Err(invalid_combat_stat_execute(
-            player,
-            hand_slot,
-            source,
-            source_id,
-            InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity,
-        ));
+    // Every other Victory opponent-Life reduction is the plain grammar: card abilities only,
+    // a positive magnitude, and no condition beyond the outcome the engine already resolves.
+    if let CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, .. } = effect {
+        if source != CombatStatEffectSourceV1::Ability
+            || victory_opponent_life_id_is_deferred(source_id)
+        {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity,
+            ));
+        }
+        if life == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentLifeMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOpponentLifePredicate,
+            ));
+        }
+        return Ok(());
     }
     // Reserve every reviewed VOD-Life identity independently of its claimed source. A
     // caller cannot turn Scott's +1 into Uuber's reduction or smuggle an otherwise
@@ -1237,11 +1261,39 @@ fn validate_combat_stat_source_plan(
             InvalidCombatStatPlanReasonV1::EqualizerOpponentLifeIdentity,
         ));
     }
-    if matches!(
-        effect,
-        CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
-            | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
-    ) {
+    // The Victory-or-Defeat opposing reduction is the same plain grammar on the channel that
+    // pays whatever the outcome; the own-Life gains stay a closed reviewed set.
+    if let CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, .. } = effect {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifeIdentity,
+            ));
+        }
+        if life == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifeEffect,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryOrDefeatLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if matches!(effect, CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }) {
         return Err(invalid_combat_stat_execute(
             player,
             hand_slot,

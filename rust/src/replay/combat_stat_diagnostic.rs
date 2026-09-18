@@ -26,7 +26,8 @@ use crate::engine::combat_stat_compiler::{
     compact_effect, has_defeat_life_shape, has_heal_life_on_victory_shape,
     has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
     has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
-    has_victory_life_shape, has_victory_opponent_pillz_shape, has_victory_pillz_per_damage_shape,
+    has_victory_life_shape, has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
+    has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
     has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
@@ -986,7 +987,8 @@ fn prepare_combat_stat_source(
             || (source.description.contains("Victory Or Defeat")
                 && (source.description.contains("Life")
                     || definition.structured_input().attribute_affected
-                        == AttributeAffectedV1::Life));
+                        == AttributeAffectedV1::Life))
+            || has_victory_or_defeat_opponent_life_shape(definition);
     // Equalizer opponent-Life is an equally closed identity-and-shape family. Captured
     // Copy can put either reviewed id in either source slot, but every malformed record
     // and adjacent Equalizer Life form must reject when selected.
@@ -1054,15 +1056,19 @@ fn prepare_combat_stat_source(
     let unadmitted_anita_courage_damage_to_life = source.id == 274
         || source.description == "Courage: +1 Life Per Dmg"
         || input.special_action == SpecialActionV1::ConvertDamageToLife;
-    // A wrong source slot, a malformed record, and the same-text catalog ids that carry
-    // no registry definition (Rakhan, Milovan, Fraser) stay selected hazards rather than
-    // inert no-ops. Conditional siblings such as Symmetry 4708, Courage 4533, Confidence
-    // 3016, and Growth 1730 belong to their own deferred families and keep their existing
-    // Disabled records, so this deliberately does not claim the whole structural shape.
-    let unadmitted_victory_opponent_life = source.id == 680
-        || source.id == 1399
-        || source.description == "-5 Opp. Life Min 5"
-        || source.description == "-2 Opp. Life Min 2";
+    // The plain reduction now has the same two-sided boundary every other post-round
+    // grammar has: the literal `-N Opp. Life Min M` text over a wrong slot or structure, or
+    // the complete reviewed structure under other text - which is what `Night: -2 Opp. Life
+    // Min 0` is - rejects when selected. The identity-locked members stay listed so a
+    // malformed record or a wrong source slot cannot quietly become an inert no-op.
+    // Conditional siblings such as Courage 4533 and Growth 1730 differ in a structured
+    // field and keep their existing Disabled records.
+    let unadmitted_victory_opponent_life = matches!(source.id, 680 | 3016 | 4301 | 4708)
+        || source.description == "-2 Opp. Life Min 2"
+        || (source.description.starts_with('-')
+            && source.description.contains("Opp. Life")
+            && input.attribute_affected == AttributeAffectedV1::Life)
+        || has_victory_opponent_life_shape(definition);
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player

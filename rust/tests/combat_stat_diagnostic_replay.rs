@@ -164,7 +164,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // bonus latched by Sofilia in 1092369/1 pays 2 in round 2 and reports 0 in round 3 with
     // its target already at zero, and Araaknat's ability latched in 1092294/2 pays 2 in
     // round 3 while Agnes knocks its owner out.
-    (963039, 2),
+    (963039, 3),
     (926226, 2),
     (1090531, 2),
     (1091585, 3),
@@ -231,6 +231,18 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // are pinned by the engine tests.
     (1089121, 4),
     (1093399, 4),
+    // Revision 33 generalises the opponent-Life reduction on the Victory and Victory-or-
+    // Defeat channels. Glenn's `512` takes Uuber's owner from 12 - 6 to exactly its Min of 3
+    // in 962243/0, where Uuber's own Victory-or-Defeat `1628` pays on the losing side, and
+    // Kazayan's `769` pays into a knockout in 962243/2. Regan's Victory-or-Defeat `1726`
+    // pays after losing 963039/2, before the Toxin its owner latched in 963039/0, which is
+    // what takes that target to 0 rather than to the Min of 1. A loss pays nothing: Dao
+    // Wang's `935` and Zinfrid's `594` in 926367, Surstorming's `4948` in 1092840/0 and
+    // Dregn Cr's `602` in 1131010/0. A stopped source pays nothing either: Mavi's Stop Opp.
+    // Ability silences Glenn's `512` in 876712/0 and only his 6 Damage lands.
+    (962243, 3),
+    (1131010, 2),
+    (876712, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -561,7 +573,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_two_hundred_and_eighty_two_unique_sequential_prefix_rounds()
+fn fixed_server_backed_gate_is_exactly_two_hundred_and_eighty_nine_unique_sequential_prefix_rounds()
 {
     let catalog = catalog();
     let registry = registry();
@@ -598,35 +610,34 @@ fn fixed_server_backed_gate_is_exactly_two_hundred_and_eighty_two_unique_sequent
             }
         }
     }
-    assert_eq!(rounds, 282);
+    assert_eq!(rounds, 289);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
-            6, 7, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 61, 73, 86, 90, 93, 94, 130, 156, 189,
-            197, 202, 206, 225, 257, 266, 274, 292, 310, 316, 333, 334, 339, 343, 360, 367, 368,
-            372, 377, 391, 401, 412, 417, 421, 432, 442, 445, 455, 461, 469, 478, 492, 503, 511,
-            520, 532, 536, 549, 555, 566, 569, 570, 577, 578, 585, 587, 612, 649, 656, 680, 682,
-            713, 717, 727, 729, 739, 741, 751, 759, 778, 801, 809, 826, 837, 844, 852, 854, 862,
-            871, 883, 888, 916, 938, 959, 963, 980, 1020, 1034, 1041, 1047, 1051, 1053, 1054, 1090,
-            1091, 1098, 1131, 1150, 1158, 1163, 1188, 1197, 1229, 1241, 1293, 1297, 1303, 1310,
-            1330, 1335, 1338, 1341, 1342, 1345, 1350, 1355, 1359, 1372, 1375, 1385, 1388, 1396,
-            1399, 1415, 1417, 1418, 1420, 1464, 1469, 1501, 1508, 1513, 1518, 1534, 1536, 1578,
-            1580, 1628, 1634, 1688, 1694, 1699, 1706, 1714, 1722, 1770, 1805, 1806, 1823, 1825,
-            1833, 1840, 1844, 1845, 1848, 1850, 1852, 2021, 2028, 2073, 2277, 2286, 2299, 2321,
-            2329, 2375, 2412, 2528, 2535, 2556, 2573, 2628, 2657, 2660, 2661, 2835, 2881, 2944,
-            2965, 2992, 3004, 3040, 3048, 3118, 3197, 3222, 3284, 3386, 3393, 3487, 3526, 3597,
-            3677, 3829, 3852, 3864, 3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301, 4330,
-            4389, 4399, 4414, 4417, 4458, 4461, 4464, 4500, 4571, 4623, 4625, 4708, 4711, 4718,
-            4722, 4730, 4757, 4824, 4908, 4951, 4954, 4966, 4983, 5025, 5026, 5085, 5169, 5170,
-            5195, 5237, 5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406, 5415, 5439, 5462, 5498,
-            5520, 5525, 5531, 5532, 5549, 5763, 5835, 5841, 5849, 5852, 5859, 5901
+            6, 7, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 61, 73, 86, 90, 93, 94, 130, 156, 184,
+            189, 197, 202, 206, 225, 257, 266, 274, 292, 310, 316, 333, 334, 339, 343, 360, 367,
+            368, 372, 377, 391, 401, 412, 417, 421, 432, 442, 445, 455, 461, 469, 478, 492, 503,
+            511, 512, 520, 532, 536, 549, 555, 566, 569, 570, 577, 578, 585, 587, 594, 602, 612,
+            649, 656, 680, 682, 713, 717, 727, 729, 739, 741, 751, 759, 769, 778, 801, 809, 826,
+            837, 844, 852, 854, 862, 871, 883, 888, 916, 935, 938, 959, 963, 980, 1020, 1034, 1041,
+            1047, 1051, 1053, 1054, 1090, 1091, 1098, 1131, 1150, 1158, 1163, 1188, 1197, 1229,
+            1241, 1293, 1297, 1303, 1310, 1330, 1335, 1338, 1341, 1342, 1345, 1350, 1355, 1359,
+            1372, 1375, 1385, 1388, 1396, 1399, 1415, 1417, 1418, 1420, 1464, 1469, 1501, 1508,
+            1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634, 1688, 1694, 1699, 1706, 1714, 1722,
+            1726, 1760, 1770, 1805, 1806, 1823, 1825, 1833, 1840, 1844, 1845, 1848, 1850, 1852,
+            2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329, 2375, 2412, 2528, 2535, 2556, 2573,
+            2628, 2657, 2660, 2661, 2835, 2881, 2944, 2965, 2992, 3004, 3040, 3048, 3118, 3197,
+            3222, 3284, 3386, 3393, 3487, 3526, 3597, 3677, 3829, 3852, 3864, 3865, 3897, 4041,
+            4098, 4216, 4286, 4297, 4299, 4301, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464,
+            4500, 4571, 4623, 4625, 4708, 4711, 4718, 4722, 4730, 4757, 4824, 4908, 4948, 4951,
+            4954, 4966, 4983, 5025, 5026, 5085, 5169, 5170, 5195, 5237, 5258, 5273, 5332, 5333,
+            5360, 5366, 5404, 5406, 5415, 5439, 5462, 5498, 5520, 5525, 5531, 5532, 5549, 5763,
+            5835, 5841, 5849, 5852, 5859, 5901,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([
-            594, 935, 1231, 2222, 2317, 2638, 4303, 4459, 4657, 4695, 4747, 4937, 4948, 5283,
-        ])
+        BTreeSet::from([1231, 2222, 2317, 2638, 4303, 4459, 4657, 4695, 4747, 4937, 5283,])
     );
     assert_eq!(absent, 14);
 }
@@ -927,7 +938,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 32);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 33);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -983,7 +994,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        32
+        33
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -3050,6 +3061,20 @@ fn victory_or_defeat_life_is_exactly_the_audited_post_round_family() {
         (5802, "Victory Or Defeat : +2 Life", 2, 1, true),
         (2944, "Victory Or Defeat : +2 Life", 2, 1, true),
         (1628, "Victory Or Defeat: - 1 Opp. Life Min 1", 1, 1, false),
+        // The opposing reduction is a grammar since revision 33, so every same-shape record
+        // whose printed text agrees with both of its numbers executes, including an id no
+        // reviewed list names.
+        (1386, "Victory Or Defeat: - 1 Opp. Life Min 0", 1, 0, false),
+        (1726, "Victory Or Defeat: - 2 Opp. Life Min 1", 2, 1, false),
+        (3367, "Victory Or Defeat: - 1 Opp. Life Min 0", 1, 0, false),
+        (4331, "Victory Or Defeat: - 2 Opp. Life Min 4", 2, 4, false),
+        (
+            900_1386,
+            "Victory Or Defeat: - 3 Opp. Life Min 2",
+            3,
+            2,
+            false,
+        ),
     ];
 
     for (id, description, life, minimum, owner_life) in cases {
@@ -3094,20 +3119,30 @@ fn victory_or_defeat_life_is_exactly_the_audited_post_round_family() {
         );
     }
 
-    // Same-text and structurally adjacent Life forms are deliberately selected hazards.
+    // A reviewed own-Life gain stays identity-and-shape locked, and the opposing reduction
+    // keeps the two-sided boundary every post-round grammar has: a complete shape whose
+    // printed numbers disagree with it is a selected hazard, not an inert no-op.
     let mut malformed =
         victory_or_defeat_life_entry(1396, "Victory Or Defeat : +1 Life", 1, 1, true);
     malformed["abilityData"]["valueMin"] = serde_json::json!(0);
-    let adjacent = victory_or_defeat_life_entry(
+    let disagreeing = victory_or_defeat_life_entry(
         900_1396,
         "Victory Or Defeat: - 2 Opp. Life Min 1",
-        2,
+        3,
         1,
         false,
     );
+    // Uuber's id is pinned to its own magnitude however the record is printed.
+    let reserved =
+        victory_or_defeat_life_entry(1628, "Victory Or Defeat: - 2 Opp. Life Min 1", 2, 1, false);
     for (id, description, entry) in [
         (1396, "Victory Or Defeat : +1 Life", malformed),
-        (900_1396, "Victory Or Defeat: - 2 Opp. Life Min 1", adjacent),
+        (
+            900_1396,
+            "Victory Or Defeat: - 2 Opp. Life Min 1",
+            disagreeing,
+        ),
+        (1628, "Victory Or Defeat: - 2 Opp. Life Min 1", reserved),
     ] {
         let registry = one_entry_registry(entry);
         let mut source = replay(875032, &catalog);

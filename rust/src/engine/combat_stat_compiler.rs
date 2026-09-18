@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 32;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 33;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -511,49 +511,85 @@ pub(crate) enum VictoryOrDefeatLifeEffectV1 {
     ReduceOpponentLife { life: u16, minimum: u16 },
 }
 
-/// Recognize only the reviewed ability identities for Victory Or Defeat Life.  Printed
-/// descriptions recur in unrelated catalog rows, so source kind and capture identity are
-/// both part of the grammar.
+/// Recognize the Victory Or Defeat Life sources. The own-Life gains stay a closed set of
+/// reviewed identities: printed descriptions recur in unrelated catalog rows, so source
+/// kind and capture identity are both part of that grammar.
+///
+/// The opposing reduction is the same effect the Victory and `Defeat:` channels already
+/// execute, so it is admitted the same way they are - exact printed text, complete neutral
+/// shape and card abilities only - over every `Victory Or Defeat: - N Opp. Life Min M`
+/// record. Uuber's `1628` stays identity-locked because it is the one such record a clan
+/// Bonus also prints, and no other magnitude may ride that id.
 pub(crate) fn classify_victory_or_defeat_life(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<VictoryOrDefeatLifeEffectV1> {
-    let effect = match definition.id() {
-        1396 | 2992 | 5835 | 5799 => VictoryOrDefeatLifeEffectV1::GainLife { life: 1 },
-        5802 | 2944 => VictoryOrDefeatLifeEffectV1::GainLife { life: 2 },
-        1628 => VictoryOrDefeatLifeEffectV1::ReduceOpponentLife {
+    let reviewed = match definition.id() {
+        1396 | 2992 | 5835 | 5799 => Some(VictoryOrDefeatLifeEffectV1::GainLife { life: 1 }),
+        5802 | 2944 => Some(VictoryOrDefeatLifeEffectV1::GainLife { life: 2 }),
+        1628 => Some(VictoryOrDefeatLifeEffectV1::ReduceOpponentLife {
             life: 1,
             minimum: 1,
-        },
-        _ => return None,
+        }),
+        _ => None,
     };
-    if !victory_or_defeat_life_identity_matches(source_kind, definition.id()) {
-        return None;
+    if let Some(effect) = reviewed {
+        if !victory_or_defeat_life_identity_matches(source_kind, definition.id()) {
+            return None;
+        }
+        let input = definition.structured_input();
+        return match effect {
+            VictoryOrDefeatLifeEffectV1::GainLife { life } => (definition.description()
+                == format!("Victory Or Defeat : +{life} Life")
+                && victory_or_defeat_life_shape_matches(
+                    input,
+                    life,
+                    1,
+                    AffectedSideV1::Player,
+                    AttributeActionV1::Increase,
+                ))
+            .then_some(effect),
+            VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum } => (definition
+                .description()
+                == format!("Victory Or Defeat: - {life} Opp. Life Min {minimum}")
+                && victory_or_defeat_life_shape_matches(
+                    input,
+                    life,
+                    minimum,
+                    AffectedSideV1::Opponent,
+                    AttributeActionV1::Decrease,
+                ))
+            .then_some(effect),
+        };
     }
     let input = definition.structured_input();
-    match effect {
-        VictoryOrDefeatLifeEffectV1::GainLife { life } => (definition.description()
-            == format!("Victory Or Defeat : +{life} Life")
-            && victory_or_defeat_life_shape_matches(
-                input,
-                life,
-                1,
-                AffectedSideV1::Player,
-                AttributeActionV1::Increase,
-            ))
-        .then_some(effect),
-        VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum } => (definition
-            .description()
+    let (life, minimum) = (input.value, input.value_min);
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && life > 0
+        && definition.description()
             == format!("Victory Or Defeat: - {life} Opp. Life Min {minimum}")
-            && victory_or_defeat_life_shape_matches(
-                input,
-                life,
-                minimum,
-                AffectedSideV1::Opponent,
-                AttributeActionV1::Decrease,
-            ))
-        .then_some(effect),
-    }
+        && victory_or_defeat_life_shape_matches(
+            input,
+            life,
+            minimum,
+            AffectedSideV1::Opponent,
+            AttributeActionV1::Decrease,
+        ))
+    .then_some(VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum })
+}
+
+/// Structural half of the Victory Or Defeat opponent-Life boundary, so replay preparation
+/// can reject the complete reviewed shape under malformed text rather than disabling it.
+pub(crate) fn has_victory_or_defeat_opponent_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && victory_or_defeat_life_shape_matches(
+            input,
+            input.value,
+            input.value_min,
+            AffectedSideV1::Opponent,
+            AttributeActionV1::Decrease,
+        )
 }
 
 /// Shared identity gate for the cold compiler and direct compact-plan validation.
@@ -570,10 +606,10 @@ pub(crate) fn victory_or_defeat_life_identity_matches(
     )
 }
 
-/// Every reviewed Victory opponent-Life identity: the registry definition id, its exact
-/// printed text, the source kind that is allowed to own it, the magnitude and bound, and
-/// the predicate that gates it. The source kind is authority in both directions, so `1399`
-/// is only ever a printed Ability and `680` only ever the clan Bonus.
+/// The Victory opponent-Life identities that are *not* covered by the plain grammar below:
+/// the one clan Bonus that prints the reduction, and the conditional forms whose printed
+/// text differs record by record. The source kind is authority in both directions, so `680`
+/// is only ever the clan Bonus and each conditional only ever a printed Ability.
 ///
 /// The conditional members reuse predicates the projection already resolves before a round
 /// is prepared. Courage `4533` (Ligea level 3) and Growth `1730` deliberately stay out:
@@ -586,15 +622,7 @@ const VICTORY_OPPONENT_LIFE_IDENTITIES: [(
     u16,
     u16,
     CombatStatPredicateV1,
-); 5] = [
-    (
-        1399,
-        "-5 Opp. Life Min 5",
-        CombatStatEffectSourceV1::Ability,
-        5,
-        5,
-        CombatStatPredicateV1::Always,
-    ),
+); 4] = [
     (
         680,
         "-2 Opp. Life Min 2",
@@ -632,27 +660,70 @@ const VICTORY_OPPONENT_LIFE_IDENTITIES: [(
     ),
 ];
 
-/// Recognize the reviewed Victory opponent-Life reductions. They are post-round resource
-/// work rather than combat-stat modifiers, so they stay out of the generic numeric
-/// compiler. Only the exact reviewed identities are admitted; every other magnitude/minimum
-/// pair, every unlisted same-text sibling, and the same-text catalog ids that have no
-/// registry definition at all (Rakhan `978`, Milovan `498`, Fraser `1289`) remain
-/// fail-closed.
+/// Recognize the Victory opponent-Life reductions. They are post-round resource work rather
+/// than combat-stat modifiers, so they stay out of the generic numeric compiler.
+///
+/// The unconditional form is a grammar like its `Defeat:` sibling: exact printed text,
+/// complete neutral structured shape, card abilities only. The registry carries fourteen
+/// structurally identical `-N Opp. Life Min M` ability records and the printed text has to
+/// agree with both numbers before either is used, so no magnitude can be smuggled in under
+/// a text that does not name it. The one clan Bonus that prints the reduction and the
+/// conditional forms, whose printed text differs record by record, stay identity-locked.
+///
+/// Everything else remains fail-closed: the capped, compound and clan-gated neighbours, the
+/// complete shape under prefixed text such as `Night: -2 Opp. Life Min 0`, and the same-text
+/// catalog ids that have no registry definition at all (Rakhan `978`, Milovan `498`,
+/// Fraser `1289`).
 pub(crate) fn classify_victory_opponent_life(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(u16, u16, CombatStatPredicateV1)> {
-    let (_, description, _, life, minimum, predicate) = VICTORY_OPPONENT_LIFE_IDENTITIES
+    if let Some((_, description, _, life, minimum, predicate)) = VICTORY_OPPONENT_LIFE_IDENTITIES
         .iter()
-        .find(|(id, _, kind, _, _, _)| *id == definition.id() && *kind == source_kind)?;
-    (definition.description() == *description
+        .find(|(id, _, kind, _, _, _)| *id == definition.id() && *kind == source_kind)
+    {
+        return (definition.description() == *description
+            && victory_opponent_life_shape_matches(
+                definition.structured_input(),
+                *life,
+                *minimum,
+                *predicate,
+            ))
+        .then_some((*life, *minimum, *predicate));
+    }
+    // A reserved id never reaches the grammar under the wrong source kind.
+    if victory_opponent_life_id_is_identity_locked(definition.id()) {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (life, minimum) = (input.value, input.value_min);
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && life > 0
+        && definition.description() == format!("-{life} Opp. Life Min {minimum}")
+        && victory_opponent_life_shape_matches(input, life, minimum, CombatStatPredicateV1::Always))
+    .then_some((life, minimum, CombatStatPredicateV1::Always))
+}
+
+/// Structural half of the Victory opponent-Life boundary, so replay preparation can reject
+/// the complete reviewed shape under malformed or prefixed text instead of silently
+/// disabling it.
+pub(crate) fn has_victory_opponent_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
         && victory_opponent_life_shape_matches(
-            definition.structured_input(),
-            *life,
-            *minimum,
-            *predicate,
-        ))
-    .then_some((*life, *minimum, *predicate))
+            input,
+            input.value,
+            input.value_min,
+            CombatStatPredicateV1::Always,
+        )
+}
+
+/// The ids the grammar must never admit on its own: each is pinned to one source kind and
+/// one magnitude by `VICTORY_OPPONENT_LIFE_IDENTITIES`.
+pub(crate) fn victory_opponent_life_id_is_identity_locked(definition_id: u32) -> bool {
+    VICTORY_OPPONENT_LIFE_IDENTITIES
+        .iter()
+        .any(|(id, _, _, _, _, _)| *id == definition_id)
 }
 
 /// Shared identity gate for cold compilation and direct compact-plan validation.
@@ -2437,6 +2508,133 @@ mod tests {
                 ),
                 None,
                 "mutated field {field}",
+            );
+        }
+    }
+
+    #[test]
+    fn unconditional_opponent_life_is_admitted_by_grammar_on_both_outcome_channels() {
+        let registry = registry();
+
+        // Every printed ability that carries the plain Victory reduction, whatever its
+        // magnitude and bound. `680` is absent because no ability prints it.
+        for (id, life, minimum) in [
+            (512, 3, 3),
+            (524, 2, 1),
+            (594, 3, 0),
+            (602, 4, 0),
+            (769, 3, 0),
+            (842, 3, 3),
+            (935, 2, 1),
+            (1002, 2, 0),
+            (1399, 5, 5),
+            (3491, 6, 0),
+            (3571, 3, 1),
+            (3716, 2, 0),
+            (4948, 5, 1),
+        ] {
+            let description = format!("-{life} Opp. Life Min {minimum}");
+            let definition = registry.lookup_capture(id, &description).unwrap();
+            assert_eq!(
+                classify_victory_opponent_life(definition, CombatStatEffectSourceV1::Ability),
+                Some((life, minimum, CombatStatPredicateV1::Always)),
+                "definition {id}",
+            );
+            // Only the reviewed Berzerk record is a clan bonus; nothing else may claim that
+            // slot, and none of these is ever a combat-stat modifier.
+            assert_eq!(
+                classify_victory_opponent_life(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} as a bonus",
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id} as a combat stat",
+            );
+        }
+
+        // The same grammar on the channel that pays whatever the outcome. Uuber's `1628`
+        // is the one member a clan bonus also prints, so it keeps its reviewed identity.
+        for (id, life, minimum, bonus_too) in [
+            (1386, 1, 0, false),
+            (1628, 1, 1, true),
+            (1726, 2, 1, false),
+            (3367, 1, 0, false),
+            (4331, 2, 4, false),
+        ] {
+            let description = format!("Victory Or Defeat: - {life} Opp. Life Min {minimum}");
+            let definition = registry.lookup_capture(id, &description).unwrap();
+            let expected = Some(VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum });
+            assert_eq!(
+                classify_victory_or_defeat_life(definition, CombatStatEffectSourceV1::Ability),
+                expected,
+                "definition {id}",
+            );
+            assert_eq!(
+                classify_victory_or_defeat_life(definition, CombatStatEffectSourceV1::Bonus),
+                if bonus_too { expected } else { None },
+                "definition {id} as a bonus",
+            );
+        }
+
+        // `Night:` prints the complete Victory shape under text the grammar does not name,
+        // so it is refused here and reported as a structural near-miss instead.
+        let night = registry
+            .lookup_capture(4750, "Night: -2 Opp. Life Min 0")
+            .unwrap();
+        assert_eq!(
+            classify_victory_opponent_life(night, CombatStatEffectSourceV1::Ability),
+            None,
+        );
+        assert!(has_victory_opponent_life_shape(night));
+
+        // The printed numbers are authority on both channels: a record whose text disagrees
+        // with its own magnitude or bound is refused rather than trusted either way.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, victory_value, victory_or_defeat_value) in [
+            ("value", serde_json::json!(2), serde_json::json!(3)),
+            ("valueMin", serde_json::json!(1), serde_json::json!(2)),
+            ("valueMax", serde_json::json!(6), serde_json::json!(6)),
+            (
+                "currentRoundRequirement",
+                serde_json::json!("lose"),
+                serde_json::json!("lose"),
+            ),
+            (
+                "indexRequirement",
+                serde_json::json!("symmetry"),
+                serde_json::json!("symmetry"),
+            ),
+            (
+                "isPermanent",
+                serde_json::json!(true),
+                serde_json::json!(true),
+            ),
+        ] {
+            let mut malformed = source.clone();
+            malformed["594"]["abilityData"][field] = victory_value;
+            malformed["1726"]["abilityData"][field] = victory_or_defeat_value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            assert_eq!(
+                classify_victory_opponent_life(
+                    malformed.get(594).unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "malformed 594 {field}",
+            );
+            assert_eq!(
+                classify_victory_or_defeat_life(
+                    malformed.get(1726).unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "malformed 1726 {field}",
             );
         }
     }

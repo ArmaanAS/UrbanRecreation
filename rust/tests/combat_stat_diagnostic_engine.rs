@@ -3442,13 +3442,16 @@ fn victory_opponent_life_plan_is_identity_magnitude_and_predicate_locked() {
     berzerk.cards[PlayerId::P1][0].source_bonus_support_count = 1;
     assert!(CombatStatDiagnosticV1::new(berzerk).is_ok());
 
+    // The Bonus identity keeps its own magnitude: it may not borrow a printed ability's.
     let mut swapped_magnitude = victory_opponent_life_spec(7, 3, 20);
-    swapped_magnitude.cards[PlayerId::P1][0].ability = execute(
-        1399,
+    swapped_magnitude.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    swapped_magnitude.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    swapped_magnitude.cards[PlayerId::P1][0].bonus = execute(
+        680,
         CombatStatPredicateV1::Always,
         CombatStatEffectV1::ReduceOpponentLifeOnVictory {
-            life: 2,
-            minimum: 2,
+            life: 5,
+            minimum: 5,
         },
     );
     assert!(matches!(
@@ -3459,7 +3462,37 @@ fn victory_opponent_life_plan_is_identity_magnitude_and_predicate_locked() {
         })
     ));
 
-    // 1399 is only ever a printed Ability and 680 only ever the clan Bonus.
+    // Since revision 33 the unconditional reduction is a grammar, so any printed ability may
+    // carry its own positive magnitude - but a zero one is still refused.
+    let mut grammar = victory_opponent_life_spec(7, 3, 20);
+    grammar.cards[PlayerId::P1][0].ability = execute(
+        594,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 3,
+            minimum: 0,
+        },
+    );
+    assert!(CombatStatDiagnosticV1::new(grammar).is_ok());
+
+    let mut zero = victory_opponent_life_spec(7, 3, 20);
+    zero.cards[PlayerId::P1][0].ability = execute(
+        594,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 0,
+            minimum: 0,
+        },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(zero),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifeMagnitude,
+            ..
+        })
+    ));
+
+    // The grammar is a printed-ability grammar, and 680 is only ever the clan Bonus.
     let mut wrong_slot = victory_opponent_life_spec(7, 3, 20);
     wrong_slot.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
     wrong_slot.cards[PlayerId::P1][0].source_bonus_support_count = 1;
@@ -3479,8 +3512,9 @@ fn victory_opponent_life_plan_is_identity_magnitude_and_predicate_locked() {
         })
     ));
 
-    // No unreviewed id may carry the effect. `4533` and `1730` share the structure exactly
-    // and are still refused, because admission is by reviewed identity, not by shape.
+    // The deferred conditional siblings are still refused however a caller labels them:
+    // `4533` has no selected observation in the corpus and `1730` is a round-scaled
+    // magnitude rather than a predicate.
     for unreviewed in [4533, 1730] {
         let mut foreign_id = victory_opponent_life_spec(7, 3, 20);
         foreign_id.cards[PlayerId::P1][0].ability = execute(

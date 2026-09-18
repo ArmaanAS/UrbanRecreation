@@ -50,20 +50,14 @@ const BERZERK_CLAN_ID: u32 = 46;
 const BERZERK_CATALOG_BONUS_ID: u32 = 44;
 const BERZERK_VICTORY_OPPONENT_LIFE_REGISTRY_ID: u32 = 680;
 const BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION: &str = "-2 Opp. Life Min 2";
-const MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID: u32 = 1399;
-const MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION: &str = "-5 Opp. Life Min 5";
-const MOU_CARD: CardKey = CardKey { id: 1589, level: 3 };
-/// Printed card abilities that carry a reviewed Victory opponent-Life reduction, keyed by
-/// the exact card and its printed catalog id, which must equal the registry definition id.
-/// The catalog is authority here: description equality never transfers one of these to
-/// another card, and a level whose printed id has no registry definition — Doela Noel level
-/// one's `4843` — stays fail-closed with no special handling.
-const VICTORY_OPPONENT_LIFE_ABILITY_CARDS: [(CardKey, u32, &str); 4] = [
-    (
-        MOU_CARD,
-        MOU_VICTORY_OPPONENT_LIFE_REGISTRY_ID,
-        MOU_VICTORY_OPPONENT_LIFE_DESCRIPTION,
-    ),
+/// Printed card abilities that carry an identity-locked *conditional* Victory opponent-Life
+/// reduction, keyed by the exact card and its printed catalog id, which must equal the
+/// registry definition id. The catalog is authority here: description equality never
+/// transfers one of these to another card, and a level whose printed id has no registry
+/// definition — Doela Noel level one's `4843` — stays fail-closed with no special handling.
+/// The unconditional printed abilities are admitted by grammar instead, under the ordinary
+/// structural-alias rule every other post-round grammar uses.
+const VICTORY_OPPONENT_LIFE_ABILITY_CARDS: [(CardKey, u32, &str); 3] = [
     (
         CardKey { id: 2058, level: 2 },
         4708,
@@ -1320,6 +1314,62 @@ fn prepare_catalog_source(
                 });
             }
             return prepare_victory_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
+        // The unconditional opponent-Life reduction follows the same rule on both of its
+        // outcome channels. Its identity-locked members - the Berzerk Bonus, the two
+        // Confidence records, Doela Noel's Symmetry and Uuber's `1628` - never reach here:
+        // their printed texts are intercepted above.
+        if classify_victory_opponent_life(definition, source_kind).is_some() {
+            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
+                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description: description.to_owned(),
+                    registry_definition_id: definition.id(),
+                    registry_reasons: definition
+                        .compiled()
+                        .unsupported_reasons()
+                        .to_vec()
+                        .into_boxed_slice(),
+                });
+            }
+            return prepare_victory_opponent_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
+        if classify_victory_or_defeat_life(definition, source_kind).is_some() {
+            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
+                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description: description.to_owned(),
+                    registry_definition_id: definition.id(),
+                    registry_reasons: definition
+                        .compiled()
+                        .unsupported_reasons()
+                        .to_vec()
+                        .into_boxed_slice(),
+                });
+            }
+            return prepare_victory_or_defeat_life_source(
                 registry,
                 player,
                 hand_slot,
