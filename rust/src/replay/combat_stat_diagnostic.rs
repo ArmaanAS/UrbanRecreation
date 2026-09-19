@@ -770,16 +770,16 @@ fn prepare_combat_stat_source(
             },
         });
     }
-    if let Some(life) = classify_victory_life(definition, source_kind) {
+    if let Some((life, predicate)) = classify_victory_life(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
                 effect: CombatStatEffectV1::GainLifeOnVictory { life },
             },
         });
@@ -829,7 +829,7 @@ fn prepare_combat_stat_source(
             },
         });
     }
-    if let Some((life_per_damage, predicate)) =
+    if let Some((life_per_damage, maximum, predicate)) =
         classify_victory_life_per_damage(definition, source_kind)
     {
         return Ok(PreparedCombatStatSourceV1 {
@@ -837,13 +837,17 @@ fn prepare_combat_stat_source(
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
                     life_per_damage,
+                    maximum,
                 },
                 predicate,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
                 predicate,
-                effect: CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage },
+                effect: CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                    life_per_damage,
+                    maximum,
+                },
             },
         });
     }

@@ -162,6 +162,10 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         ],
     ),
     (
+        "predicate-carrying fixed Victory Life + capped Life per Damage",
+        &[814, 1146, 1161, 2113, 2638, 3546],
+    ),
+    (
         "opponent-Life reduction + predicate Victory Life + capped Life per Damage",
         &[
             512, 524, 594, 602, 680, 769, 814, 842, 935, 1002, 1146, 1161, 1386, 1399, 1628, 1726,

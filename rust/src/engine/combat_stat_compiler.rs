@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 33;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 34;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -284,18 +284,43 @@ fn reprisal_stop_opponent_ability_shape_matches(input: &StructuredEffectV1) -> b
         && !input.is_immediate_permanent
 }
 
-/// Recognize only the literal, immediate end-of-round Victory Life grammar.  Unlike the
+/// Recognize only the literal, immediate end-of-round Victory Life grammar and the two
+/// reviewed forms that put an already-resolved predicate on it.  Unlike the
 /// identity-locked Pillz slices below, this is deliberately generic: any registry
 /// definition with the complete reviewed structured shape may supply its positive fixed
-/// magnitude, whether it came from an Ability or a Bonus.
+/// magnitude, whether it came from an Ability or a Bonus.  The prefixed forms are card
+/// abilities only - no clan bonus prints them - and each carries its condition in the one
+/// field the plain grammar requires neutral, so the two can never be confused.
+/// Returns `(life, predicate)`.
 pub(crate) fn classify_victory_life(
     definition: &EffectDefinitionV1,
-    _source_kind: CombatStatEffectSourceV1,
-) -> Option<u16> {
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, CombatStatPredicateV1)> {
+    if !has_victory_life_shape(definition) {
+        return None;
+    }
     let input = definition.structured_input();
-    (has_victory_life_shape(definition)
-        && definition.description() == format!("+{} Life", input.value))
-    .then_some(input.value)
+    let (predicate, text) = match (input.previous_round_requirement, input.index_requirement) {
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any) => (
+            CombatStatPredicateV1::Always,
+            format!("+{} Life", input.value),
+        ),
+        (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any) => (
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            format!("Confidence : +{} Life", input.value),
+        ),
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Asymmetry) => (
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            format!("Asymmetry: +{} Life", input.value),
+        ),
+        _ => return None,
+    };
+    if predicate != CombatStatPredicateV1::Always
+        && source_kind != CombatStatEffectSourceV1::Ability
+    {
+        return None;
+    }
+    (definition.description() == text).then_some((input.value, predicate))
 }
 
 /// Structural half of the Victory Life boundary. Replay preparation uses this to reject
@@ -379,40 +404,50 @@ pub(crate) fn has_victory_pillz_per_damage_shape(definition: &EffectDefinitionV1
     victory_pillz_per_damage_shape_matches(definition.structured_input())
 }
 
-/// Recognize the uncapped `+N Life Per Damage` conversion and its `Revenge:` and
-/// `Confidence:` forms: the winner's own Life rises by N for every point of final resolved
-/// Damage its card dealt. Anita's Courage form stays identity-locked because it is the one
-/// record whose position field carries the condition; these carry theirs, if any, in the
-/// previous-round field. Exact text and shape over every same-text record, card abilities
-/// only. Returns `(life_per_damage, predicate)`.
+/// Recognize the `+N Life Per Damage` conversion, its capped `Max. M` form and its
+/// `Revenge:` and `Confidence:` forms: the winner's own Life rises by N for every point of
+/// final resolved Damage its card dealt, and a capped record never carries its owner past
+/// M - the same bound `Heal N Max. M` already models on the latch. Anita's Courage form
+/// stays identity-locked because it is the one record whose position field carries the
+/// condition; these carry theirs, if any, in the previous-round field. The cap and a
+/// previous-round prefix have never been observed on one record, so that combination has
+/// no reviewed text and rejects. Exact text and shape over every same-text record, card
+/// abilities only. Returns `(life_per_damage, maximum, predicate)`, `maximum` 0 meaning
+/// uncapped.
 pub(crate) fn classify_victory_life_per_damage(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
-) -> Option<(u16, CombatStatPredicateV1)> {
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
     if source_kind != CombatStatEffectSourceV1::Ability
         || !has_victory_life_per_damage_shape(definition)
     {
         return None;
     }
     let input = definition.structured_input();
-    let (predicate, text) = match input.previous_round_requirement {
-        PreviousRoundRequirementV1::Any => (
+    let (predicate, text) = match (input.previous_round_requirement, input.value_max) {
+        (PreviousRoundRequirementV1::Any, 0) => (
             CombatStatPredicateV1::Always,
             format!("+{} Life Per Damage", input.value),
         ),
-        PreviousRoundRequirementV1::Lose => (
+        (PreviousRoundRequirementV1::Any, maximum) => (
+            CombatStatPredicateV1::Always,
+            format!("+{} Life Per Damage Max. {}", input.value, maximum),
+        ),
+        (PreviousRoundRequirementV1::Lose, 0) => (
             CombatStatPredicateV1::OwnerLostPreviousRound,
             format!("Revenge: +{} Life Per Damage", input.value),
         ),
-        PreviousRoundRequirementV1::Win => (
+        (PreviousRoundRequirementV1::Win, 0) => (
             CombatStatPredicateV1::OwnerWonPreviousRound,
             format!("Confidence: +{} Life Per Dmg.", input.value),
         ),
+        (PreviousRoundRequirementV1::Lose | PreviousRoundRequirementV1::Win, _) => return None,
     };
-    (definition.description() == text).then_some((input.value, predicate))
+    (definition.description() == text).then_some((input.value, input.value_max, predicate))
 }
 
-/// Structural half of the Life-per-Damage boundary, over any previous-round condition.
+/// Structural half of the Life-per-Damage boundary, over any previous-round condition and
+/// either the capped or the uncapped magnitude.
 pub(crate) fn has_victory_life_per_damage_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
     input.value > 0 && victory_life_per_damage_shape_matches(input)
@@ -1454,13 +1489,23 @@ fn defeat_recover_shape_matches(input: &StructuredEffectV1) -> bool {
 }
 
 fn victory_life_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value_min == 0
+    // Exactly the three reviewed condition slots: no condition at all, the previous-round
+    // one `Confidence :` names, or the hand-slot one `Asymmetry:` names. Every other
+    // combination - a `Revenge:` Life, a Courage position, a clan gate - keeps its
+    // visible-but-disabled record rather than becoming a near-miss hazard here.
+    matches!(
+        (input.previous_round_requirement, input.index_requirement),
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any)
+            | (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any)
+            | (
+                PreviousRoundRequirementV1::Any,
+                IndexRequirementV1::Asymmetry
+            )
+    ) && input.value_min == 0
         && input.value_max == 0
         && input.value_condition == 0
         && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
         && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
@@ -1582,7 +1627,6 @@ fn victory_pillz_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
 
 fn victory_life_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
     input.value_min == 0
-        && input.value_max == 0
         && input.value_condition == 0
         && input.position_requirement == PositionRequirementV1::Both
         && input.current_round_requirement == CurrentRoundRequirementV1::Win
@@ -3028,7 +3072,10 @@ mod tests {
             CombatStatEffectSourceV1::Ability,
             CombatStatEffectSourceV1::Bonus,
         ] {
-            assert_eq!(classify_victory_life(dave, source), Some(2));
+            assert_eq!(
+                classify_victory_life(dave, source),
+                Some((2, CombatStatPredicateV1::Always))
+            );
         }
 
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");

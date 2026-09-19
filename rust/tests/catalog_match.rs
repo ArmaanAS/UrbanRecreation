@@ -3074,11 +3074,12 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
         BTreeSet::from([
             830285, 869944, 874520, 875098, 875155, 875322, 877636, 877687, 877773, 877812, 877860,
             877950, 878011, 878056, 924257, 924320, 924413, 925254, 925674, 925719, 925796, 926367,
-            943111, 946112, 947228, 949750, 956608, 962243, 963039, 970972, 1011643, 1011712,
-            1023274, 1024673, 1025102, 1025525, 1058366, 1059030, 1059454, 1060052, 1060199,
-            1061897, 1065812, 1069506, 1069813, 1070101, 1070207, 1072715, 1078906, 1079482,
-            1080877, 1081463, 1089121, 1089346, 1090607, 1091235, 1091585, 1092294, 1092369,
-            1092454, 1092909, 1092992, 1093399, 1130577, 1130833,
+            943111, 946112, 947228, 949750, 956608, 962243, 963039, 970972, 1010898, 1011183,
+            1011643, 1011712, 1023274, 1024673, 1025102, 1025525, 1058366, 1059030, 1059454,
+            1060052, 1060199, 1061897, 1065812, 1069506, 1069813, 1070101, 1070207, 1072715,
+            1078906, 1079482, 1080877, 1081463, 1089121, 1089346, 1090607, 1091235, 1091585,
+            1092294, 1092369, 1092454, 1092909, 1092992, 1093399, 1130577, 1130609, 1130833,
+            1131010,
         ])
     );
 }
@@ -3093,25 +3094,37 @@ fn strict_catalog_match_prepares_life_per_damage_and_prefixed_permanents_with_pr
         (
             CardKey::new(673, 3),
             492,
-            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: 1,
+                maximum: 0,
+            },
             CombatStatPredicateV1::Always,
         ),
         (
             CardKey::new(358, 4),
             189,
-            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 2 },
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: 2,
+                maximum: 0,
+            },
             CombatStatPredicateV1::Always,
         ),
         (
             CardKey::new(1817, 3),
             1661,
-            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: 1,
+                maximum: 0,
+            },
             CombatStatPredicateV1::OwnerLostPreviousRound,
         ),
         (
             CardKey::new(1949, 2),
             1810,
-            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: 1,
+                maximum: 0,
+            },
             CombatStatPredicateV1::OwnerWonPreviousRound,
         ),
         (

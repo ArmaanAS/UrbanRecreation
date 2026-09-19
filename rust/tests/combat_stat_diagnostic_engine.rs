@@ -1155,7 +1155,10 @@ fn single_ability_spec(
 }
 
 const LIFE_PER_DAMAGE_TWO: CombatStatEffectV1 =
-    CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 2 };
+    CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+        life_per_damage: 2,
+        maximum: 0,
+    };
 
 #[test]
 fn life_per_damage_plan_is_ability_only_positive_and_plain_or_previous_round() {
@@ -1178,7 +1181,10 @@ fn life_per_damage_plan_is_ability_only_positive_and_plain_or_previous_round() {
             key,
             189,
             CombatStatPredicateV1::Always,
-            CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 0 },
+            CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: 0,
+                maximum: 0,
+            },
         )),
         Err(CombatStatPlanErrorV1::InvalidExecute {
             reason: InvalidCombatStatPlanReasonV1::VictoryLifePerDamageMagnitude,
@@ -1202,6 +1208,119 @@ fn life_per_damage_plan_is_ability_only_positive_and_plain_or_previous_round() {
             })
         ));
     }
+}
+
+#[test]
+fn capped_life_per_damage_stops_at_its_maximum_and_pays_nothing_at_or_past_it() {
+    // C Dusk's `1146` is the same conversion under a ceiling: 1130609/3 took 5 to exactly 8
+    // with a Fury-inclusive 6 Damage, and 1131010/2 took 7 to 8 with a plain 4. Here the
+    // owner starts at 20 with a 5-Damage Fury hit, so the uncapped +2 would reach 30.
+    for (maximum, life) in [(24, 24), (30, 30), (34, 30), (20, 20), (18, 20)] {
+        let spec = single_ability_spec(
+            CardKey::new(1320, 3),
+            1146,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: 2,
+                maximum,
+            },
+        );
+        let mut diag = game(spec.base_rules, spec.cards);
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, 2, true), (0, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.cards[PlayerId::P1].damage, 5);
+        assert_eq!(report.players[PlayerId::P1].life, life, "Max. {maximum}");
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+    }
+
+    // A cap has only ever been printed without a previous-round prefix, so the plan
+    // validator refuses the two together.
+    for predicate in [
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+    ] {
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(single_ability_spec(
+                CardKey::new(1320, 3),
+                1146,
+                predicate,
+                CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                    life_per_damage: 2,
+                    maximum: 24,
+                },
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::VictoryLifePerDamagePredicate,
+                ..
+            })
+        ));
+    }
+}
+
+#[test]
+fn prefixed_victory_life_waits_for_the_predicate_its_prefix_names() {
+    // Impudicus' `2638` pays its 3 only when the two selected hand slots differ, which is
+    // how it paid in 1010898/0 (his slot 0 against Aneta's slot 1).
+    let asymmetry = || {
+        single_ability_spec(
+            CardKey::new(2209, 3),
+            2638,
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+        )
+    };
+    let spec = asymmetry();
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (differ, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (1, 0, false)))
+        .unwrap();
+    assert!(differ.cards[PlayerId::P1].won);
+    assert_eq!(differ.players[PlayerId::P1].life, 23);
+
+    let spec = asymmetry();
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (matching, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(matching.cards[PlayerId::P1].won);
+    assert_eq!(matching.players[PlayerId::P1].life, 20);
+
+    // Barcius' `3546` is the Confidence form: nothing in a first round, the 3 in a round
+    // after its owner won one. 925868/3 is the server's paying case.
+    let confidence = || {
+        single_ability_spec(
+            CardKey::new(2386, 3),
+            3546,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+        )
+    };
+    let spec = confidence();
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P1].life, 20);
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P1].life, 23);
+
+    let spec = confidence();
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    let (after_loss, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(after_loss.cards[PlayerId::P1].won);
+    assert_eq!(after_loss.players[PlayerId::P1].life, 17);
 }
 
 #[test]
@@ -1246,7 +1365,10 @@ fn life_per_damage_pays_n_per_final_damage_point_and_revenge_waits_for_a_loss() 
         CardKey::new(1817, 3),
         1661,
         CombatStatPredicateV1::OwnerLostPreviousRound,
-        CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+            life_per_damage: 1,
+            maximum: 0,
+        },
     );
     let mut diag = game(spec.base_rules, spec.cards);
     let (first, _) = diag
@@ -1263,7 +1385,10 @@ fn life_per_damage_pays_n_per_final_damage_point_and_revenge_waits_for_a_loss() 
         CardKey::new(1817, 3),
         1661,
         CombatStatPredicateV1::OwnerLostPreviousRound,
-        CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage: 1 },
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+            life_per_damage: 1,
+            maximum: 0,
+        },
     );
     let mut diag = game(spec.base_rules, spec.cards);
     diag.make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))

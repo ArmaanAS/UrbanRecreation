@@ -105,10 +105,12 @@ pub enum CombatStatPostRoundEffectV1 {
     /// `+1 Pillz Per Damage` and its `Symmetry:` form: the winner's own Pillz rise by the
     /// final resolved Damage its card dealt. The predicate carries the hand-slot condition.
     GainPillzEqualToFinalDamageOnVictory,
-    /// `+N Life Per Damage` and its `Revenge:`/`Confidence:` forms: the winner's own Life
-    /// rises by `life_per_damage` for every point of final resolved Damage.
+    /// `+N Life Per Damage`, its capped `Max. M` form and its `Revenge:`/`Confidence:`
+    /// forms: the winner's own Life rises by `life_per_damage` for every point of final
+    /// resolved Damage, never past `maximum` when that is non-zero.
     GainLifePerFinalDamageOnVictory {
         life_per_damage: u16,
+        maximum: u16,
     },
     GainLifeOnDefeat {
         life: u16,
@@ -228,10 +230,12 @@ pub enum CombatStatEffectV1 {
     /// The winner's own Pillz rise by its card's final resolved Damage. Unconditional or
     /// under the Symmetry hand-slot predicate; Ability slot only.
     GainPillzEqualToFinalDamageOnVictory,
-    /// The winner's own Life rises by `life_per_damage` per point of final resolved Damage.
-    /// Unconditional or under a previous-round predicate; Ability slot only.
+    /// The winner's own Life rises by `life_per_damage` per point of final resolved Damage,
+    /// bounded above by `maximum` when that is non-zero. Unconditional or under a
+    /// previous-round predicate; Ability slot only, and a cap only without a predicate.
     GainLifePerFinalDamageOnVictory {
         life_per_damage: u16,
+        maximum: u16,
     },
     /// Ordinary Defeat Life applies only after a surviving loss. The hot path retains the
     /// exact positive magnitude but no strings or registry access.
@@ -1495,7 +1499,16 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryLifeMagnitude,
             ));
         }
-        if predicate != CombatStatPredicateV1::Always {
+        // The plain grammar is unconditional; the two reviewed prefixed forms carry one
+        // already-resolved predicate each, and both are card abilities only.
+        if !matches!(
+            predicate,
+            CombatStatPredicateV1::Always
+                | CombatStatPredicateV1::OwnerWonPreviousRound
+                | CombatStatPredicateV1::SelectedHandSlotsDiffer
+        ) || (predicate != CombatStatPredicateV1::Always
+            && source != CombatStatEffectSourceV1::Ability)
+        {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -1590,7 +1603,11 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
-    if let CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage } = effect {
+    if let CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+        life_per_damage,
+        maximum,
+    } = effect
+    {
         if source != CombatStatEffectSourceV1::Ability {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -1609,12 +1626,15 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryLifePerDamageMagnitude,
             ));
         }
+        // A cap has only ever been printed without a previous-round prefix, so the two
+        // must never arrive together on one plan.
         if !matches!(
             predicate,
             CombatStatPredicateV1::Always
                 | CombatStatPredicateV1::OwnerLostPreviousRound
                 | CombatStatPredicateV1::OwnerWonPreviousRound
-        ) {
+        ) || (maximum > 0 && predicate != CombatStatPredicateV1::Always)
+        {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -2162,11 +2182,15 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzEqualToFinalDamageOnVictory),
         ),
-        CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage } => {
-            Some(PostRoundSourceEffect::Fixed(
-                PostRoundEffect::GainLifePerFinalDamageOnVictory(life_per_damage),
-            ))
-        }
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+            life_per_damage,
+            maximum,
+        } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::GainLifePerFinalDamageOnVictory {
+                life_per_damage,
+                maximum,
+            },
+        )),
         CombatStatEffectV1::GainLifeOnDefeat { life } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainLifeOnDefeat(life),
         )),
@@ -3216,10 +3240,40 @@ mod tests {
             })
         ));
 
+        // The two reviewed prefixed forms are the only predicates the grammar carries, and
+        // only from the Ability slot: `Confidence :` and `Asymmetry:` are abilities, no
+        // clan bonus prints either, and every other predicate is still out of the slice.
+        for predicate in [
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        ] {
+            let mut conditional = spec_with_p1(CombatStatEffectSourceV1::Ability, 888, bonus, 3);
+            conditional.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+                source_id: 888,
+                predicate,
+                effect: bonus,
+            };
+            assert!(CombatStatDiagnosticV1::new(conditional).is_ok());
+
+            let mut from_bonus = spec_with_p1(CombatStatEffectSourceV1::Ability, 888, bonus, 3);
+            from_bonus.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
+                source_id: 888,
+                predicate,
+                effect: bonus,
+            };
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(from_bonus),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::VictoryLifePredicate,
+                    ..
+                })
+            ));
+        }
+
         let mut conditional = spec_with_p1(CombatStatEffectSourceV1::Ability, 888, bonus, 3);
         conditional.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
             source_id: 888,
-            predicate: CombatStatPredicateV1::OwnerWonPreviousRound,
+            predicate: CombatStatPredicateV1::OwnerLostPreviousRound,
             effect: bonus,
         };
         assert!(matches!(

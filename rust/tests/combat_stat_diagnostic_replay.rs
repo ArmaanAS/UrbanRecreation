@@ -241,8 +241,19 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Dregn Cr's `602` in 1131010/0. A stopped source pays nothing either: Mavi's Stop Opp.
     // Ability silences Glenn's `512` in 876712/0 and only his 6 Damage lands.
     (962243, 3),
-    (1131010, 2),
+    (1131010, 4),
     (876712, 1),
+    // Revision 34 puts a cap on the Life conversion and a predicate on fixed Victory Life.
+    // C Dusk's `1146` never carries its owner past 8: a Fury-inclusive 6 Damage takes 5 to
+    // exactly 8 in 1130609/3, and a plain 4 takes 7 to 8 in 1131010/2, which is why that
+    // fixture now runs in full. Impudicus' `2638` pays its 3 in 1010898/0, where his Roots
+    // Stop Opp. Ability leaves Aneta's Courage inert and the two selected slots differ, and
+    // pays nothing in 1011183/3 above, where he loses with the slots differing. La
+    // Salerosa's `1161` and the `Confidence :` form have no reachable server round - 877167
+    // opens on `Victory Or Defeat : +3 Players Life` and every Barcius draw carries the
+    // Cosmohnuts `Tune Out` bonus - so their arithmetic is pinned by the engine tests.
+    (1010898, 4),
+    (1130609, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -573,7 +584,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_two_hundred_and_eighty_nine_unique_sequential_prefix_rounds()
+fn fixed_server_backed_gate_is_exactly_two_hundred_and_ninety_nine_unique_sequential_prefix_rounds()
 {
     let catalog = catalog();
     let registry = registry();
@@ -610,7 +621,7 @@ fn fixed_server_backed_gate_is_exactly_two_hundred_and_eighty_nine_unique_sequen
             }
         }
     }
-    assert_eq!(rounds, 289);
+    assert_eq!(rounds, 299);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
@@ -620,26 +631,26 @@ fn fixed_server_backed_gate_is_exactly_two_hundred_and_eighty_nine_unique_sequen
             511, 512, 520, 532, 536, 549, 555, 566, 569, 570, 577, 578, 585, 587, 594, 602, 612,
             649, 656, 680, 682, 713, 717, 727, 729, 739, 741, 751, 759, 769, 778, 801, 809, 826,
             837, 844, 852, 854, 862, 871, 883, 888, 916, 935, 938, 959, 963, 980, 1020, 1034, 1041,
-            1047, 1051, 1053, 1054, 1090, 1091, 1098, 1131, 1150, 1158, 1163, 1188, 1197, 1229,
-            1241, 1293, 1297, 1303, 1310, 1330, 1335, 1338, 1341, 1342, 1345, 1350, 1355, 1359,
-            1372, 1375, 1385, 1388, 1396, 1399, 1415, 1417, 1418, 1420, 1464, 1469, 1501, 1508,
-            1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634, 1688, 1694, 1699, 1706, 1714, 1722,
-            1726, 1760, 1770, 1805, 1806, 1823, 1825, 1833, 1840, 1844, 1845, 1848, 1850, 1852,
-            2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329, 2375, 2412, 2528, 2535, 2556, 2573,
-            2628, 2657, 2660, 2661, 2835, 2881, 2944, 2965, 2992, 3004, 3040, 3048, 3118, 3197,
-            3222, 3284, 3386, 3393, 3487, 3526, 3597, 3677, 3829, 3852, 3864, 3865, 3897, 4041,
-            4098, 4216, 4286, 4297, 4299, 4301, 4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464,
-            4500, 4571, 4623, 4625, 4708, 4711, 4718, 4722, 4730, 4757, 4824, 4908, 4948, 4951,
-            4954, 4966, 4983, 5025, 5026, 5085, 5169, 5170, 5195, 5237, 5258, 5273, 5332, 5333,
-            5360, 5366, 5404, 5406, 5415, 5439, 5462, 5498, 5520, 5525, 5531, 5532, 5549, 5763,
-            5835, 5841, 5849, 5852, 5859, 5901,
+            1047, 1051, 1053, 1054, 1090, 1091, 1098, 1131, 1146, 1150, 1158, 1163, 1188, 1197,
+            1229, 1241, 1293, 1297, 1303, 1310, 1330, 1333, 1335, 1338, 1341, 1342, 1345, 1350,
+            1355, 1359, 1372, 1375, 1385, 1388, 1396, 1399, 1415, 1417, 1418, 1420, 1464, 1469,
+            1501, 1508, 1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634, 1688, 1694, 1699, 1706,
+            1714, 1722, 1726, 1760, 1770, 1805, 1806, 1823, 1825, 1833, 1840, 1844, 1845, 1848,
+            1850, 1852, 2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329, 2375, 2412, 2528, 2535,
+            2556, 2573, 2628, 2638, 2657, 2660, 2661, 2835, 2881, 2944, 2965, 2992, 3004, 3040,
+            3048, 3118, 3197, 3222, 3284, 3386, 3393, 3433, 3487, 3526, 3597, 3677, 3829, 3852,
+            3864, 3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301, 4330, 4389, 4399, 4414,
+            4417, 4458, 4461, 4464, 4500, 4571, 4623, 4625, 4708, 4711, 4718, 4722, 4730, 4757,
+            4824, 4908, 4948, 4951, 4954, 4966, 4983, 5025, 5026, 5085, 5169, 5170, 5195, 5237,
+            5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406, 5415, 5439, 5462, 5498, 5520, 5525,
+            5531, 5532, 5549, 5763, 5835, 5841, 5849, 5852, 5859, 5901,
         ])
     );
     assert_eq!(
         disabled_ids,
-        BTreeSet::from([1231, 2222, 2317, 2638, 4303, 4459, 4657, 4695, 4747, 4937, 5283,])
+        BTreeSet::from([1231, 2222, 2317, 4303, 4459, 4657, 4695, 4747, 4937, 5283,])
     );
-    assert_eq!(absent, 14);
+    assert_eq!(absent, 15);
 }
 
 #[test]
@@ -938,7 +949,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 33);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 34);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -994,7 +1005,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        33
+        34
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
@@ -2636,7 +2647,8 @@ fn life_per_damage_and_prefixed_permanents_carry_the_predicate_their_prefix_name
                 assert_eq!(
                     effect,
                     urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
-                        life_per_damage: life
+                        life_per_damage: life,
+                        maximum: 0
                     }
                 );
                 assert_eq!(actual, predicate);
@@ -2649,8 +2661,57 @@ fn life_per_damage_and_prefixed_permanents_carry_the_predicate_their_prefix_name
         ));
     }
 
+    // The capped `Max. M` form executes with the same magnitude and an upper bound.
+    for (id, life, maximum) in [(1146, 1, 8), (1161, 2, 20)] {
+        let mut capped = victory_life_per_damage_entry(id, life, "any");
+        capped["description"] =
+            serde_json::json!(format!("+{life} Life Per Damage Max. {maximum}"));
+        capped["abilityData"]["valueMax"] = serde_json::json!(maximum);
+        let description = format!("+{life} Life Per Damage Max. {maximum}");
+        let (disposition, plan) =
+            plan_of(with_ability(id, &description), &one_entry_registry(capped));
+        match disposition {
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                effect,
+                predicate: actual,
+                ..
+            } => {
+                assert_eq!(
+                    effect,
+                    urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                        life_per_damage: life,
+                        maximum
+                    }
+                );
+                assert_eq!(actual, CombatStatPredicateV1::Always);
+            }
+            other => panic!("{description} was not prepared as capped Life per Damage: {other:?}"),
+        }
+        assert!(matches!(
+            plan,
+            CombatStatSourcePlanV1::Execute {
+                predicate: CombatStatPredicateV1::Always,
+                ..
+            }
+        ));
+    }
+
+    // A cap under a previous-round prefix has never been printed, so its text is a guess
+    // and the combination rejects when selected.
+    let mut capped_prefix = victory_life_per_damage_entry(1146, 1, "win");
+    capped_prefix["description"] = serde_json::json!("Confidence: +1 Life Per Dmg. Max. 8");
+    capped_prefix["abilityData"]["valueMax"] = serde_json::json!(8);
+    let (_, plan) = plan_of(
+        with_ability(1146, "Confidence: +1 Life Per Dmg. Max. 8"),
+        &one_entry_registry(capped_prefix),
+    );
+    assert!(matches!(
+        plan,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 1146 }
+    ));
+
     // Anita's Courage record keeps its identity lock: the same text under another id, and
-    // a capped or Bonus-slot Life conversion, reject when selected.
+    // a Bonus-slot Life conversion, reject when selected.
     let mut anita_alias = victory_life_per_damage_entry(843, 1, "any");
     anita_alias["description"] = serde_json::json!("Courage: +1 Life Per Dmg");
     anita_alias["abilityData"]["positionRequirement"] = serde_json::json!("attacker");
@@ -2661,17 +2722,6 @@ fn life_per_damage_and_prefixed_permanents_carry_the_predicate_their_prefix_name
     assert!(matches!(
         plan,
         CombatStatSourcePlanV1::RejectIfSelected { source_id: 843 }
-    ));
-    let mut capped = victory_life_per_damage_entry(1146, 1, "any");
-    capped["description"] = serde_json::json!("+1 Life Per Damage Max. 8");
-    capped["abilityData"]["valueMax"] = serde_json::json!(8);
-    let (_, plan) = plan_of(
-        with_ability(1146, "+1 Life Per Damage Max. 8"),
-        &one_entry_registry(capped),
-    );
-    assert!(matches!(
-        plan,
-        CombatStatSourcePlanV1::RejectIfSelected { source_id: 1146 }
     ));
     let mut bonus = source.clone();
     bonus.players[0].hand[slot].source_bonus = Some(SourceModifier {

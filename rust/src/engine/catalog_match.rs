@@ -1790,7 +1790,7 @@ fn prepare_victory_life_source(
             description: description.to_owned(),
             source,
         })?;
-    let Some(life) = classify_victory_life(definition, source_kind) else {
+    let Some((life, predicate)) = classify_victory_life(definition, source_kind) else {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player,
             hand_slot,
@@ -1827,11 +1827,11 @@ fn prepare_victory_life_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
-            predicate: CombatStatPredicateV1::Always,
+            predicate,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
+            predicate,
             effect: CombatStatEffectV1::GainLifeOnVictory { life },
         },
     })
@@ -2054,7 +2054,7 @@ fn prepare_victory_life_per_damage_source(
             description: description.to_owned(),
             source,
         })?;
-    let Some((life_per_damage, predicate)) =
+    let Some((life_per_damage, maximum, predicate)) =
         classify_victory_life_per_damage(definition, source_kind)
     else {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
@@ -2094,13 +2094,17 @@ fn prepare_victory_life_per_damage_source(
             },
             effect: CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
                 life_per_damage,
+                maximum,
             },
             predicate,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
             predicate,
-            effect: CombatStatEffectV1::GainLifePerFinalDamageOnVictory { life_per_damage },
+            effect: CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage,
+                maximum,
+            },
         },
     })
 }

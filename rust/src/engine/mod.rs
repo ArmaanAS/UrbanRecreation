@@ -462,8 +462,13 @@ pub(super) enum PostRoundEffect {
     /// card dealt, Fury and combat modifiers included.
     GainPillzEqualToFinalDamageOnVictory,
     /// `+N Life Per Damage`: the winner's own Life rises by N for every point of that same
-    /// final resolved Damage.
-    GainLifePerFinalDamageOnVictory(u16),
+    /// final resolved Damage. A capped `Max. M` record never carries its owner past M and
+    /// pays nothing to an owner already there, exactly as `Heal N Max. M` does on the
+    /// latch; `maximum` 0 is the uncapped form.
+    GainLifePerFinalDamageOnVictory {
+        life_per_damage: u16,
+        maximum: u16,
+    },
     GainLifeOnDefeat(u16),
     ReanimateLife(u16),
     GainLifeOnVictoryOrDefeat {
@@ -710,20 +715,33 @@ impl BaseRulesGame {
                     // opponent's knockout changes nothing (1089830/2: 12 + 4 while the
                     // target falls to zero). Its Revenge and Confidence forms are plan
                     // predicates judged before the effect is handed here.
-                    PostRoundEffect::GainLifePerFinalDamageOnVictory(per_damage)
-                        if owner == winner && position.players[owner].life > 0 =>
-                    {
-                        let gain = prepared[owner]
-                            .result
-                            .damage
-                            .checked_mul(per_damage)
-                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
-                        position.players[owner].life = position.players[owner]
-                            .life
-                            .checked_add(gain)
-                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    PostRoundEffect::GainLifePerFinalDamageOnVictory {
+                        life_per_damage,
+                        maximum,
+                    } if owner == winner && position.players[owner].life > 0 => {
+                        let current = position.players[owner].life;
+                        // The cap is Heal's, read at the moment this effect pays: an owner
+                        // already at or past it gains nothing, and a conversion that would
+                        // overshoot stops exactly there (1130609/3: 5 + 6 reaches 8, not 11).
+                        if maximum == 0 || current < maximum {
+                            let gain = prepared[owner]
+                                .result
+                                .damage
+                                .checked_mul(life_per_damage)
+                                .ok_or(BaseRulesError::LifeIncreaseOverflow {
+                                player: owner,
+                            })?;
+                            let raised = current
+                                .checked_add(gain)
+                                .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                            position.players[owner].life = if maximum == 0 {
+                                raised
+                            } else {
+                                raised.min(maximum)
+                            };
+                        }
                     }
-                    PostRoundEffect::GainLifePerFinalDamageOnVictory(_) => {}
+                    PostRoundEffect::GainLifePerFinalDamageOnVictory { .. } => {}
                     // The reviewed Victory Or Defeat Life sources are ordinary Life
                     // gains, not Reanimate: a living owner gains after either outcome,
                     // while a KO remains terminal.  Keep the addition checked so the

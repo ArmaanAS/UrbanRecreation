@@ -769,8 +769,9 @@ Every one of the other 2,538 slots matches captured bonus presence and descripti
 On 2026-09-18, the deterministic strict-coverage regression scanned all 359 captured
 complete 4+4 hands with canonical `data/data.json`, battle-card overrides, captured
 `abilities.json`, and each capture's rule, night, life, and pillz context. It constructs
-`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`; exactly 61 capture ids
-are eligible: `830285`, `869944`, `874520`, `875098`, `875155`, `875322`, `877636`,
+`CatalogCombatStatMatchV1` under `RequireFullyExecutableDraws`. The eligible set is pinned
+there and holds 69 capture ids at revision 34; the list below is the 61 it held at revision
+25, kept as the base the per-revision additions after it are stated against: `830285`, `869944`, `874520`, `875098`, `875155`, `875322`, `877636`,
 `877687`, `877773`, `877812`, `877860`, `877950`, `878011`, `878056`, `924257`, `924320`,
 `924413`, `925254`, `925674`, `925719`, `925796`, `943111`, `946112`, `947228`, `949750`,
 `956608`, `970972`, `1011643`, `1011712`, `1023274`, `1024673`, `1025102`, `1025525`,
@@ -795,13 +796,15 @@ added `1092454` and `1092992`, the two measured for plain `+N Pillz`; revision 3
 revision 32 added `1070101`, `1089121`, `1093399` and `1130577`, the three measured for
 uncapped Life per Damage and the one for the predicate-carrying permanents; revision 33
 added `926367`, `962243`, `963039` and `1069506`, the two measured for the plain Victory
-`-N Opp. Life, Min M` grammar and the two for its Victory-or-Defeat form.
+`-N Opp. Life, Min M` grammar and the two for its Victory-or-Defeat form; and revision 34
+added `1010898`, `1011183`, `1130609` and `1131010`, the two measured for the capped
+Life-per-Damage forms and the two for predicate-carrying fixed Victory Life.
 That is six for two families the report had predicted would unlock three each, because six
 draws were blocked by *both* families at once — which is exactly why reach and unlock are
 measured separately, and why the measurement has to be rerun rather than added up. Catalog
 eligibility is a strict whole-draw admission measurement, not proof of full engine or
 TypeScript solver parity;
-the 289-round immutable diagnostic gate supplies the separately checked sequential replay
+the 299-round immutable diagnostic gate supplies the separately checked sequential replay
 evidence. Synthetic catalog hands continue to pin individual construction boundaries.
 
 Semantic revision 23 adds Protection, the projection's first defensive control channel.
@@ -1186,6 +1189,44 @@ and the clan-gated `5392`. The three same-text catalog ids that carry no registr
 at all - Rakhan `978`, Milovan `498`, Fraser `1289` - stay fail-closed, because the alias rule
 is catalog authority and description equality never transfers an effect to another card.
 
+Semantic revision 34 takes two same-shape families in one slice again, and neither needed a
+new effect channel. `+N Life Per Damage Max. M` (`1146`, `1161`) is the conversion revision
+32 admitted under a ceiling: the winner's own Life still rises by N per point of final
+resolved Damage, but never past M, and an owner already at or above M gains nothing. The
+bound is the one `Heal N Max. M` has modelled on the latch since revision 27, read at the
+moment the effect pays, so the engine arm gained a clamp and nothing else. The
+predicate-carrying fixed Victory Life family (`2638` `Asymmetry: +3 Life`, `814`/`2113`/`3546`
+`Confidence : +N Life`) is the change revision 32 made for permanents, applied to the fixed
+Victory Life plan: the classifier now returns the condition its prefix names - the hand-slot
+field for `Asymmetry:`, the previous-round field for `Confidence :` - and the plan validator
+admits those two predicates beside `Always`. Nothing else moved; the plain grammar is still
+generic over Ability and Bonus, while the two prefixed forms are card abilities only,
+because no clan bonus prints either.
+
+The two boundaries stay narrow on purpose. A cap and a previous-round prefix have never been
+printed on one record, so a `Revenge:`/`Confidence:` conversion with a non-zero `valueMax`
+has no reviewed text and rejects in both the compiler and the compact plan rather than being
+given a guessed one. Victory Life's structural half now names exactly three condition slots -
+none, the `Confidence :` previous-round one, the `Asymmetry:` hand-slot one - so a `Revenge:`
+Life, a Courage position or a clan gate keeps its visible-but-disabled record instead of
+becoming a near-miss hazard. The corpus has no other record in either new shape, so no source
+changed disposition beyond the six admitted here; `2638` simply leaves the gate's disabled
+set.
+
+The candidate lines read 2 and 2, together 4, and the slice unlocked exactly those four draws
+(1010898, 1011183, 1130609, 1131010), taking strict eligibility from 65 to 69. The server
+pins the cap twice, both times from below it: C Dusk's `1146` converts a Fury-inclusive 6
+Damage and its owner stops at 8 rather than 11 in 1130609/3 (5 + 6), and converts a plain 4
+to stop at 8 rather than 11 in 1131010/2 (7 + 4). Impudicus' `2638` pays its 3 in 1010898/0,
+where his Roots `Stop Opp. Ability` bonus leaves Aneta's Courage inert and the two selected
+slots differ, and pays nothing in 1011183/3, where the slots differ but he loses. The gate
+grows from 289 to 299 rounds: 1010898 and 1130609 join in full, 1131010 runs in full instead
+of two rounds, and 1011183 already ran in full. La Salerosa's `1161` and every `Confidence :`
+form have no reachable server round - 877167 opens on `Victory Or Defeat : +3 Players Life`
+and all four Barcius draws carry the Cosmohnuts `Tune Out` bonus - so their arithmetic is
+pinned by the engine tests instead: a capped conversion clamping, paying nothing at the cap
+and nothing above it, and Confidence waiting for a round its owner won.
+
 ### Choosing the next slice
 
 Reach and unlock rank differently, and only unlock is worth acting on. Strict construction
@@ -1203,7 +1244,7 @@ An id named in a candidate family must be a real registry definition, or the fam
 under-reports: an id no definition owns can never appear as a blocker. The list carried
 `990` for conditional Copy until 2026-09-17, so that family was only ever scored by `958`.
 
-On 2026-09-18 at revision 33 it scanned 359 complete draws: 65 eligible and 10 refused
+On 2026-09-19 at revision 34 it scanned 359 complete draws: 69 eligible and 10 refused
 structurally, by a Leader or a duplicate character rather than by a missing effect. The
 report also prints the blocker sets themselves, smallest first, which is what a family
 proposal should be built from: a group is worth proposing only when it covers one of those
@@ -1214,10 +1255,11 @@ unlocked 2; revision 28 measured plain Toxin at 1 and plain Poison at 3 before a
 them and unlocked 4; revision 29 measured own fixed `+N Pillz` at 2 and unlocked 2,
 revision 30 did the same for opposing Pillz reduction, revision 31 measured Pillz per
 Damage at 4 and unlocked 4, revision 32 measured uncapped Life per Damage at 3 and the
-predicate-carrying permanents at 1, together 4, and unlocked 4, and revision 33 measured the
+predicate-carrying permanents at 1, together 4, and unlocked 4, revision 33 measured the
 plain Victory `-N Opp. Life, Min M` grammar at 2 and its Victory-or-Defeat form at 2,
-together 4, and unlocked 4. Those lines now read 0, which is how a landed family is meant to
-look.
+together 4, and unlocked 4, and revision 34 measured the capped Life-per-Damage forms at 2
+and predicate-carrying fixed Victory Life at 2, together 4, and unlocked 4. Those lines now
+read 0, which is how a landed family is meant to look.
 
 The measurements that chose the last two slices are worth keeping as a record of how the
 counts behave. Revision 24's two Copy families unlocked 3 and 2 and together 5; revision
@@ -1225,42 +1267,42 @@ counts behave. Revision 24's two Copy families unlocked 3 and 2 and together 5; 
 pair that shared six - so neither additivity nor overlap can be assumed, and the split has
 to be measured each time.
 
-The Pillz family is done, and so are the Life conversions, the predicate-carrying permanents
-and the opponent-Life reduction on all three outcome channels. Before revision 29 the three
+The Pillz family is done, and so are the Life conversions capped and uncapped, the
+predicate-carrying permanents, the opponent-Life reduction on all three outcome channels and
+fixed Victory Life with or without its two printed conditions. Before revision 29 the three
 Pillz lines together unlocked 8 draws and the three slices unlocked 2, 2 and 4 in turn;
 revision 32 then took Life per Damage (3) and the prefixed permanents (1) together for 4,
 and revision 33 took the Victory reduction (2) and its Victory-or-Defeat form (2) together
 for 4. Both pairs were exactly additive, unlike the revision-22 pair.
 
-What the scan reads at revision 33 is worth acting on in order. `1379` `Xantiax: -3 Life,
-Min. 0` now blocks **three** draws on its own, the largest single source left, because
-962243 and 1058151 lost their other blockers to this slice. Then a cluster of two-draw
-lines: the capped `Max.` Life-per-Damage forms `1146`/`1161`, which read 1 before this slice
-and now read 2 (`1130609` and `1131010`); the wider permanent-Life line, still 2 (its losing-
-round `4561` and Growth `1282` forms); predicate-carrying fixed Victory Life (`2638`
-`Asymmetry: +3 Life`, `814`/`2113`/`3546` `Confidence : +N Life`), 2; and seven two-draw
-single-source sets with no family among them - `304` `Courage: -4 Opp. Dmg, Min 2`, `490`
-`Confidence: Stop Opp. Ability`, `912` `Defeat: -2 Opp. Pillz, Min 4`, `1474` `Stop: Damage
-+4`, `1488` `Brawl: Power And Damage + 1`, `1702` `Confidence: +4 Pillz`, `2250` `Killshot:
-+3 Pillz`, the clan-gated `5113` `+1 Dam./ Life Lost Max. 6` and `5681` `After
-[clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`. Combining the permanent-Life line with the
-capped conversions reads 4, so that is the obvious same-shape pair to measure first; `2638`
-is the cheapest single grammar, since a predicate on the admitted fixed Victory Life plan is
-the change revision 32 already made for permanents.
+What the scan reads at revision 34 is worth acting on in order. `1379` `Xantiax: -3 Life,
+Min. 0` still blocks **three** draws on its own, the largest single source left, and this
+slice did not touch it. Below it sit nine two-draw single-source sets. Only one is a family:
+the wider permanent-Life line, still 2, whose remaining members are the losing-round `4561`
+and Growth `1282` forms. The rest are lone sources - `304` `Courage: -4 Opp. Dmg, Min 2`,
+`490` `Confidence: Stop Opp. Ability`, `912` `Defeat: -2 Opp. Pillz, Min 4`, `1474` `Stop:
+Damage +4`, `1488` `Brawl: Power And Damage + 1`, `1702` `Confidence: +4 Pillz`, `2250`
+`Killshot: +3 Pillz`, the clan-gated `5113` `+1 Dam./ Life Lost Max. 6` and `5681` `After
+[clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`. No same-shape pair reads 4 any more, so the
+next slice is a single line and is worth choosing on cost as much as on count: `1702` is the
+admitted plain `+N Pillz` grammar under the previous-round predicate this revision just put
+on Victory Life, which makes it the cheapest of them, while `2250` prints the same shape
+under `Killshot:`, a current-round condition the post-round channel has never carried.
+Measure again before choosing; the counts have moved after every slice.
 
 Pillz is a resource the post-round channel already moved - Defeat recovery, Victory-or-
 Defeat Pillz, Argos and Komboka all wrote it - so each of the three slices was one engine
 arm and one compiler grammar, exactly as this section had predicted for own fixed `+N
 Pillz`: the opposing reduction reused the Min clamp the Life reductions modelled, and the
 conversion reused Anita's final-damage magnitude and Doela Noel's Symmetry predicate.
-Revisions 32 and 33 show that same-shape families can be taken in one slice when each is
-measured as its own line first and the combined line is measured too: Life per Damage and
-the prefixed permanents were 3 and 1 alone and 4 together, and the two opponent-Life channels
-were 2 and 2 alone and 4 together, so nothing was hidden by overlap either time. Revision 33
-also cost no engine work at all - both post-round arms already existed and only admission was
-closed - which is what a slice looks like when the family it widens is one the projection has
-already executed on another channel. Measure again before choosing; the counts have moved
-after every slice, and this one moved `1379` from two draws to three without touching it.
+Revisions 32, 33 and 34 show that same-shape families can be taken in one slice when each is
+measured as its own line first and the combined line is measured too: Life per Damage and the
+prefixed permanents were 3 and 1 alone and 4 together, the two opponent-Life channels were 2
+and 2 alone and 4 together, and the capped conversion and predicate-carrying Victory Life
+were 2 and 2 alone and 4 together, so nothing was hidden by overlap any of the three times.
+Revision 33 cost no engine work at all and revision 34 cost one clamp on an arm that already
+existed, which is what a slice looks like when the family it widens is one the projection has
+already executed.
 
 The two families revision 22 took were cheaper than this section predicted. It claimed a
 post-round plan carries no predicate and that adding one was the shared change both needed;
