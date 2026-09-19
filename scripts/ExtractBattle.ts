@@ -318,8 +318,14 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
 
   const levelMismatch = issues.some((i) => /played at level|is not in data\/data.json/.test(i));
   if (levelMismatch) issues.push("engine lacks stats for one or more cards at the level played: no testcase generated (run __ur.dumpCharacters() then `deno task cards`)");
-  const isDojo = first.battleRuleId === 6 || /dojo/i.test(String((meta.room as { name?: string } | undefined)?.name ?? ""));
-  if (isDojo) issues.push("Dojo (tutorial) battle: rules differ from PvP, no testcase generated");
+  // Dojo (tutorial, battle rule 6) battles used to be excluded wholesale on the assumption
+  // that their rules differ from PvP. Three captures say they do not. 830285's eight cards
+  // all arrive with a null bonus, but so does every lone-clan card in an ordinary battle,
+  // and that tutorial deck is eight singleton clans - the ordinary "a bonus needs a
+  // clan-mate" rule explains it. 1294430 then sent an active Jungo bonus on the two Jungo
+  // cards in the same room, which is the same rule seen from the other side. Both replay
+  // exactly, so a Dojo battle is an ordinary battle with a dealt deck; the room is worth
+  // replaying precisely because each one drills a known set of abilities.
   const night = isNight(first.creationTime);
   // Sanity check: the server sends the *active* variant of Day:/Night: abilities.
   for (const p of players) {
@@ -330,7 +336,7 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
       }
     }
   }
-  const testcase = isDojo || levelMismatch ? null : buildTestcase(players, rounds, issues, night);
+  const testcase = levelMismatch ? null : buildTestcase(players, rounds, issues, night);
 
   return {
     id,

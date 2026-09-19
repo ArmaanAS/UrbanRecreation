@@ -167,8 +167,33 @@
   "finalStatus": "playing",
   "snapshots": 27,
   "issues": [
-    "round 0: expected 2 moves, saw 0",
-    "Dojo (tutorial) battle: rules differ from PvP, no testcase generated"
+    "round 0: expected 2 moves, saw 0"
   ],
-  "testcase": null
+  "testcase": {
+    "cards": [
+      "Crazy Carlo",
+      "Rei Cr",
+      "Vanish",
+      "Lucy",
+      "Sleam",
+      "Astrid",
+      "Tino",
+      "Scubb"
+    ],
+    "levels": [
+      4,
+      3,
+      2,
+      1,
+      1,
+      1,
+      2,
+      3
+    ],
+    "night": false,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": []
+  }
 }

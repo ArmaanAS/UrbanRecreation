@@ -342,20 +342,23 @@ mod tests {
             "capture errors: {:#?}",
             corpus.errors
         );
-        assert_eq!(corpus.skipped.len(), 7);
-        assert!(corpus.ready.len() >= 352);
+        assert_eq!(corpus.skipped.len(), 6);
+        assert!(corpus.ready.len() >= 354);
 
         let skipped_ids: Vec<_> = corpus
             .skipped
             .iter()
             .map(|skipped| skipped.battle_id)
             .collect();
+        // 830285 left this list when Dojo battles started being extracted like any other
+        // battle; nothing in the corpus lacks a testcase any more, so every skip is a
+        // capture that stopped mid-match.
         assert_eq!(
             skipped_ids,
-            [830285, 869944, 957643, 1009234, 1024388, 1092729, 1145959]
+            [869944, 957643, 1009234, 1024388, 1092729, 1145959]
         );
-        assert_eq!(corpus.skipped[0].reason, ReplaySkipReason::NoReplayTestcase);
-        assert!(corpus.skipped[1..]
+        assert!(corpus
+            .skipped
             .iter()
             .all(|skipped| skipped.reason == ReplaySkipReason::InProgress));
 

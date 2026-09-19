@@ -323,8 +323,117 @@
   },
   "finalStatus": "done",
   "snapshots": 19,
-  "issues": [
-    "Dojo (tutorial) battle: rules differ from PvP, no testcase generated"
-  ],
-  "testcase": null
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Crazy Carlo",
+      "Rei Cr",
+      "Vanish",
+      "Lucy",
+      "Sleam",
+      "Astrid",
+      "Tino",
+      "Scubb"
+    ],
+    "levels": [
+      4,
+      3,
+      2,
+      1,
+      1,
+      1,
+      2,
+      3
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          0,
+          false
+        ],
+        "s2": [
+          0,
+          0,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 8,
+        "p1pillz": 12,
+        "p2pillz": 12,
+        "r1": {
+          "power": 8,
+          "damage": 4,
+          "attack": 8,
+          "won": true
+        },
+        "r2": {
+          "power": 1,
+          "damage": 4,
+          "attack": 1,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          1,
+          0,
+          false
+        ],
+        "s2": [
+          2,
+          0,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 5,
+        "p1pillz": 12,
+        "p2pillz": 12,
+        "r1": {
+          "power": 5,
+          "damage": 3,
+          "attack": 5,
+          "won": true
+        },
+        "r2": {
+          "power": 3,
+          "damage": 1,
+          "attack": 3,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          0,
+          0,
+          false
+        ],
+        "s2": [
+          2,
+          0,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 0,
+        "p1pillz": 12,
+        "p2pillz": 12,
+        "r1": {
+          "power": 7,
+          "damage": 5,
+          "attack": 7,
+          "won": true
+        },
+        "r2": {
+          "power": 4,
+          "damage": 1,
+          "attack": 4,
+          "won": false
+        }
+      }
+    ]
+  }
 }

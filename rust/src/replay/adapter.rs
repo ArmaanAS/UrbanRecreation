@@ -1071,7 +1071,12 @@ mod tests {
 
     #[test]
     fn classifies_missing_testcases_and_in_progress_captures() {
-        let no_testcase = adapt_capture(capture(830285), &catalog()).unwrap();
+        // Every committed capture carries a testcase now that Dojo battles are extracted
+        // like any other, so the missing-testcase arm is exercised by clearing one rather
+        // than by naming a battle that happens not to have been given one.
+        let mut without = capture(830285);
+        without.testcase = None;
+        let no_testcase = adapt_capture(without, &catalog()).unwrap();
         let in_progress = adapt_capture(capture(957643), &catalog()).unwrap();
 
         assert!(matches!(

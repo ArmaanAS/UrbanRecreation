@@ -205,7 +205,7 @@ Deno.test("Rust V3 maps 1024673's round two into P2-first history and server res
 Deno.test("Rust V3 provenance includes exact inputs and semantic revisions", async () => {
   const expected = {
     effectiveCatalogFingerprintFnv1a64: "95774366ab5ee807",
-    effectRegistryFingerprintFnv1a64: "e63d83a094b9b6d2",
+    effectRegistryFingerprintFnv1a64: "591dac0ce97bf0a7",
     effectRegistrySchemaVersion: 1,
     compilerPolicySemanticRevision: 34,
     catalogContextPolicySemanticRevision: 3,

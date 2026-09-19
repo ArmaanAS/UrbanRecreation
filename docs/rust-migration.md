@@ -92,8 +92,9 @@ The effective catalog fingerprints the exact catalog and override bytes it valid
   replay suite.
 
 The target is exact agreement for every replay-ready capture: per-round power, damage,
-attack, winner, life, and pillz. Incomplete and Dojo captures remain classified rather than
-silently discarded.
+attack, winner, life, and pillz. Captures that stopped mid-match remain classified rather
+than silently discarded. Dojo (battle rule 6) captures are ordinary replay members as of
+2026-09-19; they were excluded on an assumption the captures disproved.
 
 In the 328-capture corpus at import time, only 58 of 1,102 asserted rounds reduce to base
 power, damage, attack, cost, and tie rules when effects are disabled. Only 20 of those are
@@ -1409,8 +1410,9 @@ comparison finishes before another `Game` is constructed because the reference s
 process-global battle cache. Capture `1081463` remains a standalone Rust replay gate: its
 battle-rule id is 3, so the rule-10 TypeScript-hosted worker deliberately rejects it before
 launch. Strict draw `970972` is rule 2 and is refused by the Rust replay path itself, so it
-enters neither gate. The two rule-6 strict draws are Dojo/incomplete records without TypeScript testcases
-and cannot enter the hosted bridge.
+enters neither gate. The three rule-6 strict draws are Dojo records: `830285` and `1294430`
+replay exactly and `869944` stopped mid-match, but the hosted worker is rule-10 only, so
+none of them can enter the bridge whatever their testcase says.
 
 ## Performance measurement
 

@@ -1,7 +1,8 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 359 captured battles
-(352 replay-ready, 7 incomplete/Dojo ignored): 310 replay exactly and 42 mismatch. Each entry
+Status from `deno test -A --no-check tests/replay/` against 360 captured battles
+(354 replay-ready, 6 ignored because they stopped mid-match): 312 replay exactly and 42
+mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -35,8 +36,25 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-16 | 278 | 44 | Pr Hide's exact printed Victory-or-Defeat Pillz ability now also applies after KO |
 | 2026-09-17 | 304 | 48 | +31 captures extracted (29 committed but never extracted, plus 2 new); 4 fresh mismatches awaiting triage |
 | 2026-09-17 | 310 | 42 | Bet > N Pillz gates its effect; Fury settles with the Damage dealt; a gift of Opp. Pillz needs no pool |
+| 2026-09-19 | 312 | 42 | Dojo battles extracted and replayed like any other room (+1 capture) |
 
 ## Fixed
+
+### Dojo (battle rule 6) is not a different rule set
+`ExtractBattle.ts` used to refuse a testcase for every battle in the Dojo room, on the
+stated grounds that "rules differ from PvP". No capture supports that. The two older Dojo
+captures (`830285`, `869944`) send a null bonus on all eight cards, but so does every
+lone-clan card in an ordinary battle, and that tutorial deck is eight singleton clans - the
+ordinary "a bonus needs a clan-mate" rule accounts for it. `1294430`, a later Dojo battle in
+the same room, deals two Jungo cards and the server duly sends the active Jungo bonus on
+both. The arithmetic agrees either way: both completed Dojo captures now replay exactly on
+the first attempt with no engine change at all.
+
+The room is worth capturing deliberately, because each one drills a fixed set of abilities -
+`1294430` is eight Life-gain cards - so playing a room is a cheap way to generate ground
+truth for one ability family. The capture pipeline was always recording these battles; only
+the extractor was discarding them.
+
 
 ### Modifier ordering (was "Support count" + "Montana clamp" + "caps vs mins")
 The server applies a card's own Power / Damage / Attack modifiers (Support, per-X, Max caps,

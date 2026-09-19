@@ -52,9 +52,11 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 ## Current priorities (Sept 2026)
 
 1. Capture many real PvP games and make the engine reproduce them (`tests/replay/`).
-   As of 2026-09-17: **359 battles captured, 352 replay-ready, 310 replay exactly** (life,
-   pillz, power, damage, attack, winner per round), **42 mismatch**, and 7 incomplete/Dojo
-   captures ignored. Three open cases have already been investigated (874590, 874712,
+   As of 2026-09-19: **360 battles captured, 354 replay-ready, 312 replay exactly** (life,
+   pillz, power, damage, attack, winner per round), **42 mismatch**, and 6 captures ignored
+   because they stopped mid-match. Dojo (battle rule 6) battles are now extracted and
+   replayed like any other room: see the triage doc for why the old "rules differ" exclusion
+   did not survive contact with the captures. Three open cases have already been investigated (874590, 874712,
    1093173); the other 39 are fresh regression targets from the expanded corpus and
    remain untriaged. This is fresh ground truth rather than evidence that earlier working
    replays regressed. The triage table is the authority here - this line has gone stale

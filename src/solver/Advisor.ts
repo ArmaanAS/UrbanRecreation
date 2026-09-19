@@ -1007,9 +1007,9 @@ export function buildPosition(rec: Reconstructed): Built {
   const tc = rec.testcase;
   if (tc === null) {
     // The extractor says why far better than a guess would: an unknown card, a level the
-    // card DB lacks, a Dojo battle whose rules differ.
+    // card DB lacks, a Dojo battle that sent a bonus the tutorial deck should not have.
     const issue = rec.issues.find((i) =>
-      /no testcase|not in data|lacks that level|Dojo|first mover/.test(i)
+      /no testcase|not in data|lacks that level|first mover/.test(i)
     );
     return {
       settled: false,

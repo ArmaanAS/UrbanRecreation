@@ -2017,7 +2017,10 @@ fn strict_catalog_match_preserves_dave_catalog_and_registry_life_identity() {
     // definition.  Strict construction keeps both identities rather than collapsing it
     // to description text or pretending the catalog id is the registry definition.
     assert_eq!(identity.registry_definition_id, 401);
-    assert_eq!(identity.registry_alias_ids.as_ref(), [401, 888]);
+    assert_eq!(
+        identity.registry_alias_ids.as_ref(),
+        [401, 405, 609, 888, 1329]
+    );
     assert_eq!(
         *effect,
         CombatStatPostRoundEffectV1::GainLifeOnVictory { life: 2 }
@@ -2094,8 +2097,13 @@ fn strict_catalog_match_admits_alias_bound_defeat_life_and_lobos_reanimate_only(
         panic!("Eugene's Defeat Life was not prepared")
     };
     assert_eq!(identity.catalog_id, Some(862));
-    assert_eq!(identity.registry_definition_id, 862);
-    assert_eq!(identity.registry_alias_ids.as_ref(), [862, 1020, 4635]);
+    // Canonical is the lowest structural alias, so the Dojo capture's `696` took the slot
+    // `862` used to hold; the catalog id it was reached by is unchanged.
+    assert_eq!(identity.registry_definition_id, 696);
+    assert_eq!(
+        identity.registry_alias_ids.as_ref(),
+        [696, 862, 992, 1020, 4635]
+    );
     assert_eq!(
         *effect,
         CombatStatPostRoundEffectV1::GainLifeOnDefeat { life: 2 }
@@ -2125,7 +2133,7 @@ fn strict_catalog_match_admits_alias_bound_defeat_life_and_lobos_reanimate_only(
             source_kind: CombatStatEffectSourceV1::Ability,
             catalog_id: Some(5089),
             ref description,
-            registry_definition_id: 862,
+            registry_definition_id: 696,
             ..
         }) if hand_slot.get() == 0 && description == "Defeat: +2 Life"
     ));
@@ -2159,7 +2167,10 @@ fn strict_catalog_match_bridges_only_the_active_jungo_victory_life_bonus() {
         };
         assert_eq!(identity.catalog_id, Some(41));
         assert_eq!(identity.registry_definition_id, 401);
-        assert_eq!(identity.registry_alias_ids.as_ref(), [401, 888]);
+        assert_eq!(
+            identity.registry_alias_ids.as_ref(),
+            [401, 405, 609, 888, 1329]
+        );
         assert_eq!(
             *effect,
             CombatStatPostRoundEffectV1::GainLifeOnVictory { life: 2 }
@@ -3068,7 +3079,7 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
         }
     }
 
-    assert_eq!(scanned, 359);
+    assert_eq!(scanned, 360);
     assert_eq!(
         eligible,
         BTreeSet::from([
@@ -3079,7 +3090,7 @@ fn strict_catalog_coverage_of_all_complete_captured_draws_is_pinned() {
             1060052, 1060199, 1061897, 1065812, 1069506, 1069813, 1070101, 1070207, 1072715,
             1078906, 1079482, 1080877, 1081463, 1089121, 1089346, 1090607, 1091235, 1091585,
             1092294, 1092369, 1092454, 1092909, 1092992, 1093399, 1130577, 1130609, 1130833,
-            1131010,
+            1131010, 1294430,
         ])
     );
 }
