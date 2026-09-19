@@ -177,7 +177,7 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ("Killshot: +N Pillz", &[2250, 4645]),
     (
         "prefixed +N Pillz (Confidence + Killshot)",
-        &[1702, 2250, 4645],
+        &[1702, 2250, 4449, 4645],
     ),
     ("wider permanent Life (Defeat/Growth Poison)", &[1282, 4561]),
 ];

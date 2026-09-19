@@ -1259,6 +1259,47 @@ both sides at once. The gate grows from 299 to 310 rounds with all three draws i
 exercise for the first time. The engine test pins what the corpus cannot reach: a reduction
 landing exactly on the floor, and a side already there being left alone.
 
+Semantic revision 36 puts the `Confidence:` previous-round predicate on the plain `+N Pillz`
+Victory grammar (`1702` `Confidence: +4 Pillz`, `4449` `Confidence: +2 Pillz`). It is the
+change revision 34 made to fixed Victory Life, applied to the other resource: the classifier
+now returns the condition its prefix names instead of assuming `Always`, and the plan
+validator admits `OwnerWonPreviousRound` beside it. No engine work at all - the winner-only
+arm and the predicate machinery both already existed, which is what revision 33 looked like
+too. The plain grammar is untouched and still unconditional.
+
+One detail keeps the two prefixed grammars apart and is worth writing down, because the
+registry would otherwise let them borrow each other's text: Victory Life prints a spaced
+`Confidence : +4 Life` and Victory Pillz prints a tight `Confidence: +4 Pillz`. Admission is
+by exact text against a `format!` of the structured value, so neither can match the other's
+record, and both remain card abilities only. The near-miss boundary grew to match - a
+`Confidence: +N Pillz` over a wrong structure is now a selected hazard rather than an inert
+disabled source - while `Killshot:`, `Revenge:`, `Stop:`, `Growth:`, `Brawl:`, `Courage:`,
+`Perfect:`, `Equalizer:` and `Defeat:` Pillz all differ in a structured field and keep their
+visible-but-disabled records.
+
+The candidate line read 2 and the slice unlocked exactly those two draws (924615, 925087),
+taking strict eligibility from 74 to 76 of 361. The corpus is thin here and the gate shows
+it: of the four rounds in which either record is selected, only one can be reached. Balixto's
+`1702` pays in 924615/2 - his side won round 1, he wins round 2 on a bet of 5, and
+7 - 5 + 4 = 6 - and that draw joins the gate for three rounds, taking it from 310 to 313. It
+stops at three because its capture could not attribute the closing `battles.result` to a
+side, so the final round's life is a stale pre-damage snapshot rather than a server fact;
+that is also why 924615 is one of the 42 TypeScript replay mismatches, and it is a capture
+artifact rather than an engine disagreement. The other three rounds are all unreachable:
+1092515/2 (a loss, where the Vortex `577` recovery pays instead) mismatches in its own round
+0, 1073010/1 (his side did win the round before, but Spidee's Reprisal `Stop Opp. Ability`
+silences him, which is the one round in the corpus that separates the predicate from the
+source being live) opens on a deferred `Brawl:` source, and 925781/1 (Monkovski's `4449`, a
+loss with no prior win either) sits behind the Cosmohnuts `Tune Out` bonus. The engine test
+pins the three negative arms instead: a first round with no previous round to have won, a
+won round behind a lost one, and a lost current round behind a won previous one.
+
+One paying server round is thinner evidence than this project usually spends, and it is
+admitted here only because the two pieces being composed are each independently pinned - the
+plain `+N Pillz` grammar by revision 29's ten paying rounds, and `OwnerWonPreviousRound` by
+the predicate machinery every `Confidence:` source already uses. Revision 34 admitted the
+same predicate on Victory Life with no reachable server round at all.
+
 ### Choosing the next slice
 
 Reach and unlock rank differently, and only unlock is worth acting on. Strict construction
@@ -1276,7 +1317,7 @@ An id named in a candidate family must be a real registry definition, or the fam
 under-reports: an id no definition owns can never appear as a blocker. The list carried
 `990` for conditional Copy until 2026-09-17, so that family was only ever scored by `958`.
 
-On 2026-09-19 at revision 35 it scanned 360 complete draws: 73 eligible and 10 refused
+On 2026-09-20 at revision 36 it scanned 361 complete draws: 76 eligible and 10 refused
 structurally, by a Leader or a duplicate character rather than by a missing effect. The
 report also prints the blocker sets themselves, smallest first, which is what a family
 proposal should be built from: a group is worth proposing only when it covers one of those
@@ -1290,14 +1331,17 @@ Damage at 4 and unlocked 4, revision 32 measured uncapped Life per Damage at 3 a
 predicate-carrying permanents at 1, together 4, and unlocked 4, revision 33 measured the
 plain Victory `-N Opp. Life, Min M` grammar at 2 and its Victory-or-Defeat form at 2,
 together 4, and unlocked 4, and revision 34 measured the capped Life-per-Damage forms at 2
-and predicate-carrying fixed Victory Life at 2, together 4, and unlocked 4, and revision 35
-measured Xantiax at 3 and unlocked 3. Those lines now read 0, which is how a landed family
-is meant to look.
+and predicate-carrying fixed Victory Life at 2, together 4, and unlocked 4, revision 35
+measured Xantiax at 3 and unlocked 3, and revision 36 measured `Confidence: +N Pillz` at 2
+and unlocked 2. Those lines now read 0, which is how a landed family is meant to look.
 
 An id named in a candidate family must also cover the family's other printed levels, or the
 line under-reports the same way a missing definition does. Xantiax was scored at 3 by `1379`
-alone and read the same with level 2's `5198` beside it, but `Killshot: +N Pillz` read 2 as
-`[2250]` and still 2 as `[2250, 4645]`, which is only knowable by adding the line.
+alone and read the same with level 2's `5198` beside it, `Killshot: +N Pillz` read 2 as `[2250]` and still 2 as `[2250, 4645]`,
+and `Confidence: +N Pillz` read 2 as `[1702]` and still 2 as `[1702, 4449]` - which is only
+knowable by adding the line. A second member that changes no count still belongs in it, and
+in the slice: `4449` landed with `1702` because it is the same grammar, not because it paid
+for itself.
 
 The measurements that chose the last two slices are worth keeping as a record of how the
 counts behave. Revision 24's two Copy families unlocked 3 and 2 and together 5; revision
@@ -1307,33 +1351,27 @@ to be measured each time.
 
 The Pillz family is done, and so are the Life conversions capped and uncapped, the
 predicate-carrying permanents, the opponent-Life reduction on all three outcome channels,
-fixed Victory Life with or without its two printed conditions, and the both-sides Xantiax
-reduction. Before revision 29 the three
+fixed Victory Life with or without its two printed conditions, the both-sides Xantiax
+reduction, and `+N Pillz` under `Confidence:`. Before revision 29 the three
 Pillz lines together unlocked 8 draws and the three slices unlocked 2, 2 and 4 in turn;
 revision 32 then took Life per Damage (3) and the prefixed permanents (1) together for 4,
 and revision 33 took the Victory reduction (2) and its Victory-or-Defeat form (2) together
 for 4. Both pairs were exactly additive, unlike the revision-22 pair.
 
-What the scan reads at revision 35 has no three-draw source left in it. Xantiax was the
-last one, and below it sit nine two-draw single-source sets, unchanged in count by this
-slice: the wider permanent-Life line (the losing-round `4561` and Growth `1282` forms, the
-only family among them), and the lone sources `304` `Courage: -4 Opp. Dmg, Min 2`, `490`
-`Confidence: Stop Opp. Ability`, `912` `Defeat: -2 Opp. Pillz, Min 4`, `1474` `Stop: Damage
-+4`, `1488` `Brawl: Power And Damage + 1`, `1702` `Confidence: +4 Pillz`, `2250`/`4645`
-`Killshot: +N Pillz`, the clan-gated `5113` `+1 Dam./ Life Lost Max. 6` and `5681` `After
-[clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`.
+What the scan reads at revision 36 has no three-draw source left in it - Xantiax was the
+last one - and eight two-draw single-source sets, unchanged in count by this slice: the
+wider permanent-Life line (the losing-round `4561` and Growth `1282` forms, the only family
+among them), and the lone sources `304` `Courage: -4 Opp. Dmg, Min 2`, `490` `Confidence:
+Stop Opp. Ability`, `912` `Defeat: -2 Opp. Pillz, Min 4`, `1474` `Stop: Damage +4`, `1488`
+`Brawl: Power And Damage + 1`, `2250`/`4645` `Killshot: +N Pillz`, the clan-gated `5113`
+`+1 Dam./ Life Lost Max. 6` and `5681` `After [clan:27][clan:29]: -2 Opp. Pow. & Dam.,
+Min 2`. Nothing on that list is cheap in the way the last four slices were, because each of
+them wants a channel or a context the projection does not have: a Courage position on a
+combat stat, a conditional Stop, a losing-side Pillz reduction, a Stop-triggered increase, a
+Brawl round counter, a clan gate. The board of admission-only slices is empty.
 
-Two of those were measured properly this time and are worth recording before anyone prices
-them again. `1702` and `2250`/`4645` read 2 and 2 alone and 4 together, exactly additive, and
-that combined 4 is the largest line on the board - but the corpus will only pay for half of
-it. `1702` is the admitted plain `+N Pillz` grammar under the previous-round predicate
-revision 34 put on Victory Life, so it costs no engine work at all, and the server pins it
-once paying (924615/2: 7 - 5 + 4 = 6) and twice not (1073010/1, where Spidee's Reprisal
-`Stop Opp. Ability` silences it after a won previous round, and 1092515/2, a loss that pays
-the Vortex recovery instead). One paying round is thin but it is a composition of two
-independently pinned pieces.
-
-`2250`/`4645` is a different matter and should not be taken on its measured count. Its
+`Killshot: +N Pillz` is the one that looks cheapest on count and should not be taken on it.
+Its
 `sureshot` current-round channel exists nowhere in the projection, and the corpus cannot
 justify building one: of 23 selected Killshot rounds across every Killshot grammar, exactly
 one actually triggers (877023/1, Valentina Ld's `-3 Opp. Life Min 0` at 72 attack against 7),

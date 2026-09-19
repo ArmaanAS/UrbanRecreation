@@ -802,16 +802,16 @@ fn prepare_combat_stat_source(
             },
         });
     }
-    if let Some(pillz) = classify_victory_pillz(definition, source_kind) {
+    if let Some((pillz, predicate)) = classify_victory_pillz(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
                 identity,
                 effect: CombatStatPostRoundEffectV1::GainPillzOnVictory { pillz },
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
             },
             compact_plan: CombatStatSourcePlanV1::Execute {
                 source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
+                predicate,
                 effect: CombatStatEffectV1::GainPillzOnVictory { pillz },
             },
         });
@@ -1028,11 +1028,14 @@ fn prepare_combat_stat_source(
         || has_victory_life_shape(definition);
     // Plain Victory Pillz is the same kind of near-miss boundary: the literal `+N Pillz`
     // text over a wrong structure or slot, or the complete reviewed structure under other
-    // text, rejects when selected. Prefixed forms (`Stop:`, `Growth:`, `Confidence:`,
-    // `Courage:`, `Brawl:`, `Killshot:`, `Perfect:`, `Equalizer:`, `Defeat:`), the capped
-    // `+3 Pillz Max. 9` and `Support: + 1 Pillz` differ structurally and keep their
+    // text, rejects when selected. Its `Confidence:` form joined the grammar in revision 36
+    // and takes the boundary with it, so `Confidence: +N Pillz` over a wrong structure is a
+    // hazard too. The other prefixed forms (`Stop:`, `Growth:`, `Courage:`, `Brawl:`,
+    // `Killshot:`, `Perfect:`, `Equalizer:`, `Defeat:`, `Revenge:`), the capped `+3 Pillz
+    // Max. 9` and `Support: + 1 Pillz` differ structurally and keep their
     // visible-but-disabled records.
-    let unadmitted_victory_pillz = (source.description.starts_with('+')
+    let unadmitted_victory_pillz = ((source.description.starts_with('+')
+        || source.description.starts_with("Confidence: +"))
         && source.description.ends_with(" Pillz")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_victory_pillz_shape(definition);

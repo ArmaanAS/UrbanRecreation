@@ -1885,7 +1885,7 @@ fn prepare_victory_pillz_source(
             description: description.to_owned(),
             source,
         })?;
-    let Some(pillz) = classify_victory_pillz(definition, source_kind) else {
+    let Some((pillz, predicate)) = classify_victory_pillz(definition, source_kind) else {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player,
             hand_slot,
@@ -1922,11 +1922,11 @@ fn prepare_victory_pillz_source(
                 registry_alias_ids,
             },
             effect: CombatStatPostRoundEffectV1::GainPillzOnVictory { pillz },
-            predicate: CombatStatPredicateV1::Always,
+            predicate,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
+            predicate,
             effect: CombatStatEffectV1::GainPillzOnVictory { pillz },
         },
     })

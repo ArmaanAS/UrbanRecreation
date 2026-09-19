@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 360 captured battles
-(354 replay-ready, 6 ignored because they stopped mid-match): 312 replay exactly and 42
+Status from `deno test -A --no-check tests/replay/` against 361 captured battles
+(355 replay-ready, 6 ignored because they stopped mid-match): 313 replay exactly and 42
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -37,8 +37,18 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-17 | 304 | 48 | +31 captures extracted (29 committed but never extracted, plus 2 new); 4 fresh mismatches awaiting triage |
 | 2026-09-17 | 310 | 42 | Bet > N Pillz gates its effect; Fury settles with the Damage dealt; a gift of Opp. Pillz needs no pool |
 | 2026-09-19 | 312 | 42 | Dojo battles extracted and replayed like any other room (+1 capture) |
+| 2026-09-20 | 313 | 42 | +1 Dojo Life-room capture, replays exactly |
 
 ## Fixed
+
+### 924615's last round is a stale capture, not an engine bug
+The extractor could not attribute the closing `battles.result` to a side (`mySide` is null),
+so the final round's life and pillz stayed at the pre-damage snapshot the server sends before
+applying the last hit: Vektor wins round 3 for 2 Damage and the record still says the loser
+is on 5. Nothing is wrong with the engine here and nothing can be fixed by changing it - the
+round's ground truth was never captured. The Rust combat-stat gate carries 924615 for three
+rounds for the same reason. Two other entries carry the same issue string (948108, 948390).
+
 
 ### Dojo (battle rule 6) is not a different rule set
 `ExtractBattle.ts` used to refuse a testcase for every battle in the Dojo room, on the

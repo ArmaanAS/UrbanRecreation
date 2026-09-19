@@ -743,7 +743,7 @@ fn archimedes_spec() -> CombatStatDiagnosticMatchSpecV1 {
 }
 
 #[test]
-fn victory_pillz_plan_is_ability_only_positive_and_unconditional() {
+fn victory_pillz_plan_is_ability_only_positive_and_carries_only_confidence() {
     let mut bonus = archimedes_spec();
     bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
     bonus.cards[PlayerId::P1][0].bonus =
@@ -771,19 +771,37 @@ fn victory_pillz_plan_is_ability_only_positive_and_unconditional() {
         })
     ));
 
-    let mut conditional = archimedes_spec();
-    conditional.cards[PlayerId::P1][0].ability = execute(
-        1150,
+    // Revision 36 admits one predicate beside `Always`: the previous-round win that
+    // `Confidence:` prints. Every other condition is still refused, so a `Revenge:` or a
+    // hand-slot form cannot borrow the grammar.
+    let mut confidence = archimedes_spec();
+    confidence.cards[PlayerId::P1][0].ability = execute(
+        1702,
         CombatStatPredicateV1::OwnerWonPreviousRound,
         VICTORY_PILLZ,
     );
-    assert!(matches!(
-        CombatStatDiagnosticV1::new(conditional),
-        Err(CombatStatPlanErrorV1::InvalidExecute {
-            reason: InvalidCombatStatPlanReasonV1::VictoryPillzPredicate,
-            ..
-        })
-    ));
+    assert!(CombatStatDiagnosticV1::new(confidence).is_ok());
+
+    for predicate in [
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatPredicateV1::OwnerMovesSecond,
+    ] {
+        let mut conditional = archimedes_spec();
+        conditional.cards[PlayerId::P1][0].ability = execute(1150, predicate, VICTORY_PILLZ);
+        assert!(
+            matches!(
+                CombatStatDiagnosticV1::new(conditional),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::VictoryPillzPredicate,
+                    ..
+                })
+            ),
+            "{predicate:?}",
+        );
+    }
 }
 
 #[test]
@@ -1321,6 +1339,60 @@ fn prefixed_victory_life_waits_for_the_predicate_its_prefix_names() {
         .unwrap();
     assert!(after_loss.cards[PlayerId::P1].won);
     assert_eq!(after_loss.players[PlayerId::P1].life, 17);
+}
+
+#[test]
+fn confidence_victory_pillz_waits_for_a_round_its_own_side_won() {
+    // Balixto's `1702`. The server pins the paying case once, in 924615/2: his side won
+    // round 1, he wins round 2 on a bet of 5, and 7 - 5 + 4 = 6. Everything else this test
+    // pins is a corpus round the gate cannot reach - 1092515/2 mismatches in its own round
+    // 0, 1073010/1 opens on a deferred `Brawl:` source and 925781/1 carries `Tune Out`.
+    let confidence = || {
+        single_ability_spec(
+            CardKey::new(1707, 2),
+            1702,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            CombatStatEffectV1::GainPillzOnVictory { pillz: 4 },
+        )
+    };
+
+    // A first round has no previous round to have won, so winning it pays nothing.
+    let spec = confidence();
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert!(first.cards[PlayerId::P1].won);
+    assert_eq!(first.players[PlayerId::P1].pillz, 18); // 20 - 2, nothing added
+                                                       // The round after one its own side won does pay.
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P1].pillz, 20); // 18 - 2 + 4
+
+    // Losing the previous round withholds it even from a won current round.
+    let spec = confidence();
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P2, (1, 0, false), (1, 2, false)))
+        .unwrap();
+    let (after_loss, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(after_loss.cards[PlayerId::P1].won);
+    assert_eq!(after_loss.players[PlayerId::P1].pillz, 18); // 20 - 2, nothing added
+
+    // And winning the previous round is not enough on its own: the current round still has
+    // to be won, which is the outcome channel the plain grammar already carried.
+    let spec = confidence();
+    let mut diag = game(spec.base_rules, spec.cards);
+    diag.make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    let (lost_current, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 2, false)))
+        .unwrap();
+    assert!(!lost_current.cards[PlayerId::P1].won);
+    assert_eq!(lost_current.players[PlayerId::P1].pillz, 18); // 18 - 0, nothing added
 }
 
 #[test]

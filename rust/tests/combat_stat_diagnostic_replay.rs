@@ -264,6 +264,18 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1058151, 4),
     (1059648, 4),
     (1080464, 3),
+    // Revision 36 puts the `Confidence:` previous-round predicate on the plain `+N Pillz`
+    // grammar. Balixto's `1702` pays 7 - 5 + 4 = 6 in 924615/2, behind a round his side won,
+    // and that is the corpus's only paying round for this form: the three others it appears
+    // in are all unreachable here. 1092515/2 (a loss, where the Vortex `577` recovery pays
+    // instead) already mismatches in its round 0, 1073010/1 (his side did win the round
+    // before, but Spidee's Reprisal `Stop Opp. Ability` silences him) selects a deferred
+    // `Brawl:` source in its round 0, and 925781/1 (Monkovski's `4449`, a loss with no
+    // prior win) sits behind the Cosmohnuts `Tune Out` bonus. The engine tests pin the
+    // negative arms instead. 924615 itself stops at three rounds because its capture could
+    // not attribute the closing `battles.result` to a side, so the last round's life is the
+    // stale pre-damage snapshot rather than a server fact.
+    (924615, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -594,7 +606,8 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_three_hundred_and_ten_unique_sequential_prefix_rounds() {
+fn fixed_server_backed_gate_is_exactly_three_hundred_and_thirteen_unique_sequential_prefix_rounds()
+{
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -630,7 +643,7 @@ fn fixed_server_backed_gate_is_exactly_three_hundred_and_ten_unique_sequential_p
             }
         }
     }
-    assert_eq!(rounds, 310);
+    assert_eq!(rounds, 313);
     assert_eq!(
         execute_ids,
         BTreeSet::from([
@@ -644,16 +657,16 @@ fn fixed_server_backed_gate_is_exactly_three_hundred_and_ten_unique_sequential_p
             1188, 1197, 1229, 1241, 1293, 1297, 1303, 1310, 1330, 1333, 1335, 1338, 1341, 1342,
             1345, 1350, 1355, 1359, 1372, 1375, 1379, 1385, 1388, 1396, 1399, 1415, 1417, 1418,
             1420, 1464, 1469, 1501, 1508, 1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634, 1688,
-            1694, 1699, 1706, 1714, 1722, 1726, 1760, 1770, 1805, 1806, 1823, 1825, 1833, 1840,
-            1844, 1845, 1848, 1850, 1852, 2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329, 2375,
-            2412, 2528, 2535, 2556, 2573, 2628, 2638, 2657, 2660, 2661, 2835, 2881, 2944, 2965,
-            2992, 3004, 3040, 3048, 3118, 3197, 3222, 3284, 3386, 3393, 3433, 3487, 3526, 3597,
-            3677, 3829, 3852, 3864, 3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301, 4330,
-            4389, 4399, 4414, 4417, 4458, 4461, 4464, 4500, 4571, 4588, 4623, 4625, 4708, 4711,
-            4718, 4722, 4730, 4757, 4824, 4908, 4948, 4951, 4954, 4966, 4983, 5025, 5026, 5085,
-            5169, 5170, 5195, 5198, 5237, 5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406, 5415,
-            5439, 5462, 5498, 5520, 5525, 5531, 5532, 5549, 5763, 5835, 5841, 5849, 5852, 5859,
-            5881, 5901,
+            1694, 1699, 1702, 1706, 1714, 1722, 1726, 1760, 1770, 1805, 1806, 1823, 1825, 1833,
+            1840, 1844, 1845, 1848, 1850, 1852, 2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329,
+            2375, 2412, 2528, 2535, 2556, 2573, 2628, 2638, 2657, 2660, 2661, 2835, 2881, 2944,
+            2965, 2992, 3004, 3040, 3048, 3118, 3197, 3222, 3284, 3386, 3393, 3433, 3487, 3526,
+            3597, 3677, 3829, 3852, 3864, 3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301,
+            4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464, 4500, 4571, 4588, 4623, 4625, 4708,
+            4711, 4718, 4722, 4730, 4757, 4824, 4908, 4948, 4951, 4954, 4966, 4983, 5025, 5026,
+            5085, 5169, 5170, 5195, 5198, 5237, 5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406,
+            5415, 5439, 5462, 5498, 5520, 5525, 5531, 5532, 5549, 5763, 5835, 5841, 5849, 5852,
+            5859, 5881, 5901,
         ])
     );
     assert_eq!(
@@ -959,7 +972,7 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 35);
+    assert_eq!(provenance.compiler_policy_semantic_revision, 36);
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -1015,7 +1028,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        35
+        36
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2

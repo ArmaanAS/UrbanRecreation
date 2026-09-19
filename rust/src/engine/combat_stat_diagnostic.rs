@@ -1551,7 +1551,12 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryPillzMagnitude,
             ));
         }
-        if predicate != CombatStatPredicateV1::Always {
+        // The plain grammar is unconditional; the one reviewed prefixed form carries the
+        // previous-round predicate `Confidence:` names, and both are card abilities only.
+        if !matches!(
+            predicate,
+            CombatStatPredicateV1::Always | CombatStatPredicateV1::OwnerWonPreviousRound
+        ) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,

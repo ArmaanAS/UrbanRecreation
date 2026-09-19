@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 35;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 36;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -330,20 +330,35 @@ pub(crate) fn has_victory_life_shape(definition: &EffectDefinitionV1) -> bool {
     input.value > 0 && victory_life_shape_matches(input)
 }
 
-/// Recognize the plain `+N Pillz` Victory grammar: the winner's own Pillz rise by the
-/// printed amount at the end of the round. Like Victory Life it is admitted by exact text
-/// and complete structured shape over every same-text registry record, but card abilities
-/// only - no clan bonus prints it, so a Bonus slot carrying the text is a hazard, not a
-/// generic source.
+/// Recognize the plain `+N Pillz` Victory grammar and its `Confidence:` form: the winner's
+/// own Pillz rise by the printed amount at the end of the round, unconditionally or only
+/// after a round its own side won. Like Victory Life it is admitted by exact text and
+/// complete structured shape over every same-text registry record, but card abilities only
+/// - no clan bonus prints either, so a Bonus slot carrying the text is a hazard, not a
+/// generic source. The prefixed form carries its condition in the one field the plain
+/// grammar requires neutral, so the two can never be confused; it prints `Confidence:`
+/// tight, unlike Victory Life's spaced `Confidence :`, and the exact-text check is what
+/// keeps those two apart. Returns `(pillz, predicate)`.
 pub(crate) fn classify_victory_pillz(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
-) -> Option<u16> {
+) -> Option<(u16, CombatStatPredicateV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability || !has_victory_pillz_shape(definition) {
+        return None;
+    }
     let input = definition.structured_input();
-    (source_kind == CombatStatEffectSourceV1::Ability
-        && has_victory_pillz_shape(definition)
-        && definition.description() == format!("+{} Pillz", input.value))
-    .then_some(input.value)
+    let (predicate, text) = match input.previous_round_requirement {
+        PreviousRoundRequirementV1::Any => (
+            CombatStatPredicateV1::Always,
+            format!("+{} Pillz", input.value),
+        ),
+        PreviousRoundRequirementV1::Win => (
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            format!("Confidence: +{} Pillz", input.value),
+        ),
+        PreviousRoundRequirementV1::Lose => return None,
+    };
+    (definition.description() == text).then_some((input.value, predicate))
 }
 
 /// Structural half of the Victory Pillz boundary, so replay preparation can reject a
@@ -1594,11 +1609,16 @@ fn victory_life_shape_matches(input: &StructuredEffectV1) -> bool {
 }
 
 fn victory_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value_min == 0
+    // Exactly the two reviewed condition slots: no condition at all, or the previous-round
+    // one `Confidence:` names. A `Revenge:` Pillz keeps its visible-but-disabled record
+    // rather than becoming a near-miss hazard here.
+    matches!(
+        input.previous_round_requirement,
+        PreviousRoundRequirementV1::Any | PreviousRoundRequirementV1::Win
+    ) && input.value_min == 0
         && input.value_max == 0
         && input.value_condition == 0
         && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
         && input.current_round_requirement == CurrentRoundRequirementV1::Win
         && input.index_requirement == IndexRequirementV1::Any
         && input.clan_requirement.is_empty()
@@ -2490,6 +2510,55 @@ mod tests {
                 None,
                 "mutated field {field}",
             );
+        }
+    }
+
+    #[test]
+    fn victory_pillz_carries_only_the_confidence_predicate_its_prefix_names() {
+        let registry = registry();
+        // The plain grammar is unchanged and still unconditional.
+        let plain = registry.lookup_capture(337, "+3 Pillz").unwrap();
+        assert_eq!(
+            classify_victory_pillz(plain, CombatStatEffectSourceV1::Ability),
+            Some((3, CombatStatPredicateV1::Always))
+        );
+        // Both printed `Confidence:` records carry the previous-round predicate.
+        for (id, description, pillz) in [
+            (1702, "Confidence: +4 Pillz", 4),
+            (4449, "Confidence: +2 Pillz", 2),
+        ] {
+            let confidence = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_victory_pillz(confidence, CombatStatEffectSourceV1::Ability),
+                Some((pillz, CombatStatPredicateV1::OwnerWonPreviousRound)),
+                "confidence {id}",
+            );
+            // No clan bonus prints it, so the Bonus slot stays a hazard.
+            assert_eq!(
+                classify_victory_pillz(confidence, CombatStatEffectSourceV1::Bonus),
+                None,
+                "confidence {id} as bonus",
+            );
+        }
+        // Victory Life's `Confidence :` is spaced and affects the other resource, so the
+        // exact-text check keeps the two prefixed grammars apart in both directions.
+        let confidence_life = registry
+            .lookup_capture(814, "Confidence : +4 Life")
+            .unwrap();
+        assert_eq!(
+            classify_victory_pillz(confidence_life, CombatStatEffectSourceV1::Ability),
+            None
+        );
+        // The other prefixed Pillz forms differ in a structured field and keep their
+        // visible-but-disabled records rather than borrowing this grammar.
+        for (id, description) in [(2250, "Killshot: +3 Pillz"), (4645, "Killshot: +2 Pillz")] {
+            let other = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_victory_pillz(other, CombatStatEffectSourceV1::Ability),
+                None,
+                "other {id}",
+            );
+            assert!(!has_victory_pillz_shape(other), "other {id} shape");
         }
     }
 
