@@ -4428,6 +4428,57 @@ fn attack_per_opponent_damage_reads_the_damage_before_fury() {
     assert_eq!(report.cards[PlayerId::P1].attack, 34); // 32 + 2 x 1
 }
 
+/// `Xantiax: -N Life, Min. M` charges both players whatever the round did, floors each of
+/// them at the Min independently, and revives neither from it.
+#[test]
+fn both_players_life_reduction_charges_each_side_whatever_the_outcome() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1379,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceBothPlayersLife {
+            life: 3,
+            minimum: 0,
+        },
+    );
+
+    // A losing owner pays, and so does the winner who has just damaged it.
+    let mut losing = game(base.clone(), cards.clone());
+    let (report, _) = losing
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].won, false);
+    assert_eq!(report.players[PlayerId::P1].life, 14); // 20 - 3 damage - 3
+    assert_eq!(report.players[PlayerId::P2].life, 17); // 20 - 3
+
+    // A winning owner pays exactly the same. This is the shape 1080464/2 pins.
+    let mut winning = game(base.clone(), cards.clone());
+    let (report, _) = winning
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].won, true);
+    assert_eq!(report.players[PlayerId::P1].life, 17); // 20 - 3
+    assert_eq!(report.players[PlayerId::P2].life, 14); // 20 - 3 damage - 3
+
+    // Each side floors independently: an owner the round's damage has already taken to
+    // zero is not charged again and is never revived by the clamp, while the opposing
+    // player, sitting on two, is taken down to the Min rather than past it. 1058151/3 is
+    // the captured half of this.
+    let mut spec = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    };
+    spec.base_rules.players[PlayerId::P1].initial_life = 3;
+    spec.base_rules.players[PlayerId::P2].initial_life = 2;
+    let mut clamped = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = clamped
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 0); // 3 - 3 damage, then nothing to take
+    assert_eq!(report.players[PlayerId::P2].life, 0); // 2 - 3 floored at Min 0
+}
+
 /// `Defeat: -N Opp. Life, Min M` pays out when its owner loses the round, leaves a target
 /// already at or below the Min alone, and still pays after its owner is taken to zero.
 #[test]

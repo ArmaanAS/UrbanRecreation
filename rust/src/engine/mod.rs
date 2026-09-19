@@ -486,6 +486,12 @@ pub(super) enum PostRoundEffect {
         life: u16,
         minimum: u16,
     },
+    /// `Xantiax: -N Life, Min. M`: both players lose `life`, neither below `minimum`,
+    /// whatever the round's outcome and whichever side owns the source.
+    ReduceBothPlayersLife {
+        life: u16,
+        minimum: u16,
+    },
     /// A permanent on a live source whose owner wins this round: latch it into the owner's
     /// position so every later round pays it. Whether this round pays it too is the
     /// effect's own property.
@@ -795,6 +801,23 @@ impl BaseRulesGame {
                             .max(minimum);
                     }
                     PostRoundEffect::ReduceOpponentLifeOnDefeat { .. } => {}
+                    // Xantiax is the only admitted post-round effect with no outcome
+                    // channel and no beneficiary: it takes from both players at once. The
+                    // owner winning, losing or being knocked out by this round's damage
+                    // makes no difference (1058151/3 pays into the opponent from an owner
+                    // the round has just taken to zero; 1080464/2 charges a winning owner),
+                    // and neither player may be revived from zero or pulled up to Min by
+                    // the clamp.
+                    PostRoundEffect::ReduceBothPlayersLife { life, minimum } => {
+                        for player in [owner, owner.other()] {
+                            if position.players[player].life > minimum {
+                                position.players[player].life = position.players[player]
+                                    .life
+                                    .saturating_sub(life)
+                                    .max(minimum);
+                            }
+                        }
+                    }
                     // Ordinary Defeat Life is post-damage work for a loss that did not KO
                     // its owner. It deliberately cannot turn a terminal zero back into a
                     // live position.

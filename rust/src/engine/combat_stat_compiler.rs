@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 34;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 35;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -876,6 +876,69 @@ fn defeat_opponent_life_shape_matches(input: &StructuredEffectV1) -> bool {
         && input.previous_clan_requirement.is_empty()
         && input.bet_pillz_link == BetPillzLinkV1::No
         && input.side_affected == AffectedSideV1::Opponent
+        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_action == AttributeActionV1::Decrease
+        && input.special_action == SpecialActionV1::None
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+/// Recognize `Xantiax: -N Life, Min. M`: the only admitted post-round grammar that names
+/// no outcome and no beneficiary. Both players lose N, neither below M, whatever the round
+/// did. `Xantiax` is flavour on the printed text, not a condition - the structured record
+/// asks for no outcome, no previous round, no position and no hand slot, and reaches both
+/// sides at once, which is the shape no other admitted grammar has. Exact text and complete
+/// shape over every same-text registry record, card abilities only: no clan bonus prints it,
+/// so a Bonus slot carrying the text is a hazard rather than a generic source.
+/// Returns `(life, minimum)`.
+pub(crate) fn classify_both_players_life_reduction(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (life, minimum) = (input.value, input.value_min);
+    (life > 0
+        && definition.description() == format!("Xantiax: -{life} Life, Min. {minimum}")
+        && both_players_life_reduction_shape_matches(input))
+    .then_some((life, minimum))
+}
+
+/// Structural half of the boundary, so replay preparation can reject a complete shape under
+/// malformed text instead of silently disabling it.
+pub(crate) fn has_both_players_life_reduction_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && both_players_life_reduction_shape_matches(input)
+}
+
+fn both_players_life_reduction_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value_max == 0
+        && input.value_condition == 0
+        && input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        // No outcome channel at all. `Win`, `Lose` and the Victory-or-Defeat sources all
+        // differ here, so none of them can reach this grammar by text alone.
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.side_affected == AffectedSideV1::Both
         && input.attribute_affected == AttributeAffectedV1::Life
         && input.attribute_action == AttributeActionV1::Decrease
         && input.special_action == SpecialActionV1::None
@@ -2426,6 +2489,49 @@ mod tests {
                 ),
                 None,
                 "mutated field {field}",
+            );
+        }
+    }
+
+    #[test]
+    fn both_players_life_reduction_is_source_kind_text_and_shape_locked() {
+        let registry = registry();
+        // The two printed levels are separate registry records with the same text and
+        // shape, so each is admitted on its own rather than as an alias of the other.
+        for id in [1379, 5198] {
+            let xantiax = registry
+                .lookup_capture(id, "Xantiax: -3 Life, Min. 0")
+                .unwrap();
+            assert_eq!(
+                classify_both_players_life_reduction(xantiax, CombatStatEffectSourceV1::Ability),
+                Some((3, 0)),
+                "xantiax {id}",
+            );
+            // No clan bonus prints it, so the Bonus slot is a hazard rather than a source.
+            assert_eq!(
+                classify_both_players_life_reduction(xantiax, CombatStatEffectSourceV1::Bonus),
+                None,
+                "xantiax {id} as bonus",
+            );
+            assert!(has_both_players_life_reduction_shape(xantiax), "shape {id}");
+        }
+        // Every neighbouring Life reduction names an outcome or a single side, which is
+        // exactly what this grammar requires neutral, so none of them can reach it.
+        for (id, description) in [
+            (680, "-2 Opp. Life Min 2"),
+            (1399, "-5 Opp. Life Min 5"),
+            (1628, "Victory Or Defeat: - 1 Opp. Life Min 1"),
+            (4708, "Symmetry: - 4 Opp. Life Min 0"),
+        ] {
+            let other = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_both_players_life_reduction(other, CombatStatEffectSourceV1::Ability),
+                None,
+                "neighbour {id}",
+            );
+            assert!(
+                !has_both_players_life_reduction_shape(other),
+                "neighbour {id} shape",
             );
         }
     }

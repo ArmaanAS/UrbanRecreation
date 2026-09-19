@@ -172,6 +172,14 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             2113, 2638, 3367, 3491, 3546, 3571, 3716, 4331, 4948,
         ],
     ),
+    ("Xantiax both-sides Life reduction", &[1379, 5198]),
+    ("Confidence: +N Pillz", &[1702]),
+    ("Killshot: +N Pillz", &[2250, 4645]),
+    (
+        "prefixed +N Pillz (Confidence + Killshot)",
+        &[1702, 2250, 4645],
+    ),
+    ("wider permanent Life (Defeat/Growth Poison)", &[1282, 4561]),
 ];
 
 fn root_path(path: &str) -> PathBuf {

@@ -140,6 +140,12 @@ pub enum CombatStatPostRoundEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// `Xantiax: -N Life, Min. M`: the round's outcome is irrelevant and so is which side
+    /// owns the source - both players lose `life`, neither below `minimum`.
+    ReduceBothPlayersLife {
+        life: u16,
+        minimum: u16,
+    },
     /// `Heal N Max. M`: won rounds latch it, every later round pays `life` while the owner
     /// is below `maximum`. Admitted by exact text and shape from the Ability slot.
     HealLifeOnVictory {
@@ -271,6 +277,13 @@ pub enum CombatStatEffectV1 {
     /// Defeat-only opponent-Life reduction: the owner having lost is the trigger, and a
     /// target already at or below `minimum` is left alone.
     ReduceOpponentLifeOnDefeat {
+        life: u16,
+        minimum: u16,
+    },
+    /// `Xantiax: -N Life, Min. M`: the only admitted post-round effect with no outcome
+    /// channel and no owning side. Both players lose `life`, neither taken below
+    /// `minimum`, whoever won and whether or not the owner is already out.
+    ReduceBothPlayersLife {
         life: u16,
         minimum: u16,
     },
@@ -2137,6 +2150,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
+        | CombatStatEffectV1::ReduceBothPlayersLife { .. }
         | CombatStatEffectV1::HealLifeOnVictory { .. }
         | CombatStatEffectV1::RegenLifeOnVictory { .. }
         | CombatStatEffectV1::PoisonOpponentLifeOnVictory { .. }
@@ -2210,6 +2224,9 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
                 PostRoundEffect::ReduceOpponentLifeOnDefeat { life, minimum },
             ))
         }
+        CombatStatEffectV1::ReduceBothPlayersLife { life, minimum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::ReduceBothPlayersLife { life, minimum }),
+        ),
         CombatStatEffectV1::HealLifeOnVictory { life, maximum } => {
             Some(PostRoundSourceEffect::Fixed(
                 PostRoundEffect::LatchOnVictory(LatchedEffectV1::HealLife { life, maximum }),

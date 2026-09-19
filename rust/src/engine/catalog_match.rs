@@ -6,12 +6,12 @@
 
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_combat_stat_effect, classify_copy_opponent_source, classify_defeat_life,
-    classify_defeat_opponent_life, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_regen_life_on_victory,
-    classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_both_players_life_reduction, classify_combat_stat_effect,
+    classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_heal_life_on_victory, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
@@ -1546,6 +1546,35 @@ fn prepare_catalog_source(
                 definition.id(),
             );
         }
+        // Xantiax charges both players and names no outcome, but it is admitted by the
+        // same rule as every other generic post-round grammar: the catalog row has to be a
+        // structural alias of the registry definition its text resolves to.
+        if classify_both_players_life_reduction(definition, source_kind).is_some() {
+            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
+                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description: description.to_owned(),
+                    registry_definition_id: definition.id(),
+                    registry_reasons: definition
+                        .compiled()
+                        .unsupported_reasons()
+                        .to_vec()
+                        .into_boxed_slice(),
+                });
+            }
+            return prepare_both_players_life_reduction_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
         // The plain permanent grammars follow the Victory Life rule: the catalog row must
         // be a structural alias of the registry definition its text resolves to. A
         // same-text row under another numeric identity cannot latch a permanent.
@@ -2237,6 +2266,73 @@ fn prepare_defeat_opponent_life_source(
             source_id: definition.id(),
             predicate: CombatStatPredicateV1::Always,
             effect: CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
+        },
+    })
+}
+
+fn prepare_both_players_life_reduction_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let definition = registry
+        .lookup_capture(registry_definition_id, description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?;
+    let Some((life, minimum)) = classify_both_players_life_reduction(definition, source_kind)
+    else {
+        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            registry_definition_id: definition.id(),
+            registry_reasons: definition
+                .compiled()
+                .unsupported_reasons()
+                .to_vec()
+                .into_boxed_slice(),
+        });
+    };
+    let registry_alias_ids = registry
+        .lookup_description(description)
+        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
+            player,
+            hand_slot,
+            source_kind,
+            catalog_id,
+            description: description.to_owned(),
+            source,
+        })?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id,
+                description: description.to_owned(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            effect: CombatStatPostRoundEffectV1::ReduceBothPlayersLife { life, minimum },
+            predicate: CombatStatPredicateV1::Always,
+        },
+        compact: CombatStatSourcePlanV1::Execute {
+            source_id: definition.id(),
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::ReduceBothPlayersLife { life, minimum },
         },
     })
 }
