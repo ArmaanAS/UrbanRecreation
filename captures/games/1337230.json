@@ -1,0 +1,478 @@
+{
+  "id": 1337230,
+  "capturedAt": "2026-09-20T20:55:25.128Z",
+  "creationTime": 1789937726,
+  "room": {
+    "id": 154844,
+    "name": "Dojo",
+    "idBattleRule": 6,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 6,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1916,
+          "name": "Torkan",
+          "clan": "Komboka",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1768,
+            "description": "Killshot: +2 Pillz And Life"
+          },
+          "bonus": null
+        },
+        {
+          "id": 1340,
+          "name": "Annie",
+          "clan": "Raptors",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1167,
+            "description": "Reprisal: -3 Opp Damage, Min 1"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        },
+        {
+          "id": 1379,
+          "name": "Drakorah Cr",
+          "clan": "Raptors",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1204,
+            "description": "Killshot: -6 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        },
+        {
+          "id": 1344,
+          "name": "Ryujin Cr",
+          "clan": "Raptors",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1172,
+            "description": "Cancel Opp. Life Modif."
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 34934781,
+      "name": "-Crypt0Night-",
+      "level": 1,
+      "grade": "Novice",
+      "country": "fr",
+      "club": null,
+      "registrationTime": 1545223684,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 693,
+          "name": "Glenn",
+          "clan": "Uppers",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 512,
+            "description": "-3 Opp. Life Min 3"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 771,
+          "name": "Harold",
+          "clan": "Uppers",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 591,
+            "description": "Confidence : -1 Opp. Power, Min 1"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 919,
+          "name": "Hefty",
+          "clan": "Uppers",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 741,
+            "description": "Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 1061,
+          "name": "McArthur",
+          "clan": "Uppers",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 887,
+            "description": "Copy: Opp. Power"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1379,
+          "pillz": 9,
+          "pillzUsed": 10,
+          "fury": true,
+          "t": 1789937741469
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 693,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1789937741630
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 80,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 49,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        5
+      ],
+      "pillz": [
+        0,
+        6
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 24092
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 771,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1789937749220
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1344,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789937753821
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 8,
+          "won": false
+        },
+        {
+          "power": 7,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 14,
+          "won": true
+        }
+      ],
+      "life": [
+        8,
+        5
+      ],
+      "pillz": [
+        0,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 13082
+    },
+    {
+      "round": 2,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1916,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1789937768520
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 919,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": true,
+          "t": 1789937768713
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 3,
+          "won": false
+        },
+        {
+          "power": 7,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 14,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        5
+      ],
+      "pillz": [
+        0,
+        1
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 15253
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 0,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 5,
+      "pillz": 1
+    },
+    "rewards": [
+      {
+        "type": "playerXP",
+        "value": 4
+      },
+      {
+        "type": "characterXP",
+        "value": 620
+      }
+    ],
+    "t": 1789937769036
+  },
+  "finalStatus": "done",
+  "snapshots": 20,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Torkan",
+      "Annie",
+      "Drakorah Cr",
+      "Ryujin Cr",
+      "Glenn",
+      "Harold",
+      "Hefty",
+      "McArthur"
+    ],
+    "levels": [
+      3,
+      3,
+      5,
+      2,
+      5,
+      3,
+      5,
+      2
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          2,
+          9,
+          true
+        ],
+        "s2": [
+          0,
+          6,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 5,
+        "p1pillz": 0,
+        "p2pillz": 6,
+        "r1": {
+          "power": 8,
+          "damage": 7,
+          "attack": 80,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 6,
+          "attack": 49,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          1,
+          1,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          false
+        ],
+        "p1life": 8,
+        "p2life": 5,
+        "p1pillz": 0,
+        "p2pillz": 5,
+        "r1": {
+          "power": 8,
+          "damage": 2,
+          "attack": 8,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 4,
+          "attack": 14,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          0,
+          0,
+          false
+        ],
+        "s2": [
+          2,
+          1,
+          true
+        ],
+        "p1life": 0,
+        "p2life": 5,
+        "p1pillz": 0,
+        "p2pillz": 1,
+        "r1": {
+          "power": 8,
+          "damage": 3,
+          "attack": 3,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 8,
+          "attack": 14,
+          "won": true
+        }
+      }
+    ]
+  }
+}

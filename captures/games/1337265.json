@@ -1,0 +1,397 @@
+{
+  "id": 1337265,
+  "capturedAt": "2026-09-20T20:56:22.619Z",
+  "creationTime": 1789937783,
+  "room": {
+    "id": 154844,
+    "name": "Dojo",
+    "idBattleRule": 6,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 6,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 163,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1592,
+          "name": "Hercule",
+          "clan": "Berzerk",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1401,
+            "description": "Backlash: - 1 Pillz Min 4"
+          },
+          "bonus": {
+            "id": 680,
+            "description": "-2 Opp. Life Min 2"
+          }
+        },
+        {
+          "id": 950,
+          "name": "Sylvia Ld",
+          "clan": "Berzerk",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 2853,
+            "description": "Backlash: - 3 Life Min 3"
+          },
+          "bonus": {
+            "id": 680,
+            "description": "-2 Opp. Life Min 2"
+          }
+        },
+        {
+          "id": 1910,
+          "name": "Zip",
+          "clan": "Jungo",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1762,
+            "description": "Defeat: +1 Opp. Life"
+          },
+          "bonus": null
+        },
+        {
+          "id": 1930,
+          "name": "Kasaba",
+          "clan": "Nightmare",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1783,
+            "description": "Defeat: +1 Opp. Life"
+          },
+          "bonus": null
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 15778,
+      "name": "30 - Backlash",
+      "level": 1,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1098982723,
+      "certificationLevel": 0,
+      "baseLife": 12,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1528,
+          "name": "Fletcher",
+          "clan": "Sentinel",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1336,
+            "description": "Cancel Opp. Life Modif."
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 548,
+          "name": "Hawk",
+          "clan": "Sentinel",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 366,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 359,
+          "name": "Luis",
+          "clan": "Sentinel",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 190,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 636,
+          "name": "Melvin",
+          "clan": "Sentinel",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 454,
+            "description": "-3 Opp Damage, Min 2"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 950,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1789937794499
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1528,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1789937794722
+        }
+      ],
+      "resolution": [
+        {
+          "power": 9,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 54,
+          "won": true
+        },
+        {
+          "power": 8,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 48,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        6
+      ],
+      "pillz": [
+        7,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 21751
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 359,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1789937804370
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1930,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": false,
+          "t": 1789937821902
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 64,
+          "won": true
+        },
+        {
+          "power": 6,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 26,
+          "won": false
+        }
+      ],
+      "life": [
+        12,
+        0
+      ],
+      "pillz": [
+        0,
+        6
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 26898
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 12,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 6
+    },
+    "rewards": [
+      {
+        "type": "playerXP",
+        "value": 2
+      },
+      {
+        "type": "characterXP",
+        "value": 800
+      }
+    ],
+    "t": 1789937822148
+  },
+  "finalStatus": "done",
+  "snapshots": 15,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Hercule",
+      "Sylvia Ld",
+      "Zip",
+      "Kasaba",
+      "Fletcher",
+      "Hawk",
+      "Luis",
+      "Melvin"
+    ],
+    "levels": [
+      4,
+      3,
+      2,
+      4,
+      2,
+      5,
+      3,
+      3
+    ],
+    "night": true,
+    "flip": false,
+    "life": 12,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          5,
+          false
+        ],
+        "s2": [
+          0,
+          4,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 6,
+        "p1pillz": 7,
+        "p2pillz": 8,
+        "r1": {
+          "power": 9,
+          "damage": 6,
+          "attack": 54,
+          "won": true
+        },
+        "r2": {
+          "power": 8,
+          "damage": 2,
+          "attack": 48,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          2,
+          false
+        ],
+        "s2": [
+          3,
+          7,
+          false
+        ],
+        "p1life": 12,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 6,
+        "r1": {
+          "power": 8,
+          "damage": 7,
+          "attack": 64,
+          "won": true
+        },
+        "r2": {
+          "power": 6,
+          "damage": 3,
+          "attack": 26,
+          "won": false
+        }
+      }
+    ]
+  }
+}

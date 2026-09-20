@@ -186,6 +186,18 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         "Courage opponent Damage + Defeat opponent Pillz",
         &[304, 912, 961],
     ),
+    // The Killshot families the 2026-09-20 Dojo captures pin. `1204` fires in 1337321/1 and
+    // pointedly does not in 1337230/0, where the same card wins without doubling; `1768`
+    // fires in 1337321/2 with the server naming both halves in `postRoundAbilities`.
+    (
+        "Killshot opponent Life",
+        &[1204, 1670, 1779, 1959, 4459, 4785, 5461, 5530],
+    ),
+    ("Killshot +N Pillz And Life", &[1768, 3106, 3318]),
+    (
+        "Killshot opponent Life + Pillz And Life",
+        &[1204, 1670, 1768, 1779, 1959, 3106, 3318, 4459, 4785, 5461, 5530],
+    ),
 ];
 
 fn root_path(path: &str) -> PathBuf {

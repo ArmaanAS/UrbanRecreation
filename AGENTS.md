@@ -53,7 +53,7 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 ## Current priorities (Sept 2026)
 
 1. Capture many real PvP games and make the engine reproduce them (`tests/replay/`).
-   As of 2026-09-20: **361 battles captured, 355 replay-ready, 313 replay exactly** (life,
+   As of 2026-09-20: **364 battles captured, 358 replay-ready, 316 replay exactly** (life,
    pillz, power, damage, attack, winner per round), **42 mismatch**, and 6 captures ignored
    because they stopped mid-match. Dojo (battle rule 6) battles are now extracted and
    replayed like any other room: see the triage doc for why the old "rules differ" exclusion
