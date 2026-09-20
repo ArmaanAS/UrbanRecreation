@@ -30,8 +30,8 @@ use crate::catalog::{
     EffectiveCatalogSourceFingerprintFnv1a64,
 };
 use crate::effect_registry::{
-    EffectLookupError, EffectRegistryV1, SourceFingerprintFnv1a64, SupportedEffectV1,
-    UnsupportedReasonV1,
+    EffectDefinitionV1, EffectLookupError, EffectRegistryV1, SourceFingerprintFnv1a64,
+    SupportedEffectV1, UnsupportedReasonV1,
 };
 use std::error::Error;
 use std::fmt;
@@ -1800,7 +1800,16 @@ fn prepare_control_source(
     })
 }
 
-fn prepare_victory_life_source(
+/// The identity and error plumbing every post-round grammar shares: resolve the registry
+/// definition the catalog row claims, ask the grammar to classify it, collect the alias ids
+/// of every same-text record, and pair the provenance disposition with the compact plan the
+/// hot path executes. A grammar supplies only `classify`, which turns a definition into its
+/// two effect representations and its predicate, or `None` to reject it as unsupported.
+///
+/// Holding this in one place is what keeps the two representations from disagreeing: a
+/// grammar returns its public effect and its compact effect together, and the identity they
+/// are recorded under is built the same way for every one of them.
+fn prepare_post_round_source(
     registry: &EffectRegistryV1,
     player: PlayerId,
     hand_slot: HandSlot,
@@ -1808,18 +1817,27 @@ fn prepare_victory_life_source(
     catalog_id: Option<u32>,
     description: &str,
     registry_definition_id: u32,
+    classify: impl FnOnce(
+        &EffectDefinitionV1,
+        CombatStatEffectSourceV1,
+    ) -> Option<(
+        CombatStatPostRoundEffectV1,
+        CombatStatEffectV1,
+        CombatStatPredicateV1,
+    )>,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let lookup_failed = |source| CatalogCombatStatMatchErrorV1::Lookup {
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description: description.to_owned(),
+        source,
+    };
     let definition = registry
         .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some((life, predicate)) = classify_victory_life(definition, source_kind) else {
+        .map_err(lookup_failed)?;
+    let Some((effect, compact_effect, predicate)) = classify(definition, source_kind) else {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player,
             hand_slot,
@@ -1836,14 +1854,7 @@ fn prepare_victory_life_source(
     };
     let registry_alias_ids = registry
         .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
+        .map_err(lookup_failed)?
         .alias_ids()
         .to_vec()
         .into_boxed_slice();
@@ -1855,15 +1866,43 @@ fn prepare_victory_life_source(
                 registry_definition_id: definition.id(),
                 registry_alias_ids,
             },
-            effect: CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
+            effect,
             predicate,
         },
         compact: CombatStatSourcePlanV1::Execute {
             source_id: definition.id(),
             predicate,
-            effect: CombatStatEffectV1::GainLifeOnVictory { life },
+            effect: compact_effect,
         },
     })
+}
+
+fn prepare_victory_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (life, predicate) = classify_victory_life(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
+                CombatStatEffectV1::GainLifeOnVictory { life },
+                predicate,
+            ))
+        },
+    )
 }
 
 fn prepare_victory_pillz_source(
@@ -1875,61 +1914,23 @@ fn prepare_victory_pillz_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some((pillz, predicate)) = classify_victory_pillz(definition, source_kind) else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::GainPillzOnVictory { pillz },
-            predicate,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (pillz, predicate) = classify_victory_pillz(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::GainPillzOnVictory { pillz },
+                CombatStatEffectV1::GainPillzOnVictory { pillz },
+                predicate,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate,
-            effect: CombatStatEffectV1::GainPillzOnVictory { pillz },
-        },
-    })
+    )
 }
 
 fn prepare_victory_opponent_pillz_source(
@@ -1941,61 +1942,23 @@ fn prepare_victory_opponent_pillz_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some((pillz, minimum)) = classify_victory_opponent_pillz(definition, source_kind) else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (pillz, minimum) = classify_victory_opponent_pillz(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+                CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
-        },
-    })
+    )
 }
 
 fn prepare_victory_pillz_per_damage_source(
@@ -2007,61 +1970,23 @@ fn prepare_victory_pillz_per_damage_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some(predicate) = classify_victory_pillz_per_damage(definition, source_kind) else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::GainPillzEqualToFinalDamageOnVictory,
-            predicate,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let predicate = classify_victory_pillz_per_damage(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::GainPillzEqualToFinalDamageOnVictory,
+                CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory,
+                predicate,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate,
-            effect: CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory,
-        },
-    })
+    )
 }
 
 fn prepare_victory_life_per_damage_source(
@@ -2073,69 +1998,30 @@ fn prepare_victory_life_per_damage_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some((life_per_damage, maximum, predicate)) =
-        classify_victory_life_per_damage(definition, source_kind)
-    else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
-                life_per_damage,
-                maximum,
-            },
-            predicate,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (life_per_damage, maximum, predicate) =
+                classify_victory_life_per_damage(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                    life_per_damage,
+                    maximum,
+                },
+                CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                    life_per_damage,
+                    maximum,
+                },
+                predicate,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate,
-            effect: CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
-                life_per_damage,
-                maximum,
-            },
-        },
-    })
+    )
 }
 
 fn prepare_defeat_life_source(
@@ -2147,61 +2033,23 @@ fn prepare_defeat_life_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some(life) = classify_defeat_life(definition, source_kind) else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::GainLifeOnDefeat { life },
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let life = classify_defeat_life(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::GainLifeOnDefeat { life },
+                CombatStatEffectV1::GainLifeOnDefeat { life },
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::GainLifeOnDefeat { life },
-        },
-    })
+    )
 }
 
 fn prepare_defeat_opponent_life_source(
@@ -2213,61 +2061,23 @@ fn prepare_defeat_opponent_life_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some((life, minimum)) = classify_defeat_opponent_life(definition, source_kind) else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (life, minimum) = classify_defeat_opponent_life(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
+                CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
-        },
-    })
+    )
 }
 
 fn prepare_both_players_life_reduction_source(
@@ -2279,62 +2089,23 @@ fn prepare_both_players_life_reduction_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some((life, minimum)) = classify_both_players_life_reduction(definition, source_kind)
-    else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::ReduceBothPlayersLife { life, minimum },
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (life, minimum) = classify_both_players_life_reduction(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ReduceBothPlayersLife { life, minimum },
+                CombatStatEffectV1::ReduceBothPlayersLife { life, minimum },
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::ReduceBothPlayersLife { life, minimum },
-        },
-    })
+    )
 }
 
 fn prepare_reanimate_life_source(
@@ -2346,61 +2117,23 @@ fn prepare_reanimate_life_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some(life) = classify_reanimate_life(definition, source_kind) else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::ReanimateLife { life },
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let life = classify_reanimate_life(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ReanimateLife { life },
+                CombatStatEffectV1::ReanimateLife { life },
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::ReanimateLife { life },
-        },
-    })
+    )
 }
 
 /// Resolves only the reviewed recovery identities. In particular, catalog bonus id 43 is
@@ -2435,63 +2168,22 @@ fn prepare_defeat_recover_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    if !classify_defeat_recover_pillz(definition, source_kind) {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    }
-    // Report the registry's actual structurally identical aliases as provenance. Admission
-    // remains pinned to `registry_definition_id`; aliases never inherit executability.
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            classify_defeat_recover_pillz(definition, source_kind).then_some((
+                CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+                CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-        },
-    })
+    )
 }
 
 /// One of the four plain permanent grammars, already resolved to the registry definition
@@ -2506,96 +2198,53 @@ fn prepare_permanent_life_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let classified = if let Some((life, maximum, predicate)) =
-        classify_heal_life_on_victory(definition, source_kind)
-    {
-        Some((
-            CombatStatPostRoundEffectV1::HealLifeOnVictory { life, maximum },
-            CombatStatEffectV1::HealLifeOnVictory { life, maximum },
-            predicate,
-        ))
-    } else if let Some((life, maximum, predicate)) =
-        classify_regen_life_on_victory(definition, source_kind)
-    {
-        Some((
-            CombatStatPostRoundEffectV1::RegenLifeOnVictory { life, maximum },
-            CombatStatEffectV1::RegenLifeOnVictory { life, maximum },
-            predicate,
-        ))
-    } else if let Some((life, minimum, predicate)) =
-        classify_poison_opponent_life_on_victory(definition, source_kind)
-    {
-        Some((
-            CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
-            CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
-            predicate,
-        ))
-    } else if let Some((life, minimum, predicate)) =
-        classify_toxin_opponent_life_on_victory(definition, source_kind)
-    {
-        Some((
-            CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
-            CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
-            predicate,
-        ))
-    } else {
-        None
-    };
-    let Some((public_effect, compact_effect, predicate)) = classified else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: public_effect,
-            predicate,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        // The four plain permanents share one latch and one shape family, so they are tried
+        // in turn here rather than given four near-identical preparers of their own.
+        |definition, source_kind| {
+            if let Some((life, maximum, predicate)) =
+                classify_heal_life_on_victory(definition, source_kind)
+            {
+                return Some((
+                    CombatStatPostRoundEffectV1::HealLifeOnVictory { life, maximum },
+                    CombatStatEffectV1::HealLifeOnVictory { life, maximum },
+                    predicate,
+                ));
+            }
+            if let Some((life, maximum, predicate)) =
+                classify_regen_life_on_victory(definition, source_kind)
+            {
+                return Some((
+                    CombatStatPostRoundEffectV1::RegenLifeOnVictory { life, maximum },
+                    CombatStatEffectV1::RegenLifeOnVictory { life, maximum },
+                    predicate,
+                ));
+            }
+            if let Some((life, minimum, predicate)) =
+                classify_poison_opponent_life_on_victory(definition, source_kind)
+            {
+                return Some((
+                    CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
+                    CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
+                    predicate,
+                ));
+            }
+            let (life, minimum, predicate) =
+                classify_toxin_opponent_life_on_victory(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
+                CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, minimum },
+                predicate,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate,
-            effect: compact_effect,
-        },
-    })
+    )
 }
 
 fn prepare_argos_defeat_capped_pillz_source(
@@ -2606,61 +2255,22 @@ fn prepare_argos_defeat_capped_pillz_source(
     catalog_id: Option<u32>,
     description: &str,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    if !classify_argos_defeat_capped_pillz(definition, source_kind) {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    }
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        ARGOS_DEFEAT_CAPPED_PILLZ_REGISTRY_ID,
+        |definition, source_kind| {
+            classify_argos_defeat_capped_pillz(definition, source_kind).then_some((
+                CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+                CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
-        },
-    })
+    )
 }
 
 fn victory_or_defeat_life_description(description: &str) -> bool {
@@ -2739,71 +2349,32 @@ fn prepare_victory_or_defeat_life_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some(effect) = classify_victory_or_defeat_life(definition, source_kind) else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    let (post_round_effect, compact_effect) = match effect {
-        VictoryOrDefeatLifeEffectV1::GainLife { life } => (
-            CombatStatPostRoundEffectV1::GainLifeOnVictoryOrDefeat { life },
-            CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life },
-        ),
-        VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum } => (
-            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
-            CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
-        ),
-    };
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: post_round_effect,
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (effect, compact_effect) =
+                match classify_victory_or_defeat_life(definition, source_kind)? {
+                    VictoryOrDefeatLifeEffectV1::GainLife { life } => (
+                        CombatStatPostRoundEffectV1::GainLifeOnVictoryOrDefeat { life },
+                        CombatStatEffectV1::GainLifeOnVictoryOrDefeat { life },
+                    ),
+                    VictoryOrDefeatLifeEffectV1::ReduceOpponentLife { life, minimum } => (
+                        CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+                            life,
+                            minimum,
+                        },
+                        CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
+                    ),
+                };
+            Some((effect, compact_effect, CombatStatPredicateV1::Always))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: compact_effect,
-        },
-    })
+    )
 }
 
 /// Maps the only two printed catalog sources reviewed for Equalizer opponent-Life. The
@@ -2834,69 +2405,30 @@ fn prepare_equalizer_opponent_life_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some((per_star, minimum)) =
-        classify_equalizer_opponent_life_on_victory(definition, source_kind)
-    else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
-                per_star,
-                minimum,
-            },
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (per_star, minimum) =
+                classify_equalizer_opponent_life_on_victory(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                    per_star,
+                    minimum,
+                },
+                CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                    per_star,
+                    minimum,
+                },
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
-                per_star,
-                minimum,
-            },
-        },
-    })
+    )
 }
 
 /// Catalog clan-bonus id 47 is not a capture registry id. It maps to the reviewed Riots
@@ -2939,62 +2471,24 @@ fn prepare_victory_opponent_life_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    let Some((life, minimum, predicate)) = classify_victory_opponent_life(definition, source_kind)
-    else {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    };
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
-            predicate,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (life, minimum, predicate) =
+                classify_victory_opponent_life(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+                CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+                predicate,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate,
-            effect: CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
-        },
-    })
+    )
 }
 
 fn victory_or_defeat_pillz_registry_definition_id(
@@ -3022,61 +2516,22 @@ fn prepare_victory_or_defeat_pillz_source(
     description: &str,
     registry_definition_id: u32,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(registry_definition_id, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    if !classify_victory_or_defeat_pillz(definition, source_kind) {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    }
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            classify_victory_or_defeat_pillz(definition, source_kind).then_some((
+                CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+                CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
-        },
-    })
+    )
 }
 
 /// The immutable catalog can only execute Anita's printed level-three Ability. The
@@ -3105,61 +2560,22 @@ fn prepare_anita_courage_damage_to_life_source(
     catalog_id: Option<u32>,
     description: &str,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(ANITA_COURAGE_DAMAGE_TO_LIFE_REGISTRY_ID, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    if !classify_anita_courage_damage_to_life(definition, source_kind) {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    }
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
-            predicate: CombatStatPredicateV1::OwnerMovesFirst,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        ANITA_COURAGE_DAMAGE_TO_LIFE_REGISTRY_ID,
+        |definition, source_kind| {
+            classify_anita_courage_damage_to_life(definition, source_kind).then_some((
+                CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+                CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+                CombatStatPredicateV1::OwnerMovesFirst,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::OwnerMovesFirst,
-            effect: CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
-        },
-    })
+    )
 }
 
 fn prepare_komboka_victory_pillz_and_life_source(
@@ -3170,59 +2586,20 @@ fn prepare_komboka_victory_pillz_and_life_source(
     catalog_id: Option<u32>,
     description: &str,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
-    let definition = registry
-        .lookup_capture(KOMBOKA_VICTORY_PILLZ_AND_LIFE_REGISTRY_ID, description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?;
-    if !classify_komboka_victory_pillz_and_life(definition, source_kind) {
-        return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            registry_definition_id: definition.id(),
-            registry_reasons: definition
-                .compiled()
-                .unsupported_reasons()
-                .to_vec()
-                .into_boxed_slice(),
-        });
-    }
-    let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(|source| CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
-        })?
-        .alias_ids()
-        .to_vec()
-        .into_boxed_slice();
-    Ok(PreparedCatalogSourceV1 {
-        metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
-            identity: CatalogCombatStatModifierIdentityV1 {
-                catalog_id,
-                description: description.to_owned(),
-                registry_definition_id: definition.id(),
-                registry_alias_ids,
-            },
-            effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
-            predicate: CombatStatPredicateV1::Always,
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        KOMBOKA_VICTORY_PILLZ_AND_LIFE_REGISTRY_ID,
+        |definition, source_kind| {
+            classify_komboka_victory_pillz_and_life(definition, source_kind).then_some((
+                CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+                CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
+                CombatStatPredicateV1::Always,
+            ))
         },
-        compact: CombatStatSourcePlanV1::Execute {
-            source_id: definition.id(),
-            predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
-        },
-    })
+    )
 }
