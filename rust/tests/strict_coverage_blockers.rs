@@ -370,6 +370,52 @@ fn report_strict_coverage_blockers() {
         }
     }
 
+    // The shape of the work left. Unlock ranks a family on its own; this ranks the corpus.
+    // Admitting sources in reach order, how many draws come free at each step? A curve that
+    // rises in steps says the mass is concentrated and one big slice buys a lot; a curve
+    // that creeps says every draw needs its own long tail and slicing by unlock is right.
+    {
+        println!(
+            "
+-- cumulative: draws unlocked if the top-k sources by reach were all admitted --"
+        );
+        let order: Vec<u32> = ranked.iter().map(|(id, _)| **id).collect();
+        let mut admitted: BTreeSet<u32> = BTreeSet::new();
+        let mut last = 0usize;
+        for (k, id) in order.iter().enumerate() {
+            admitted.insert(*id);
+            let unlocked = per_capture
+                .values()
+                .filter(|blockers| blockers.iter().all(|b| admitted.contains(b)))
+                .count();
+            let step = unlocked - last;
+            if step > 0 || (k + 1) % 20 == 0 || k + 1 == order.len() {
+                println!(
+                    "  top {:3} -> {:3} of {} blocked draws (+{step:2})  {:5} {}",
+                    k + 1,
+                    unlocked,
+                    per_capture.len(),
+                    id,
+                    reach.get(id).map(|(d, _)| d.as_str()).unwrap_or("?"),
+                );
+            }
+            last = unlocked;
+        }
+        let mut per_draw: BTreeMap<usize, usize> = BTreeMap::new();
+        for blockers in per_capture.values() {
+            *per_draw.entry(blockers.len()).or_default() += 1;
+        }
+        println!("  blockers per blocked draw: {per_draw:?}");
+        let sources: usize = per_capture.values().map(BTreeSet::len).sum();
+        println!(
+            "  unsupported slots {sources} of {} scanned card slots ({:.1}% of cards executable)",
+            scanned * 8,
+            100.0 - (sources as f64) * 100.0 / (scanned * 8) as f64,
+        );
+        println!("  blocker ids: {order:?}");
+        println!("  distinct blocking sources: {}", order.len());
+    }
+
     println!("\n-- unlock: draws whose every remaining blocker is in the family --");
     for (name, ids) in CANDIDATE_FAMILIES {
         let unlocked = per_capture
