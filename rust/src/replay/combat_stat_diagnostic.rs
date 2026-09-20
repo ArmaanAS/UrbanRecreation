@@ -577,6 +577,31 @@ fn prepare_combat_stat_cards(
     })
 }
 
+/// Pair a post-round grammar's provenance disposition with the compact plan the hot path
+/// executes. Every admitted grammar records the same two-sided result from the same parts,
+/// and building both here is what keeps them from disagreeing: a grammar hands over its
+/// public effect, its compact effect and its predicate together, or not at all.
+fn executes_post_round(
+    identity: CombatStatModifierIdentityV1,
+    source_id: u32,
+    effect: CombatStatPostRoundEffectV1,
+    compact_effect: CombatStatEffectV1,
+    predicate: CombatStatPredicateV1,
+) -> PreparedCombatStatSourceV1 {
+    PreparedCombatStatSourceV1 {
+        disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate,
+        },
+        compact_plan: CombatStatSourcePlanV1::Execute {
+            source_id,
+            predicate,
+            effect: compact_effect,
+        },
+    }
+}
+
 fn prepare_combat_stat_source(
     registry: &EffectRegistryV1,
     battle_id: u64,
@@ -618,49 +643,34 @@ fn prepare_combat_stat_source(
         );
     }
     if classify_defeat_recover_pillz(definition, source_kind) {
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
-                predicate: CombatStatPredicateV1::Always,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
-                effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            CombatStatPredicateV1::Always,
+        ));
     }
     if classify_argos_defeat_capped_pillz(definition, source_kind) {
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
-                predicate: CombatStatPredicateV1::Always,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
-                effect: CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainTwoPillzOnDefeatMaxEleven,
+            CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
+            CombatStatPredicateV1::Always,
+        ));
     }
     // Anita is deliberately an identity-locked post-round conversion rather than a
     // generic Life increase: Courage is bound into the compact predicate and the engine
     // supplies the selected card's final resolved damage as the runtime magnitude.
     if classify_anita_courage_damage_to_life(definition, source_kind) {
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
-                predicate: CombatStatPredicateV1::OwnerMovesFirst,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::OwnerMovesFirst,
-                effect: CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+            CombatStatEffectV1::GainLifeEqualToFinalDamageOnCourageVictory,
+            CombatStatPredicateV1::OwnerMovesFirst,
+        ));
     }
     // The reviewed Victory opponent-Life reductions are a typed post-round plan, not a
     // combat-stat modifier, so normal Stop liveness still applies but cancellation never
@@ -685,48 +695,33 @@ fn prepare_combat_stat_source(
     // Its losing-side sibling shares the channel and carries no condition of its own
     // beyond the outcome the engine already resolves.
     if let Some((life, minimum)) = classify_defeat_opponent_life(definition, source_kind) {
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
-                predicate: CombatStatPredicateV1::Always,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
-                effect: CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
+            CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
+            CombatStatPredicateV1::Always,
+        ));
     }
     // Xantiax has no outcome channel and no beneficiary: both players pay it whatever the
     // round did, so the plan carries no predicate and the engine reads no winner.
     if let Some((life, minimum)) = classify_both_players_life_reduction(definition, source_kind) {
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: CombatStatPostRoundEffectV1::ReduceBothPlayersLife { life, minimum },
-                predicate: CombatStatPredicateV1::Always,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
-                effect: CombatStatEffectV1::ReduceBothPlayersLife { life, minimum },
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::ReduceBothPlayersLife { life, minimum },
+            CombatStatEffectV1::ReduceBothPlayersLife { life, minimum },
+            CombatStatPredicateV1::Always,
+        ));
     }
     if classify_victory_or_defeat_pillz(definition, source_kind) {
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
-                predicate: CombatStatPredicateV1::Always,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
-                effect: CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainOnePillzOnVictoryOrDefeat,
+            CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat,
+            CombatStatPredicateV1::Always,
+        ));
     }
     if let Some(effect) = classify_victory_or_defeat_life(definition, source_kind) {
         let (post_round_effect, compact_effect) = match effect {
@@ -739,18 +734,13 @@ fn prepare_combat_stat_source(
                 CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { life, minimum },
             ),
         };
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: post_round_effect,
-                predicate: CombatStatPredicateV1::Always,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
-                effect: compact_effect,
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            CombatStatPredicateV1::Always,
+        ));
     }
     if let Some((per_star, minimum)) =
         classify_equalizer_opponent_life_on_victory(definition, source_kind)
@@ -775,18 +765,13 @@ fn prepare_combat_stat_source(
         });
     }
     if classify_komboka_victory_pillz_and_life(definition, source_kind) {
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
-                predicate: CombatStatPredicateV1::Always,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
-                effect: CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
+            CombatStatPredicateV1::Always,
+        ));
     }
     if let Some((life, predicate)) = classify_victory_life(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
@@ -870,18 +855,13 @@ fn prepare_combat_stat_source(
         });
     }
     if let Some(life) = classify_defeat_life(definition, source_kind) {
-        return Ok(PreparedCombatStatSourceV1 {
-            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
-                identity,
-                effect: CombatStatPostRoundEffectV1::GainLifeOnDefeat { life },
-                predicate: CombatStatPredicateV1::Always,
-            },
-            compact_plan: CombatStatSourcePlanV1::Execute {
-                source_id: source.id,
-                predicate: CombatStatPredicateV1::Always,
-                effect: CombatStatEffectV1::GainLifeOnDefeat { life },
-            },
-        });
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainLifeOnDefeat { life },
+            CombatStatEffectV1::GainLifeOnDefeat { life },
+            CombatStatPredicateV1::Always,
+        ));
     }
     // The generic structural classifier makes malformed Reanimate records fail-closed, but
     // the executable replay slice remains restricted to Lobo's captured identity.

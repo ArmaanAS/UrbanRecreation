@@ -1298,21 +1298,15 @@ fn prepare_catalog_source(
     if let Ok(match_) = registry.lookup_description(description) {
         let definition = match_.definition();
         if classify_victory_life(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_victory_life_source(
                 registry,
                 player,
@@ -1328,21 +1322,15 @@ fn prepare_catalog_source(
         // Confidence records, Doela Noel's Symmetry and Uuber's `1628` - never reach here:
         // their printed texts are intercepted above.
         if classify_victory_opponent_life(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_victory_opponent_life_source(
                 registry,
                 player,
@@ -1354,21 +1342,15 @@ fn prepare_catalog_source(
             );
         }
         if classify_victory_or_defeat_life(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_victory_or_defeat_life_source(
                 registry,
                 player,
@@ -1382,21 +1364,15 @@ fn prepare_catalog_source(
         // Plain Victory Pillz follows the same rule: exact text, complete shape, and a
         // catalog id that is a structural alias of the definition the text resolves to.
         if classify_victory_pillz(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_victory_pillz_source(
                 registry,
                 player,
@@ -1409,21 +1385,15 @@ fn prepare_catalog_source(
         }
         // The opposing Pillz reduction follows the same rule.
         if classify_victory_opponent_pillz(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_victory_opponent_pillz_source(
                 registry,
                 player,
@@ -1436,21 +1406,15 @@ fn prepare_catalog_source(
         }
         // So does the Pillz-per-Damage conversion, whose predicate the printed prefix names.
         if classify_victory_pillz_per_damage(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_victory_pillz_per_damage_source(
                 registry,
                 player,
@@ -1463,21 +1427,15 @@ fn prepare_catalog_source(
         }
         // And the Life conversion, whose predicate the printed prefix names.
         if classify_victory_life_per_damage(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_victory_life_per_damage_source(
                 registry,
                 player,
@@ -1492,21 +1450,15 @@ fn prepare_catalog_source(
         // source must be a real structural alias of the selected registry definition.
         // A same-text row with another numeric identity cannot borrow execution authority.
         if classify_defeat_life(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_defeat_life_source(
                 registry,
                 player,
@@ -1521,21 +1473,15 @@ fn prepare_catalog_source(
         // the same rule: the catalog row must be a structural alias of the registry
         // definition it claims, so a same-text row with another identity cannot execute.
         if classify_defeat_opponent_life(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_defeat_opponent_life_source(
                 registry,
                 player,
@@ -1550,21 +1496,15 @@ fn prepare_catalog_source(
         // same rule as every other generic post-round grammar: the catalog row has to be a
         // structural alias of the registry definition its text resolves to.
         if classify_both_players_life_reduction(definition, source_kind).is_some() {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_both_players_life_reduction_source(
                 registry,
                 player,
@@ -1583,21 +1523,15 @@ fn prepare_catalog_source(
             || classify_poison_opponent_life_on_victory(definition, source_kind).is_some()
             || classify_toxin_opponent_life_on_victory(definition, source_kind).is_some()
         {
-            if !catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
-                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                    player,
-                    hand_slot,
-                    source_kind,
-                    catalog_id,
-                    description: description.to_owned(),
-                    registry_definition_id: definition.id(),
-                    registry_reasons: definition
-                        .compiled()
-                        .unsupported_reasons()
-                        .to_vec()
-                        .into_boxed_slice(),
-                });
-            }
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
             return prepare_permanent_life_source(
                 registry,
                 player,
@@ -1809,6 +1743,37 @@ fn prepare_control_source(
 /// Holding this in one place is what keeps the two representations from disagreeing: a
 /// grammar returns its public effect and its compact effect together, and the identity they
 /// are recorded under is built the same way for every one of them.
+/// A generic grammar admits any registry definition carrying its text and shape, so the
+/// catalog row has to be a structural alias of the definition its text resolves to: a
+/// same-text row under another numeric identity cannot borrow the grammar. Every generic
+/// post-round grammar applies this same rule, so they all call it rather than restating it.
+fn require_catalog_alias(
+    alias_ids: &[u32],
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    definition: &EffectDefinitionV1,
+) -> Result<(), CatalogCombatStatMatchErrorV1> {
+    if catalog_id.is_some_and(|id| alias_ids.contains(&id)) {
+        return Ok(());
+    }
+    Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description: description.to_owned(),
+        registry_definition_id: definition.id(),
+        registry_reasons: definition
+            .compiled()
+            .unsupported_reasons()
+            .to_vec()
+            .into_boxed_slice(),
+    })
+}
+
 fn prepare_post_round_source(
     registry: &EffectRegistryV1,
     player: PlayerId,
