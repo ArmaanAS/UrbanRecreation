@@ -1424,6 +1424,14 @@ rounds pin only the negative half, that a plain victory does not pay. Play a Kil
 card into a doubled attack before coding this one, or take it together with the other
 Killshot grammars once the corpus has more than one firing round in total.
 
+`rust/tests/killshot_evidence_report.rs` answers that question in one command, so a newly
+captured battle does not have to be read by hand. Over the 355 replayable draws it finds 22
+selected Killshot rounds across 18 definitions and exactly one that fires - 877023/1,
+Valentina Ld's `4459` at 72 attack against 7 - and lists the near misses, the closest being
+875272/3, where Baresco reached 28 of the 30 it needed. Re-run it after any new capture:
+a second firing round, on any Killshot grammar, is what turns this family from a guess into
+a slice.
+
 Measure again before choosing; the counts have moved after every slice.
 
 On 2026-09-20 the corpus was re-read for evidence rather than for counts, and two of the
