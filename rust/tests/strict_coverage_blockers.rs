@@ -180,6 +180,12 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         &[1702, 2250, 4449, 4645],
     ),
     ("wider permanent Life (Defeat/Growth Poison)", &[1282, 4561]),
+    ("Courage: -4 Opp. Dmg, Min 2", &[304, 961]),
+    ("Defeat: -2 Opp. Pillz, Min 4", &[912]),
+    (
+        "Courage opponent Damage + Defeat opponent Pillz",
+        &[304, 912, 961],
+    ),
 ];
 
 fn root_path(path: &str) -> PathBuf {

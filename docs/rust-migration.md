@@ -1426,6 +1426,33 @@ Killshot grammars once the corpus has more than one firing round in total.
 
 Measure again before choosing; the counts have moved after every slice.
 
+On 2026-09-20 the corpus was re-read for evidence rather than for counts, and two of the
+sources this section had written off as two-draw singletons are both measured and pinned:
+
+* `304`/`961` `Courage: -4 Opp. Dmg, Min 2` unlocks 2. Battle 1078999 round 2 pins the
+  arithmetic and exercises the floor in the same round: Hattori moves first and loses, and
+  Lothar's printed 5 Damage resolves as 2, which is `max(5 - 4, 2)` and not the unfloored
+  1. The life ledger agrees independently - side 1 goes 7 to 5. The same round also shows
+  Lothar's own `-3 Opp Power, Min 4` taking Hattori's 8 Power to 5, so both sides' effects
+  are visible and separable.
+* `912` `Defeat: -2 Opp. Pillz, Min 4` unlocks 3, not the 2 this section claimed. Battles
+  1092515 round 0 and 1092201 round 2 both pin it away from the floor once the opponent's
+  own bet and their independent `Victory Or Defeat: +1 Pillz` bonus are accounted for:
+  12 - 5 + 1 - 2 = 6 and 11 - 0 + 1 - 2 = 10, both matching the server exactly, and neither
+  matching the no-effect reading. Battle 1088480 round 2 is a floor case that distinguishes
+  nothing, which is worth knowing but is not the evidence. The clan-gated sibling `4673`
+  is a different grammar and is not in the family.
+
+Together they measure 5 and are exactly additive, which makes them the largest slice
+available at revision 36. Neither is admission-only: the first wants a Courage position on
+an opponent combat stat and the second a losing-side Pillz reduction.
+
+`490` `Confidence: Stop Opp. Ability` was read the same way and is **not** ready. It is
+selected exactly once in the corpus (1091644 round 2) with Confidence genuinely satisfied,
+but the opposing ability it would have stopped is itself `Stop Opp. Ability`, which carries
+no numeric payload - so the round resolves identically whether the stop fired or not. A
+precondition-satisfied selection that proves nothing is still negative-only.
+
 Pillz is a resource the post-round channel already moved - Defeat recovery, Victory-or-
 Defeat Pillz, Argos and Komboka all wrote it - so each of the three slices was one engine
 arm and one compiler grammar, exactly as this section had predicted for own fixed `+N
