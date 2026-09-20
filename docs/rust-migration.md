@@ -1444,8 +1444,26 @@ sources this section had written off as two-draw singletons are both measured an
   is a different grammar and is not in the family.
 
 Together they measure 5 and are exactly additive, which makes them the largest slice
-available at revision 36. Neither is admission-only: the first wants a Courage position on
-an opponent combat stat and the second a losing-side Pillz reduction.
+available at revision 36, and revision 37 took both: eligibility went 76 to 81 and the gate
+310 to 318.
+
+The Courage half turned out to be admission-only after all, which this section had got
+wrong. `classify_position_numeric` already put `OwnerMovesFirst` on a fixed numeric effect,
+and `numeric_effect` already covered an opponent-Damage decrease; the only thing rejecting
+`304` was `numeric_description_body_matches`, which knew `-4 Opp Damage, Min 2` and
+`-4 Opp. Damage, Min 2` but not the abbreviated `-4 Opp. Dmg, Min 2` Hattori prints. One
+alternative spelling on that arm unlocked both draws. The lesson is worth keeping: a source
+the report lists as needing "a channel the projection does not have" may only need its
+printed spelling, and the cheapest way to tell is to read the classifier chain rather than
+this section's prediction of it.
+
+The Pillz half was a real grammar: `classify_defeat_opponent_pillz` with the neutral
+post-round shape on `CurrentRoundRequirementV1::Lose`, one effect in each enum, one engine
+arm and the usual preparer and hazard clause. It composes two already-pinned pieces - the
+Victory reduction's post-bet arithmetic and Min clamp, and the Defeat channel's trigger,
+which the reviewed opponent-Life sibling established pays out even from a knocked-out owner.
+The corpus has no knocked-out owner carrying this ability, so that arm rests on the sibling
+and is pinned by an engine test rather than by a capture.
 
 `490` `Confidence: Stop Opp. Ability` was read the same way and is **not** ready. It is
 selected exactly once in the corpus (1091644 round 2) with Confidence genuinely satisfied,

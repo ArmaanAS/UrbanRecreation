@@ -458,6 +458,12 @@ pub(super) enum PostRoundEffect {
         pillz: u16,
         minimum: u16,
     },
+    /// `Defeat: -N Opp. Pillz, Min M`: the losing owner takes `pillz` from the opposing
+    /// player's remaining Pillz, never below `minimum`.
+    ReduceOpponentPillzOnDefeat {
+        pillz: u16,
+        minimum: u16,
+    },
     /// `+1 Pillz Per Damage`: the winner's own Pillz rise by the final resolved Damage its
     /// card dealt, Fury and combat modifiers included.
     GainPillzEqualToFinalDamageOnVictory,
@@ -703,6 +709,23 @@ impl BaseRulesGame {
                             .max(minimum);
                     }
                     PostRoundEffect::ReduceOpponentPillzOnVictory { .. } => {}
+                    // The losing-side reduction composes two already-pinned pieces: the
+                    // Victory reduction's arithmetic - read after both bets, leave a target
+                    // at or below Min alone - and the Defeat channel's trigger, which the
+                    // reviewed opponent-Life sibling establishes pays out even from an owner
+                    // this round has knocked out. 1092515/0 and 1092201/2 pin the arithmetic
+                    // away from the floor; the corpus has no knocked-out owner carrying it,
+                    // so that half is the sibling's evidence, not its own.
+                    PostRoundEffect::ReduceOpponentPillzOnDefeat { pillz, minimum }
+                        if owner != winner && position.players[owner.other()].pillz > minimum =>
+                    {
+                        let target = owner.other();
+                        position.players[target].pillz = position.players[target]
+                            .pillz
+                            .saturating_sub(pillz)
+                            .max(minimum);
+                    }
+                    PostRoundEffect::ReduceOpponentPillzOnDefeat { .. } => {}
                     // The conversion reads the same final damage Anita's does - the
                     // TypeScript multiplier is `card.damage.final` - and pays a living
                     // winner. Its Symmetry form is a predicate on the plan, judged before

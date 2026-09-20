@@ -4551,6 +4551,138 @@ fn both_players_life_reduction_charges_each_side_whatever_the_outcome() {
     assert_eq!(report.players[PlayerId::P2].life, 0); // 2 - 3 floored at Min 0
 }
 
+/// The losing-side Pillz reduction carries the same plan guards as its Victory sibling:
+/// the Ability slot only, a positive magnitude, and no predicate.
+#[test]
+fn opposing_defeat_pillz_plan_is_ability_only_positive_and_unconditional() {
+    let base = base_spec(6, 3);
+    let effect = CombatStatEffectV1::ReduceOpponentPillzOnDefeat {
+        pillz: 2,
+        minimum: 4,
+    };
+    let spec = |plan: CombatStatSourcePlanV1, bonus: bool| {
+        let mut cards = plans(&base);
+        if bonus {
+            cards[PlayerId::P1][0].bonus = plan;
+            cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        } else {
+            cards[PlayerId::P1][0].ability = plan;
+        }
+        CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards,
+        }
+    };
+
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(spec(
+            execute(912, CombatStatPredicateV1::Always, effect),
+            true
+        )),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::DefeatOpponentPillzSource,
+            ..
+        })
+    ));
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(spec(
+            execute(
+                912,
+                CombatStatPredicateV1::Always,
+                CombatStatEffectV1::ReduceOpponentPillzOnDefeat {
+                    pillz: 0,
+                    minimum: 4,
+                },
+            ),
+            false
+        )),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::DefeatOpponentPillzMagnitude,
+            ..
+        })
+    ));
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(spec(
+            execute(912, CombatStatPredicateV1::SelectedHandSlotsMatch, effect),
+            false
+        )),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::DefeatOpponentPillzPredicate,
+            ..
+        })
+    ));
+}
+
+/// `Defeat: -N Opp. Pillz, Min M` is the Victory reduction's arithmetic on the losing
+/// side's trigger. Captures 1092515/0 and 1092201/2 pin the paying case away from the
+/// floor; the floor, the winning case and the knocked-out owner are pinned here, the last
+/// of those by composition with the reviewed opponent-Life sibling rather than by its own
+/// observation - the corpus has no round where a knocked-out owner carries this ability.
+#[test]
+fn defeat_opponent_pillz_triggers_on_a_loss_and_respects_its_minimum() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        912,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnDefeat {
+            pillz: 2,
+            minimum: 4,
+        },
+    );
+
+    // Losing pays, and the target is read after its own bet: 20 - 5 - 2 = 13.
+    let mut losing = game(base.clone(), cards.clone());
+    let start = losing.position().clone();
+    let (report, undo) = losing
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 13);
+    losing.unmake(undo);
+    assert_eq!(losing.position(), &start);
+
+    // Winning does not pay: the trigger is the loss, not the ability being selected.
+    let mut winning = game(base.clone(), cards.clone());
+    let (report, _) = winning
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 20);
+
+    // Crossing the floor stops on it, and a target already at or below it is left alone
+    // rather than pulled up - the same clamp the Victory sibling carries. The last case is
+    // the one the corpus holds (1088480/2): the target's own bet has already taken it below
+    // the floor, so the ability finds nothing to take and the round distinguishes nothing.
+    for (initial, bet, expected) in [(11, 5, 4), (6, 1, 4), (5, 1, 4), (4, 1, 3), (6, 5, 1)] {
+        let mut spec = CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards: cards.clone(),
+        };
+        spec.base_rules.players[PlayerId::P2].initial_pillz = initial;
+        let mut clamped = CombatStatDiagnosticV1::new(spec).unwrap();
+        let (report, _) = clamped
+            .make(input(PlayerId::P1, (0, 0, false), (0, bet, false)))
+            .unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P2].pillz, expected);
+    }
+
+    // An owner this round has knocked out still pays it, exactly as the reviewed
+    // opponent-Life sibling does.
+    let mut spec = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    };
+    spec.base_rules.players[PlayerId::P1].initial_life = 3;
+    let mut knocked_out = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = knocked_out
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 0);
+    assert_eq!(report.players[PlayerId::P2].pillz, 13);
+}
+
 /// `Defeat: -N Opp. Life, Min M` pays out when its owner loses the round, leaves a target
 /// already at or below the Min alone, and still pays after its owner is taken to zero.
 #[test]

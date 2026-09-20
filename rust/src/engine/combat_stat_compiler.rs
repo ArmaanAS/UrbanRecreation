@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 36;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 37;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -351,6 +351,34 @@ pub(crate) fn classify_victory_opponent_pillz(
 pub(crate) fn has_victory_opponent_pillz_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
     input.value > 0 && victory_opponent_pillz_shape_matches(input)
+}
+
+/// Recognize the losing-side `Defeat: -N Opp. Pillz, Min M` grammar: the owner lost the
+/// round, so the opposing player's Pillz fall by N, never below M, read after both bets
+/// have been paid. It is the Victory reduction's sibling on the other outcome channel and
+/// prints a different text - dotted `Opp.` with a comma before `Min`, under a `Defeat:`
+/// prefix - so the two can never be confused. Exact text and complete structured shape,
+/// card abilities only. Returns `(pillz, minimum)`.
+pub(crate) fn classify_defeat_opponent_pillz(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_defeat_opponent_pillz_shape(definition)
+        && definition.description()
+            == format!(
+                "Defeat: -{} Opp. Pillz, Min {}",
+                input.value, input.value_min
+            ))
+    .then_some((input.value, input.value_min))
+}
+
+/// Structural half of the opposing Defeat Pillz boundary. The clan-gated `4673` carries a
+/// clan requirement, which `shape_matches` requires empty, so it is not in this family.
+pub(crate) fn has_defeat_opponent_pillz_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && defeat_opponent_pillz_shape_matches(input)
 }
 
 /// Recognize the `+1 Pillz Per Damage` conversion and its `Symmetry:` form: the winner's
@@ -1630,6 +1658,20 @@ fn victory_opponent_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
     )
 }
 
+fn defeat_opponent_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            current_round: CurrentRoundRequirementV1::Lose,
+            side: AffectedSideV1::Opponent,
+            attribute: AttributeAffectedV1::Pillz,
+            action: AttributeActionV1::Decrease,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
 fn victory_pillz_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
     // The conversion leaves the hand-slot field free - `Symmetry:` is a printed form of it -
     // and the classifier narrows that to the predicates it has evidence for. The structural
@@ -2007,6 +2049,9 @@ fn numeric_description_body_matches(
         (AffectedSideV1::Opponent, CombatStatV1::Damage, StatOperationV1::Decrease, Some(min)) => {
             body == format!("-{value} Opp Damage, Min {min}")
                 || body == format!("-{value} Opp. Damage, Min {min}")
+                // Hattori `304`/`961` print the abbreviated stat. Same grammar, same shape:
+                // the registry's structured fields are identical, only the spelling differs.
+                || body == format!("-{value} Opp. Dmg, Min {min}")
         }
         (AffectedSideV1::Opponent, CombatStatV1::Attack, StatOperationV1::Decrease, Some(min)) => {
             body == format!("-{value} Opp Attack, Min {min}")

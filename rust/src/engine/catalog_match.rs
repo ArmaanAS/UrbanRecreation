@@ -8,10 +8,11 @@ use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_both_players_life_reduction, classify_combat_stat_effect,
     classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
-    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_heal_life_on_victory, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
+    classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory,
+    classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
@@ -1404,6 +1405,27 @@ fn prepare_catalog_source(
                 definition.id(),
             );
         }
+        // And so does its losing-side sibling.
+        if classify_defeat_opponent_pillz(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_defeat_opponent_pillz_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
         // So does the Pillz-per-Damage conversion, whose predicate the printed prefix names.
         if classify_victory_pillz_per_damage(definition, source_kind).is_some() {
             require_catalog_alias(
@@ -1920,6 +1942,34 @@ fn prepare_victory_opponent_pillz_source(
             Some((
                 CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
                 CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+                CombatStatPredicateV1::Always,
+            ))
+        },
+    )
+}
+
+fn prepare_defeat_opponent_pillz_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (pillz, minimum) = classify_defeat_opponent_pillz(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ReduceOpponentPillzOnDefeat { pillz, minimum },
+                CombatStatEffectV1::ReduceOpponentPillzOnDefeat { pillz, minimum },
                 CombatStatPredicateV1::Always,
             ))
         },

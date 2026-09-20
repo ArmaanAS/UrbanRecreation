@@ -190,7 +190,7 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1092454, 2),
     (1092992, 4),
     (1092141, 2),
-    (1092201, 2),
+    (1092201, 3),
     (1060341, 1),
     (1060510, 3),
     (1089626, 1),
@@ -278,6 +278,18 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // not attribute the closing `battles.result` to a side, so the last round's life is the
     // stale pre-damage snapshot rather than a server fact.
     (924615, 3),
+    // Revision 37 admits Hattori's `Courage: -4 Opp. Dmg, Min 2` - the same opponent-Damage
+    // grammar under the position predicate the compiler already had, blocked only by the
+    // abbreviated printed spelling - and the losing-side `Defeat: -N Opp. Pillz, Min M`.
+    // 1078999/2 pins both halves of the Courage floor in one round: Hattori moves first and
+    // loses, so Lothar's printed 5 Damage resolves as max(5 - 4, 2) = 2 and the life ledger
+    // agrees at 7 to 5, while Lothar's own `-3 Opp Power, Min 4` independently takes
+    // Hattori's 8 Power to 5. 1092515/0 pins the Pillz reduction away from the floor -
+    // Boomstock Cr's 12 - 5 + 1 (its own Victory Or Defeat bonus) - 2 = 6 - and 1092201/2
+    // repeats it at 11 - 0 + 1 - 2 = 10. 1088480/2 is the floor case the corpus also holds,
+    // where the target's own bet has already taken it to 0, so it distinguishes nothing.
+    (1078999, 3),
+    (1092515, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -422,6 +434,21 @@ fn victory_opponent_pillz_entry(id: u32, pillz: u16, minimum: u16) -> serde_json
         minimum,
     );
     entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    entry["abilityData"]["sideAffected"] = serde_json::json!("opponent");
+    entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
+    entry["abilityData"]["attributeAction"] = serde_json::json!("decrease");
+    entry
+}
+
+fn defeat_opponent_pillz_entry(id: u32, pillz: u16, minimum: u16) -> serde_json::Value {
+    let mut entry = numeric_entry(
+        id,
+        &format!("Defeat: -{pillz} Opp. Pillz, Min {minimum}"),
+        "both",
+        pillz,
+        minimum,
+    );
+    entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("lose");
     entry["abilityData"]["sideAffected"] = serde_json::json!("opponent");
     entry["abilityData"]["attributeAffected"] = serde_json::json!("pillz");
     entry["abilityData"]["attributeAction"] = serde_json::json!("decrease");
@@ -608,8 +635,7 @@ fn diagnostic(
 }
 
 #[test]
-fn fixed_server_backed_gate_is_exactly_three_hundred_and_thirteen_unique_sequential_prefix_rounds()
-{
+fn fixed_server_backed_gate_replays_every_unique_sequential_prefix_round() {
     let catalog = catalog();
     let registry = registry();
     let mut rounds = 0;
@@ -2477,6 +2503,170 @@ fn victory_opponent_pillz_compiler_admits_the_complete_ability_shape_and_near_mi
     assert!(matches!(
         prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
         CombatStatSourcePlanV1::Disabled { source_id: 2590 }
+    ));
+}
+
+/// Hattori's `304`/`961` print the opponent-Damage reduction with the stat abbreviated.
+/// The grammar, the shape and the Courage predicate were all already admitted - only the
+/// spelling was not - so this pins the spelling as an alternative of the same text check
+/// and nothing wider: a different magnitude, a different floor or a lowercased stat under
+/// the same complete structure still rejects.
+#[test]
+fn courage_opponent_damage_admits_the_abbreviated_printed_spelling_only() {
+    let catalog = catalog();
+    const EFFECT_ID: u32 = 900_117;
+    let cases = [
+        ("Courage: -4 Opp. Dmg, Min 2", true),
+        ("Courage: -4 Opp. Damage, Min 2", true),
+        ("Courage: -4 Opp Damage, Min 2", true),
+        ("Courage: -3 Opp. Dmg, Min 2", false),
+        ("Courage: -4 Opp. Dmg, Min 3", false),
+        ("Courage: -4 opp. dmg, min 2", false),
+        ("Courage: -4 Opp. Dmg Min 2", false),
+        ("-4 Opp. Dmg, Min 2", false),
+    ];
+    for (description, admitted) in cases {
+        let mut entry = numeric_entry(EFFECT_ID, description, "attacker", 4, 2);
+        entry["abilityData"]["attributeAffected"] = serde_json::json!("dmg");
+        let registry = one_entry_registry(entry);
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        source.players[0].hand[slot].source_ability = Some(SourceModifier {
+            id: EFFECT_ID,
+            description: description.to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert_eq!(
+            matches!(
+                prepared.preparation()[PlayerId::P1][slot].ability,
+                CombatStatProjectionDispositionV1::Execute {
+                    predicate: CombatStatPredicateV1::OwnerMovesFirst,
+                    ..
+                }
+            ),
+            admitted,
+            "{description}"
+        );
+    }
+}
+
+#[test]
+fn defeat_opponent_pillz_compiler_admits_the_complete_ability_shape_and_near_misses_reject() {
+    let catalog = catalog();
+    const ID: u32 = 912;
+    const DESCRIPTION: &str = "Defeat: -2 Opp. Pillz, Min 4";
+    let mut source = replay(875032, &catalog);
+    clear_sources(&mut source);
+    let slot = usize::from(
+        source.rounds[0]
+            .plays
+            .iter()
+            .find(|play| play.engine_player == EnginePlayer::P1)
+            .unwrap()
+            .hand_index,
+    );
+    let with_ability = |id: u32, description: &str| {
+        let mut source = source.clone();
+        source.players[0].hand[slot].source_ability = Some(SourceModifier {
+            id,
+            description: description.to_owned(),
+        });
+        source
+    };
+
+    // The Ability slot executes with the printed magnitude and floor.
+    let registry = one_entry_registry(defeat_opponent_pillz_entry(ID, 2, 4));
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(ID, DESCRIPTION),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][slot].ability,
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            effect:
+                urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentPillzOnDefeat {
+                    pillz: 2,
+                    minimum: 4
+                },
+            predicate: CombatStatPredicateV1::Always,
+            ..
+        }
+    ));
+
+    // The same record in the Bonus slot is a hazard: no clan prints it.
+    let mut bonus = source.clone();
+    bonus.players[0].hand[slot].source_bonus = Some(SourceModifier {
+        id: ID,
+        description: DESCRIPTION.to_owned(),
+    });
+    let prepared =
+        CombatStatDiagnosticReplayV1::new(bonus, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].bonus,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
+    ));
+
+    // The Victory sibling's outcome under this text is a different record and rejects.
+    let mut malformed = defeat_opponent_pillz_entry(ID, 2, 4);
+    malformed["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(ID, DESCRIPTION),
+        &catalog,
+        &one_entry_registry(malformed),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
+    ));
+
+    // So does the complete structure under the Victory grammar's own spelling, which is a
+    // different printed text and must not be read as this one.
+    const VICTORY_SPELLING: &str = "-2 Opp Pillz. Min 4";
+    let mut malformed = defeat_opponent_pillz_entry(ID, 2, 4);
+    malformed["description"] = serde_json::json!(VICTORY_SPELLING);
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(ID, VICTORY_SPELLING),
+        &catalog,
+        &one_entry_registry(malformed),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
+    ));
+
+    // The clan-gated sibling `4673` carries a clan requirement, which every admitted
+    // post-round shape requires empty. It stays an ordinary disabled ability.
+    const CLAN_GATED: &str =
+        "[clan:38][clan:54][clan:42][clan:28][clan:59] Defeat: -1 Opp. Pillz, Min 4";
+    let mut gated = defeat_opponent_pillz_entry(4673, 1, 4);
+    gated["description"] = serde_json::json!(CLAN_GATED);
+    gated["abilityData"]["clanRequirement"] = serde_json::json!("38,54,42,28,59");
+    let prepared = CombatStatDiagnosticReplayV1::new(
+        with_ability(4673, CLAN_GATED),
+        &catalog,
+        &one_entry_registry(gated),
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(matches!(
+        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+        CombatStatSourcePlanV1::Disabled { source_id: 4673 }
     ));
 }
 

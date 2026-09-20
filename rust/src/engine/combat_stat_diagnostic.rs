@@ -102,6 +102,12 @@ pub enum CombatStatPostRoundEffectV1 {
         pillz: u16,
         minimum: u16,
     },
+    /// `Defeat: -N Opp. Pillz, Min M`: the losing owner takes `pillz` from the opposing
+    /// player, never below `minimum`. The Victory reduction's losing-side sibling.
+    ReduceOpponentPillzOnDefeat {
+        pillz: u16,
+        minimum: u16,
+    },
     /// `+1 Pillz Per Damage` and its `Symmetry:` form: the winner's own Pillz rise by the
     /// final resolved Damage its card dealt. The predicate carries the hand-slot condition.
     GainPillzEqualToFinalDamageOnVictory,
@@ -230,6 +236,12 @@ pub enum CombatStatEffectV1 {
     /// Victory-only reduction of the opposing player's Pillz with a fixed magnitude and lower
     /// bound, admitted only by the cold structured compiler from the Ability slot.
     ReduceOpponentPillzOnVictory {
+        pillz: u16,
+        minimum: u16,
+    },
+    /// Defeat-only reduction of the opposing player's Pillz with a fixed magnitude and lower
+    /// bound, admitted only by the cold structured compiler from the Ability slot.
+    ReduceOpponentPillzOnDefeat {
         pillz: u16,
         minimum: u16,
     },
@@ -442,6 +454,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     VictoryOpponentPillzSource,
     VictoryOpponentPillzMagnitude,
     VictoryOpponentPillzPredicate,
+    DefeatOpponentPillzSource,
+    DefeatOpponentPillzMagnitude,
+    DefeatOpponentPillzPredicate,
     VictoryPillzPerDamageSource,
     VictoryPillzPerDamagePredicate,
     VictoryLifePerDamageSource,
@@ -1597,6 +1612,36 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    if let CombatStatEffectV1::ReduceOpponentPillzOnDefeat { pillz, .. } = effect {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::DefeatOpponentPillzSource,
+            ));
+        }
+        if pillz == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::DefeatOpponentPillzMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::DefeatOpponentPillzPredicate,
+            ));
+        }
+        return Ok(());
+    }
     if effect == CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory {
         if source != CombatStatEffectSourceV1::Ability {
             return Err(invalid_combat_stat_execute(
@@ -2147,6 +2192,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainLifeOnVictory { .. }
         | CombatStatEffectV1::GainPillzOnVictory { .. }
         | CombatStatEffectV1::ReduceOpponentPillzOnVictory { .. }
+        | CombatStatEffectV1::ReduceOpponentPillzOnDefeat { .. }
         | CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory
         | CombatStatEffectV1::GainLifePerFinalDamageOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
@@ -2196,6 +2242,11 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum } => {
             Some(PostRoundSourceEffect::Fixed(
                 PostRoundEffect::ReduceOpponentPillzOnVictory { pillz, minimum },
+            ))
+        }
+        CombatStatEffectV1::ReduceOpponentPillzOnDefeat { pillz, minimum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::ReduceOpponentPillzOnDefeat { pillz, minimum },
             ))
         }
         CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory => Some(

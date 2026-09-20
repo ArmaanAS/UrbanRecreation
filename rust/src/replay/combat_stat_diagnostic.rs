@@ -16,7 +16,7 @@ use crate::effect_registry::{
 use crate::engine::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_both_players_life_reduction, classify_combat_stat_effect, classify_defeat_life,
-    classify_defeat_opponent_life, classify_defeat_recover_pillz,
+    classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
     classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_victory,
     classify_reanimate_life, classify_regen_life_on_victory,
@@ -25,10 +25,10 @@ use crate::engine::combat_stat_compiler::{
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
     compact_effect, has_both_players_life_reduction_shape, has_defeat_life_shape,
-    has_heal_life_on_victory_shape, has_poison_opponent_life_on_victory_shape,
-    has_reanimate_life_shape, has_regen_life_on_victory_shape,
-    has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
-    has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
+    has_defeat_opponent_pillz_shape, has_heal_life_on_victory_shape,
+    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
+    has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
+    has_victory_life_shape, has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
     has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -818,6 +818,20 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some((pillz, minimum)) = classify_defeat_opponent_pillz(definition, source_kind) {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::ReduceOpponentPillzOnDefeat { pillz, minimum },
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::ReduceOpponentPillzOnDefeat { pillz, minimum },
+            },
+        });
+    }
     if let Some(predicate) = classify_victory_pillz_per_damage(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -1020,12 +1034,19 @@ fn prepare_combat_stat_source(
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_victory_pillz_shape(definition);
     // The opposing reduction has the same two-sided boundary. `Stop:`, `Growth:`, `Brawl:`,
-    // `Bet > N Pillz:`, `Defeat:` and clan-gated forms differ structurally and stay
+    // `Bet > N Pillz:` and clan-gated forms differ structurally and stay
     // visible-but-disabled; the dotted `Opp. Pillz` compounds are other grammars entirely.
     let unadmitted_victory_opponent_pillz = (source.description.starts_with('-')
         && source.description.contains("Opp Pillz")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_victory_opponent_pillz_shape(definition);
+    // Its losing-side sibling prints the dotted spelling under a `Defeat:` prefix. A near
+    // miss - the clan-gated `4673`, or the complete shape under other text - stays a
+    // selected hazard rather than an inert disabled source.
+    let unadmitted_defeat_opponent_pillz = (source.description.starts_with("Defeat: -")
+        && source.description.contains("Opp. Pillz")
+        && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
+        || has_defeat_opponent_pillz_shape(definition);
     // The Pillz-per-Damage conversion is a closed grammar over one special action: any
     // record that converts Damage to Pillz, prints the text, or carries the complete shape
     // under another hand-slot prefix rejects when selected.
@@ -1110,6 +1131,7 @@ fn prepare_combat_stat_source(
         || unadmitted_victory_life
         || unadmitted_victory_pillz
         || unadmitted_victory_opponent_pillz
+        || unadmitted_defeat_opponent_pillz
         || unadmitted_victory_pillz_per_damage
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
@@ -1144,6 +1166,7 @@ fn prepare_combat_stat_source(
         || unadmitted_victory_life
         || unadmitted_victory_pillz
         || unadmitted_victory_opponent_pillz
+        || unadmitted_defeat_opponent_pillz
         || unadmitted_victory_pillz_per_damage
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
