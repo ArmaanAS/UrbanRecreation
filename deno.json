@@ -14,6 +14,7 @@
     "time": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 ./tests/IterTree.bench.ts",
     "rust:check": "cargo check --manifest-path rust/Cargo.toml --locked --all-features",
     "rust:test": "cargo test --manifest-path rust/Cargo.toml --locked",
+    "pins:update": "UR_UPDATE_EXPECT=1 cargo test --manifest-path rust/Cargo.toml --locked && UR_UPDATE_EXPECT=1 deno test -A --no-check tests/solver/RustAdvisorInput.test.ts",
     "rust:worker:test": "deno run --allow-run=cargo,deno --allow-read --allow-env ./scripts/TestRustWorker.ts",
     "rust:worker": "cargo build --manifest-path rust/Cargo.toml --release --locked --bin urban-recreation-advisor-jsonl",
     "rust:advise": "cargo run --manifest-path rust/Cargo.toml --release --locked --bin urban-recreation-advisor --",

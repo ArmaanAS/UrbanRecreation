@@ -10,6 +10,7 @@ import {
   rustV1Provenance,
 } from "@/solver/RustAdvisorInput.ts";
 import { SearchMode } from "@/solver/Search.ts";
+import { expectSnapshot } from "../support/Expect.ts";
 
 const fixture = JSON.parse(
   await Deno.readTextFile(
@@ -203,16 +204,13 @@ Deno.test("Rust V3 maps 1024673's round two into P2-first history and server res
 });
 
 Deno.test("Rust V3 provenance includes exact inputs and semantic revisions", async () => {
-  const expected = {
-    effectiveCatalogFingerprintFnv1a64: "95774366ab5ee807",
-    effectRegistryFingerprintFnv1a64: "591dac0ce97bf0a7",
-    effectRegistrySchemaVersion: 1,
-    compilerPolicySemanticRevision: 36,
-    catalogContextPolicySemanticRevision: 3,
-    advisorPolicySemanticRevision: 2,
-  };
-  assertEquals(await readRustV1Provenance(), expected);
-  assertEquals(await rustV1Provenance(), expected);
+  const read = await readRustV1Provenance();
+  await expectSnapshot(
+    "rust-provenance",
+    "Catalog and registry fingerprints plus the Rust semantic revisions the worker checks.",
+    read,
+  );
+  assertEquals(await rustV1Provenance(), read);
 });
 
 Deno.test("Rust V3 normalises the revealed first card for SECOND without adding it to history", async () => {

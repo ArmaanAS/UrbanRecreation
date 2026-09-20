@@ -34,6 +34,7 @@ deno task advise                 # live view; starts its capture server automati
 deno task advise --replay 866431 --budget 10   # grade your moves in a captured battle
 deno task rust:check             # Rust library + optional historical advisor compile check
 deno task rust:test              # Rust foundation, catalog, replay and current base-engine tests
+deno task pins:update            # regenerate the derived pins, then review `git diff rust/tests/expect tests/expect`
 deno task rust:worker            # build the precompiled Rust JSONL advisor worker
 deno task rust:worker:test       # build it and run the real-process V3 integration gate
 deno task rust:advise --plain    # current Rust engine: strict current-round TUI
@@ -84,8 +85,12 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    `captures/games/<id>.json` has the full round (moves, abilities, server results,
    post-round effects). Group new failures by ability keyword before fixing anything.
 3. Fix loop: change the engine → replay suite → full `deno test -A --no-check` (two legacy
-   failures are expected: `Game_2 Protection`, `Oculus Infiltrated`) → update the triage doc
-   → commit with a subject in the repo's "Add X, Fix Y" style.
+   failures are expected: `Game_2 Protection`, `Oculus Infiltrated`) → `deno task pins:update`
+   and read `git diff rust/tests/expect tests/expect`, which is where the derived id sets,
+   counts, revisions and provenance fingerprints now live → update the triage doc
+   → commit with a subject in the repo's "Add X, Fix Y" style. Never hand-edit a file under
+   an `expect/` directory: regenerate it and review the diff, which is also the unlock
+   evidence a slice's commit message should quote.
 4. Prefer fixes backed by ≥2 captured data points; note single-point hypotheses in the
    triage doc instead of coding them. Every ability rule fixed so far was confirmed by
    arithmetic against the server's power/damage/attack numbers, not by reading rules text.

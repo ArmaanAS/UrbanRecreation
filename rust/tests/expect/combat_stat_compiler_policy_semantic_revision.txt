@@ -1,0 +1,6 @@
+# combat_stat_compiler_policy_semantic_revision
+# Compiler policy revision the replay provenance reports; bumped by every slice.
+# Derived, not hand-written. Regenerate with:
+#   UR_UPDATE_EXPECT=1 cargo test --manifest-path rust/Cargo.toml --locked
+# Then read `git diff` on this file: it is the slice's unlock evidence.
+36

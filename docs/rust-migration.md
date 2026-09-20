@@ -1324,7 +1324,20 @@ that are actually specific to it. In order:
    `executes_post_round(...)`, and an `unadmitted_*` clause so near misses stay selected
    hazards instead of becoming inert disabled sources.
 6. **Tests and pins** - a compiler boundary test, an engine arithmetic test for the arms the
-   corpus cannot reach, the gate rounds, and the pinned sets listed under "How to resume".
+   corpus cannot reach, and the gate rounds.
+7. **Regenerate the derived pins** - the executed and disabled source sets, the eligible-draw
+   set, the gate's round and absent counts, the compiler revision and the TypeScript
+   provenance fingerprints are not edited by hand. Run
+
+   ```bash
+   deno task pins:update
+   git diff rust/tests/expect tests/expect
+   ```
+
+   and read that diff: it names the ids and draws the slice added, which is the slice's
+   unlock evidence and belongs in the commit message. An unlock you did not predict is a
+   finding, not a formality - `UR_UPDATE_EXPECT=1` will happily record a regression as
+   cheerfully as a win, so the diff is the review, and nothing else is.
 
 Before the refactor a grammar cost about 700 lines across 11 to 14 files, most of it copied;
 the shared plumbing is now written once, and what remains is the part that says what the
@@ -1432,6 +1445,52 @@ post-round plan carries no predicate and that adding one was the shared change b
 in fact `active_effect` already evaluated `predicate_matches` over the post-round effect, so
 only admission was closed. Check the code before pricing a slice from this paragraph, and
 rerun the measurement after any admission change rather than trusting the numbers above.
+
+### Per-decision admission instead of whole-draw admission
+
+Every slice above widens what the projection understands. There is a second axis, which
+widens nothing and costs no ability work: stop asking whether the *draw* is understood and
+ask whether *this decision* is. A decision in round `r` only explores the cards still in
+hand, and the advisor reconciles life and pillz against the server's snapshot rather than
+recomputing the rounds already played, so a decision can be sound in a draw that is not.
+
+`rust/tests/partial_admission_report.rs` measures it by retiring each already-played slot
+with a neutral filler and retrying construction, over the 355 replayable draws and the 1,222
+decisions in them:
+
+| rule | decisions | share |
+| --- | --- | --- |
+| whole draw (today) | 260 | 21.3% |
+| remaining cards executable | 388 | 31.8% |
+| remaining cards, no persistent history | 338 | 27.7% |
+
+The middle row is the optimistic bound - it assumes everything already played has finished
+paying - and the last row subtracts every decision where an already-played card prints text
+that could still be paying out. The real rule has to be at least as strict as the last row,
+because a latched permanent is not history: an unsupported card that latched a Poison keeps
+taking Life in every later round, and a projection that forgot it would be quietly wrong
+rather than loudly absent.
+
+The gain concentrates late, as it must, because round one is the whole draw by definition:
+
+| round | decisions | remaining | no persistent history |
+| --- | --- | --- | --- |
+| 1 | 353 | 75 | 75 |
+| 2 | 350 | 92 | 87 |
+| 3 | 300 | 100 | 88 |
+| 4 | 219 | 121 | 88 |
+
+Counted in games rather than decisions it reads better than the decision share suggests:
+**76 draws are usable today, and 163 would have at least one usable decision**, because a
+draw with one unsupported card usually becomes readable once that card is spent.
+
+What it would cost: a second `CatalogCombatStatProjectionV1` variant that takes the played
+slots as input, a compiler answer to "can this unsupported source still be paying?" that is
+better than the report's keyword scan (the scan is a measurement heuristic and must not
+become a semantic rule), the played-slot set threaded through the JSONL protocol and its
+provenance, and a visible marker wherever a partially-informed recommendation is shown. The
+fail-closed property has to survive all of it: an unsupported source is still never a no-op,
+it is a reason to refuse the decision it can reach.
 
 ### 4. Port current solver semantics
 

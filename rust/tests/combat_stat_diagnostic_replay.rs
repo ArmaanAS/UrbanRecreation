@@ -18,6 +18,8 @@ use urban_recreation_rust::replay::{
     SourceModifier, COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 
+mod support;
+
 const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (875032, 2),
     (875155, 1),
@@ -643,37 +645,26 @@ fn fixed_server_backed_gate_is_exactly_three_hundred_and_thirteen_unique_sequent
             }
         }
     }
-    assert_eq!(rounds, 313);
-    assert_eq!(
-        execute_ids,
-        BTreeSet::from([
-            6, 7, 36, 37, 38, 39, 40, 41, 42, 53, 56, 57, 61, 73, 86, 90, 93, 94, 130, 156, 184,
-            189, 197, 202, 206, 225, 257, 266, 274, 292, 310, 316, 333, 334, 339, 343, 360, 367,
-            368, 372, 377, 391, 401, 412, 417, 421, 432, 442, 445, 455, 461, 469, 478, 492, 503,
-            511, 512, 520, 532, 536, 549, 555, 566, 569, 570, 577, 578, 582, 585, 587, 594, 602,
-            612, 649, 656, 680, 682, 713, 717, 727, 729, 739, 741, 751, 759, 769, 778, 801, 809,
-            826, 837, 844, 852, 854, 859, 862, 871, 883, 888, 916, 935, 938, 959, 963, 980, 1020,
-            1034, 1041, 1047, 1051, 1053, 1054, 1090, 1091, 1098, 1131, 1146, 1150, 1158, 1163,
-            1188, 1197, 1229, 1241, 1293, 1297, 1303, 1310, 1330, 1333, 1335, 1338, 1341, 1342,
-            1345, 1350, 1355, 1359, 1372, 1375, 1379, 1385, 1388, 1396, 1399, 1415, 1417, 1418,
-            1420, 1464, 1469, 1501, 1508, 1513, 1518, 1534, 1536, 1578, 1580, 1628, 1634, 1688,
-            1694, 1699, 1702, 1706, 1714, 1722, 1726, 1760, 1770, 1805, 1806, 1823, 1825, 1833,
-            1840, 1844, 1845, 1848, 1850, 1852, 2021, 2028, 2073, 2277, 2286, 2299, 2321, 2329,
-            2375, 2412, 2528, 2535, 2556, 2573, 2628, 2638, 2657, 2660, 2661, 2835, 2881, 2944,
-            2965, 2992, 3004, 3040, 3048, 3118, 3197, 3222, 3284, 3386, 3393, 3433, 3487, 3526,
-            3597, 3677, 3829, 3852, 3864, 3865, 3897, 4041, 4098, 4216, 4286, 4297, 4299, 4301,
-            4330, 4389, 4399, 4414, 4417, 4458, 4461, 4464, 4500, 4571, 4588, 4623, 4625, 4708,
-            4711, 4718, 4722, 4730, 4757, 4824, 4908, 4948, 4951, 4954, 4966, 4983, 5025, 5026,
-            5085, 5169, 5170, 5195, 5198, 5237, 5258, 5273, 5332, 5333, 5360, 5366, 5404, 5406,
-            5415, 5439, 5462, 5498, 5520, 5525, 5531, 5532, 5549, 5763, 5835, 5841, 5849, 5852,
-            5859, 5881, 5901,
-        ])
+    support::expect_count(
+        "combat_stat_gate_rounds",
+        "Sequential prefix rounds the combat-stat gate replays.",
+        rounds,
     );
-    assert_eq!(
-        disabled_ids,
-        BTreeSet::from([1231, 2222, 2317, 4303, 4459, 4657, 4695, 4747, 4937, 5283,])
+    support::expect_ids(
+        "combat_stat_gate_execute_ids",
+        "Registry definition ids the gate executed as a selected ability or bonus.",
+        &execute_ids,
     );
-    assert_eq!(absent, 16);
+    support::expect_ids(
+        "combat_stat_gate_disabled_ids",
+        "Registry definition ids the gate selected but left visible-but-disabled.",
+        &disabled_ids,
+    );
+    support::expect_count(
+        "combat_stat_gate_absent_dispositions",
+        "Selected ability/bonus slots the gate found empty across those rounds.",
+        absent,
+    );
 }
 
 #[test]
@@ -972,7 +963,11 @@ fn dispositions_and_provenance_expose_predicates_and_compiler_revision() {
         provenance.compiler_policy_semantic_revision,
         COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.compiler_policy_semantic_revision, 36);
+    support::expect_count(
+        "combat_stat_compiler_policy_semantic_revision",
+        "Compiler policy revision the replay provenance reports; bumped by every slice.",
+        usize::from(provenance.compiler_policy_semantic_revision),
+    );
     assert_eq!(
         provenance.effect_registry_source_fingerprint_fnv1a64,
         registry.source_fingerprint_fnv1a64()
@@ -1028,7 +1023,7 @@ fn defeat_life_and_reanimate_capture_evidence_is_visible_without_widening_the_ga
     assert_eq!(
         lobo.preparation_provenance()
             .compiler_policy_semantic_revision,
-        36
+        COMBAT_STAT_DIAGNOSTIC_COMPILER_POLICY_SEMANTIC_REVISION_V1
     );
     let (life, owner, slot) = source_in_round(&lobo, 1, 453);
     assert_eq!(life, 4); // 7 - Miyo 5 + 2
