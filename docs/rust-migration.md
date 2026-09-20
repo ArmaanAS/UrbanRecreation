@@ -1300,6 +1300,36 @@ plain `+N Pillz` grammar by revision 29's ten paying rounds, and `OwnerWonPrevio
 the predicate machinery every `Confidence:` source already uses. Revision 34 admitted the
 same predicate on Victory Life with no reachable server round at all.
 
+### Adding a post-round grammar
+
+The shared parts were factored out on 2026-09-20, so a grammar is now the handful of things
+that are actually specific to it. In order:
+
+1. **`combat_stat_compiler.rs`** - a `classify_*` returning the magnitudes and predicate, and
+   a `*_shape_matches` that is `POST_ROUND_SHAPE` with the fields the grammar differs in
+   overridden. Do not restate the neutral fields: `shape_matches` requires the clan gates,
+   the bet link, `valueCondition` and every magnitude flag neutral for all grammars, which is
+   what keeps the projection fail-closed as the table grows. State condition slots as
+   `(previous round, hand slot)` pairs, never as two independent lists. Add a `has_*_shape`
+   so replay preparation can call a complete shape under malformed text a hazard.
+2. **`combat_stat_diagnostic.rs`** - the effect in both enums, an arm in
+   `shared_post_round_effect`, and the predicate rule in the plan validator.
+3. **`engine/mod.rs`** - the `PostRoundEffect` variant and the arm that pays it. Often there
+   is nothing to do here: the cheapest slices are the ones where the projection already
+   executes the effect on another channel and only admission closes.
+4. **`catalog_match.rs`** - a dispatch arm calling `require_catalog_alias`, and a preparer
+   that is one call to `prepare_post_round_source` with a closure mapping the classifier's
+   output to the two effect representations and the predicate.
+5. **`replay/combat_stat_diagnostic.rs`** - a `classify_*` arm returning
+   `executes_post_round(...)`, and an `unadmitted_*` clause so near misses stay selected
+   hazards instead of becoming inert disabled sources.
+6. **Tests and pins** - a compiler boundary test, an engine arithmetic test for the arms the
+   corpus cannot reach, the gate rounds, and the pinned sets listed under "How to resume".
+
+Before the refactor a grammar cost about 700 lines across 11 to 14 files, most of it copied;
+the shared plumbing is now written once, and what remains is the part that says what the
+grammar is.
+
 ### Choosing the next slice
 
 Reach and unlock rank differently, and only unlock is worth acting on. Strict construction
