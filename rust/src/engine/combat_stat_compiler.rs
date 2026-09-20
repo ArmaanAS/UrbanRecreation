@@ -179,36 +179,17 @@ pub(crate) fn anita_courage_damage_to_life_identity_matches(
 }
 
 fn anita_courage_damage_to_life_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value == 1
-        && input.value_min == 0
-        && input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Attacker
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::Life
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::ConvertDamageToLife
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(1),
+            // Courage lives in the position field, which every other admitted post-round
+            // grammar requires neutral.
+            position: PositionRequirementV1::Attacker,
+            special: SpecialActionV1::ConvertDamageToLife,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 /// Recognize Komboka's exact clan-bonus composite Victory effect.  This remains outside
@@ -252,36 +233,18 @@ pub(crate) fn reprisal_stop_opponent_ability_identity_matches(
 }
 
 fn reprisal_stop_opponent_ability_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value == 0
-        && input.value_min == 0
-        && input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Defender
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Any
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::None
-        && input.attribute_action == AttributeActionV1::None
-        && input.special_action == SpecialActionV1::StopAbility
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(0),
+            position: PositionRequirementV1::Defender,
+            current_round: CurrentRoundRequirementV1::Any,
+            attribute: AttributeAffectedV1::None,
+            action: AttributeActionV1::None,
+            special: SpecialActionV1::StopAbility,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 /// Recognize only the literal, immediate end-of-round Victory Life grammar and the two
@@ -880,34 +843,16 @@ pub(crate) fn classify_defeat_opponent_life(
 }
 
 fn defeat_opponent_life_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Lose
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Opponent
-        && input.attribute_affected == AttributeAffectedV1::Life
-        && input.attribute_action == AttributeActionV1::Decrease
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            current_round: CurrentRoundRequirementV1::Lose,
+            side: AffectedSideV1::Opponent,
+            action: AttributeActionV1::Decrease,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 /// Recognize `Xantiax: -N Life, Min. M`: the only admitted post-round grammar that names
@@ -941,36 +886,18 @@ pub(crate) fn has_both_players_life_reduction_shape(definition: &EffectDefinitio
 }
 
 fn both_players_life_reduction_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        // No outcome channel at all. `Win`, `Lose` and the Victory-or-Defeat sources all
-        // differ here, so none of them can reach this grammar by text alone.
-        && input.current_round_requirement == CurrentRoundRequirementV1::Any
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Both
-        && input.attribute_affected == AttributeAffectedV1::Life
-        && input.attribute_action == AttributeActionV1::Decrease
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            // No outcome channel at all, which is what makes this grammar unmistakable:
+            // every neighbouring Life reduction names `win` or `lose` here.
+            current_round: CurrentRoundRequirementV1::Any,
+            side: AffectedSideV1::Both,
+            action: AttributeActionV1::Decrease,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 pub(crate) fn classify_equalizer_opponent_life_on_victory(
@@ -1534,22 +1461,109 @@ fn neutral_except_previous_round(input: &StructuredEffectV1) -> bool {
 }
 
 fn defeat_recover_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value == 2
-        && input.value_min == 3
-        && input.value_max == 0
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(2),
+            value_min: ShapeFieldV1::Exact(3),
+            current_round: CurrentRoundRequirementV1::Lose,
+            attribute: AttributeAffectedV1::Pillz,
+            special: SpecialActionV1::RecoverPillz,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+/// How a grammar constrains one numeric field of a structured record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ShapeFieldV1 {
+    /// The field must hold exactly this value.
+    Exact(u16),
+    /// The grammar reads the field and renders it into the text it expects, so any value is
+    /// structurally acceptable and the exact-text check is what pins it.
+    Read,
+}
+
+impl ShapeFieldV1 {
+    const fn accepts(self, actual: u16) -> bool {
+        match self {
+            Self::Exact(expected) => actual == expected,
+            Self::Read => true,
+        }
+    }
+}
+
+/// The structured fields one post-round grammar constrains.
+///
+/// Every admitted grammar asks for the same neutral record in all but a handful of fields,
+/// so a grammar is written as `POST_ROUND_SHAPE` with those few overridden rather than as
+/// its own thirty-line conjunction. The fields absent from this struct are the ones no
+/// admitted grammar has ever varied - the clan gates, the bet link, `valueCondition` and
+/// every magnitude flag - and `shape_matches` requires all of them neutral, which is what
+/// keeps the projection fail-closed as the table grows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct PostRoundShapeV1 {
+    pub(crate) value: ShapeFieldV1,
+    pub(crate) value_min: ShapeFieldV1,
+    pub(crate) value_max: ShapeFieldV1,
+    pub(crate) position: PositionRequirementV1,
+    /// The `(previous round, hand slot)` pairs the grammar admits, as pairs rather than two
+    /// independent lists: fixed Victory Life takes a won previous round or a differing hand
+    /// slot, never both at once, and a cross product would silently admit the combination
+    /// no card prints.
+    pub(crate) conditions: &'static [(PreviousRoundRequirementV1, IndexRequirementV1)],
+    pub(crate) current_round: CurrentRoundRequirementV1,
+    pub(crate) side: AffectedSideV1,
+    pub(crate) attribute: AttributeAffectedV1,
+    pub(crate) action: AttributeActionV1,
+    pub(crate) special: SpecialActionV1,
+    pub(crate) opponent_stars_linked: bool,
+}
+
+/// The one unconditional slot: no previous-round requirement and no hand-slot requirement.
+const UNCONDITIONAL: &[(PreviousRoundRequirementV1, IndexRequirementV1)] =
+    &[(PreviousRoundRequirementV1::Any, IndexRequirementV1::Any)];
+
+/// The neutral post-round record: an unconditional fixed gain of the owner's own Life on a
+/// won round, with no bounds and no special action. Every grammar below is this with the
+/// fields it actually differs in overridden.
+const POST_ROUND_SHAPE: PostRoundShapeV1 = PostRoundShapeV1 {
+    value: ShapeFieldV1::Read,
+    value_min: ShapeFieldV1::Exact(0),
+    value_max: ShapeFieldV1::Exact(0),
+    position: PositionRequirementV1::Both,
+    conditions: UNCONDITIONAL,
+    current_round: CurrentRoundRequirementV1::Win,
+    side: AffectedSideV1::Player,
+    attribute: AttributeAffectedV1::Life,
+    action: AttributeActionV1::Increase,
+    special: SpecialActionV1::None,
+    opponent_stars_linked: false,
+};
+
+/// True when `input` is exactly the record `shape` describes. The fields the shape does not
+/// name must all be neutral: a clan gate, a bet link, a `valueCondition`, a Support or
+/// per-X magnitude or a permanence flag takes a record out of every admitted post-round
+/// grammar, whatever its text says.
+fn shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
+    shape.value.accepts(input.value)
+        && shape.value_min.accepts(input.value_min)
+        && shape.value_max.accepts(input.value_max)
+        && input.position_requirement == shape.position
+        && shape
+            .conditions
+            .contains(&(input.previous_round_requirement, input.index_requirement))
+        && input.current_round_requirement == shape.current_round
+        && input.side_affected == shape.side
+        && input.attribute_affected == shape.attribute
+        && input.attribute_action == shape.action
+        && input.special_action == shape.special
+        && input.is_opponent_stars_linked == shape.opponent_stars_linked
         && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Lose
-        && input.index_requirement == IndexRequirementV1::Any
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
         && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::Pillz
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::RecoverPillz
         && !input.is_inverted
         && !input.is_support
         && !input.is_anti_support
@@ -1559,7 +1573,6 @@ fn defeat_recover_shape_matches(input: &StructuredEffectV1) -> bool {
         && !input.is_pillz_linked
         && !input.is_lost_life_linked
         && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
         && !input.is_clanmates_count_linked
         && !input.is_anti_clanmates_count_linked
         && !input.is_permanent
@@ -1567,175 +1580,101 @@ fn defeat_recover_shape_matches(input: &StructuredEffectV1) -> bool {
 }
 
 fn victory_life_shape_matches(input: &StructuredEffectV1) -> bool {
-    // Exactly the three reviewed condition slots: no condition at all, the previous-round
-    // one `Confidence :` names, or the hand-slot one `Asymmetry:` names. Every other
-    // combination - a `Revenge:` Life, a Courage position, a clan gate - keeps its
-    // visible-but-disabled record rather than becoming a near-miss hazard here.
-    matches!(
-        (input.previous_round_requirement, input.index_requirement),
-        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any)
-            | (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any)
-            | (
-                PreviousRoundRequirementV1::Any,
-                IndexRequirementV1::Asymmetry
-            )
-    ) && input.value_min == 0
-        && input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::Life
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    // The three condition slots fixed Victory Life prints: none, `Confidence :`'s won
+    // previous round, `Asymmetry:`'s differing hand slots. A `Revenge:` Life, a Courage
+    // position or a clan gate keeps its visible-but-disabled record instead.
+    const CONDITIONS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any),
+        (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any),
+        (
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Asymmetry,
+        ),
+    ];
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            conditions: CONDITIONS,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn victory_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
-    // Exactly the two reviewed condition slots: no condition at all, or the previous-round
-    // one `Confidence:` names. A `Revenge:` Pillz keeps its visible-but-disabled record
-    // rather than becoming a near-miss hazard here.
-    matches!(
-        input.previous_round_requirement,
-        PreviousRoundRequirementV1::Any | PreviousRoundRequirementV1::Win
-    ) && input.value_min == 0
-        && input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::Pillz
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    // No condition at all, or the won previous round `Confidence:` names. A `Revenge:`
+    // Pillz keeps its visible-but-disabled record rather than becoming a near-miss hazard.
+    const CONDITIONS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any),
+        (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any),
+    ];
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            conditions: CONDITIONS,
+            attribute: AttributeAffectedV1::Pillz,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn victory_opponent_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Opponent
-        && input.attribute_affected == AttributeAffectedV1::Pillz
-        && input.attribute_action == AttributeActionV1::Decrease
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            side: AffectedSideV1::Opponent,
+            attribute: AttributeAffectedV1::Pillz,
+            action: AttributeActionV1::Decrease,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn victory_pillz_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value == 1
-        && input.value_min == 0
-        && input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::Pillz
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::ConvertDamageToPillz
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    // The conversion leaves the hand-slot field free - `Symmetry:` is a printed form of it -
+    // and the classifier narrows that to the predicates it has evidence for. The structural
+    // half stays as wide as the grammar so a hand-slot near-miss is a hazard, not a no-op.
+    const CONDITIONS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any),
+        (
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Symmetry,
+        ),
+        (
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Asymmetry,
+        ),
+    ];
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(1),
+            conditions: CONDITIONS,
+            attribute: AttributeAffectedV1::Pillz,
+            special: SpecialActionV1::ConvertDamageToPillz,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn victory_life_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value_min == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::Life
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::ConvertDamageToLife
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    // The Life conversion leaves the previous-round field free instead - `Revenge:` and
+    // `Confidence:` are printed forms - and reads a `Max. M` cap. The classifier narrows
+    // the predicate and refuses a cap under a prefix, which no card prints together.
+    const CONDITIONS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[
+        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any),
+        (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any),
+        (PreviousRoundRequirementV1::Lose, IndexRequirementV1::Any),
+    ];
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_max: ShapeFieldV1::Read,
+            conditions: CONDITIONS,
+            special: SpecialActionV1::ConvertDamageToLife,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn defeat_life_shape_matches(input: &StructuredEffectV1, minimum: u16) -> bool {
@@ -1771,36 +1710,15 @@ fn defeat_life_shape_matches(input: &StructuredEffectV1, minimum: u16) -> bool {
 }
 
 fn victory_or_defeat_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value == 1
-        && input.value_min == 0
-        && input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Any
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::Pillz
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(1),
+            current_round: CurrentRoundRequirementV1::Any,
+            attribute: AttributeAffectedV1::Pillz,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn victory_or_defeat_life_shape_matches(
@@ -1843,69 +1761,32 @@ fn victory_or_defeat_life_shape_matches(
 }
 
 fn equalizer_opponent_life_on_victory_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value == 1
-        && input.value_min == 2
-        && input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Opponent
-        && input.attribute_affected == AttributeAffectedV1::Life
-        && input.attribute_action == AttributeActionV1::Decrease
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(1),
+            value_min: ShapeFieldV1::Exact(2),
+            side: AffectedSideV1::Opponent,
+            action: AttributeActionV1::Decrease,
+            // The magnitude is the opposing card's stars, which is the one place an
+            // admitted post-round grammar reads a per-X flag.
+            opponent_stars_linked: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn argos_defeat_capped_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value == 2
-        && input.value_min == 0
-        && input.value_max == 11
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Lose
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::Pillz
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(2),
+            value_max: ShapeFieldV1::Exact(11),
+            current_round: CurrentRoundRequirementV1::Lose,
+            attribute: AttributeAffectedV1::Pillz,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 /// The complete structured shape every plain `Heal N Max. M` record carries: an own-Life
@@ -1977,36 +1858,14 @@ fn permanent_life_neutral_shape_matches(
 }
 
 fn komboka_victory_pillz_and_life_shape_matches(input: &StructuredEffectV1) -> bool {
-    input.value == 1
-        && input.value_min == 0
-        && input.value_max == 0
-        && input.value_condition == 0
-        && input.position_requirement == PositionRequirementV1::Both
-        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
-        && input.index_requirement == IndexRequirementV1::Any
-        && input.clan_requirement.is_empty()
-        && input.opponent_clan_requirement.is_empty()
-        && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
-        && input.side_affected == AffectedSideV1::Player
-        && input.attribute_affected == AttributeAffectedV1::LifeAndPillz
-        && input.attribute_action == AttributeActionV1::Increase
-        && input.special_action == SpecialActionV1::None
-        && !input.is_inverted
-        && !input.is_support
-        && !input.is_anti_support
-        && !input.is_overdrive
-        && !input.is_divide
-        && !input.is_life_linked
-        && !input.is_pillz_linked
-        && !input.is_lost_life_linked
-        && !input.is_lost_pillz_linked
-        && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
-        && !input.is_anti_clanmates_count_linked
-        && !input.is_permanent
-        && !input.is_immediate_permanent
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(1),
+            attribute: AttributeAffectedV1::LifeAndPillz,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn position_description_matches(
