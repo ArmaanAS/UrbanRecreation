@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 39;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 40;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1268,6 +1268,9 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_equalizer_numeric(definition) {
         return Some(classified);
     }
+    if let Some(classified) = classify_brawl_numeric(definition) {
+        return Some(classified);
+    }
     if let Some(classified) = classify_round_scaled_numeric(definition) {
         return Some(classified);
     }
@@ -1421,6 +1424,27 @@ fn classify_equalizer_numeric(
         .then_some((effect, CombatStatPredicateV1::Always))
 }
 
+/// Recognize the `Brawl:` grammars. Brawl is an *anti-support* magnitude, not a round
+/// counter: the effect is multiplied by the number of distinct characters in the opposing
+/// hand sharing the opposing selected card's effective clan, which is `Per::Brawl` in the
+/// reference and the exact mirror of `Per::Support`.
+///
+/// It is admitted the way Equalizer is rather than the way Support is. `is_anti_support`
+/// stays an unsupported link in the registry compiler, so the effect is built here from the
+/// structured input and the text checked through `numeric_description_body_matches`, which
+/// carries the alternate printed spellings the registry's own strict expectation does not.
+fn classify_brawl_numeric(
+    definition: &EffectDefinitionV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    if !input.is_anti_support || !neutral_except_anti_support(input) {
+        return None;
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::AntiSupport)?;
+    brawl_description_matches(definition.description(), effect)
+        .then_some((effect, CombatStatPredicateV1::Always))
+}
+
 fn numeric_effect(
     input: &StructuredEffectV1,
     multiplier: MagnitudeMultiplierV1,
@@ -1474,6 +1498,36 @@ fn neutral_except_round_scaled_magnitude(input: &StructuredEffectV1) -> bool {
         && !input.is_inverted
         && !input.is_support
         && !input.is_anti_support
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
+/// The Brawl gate. It is `neutral_except_equalizer` with the two magnitude flags swapped,
+/// and it deliberately keeps every other flag neutral: a clan-gated Brawl (`3666`, `3667`)
+/// or a Brawl carrying a position, previous-round or hand-slot condition keeps its existing
+/// record rather than riding this grammar.
+fn neutral_except_anti_support(input: &StructuredEffectV1) -> bool {
+    input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_support
+        && input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
         && !input.is_life_linked
         && !input.is_pillz_linked
         && !input.is_lost_life_linked
@@ -2084,6 +2138,7 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
         MagnitudeMultiplierV1::Fixed
         | MagnitudeMultiplierV1::Support
+        | MagnitudeMultiplierV1::AntiSupport
         | MagnitudeMultiplierV1::OpponentStars
         | MagnitudeMultiplierV1::OpponentDamage => return false,
     };
@@ -2091,6 +2146,14 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         description.strip_prefix(prefix).unwrap_or(""),
         effect,
         multiplier,
+    )
+}
+
+fn brawl_description_matches(description: &str, effect: SupportedEffectV1) -> bool {
+    numeric_description_body_matches(
+        description.strip_prefix("Brawl: ").unwrap_or(""),
+        effect,
+        MagnitudeMultiplierV1::AntiSupport,
     )
 }
 
@@ -2127,7 +2190,10 @@ fn numeric_description_body_matches(
             body == format!("Power +{value}")
         }
         (AffectedSideV1::Player, CombatStatV1::Damage, StatOperationV1::Increase, None) => {
-            body == format!("Damage +{value}")
+            // `1490`, `1703` and `3948` print `Brawl: Damage + 1` with a space either side
+            // of the sign, the same abbreviation-style variance Hattori's `304` had. The
+            // Power-And-Damage arm below already carries its spaced form.
+            body == format!("Damage +{value}") || body == format!("Damage + {value}")
         }
         (AffectedSideV1::Player, CombatStatV1::Attack, StatOperationV1::Increase, None) => {
             body == format!("Attack +{value}")
@@ -2197,6 +2263,7 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 MagnitudeMultiplierV1::Growth => CombatStatMagnitudeV1::Growth,
                 MagnitudeMultiplierV1::Degrowth => CombatStatMagnitudeV1::Degrowth,
                 MagnitudeMultiplierV1::OpponentStars => CombatStatMagnitudeV1::OpponentStars,
+                MagnitudeMultiplierV1::AntiSupport => CombatStatMagnitudeV1::AntiSupport,
                 MagnitudeMultiplierV1::OpponentDamage => CombatStatMagnitudeV1::OpponentDamage,
             },
         }),
@@ -2348,6 +2415,85 @@ mod tests {
                 "malformed {field}",
             );
         }
+    }
+
+    #[test]
+    fn brawl_is_admitted_by_grammar_across_every_combat_stat_form() {
+        let registry = registry();
+
+        // The whole combat-stat Brawl set. Each is admitted by its printed text over the
+        // anti-support shape, never by an id list, and each must carry the AntiSupport
+        // magnitude rather than riding Fixed.
+        for id in [
+            1488, 1490, 1556, 1703, 1707, 1759, 1834, 2560, 2859, 2905, 2917, 2973, 3047, 3219,
+            3272, 3303, 3855, 3936, 3948, 4463, 4826, 4897, 5255, 5339, 5340, 5376, 5497, 5519,
+            5524, 5527, 5759,
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            let classified =
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability);
+            let Some((SupportedEffectV1::ModifyCombatStat { multiplier, .. }, predicate)) =
+                classified
+            else {
+                panic!("{id} was not admitted as a combat-stat modifier: {classified:?}");
+            };
+            assert_eq!(
+                multiplier,
+                MagnitudeMultiplierV1::AntiSupport,
+                "definition {id} magnitude",
+            );
+            assert_eq!(
+                predicate,
+                CombatStatPredicateV1::Always,
+                "definition {id} predicate",
+            );
+        }
+
+        // The clan-gated Brawls carry a condition this grammar does not model, and the
+        // Life and Pillz Brawls are post-round channels rather than combat stats. All of
+        // them keep their existing records.
+        for id in [3666, 3667, 2893, 5650, 4583, 5172, 5822, 5844] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_brawl_numeric(definition),
+                None,
+                "definition {id} must stay out of the combat-stat Brawl grammar",
+            );
+        }
+
+        // Text and structure must corroborate. A Brawl record whose printed numbers
+        // disagree with its own magnitude, or which drops the anti-support flag, is
+        // refused rather than trusted either way.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        //
+        // `isSupport` is not in this list: the registry loader refuses a record carrying
+        // both support and anti-support outright, which is a stronger guarantee than the
+        // grammar could give, and is asserted separately below.
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("isAntiSupport", serde_json::json!(false)),
+            ("isOverdrive", serde_json::json!(true)),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("positionRequirement", serde_json::json!("attacker")),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1488"]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_brawl_numeric(malformed.get(1488).unwrap()),
+                None,
+                "malformed {field} = {value}",
+            );
+        }
+
+        // Support and anti-support are mutually exclusive at the registry boundary, so a
+        // record claiming both never reaches any grammar at all.
+        let mut both = source.clone();
+        both["1488"]["abilityData"]["isSupport"] = serde_json::json!(true);
+        assert!(EffectRegistryV1::from_reader(both.to_string().as_bytes()).is_err());
     }
 
     #[test]

@@ -64,6 +64,10 @@ pub enum CombatStatMagnitudeV1 {
     OpponentStars,
     /// Scaled by the opposing selected card's resolved Damage, before Fury.
     OpponentDamage,
+    /// `Brawl:`. Scaled by the number of distinct characters in the opposing hand sharing
+    /// the opposing selected card's effective clan - the mirror of Support, which counts
+    /// the owner's own hand.
+    AntiSupport,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1838,6 +1842,7 @@ fn validate_combat_stat_source_plan(
         CombatStatMagnitudeV1::Growth
             | CombatStatMagnitudeV1::Degrowth
             | CombatStatMagnitudeV1::OpponentStars
+            | CombatStatMagnitudeV1::AntiSupport
     ) && predicate != CombatStatPredicateV1::Always
     {
         return Err(invalid_combat_stat_execute(
@@ -2033,6 +2038,16 @@ fn prepare_combat_stat_diagnostic(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
         cards[PlayerId::P2][validated[PlayerId::P2].slot.index()],
     );
+    // Brawl reads the *opposing* hand at the *opposing* selected slot, so each player's
+    // count is taken from the other player's cards. This is the lowest layer that holds
+    // both full hands: `prepare_combat_resolution_with_post_round` below receives only the
+    // two selected cards, which is why the number is derived here and carried down rather
+    // than recomputed there. When a Copy adopts the opposing Brawl the copier becomes the
+    // effect's owner, so the hand it should read is the one its own plan already carries.
+    let anti_support = ByPlayer::new(
+        effective_clan_character_count(validated[PlayerId::P2].slot, &cards[PlayerId::P2]),
+        effective_clan_character_count(validated[PlayerId::P1].slot, &cards[PlayerId::P1]),
+    );
     let plans = ByPlayer::new(
         resolution_card_plan(
             selected[PlayerId::P1],
@@ -2042,6 +2057,7 @@ fn prepare_combat_stat_diagnostic(
             validated[PlayerId::P1].slot,
             validated[PlayerId::P2].slot,
             previous_round_winner,
+            anti_support[PlayerId::P1],
         ),
         resolution_card_plan(
             selected[PlayerId::P2],
@@ -2051,6 +2067,7 @@ fn prepare_combat_stat_diagnostic(
             validated[PlayerId::P2].slot,
             validated[PlayerId::P1].slot,
             previous_round_winner,
+            anti_support[PlayerId::P2],
         ),
     );
     prepare_combat_resolution_with_post_round(validated, plans, rounds_played)
@@ -2105,6 +2122,10 @@ fn resolution_card_plan(
     owner_slot: HandSlot,
     opponent_slot: HandSlot,
     previous_round_winner: Option<PlayerId>,
+    // Brawl's multiplier, counted over the opposing hand at the opposing selected slot.
+    // It is the same number for both of this card's sources and for every magnitude that
+    // is not `AntiSupport`, which simply ignores it.
+    anti_support_count: u16,
 ) -> ResolutionCardPlan {
     // Resolve each source once. Copy substitution and the predicate are the same work for
     // the combat effect and the post-round effect, and a source only ever supplies one of
@@ -2130,6 +2151,7 @@ fn resolution_card_plan(
             effect: effect.and_then(shared_effect),
             post_round: effect.and_then(shared_post_round_effect),
             support_count,
+            anti_support_count,
         }
     };
     ResolutionCardPlan {
@@ -2174,6 +2196,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 CombatStatMagnitudeV1::Growth => DiagnosticMagnitudeV1::Growth,
                 CombatStatMagnitudeV1::Degrowth => DiagnosticMagnitudeV1::Degrowth,
                 CombatStatMagnitudeV1::OpponentStars => DiagnosticMagnitudeV1::OpponentStars,
+                CombatStatMagnitudeV1::AntiSupport => DiagnosticMagnitudeV1::AntiSupport,
                 CombatStatMagnitudeV1::OpponentDamage => DiagnosticMagnitudeV1::OpponentDamage,
             },
         },

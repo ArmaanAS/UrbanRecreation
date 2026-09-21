@@ -235,6 +235,12 @@ pub enum MagnitudeMultiplierV1 {
     /// Scaled by the opposing selected card's Damage as resolved for that round, before
     /// Fury is added to it.
     OpponentDamage,
+    /// `Brawl:`. Scaled by the number of distinct characters in the *opposing* hand sharing
+    /// the opposing selected card's effective clan - the mirror of `Support`, which counts
+    /// the owner's own hand. Like `OpponentStars` this is never emitted by the registry
+    /// compiler: `is_anti_support` stays an unsupported link there, and the grammar is
+    /// admitted compiler-side instead.
+    AntiSupport,
 }
 
 /// Compact, string-free building blocks safe to copy into later round plans.
@@ -1299,6 +1305,7 @@ fn reviewed_stat_description(
         MagnitudeMultiplierV1::Growth => "Growth: ",
         MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
         MagnitudeMultiplierV1::OpponentStars => "Equalizer: ",
+        MagnitudeMultiplierV1::AntiSupport => "Brawl: ",
         MagnitudeMultiplierV1::OpponentDamage => return false,
     };
     let expected = match (side, operation) {

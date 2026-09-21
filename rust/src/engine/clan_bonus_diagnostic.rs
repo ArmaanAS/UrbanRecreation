@@ -56,6 +56,10 @@ pub enum DiagnosticMagnitudeV1 {
     OpponentStars,
     /// Scaled by the opposing selected card's resolved Damage, before Fury.
     OpponentDamage,
+    /// `Brawl:`. Scaled by the number of distinct characters in the opposing hand sharing
+    /// the opposing selected card's effective clan - the mirror of Support, which counts
+    /// the owner's own hand.
+    AntiSupport,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -151,6 +155,9 @@ pub enum InvalidDiagnosticPlanReasonV1 {
     IncompatibleBounds,
     InvalidModifierDirection,
     OpponentStarsMagnitude,
+    /// This older projection has no opposing-hand context, so a Brawl magnitude cannot be
+    /// evaluated here however a caller labels it.
+    AntiSupportMagnitude,
     RoundScaledMagnitude,
     ZeroMagnitude,
 }
@@ -462,6 +469,15 @@ fn validate_diagnostic_source_plan(
             InvalidDiagnosticPlanReasonV1::OpponentStarsMagnitude,
         ));
     }
+    if multiplier == DiagnosticMagnitudeV1::AntiSupport {
+        return Err(invalid_diagnostic_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidDiagnosticPlanReasonV1::AntiSupportMagnitude,
+        ));
+    }
     if matches!(
         multiplier,
         DiagnosticMagnitudeV1::Growth | DiagnosticMagnitudeV1::Degrowth
@@ -574,11 +590,14 @@ fn prepare_clan_bonus_diagnostic(
 fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {
     ResolutionCardPlan {
         ability: ResolutionSourcePlan {
+            // This older projection has no opposing-hand context and admits no Brawl.
+            anti_support_count: 0,
             effect: executing_effect(plan.ability),
             post_round: None,
             support_count: 0,
         },
         bonus: ResolutionSourcePlan {
+            anti_support_count: 0,
             effect: executing_effect(plan.bonus),
             post_round: None,
             support_count: plan.source_bonus_support_count,

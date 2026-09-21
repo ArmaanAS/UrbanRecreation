@@ -271,8 +271,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // and that is the corpus's only paying round for this form: the three others it appears
     // in are all unreachable here. 1092515/2 (a loss, where the Vortex `577` recovery pays
     // instead) already mismatches in its round 0, 1073010/1 (his side did win the round
-    // before, but Spidee's Reprisal `Stop Opp. Ability` silences him) selects a deferred
-    // `Brawl:` source in its round 0, and 925781/1 (Monkovski's `4449`, a loss with no
+    // before, but Spidee's Reprisal `Stop Opp. Ability` silences him) selected a deferred
+    // `Brawl:` source in its round 0 until semantic revision 40 admitted the combat-stat
+    // Brawl grammars - that draw is eligible now and is a candidate fixture, though it is
+    // not one yet - and 925781/1 (Monkovski's `4449`, a loss with no
     // prior win) sits behind the Cosmohnuts `Tune Out` bonus. The engine tests pin the
     // negative arms instead. 924615 itself stops at three rounds because its capture could
     // not attribute the closing `battles.result` to a side, so the last round's life is the

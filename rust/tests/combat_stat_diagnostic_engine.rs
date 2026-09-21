@@ -1346,7 +1346,9 @@ fn confidence_victory_pillz_waits_for_a_round_its_own_side_won() {
     // Balixto's `1702`. The server pins the paying case once, in 924615/2: his side won
     // round 1, he wins round 2 on a bet of 5, and 7 - 5 + 4 = 6. Everything else this test
     // pins is a corpus round the gate cannot reach - 1092515/2 mismatches in its own round
-    // 0, 1073010/1 opens on a deferred `Brawl:` source and 925781/1 carries `Tune Out`.
+    // 0 and 925781/1 carries `Tune Out`. 1073010/1 opened on a deferred `Brawl:` source
+    // until semantic revision 40 admitted it; that draw is eligible now and is a candidate
+    // gate fixture, but it is not one yet, so the engine still pins this arm.
     let confidence = || {
         single_ability_spec(
             CardKey::new(1707, 2),
@@ -4889,4 +4891,89 @@ fn courage_victory_opponent_life_needs_the_owner_to_move_first() {
         .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
         .unwrap();
     assert_eq!(report.players[PlayerId::P2].life, 1);
+}
+
+/// Brawl is an anti-support magnitude: the effect is multiplied by the number of distinct
+/// characters in the OPPOSING hand sharing the OPPOSING selected card's effective clan.
+///
+/// Every Brawl round in the corpus has a count of exactly 4, because every opposing hand in
+/// it is mono-clan with four distinct characters. So the server pins the magnitude against
+/// `Fixed` but never separates "distinct characters of the opposing selected card's clan"
+/// from "opposing hand size", and never varies the count at all. Those are the arms pinned
+/// here: counts of 1, 2 and 4, the dedup by character id, and the fact that the number is
+/// read from the opposing hand rather than the owner's.
+#[test]
+fn brawl_scales_by_the_opposing_hands_clan_count() {
+    // Power +1 under the Brawl magnitude, so the resolved Power reads the count directly.
+    let brawl = modifier(
+        CombatStatAffectedSideV1::Player,
+        CombatStatAttributeV1::Power,
+        CombatStatOperationV1::Increase,
+        1,
+        None,
+        None,
+        CombatStatMagnitudeV1::AntiSupport,
+    );
+
+    // `base_spec` gives every card its own clan, so the opposing count starts at 1.
+    let one = base_spec(6, 3);
+    let mut cards = plans(&one);
+    cards[PlayerId::P1][0].ability = execute(1488, CombatStatPredicateV1::Always, brawl);
+    let mut lone = game(one.clone(), cards.clone());
+    let (report, _) = lone
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 7);
+
+    // Two opposing cards sharing the selected card's clan doubles it, and the two that do
+    // not share it contribute nothing.
+    let mut pair = plans(&one);
+    pair[PlayerId::P1][0].ability = execute(1488, CombatStatPredicateV1::Always, brawl);
+    pair[PlayerId::P2][0].effective_clan_id = 900;
+    pair[PlayerId::P2][1].effective_clan_id = 900;
+    let mut two = game(one.clone(), pair);
+    let (report, _) = two
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 8);
+
+    // A mono-clan opposing hand of four distinct characters is the corpus's only case.
+    let mut quad = plans(&one);
+    quad[PlayerId::P1][0].ability = execute(1488, CombatStatPredicateV1::Always, brawl);
+    for slot in 0..4 {
+        quad[PlayerId::P2][slot].effective_clan_id = 900;
+    }
+    let mut four = game(one.clone(), quad.clone());
+    let (report, _) = four
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 10);
+
+    // The count is over the OPPOSING hand, so stacking the owner's own hand changes
+    // nothing. This is what separates Brawl from Support.
+    let mut mine = plans(&one);
+    mine[PlayerId::P1][0].ability = execute(1488, CombatStatPredicateV1::Always, brawl);
+    for slot in 0..4 {
+        mine[PlayerId::P1][slot].effective_clan_id = 900;
+    }
+    let mut own_hand = game(one.clone(), mine);
+    let (report, _) = own_hand
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 7);
+
+    // Characters are counted distinctly: a duplicate character id in the opposing hand is
+    // counted once, not twice, which no corpus round exercises.
+    let mut duplicated = one.clone();
+    duplicated.players[PlayerId::P2].hand[1] = duplicated.players[PlayerId::P2].hand[0];
+    let mut dup_cards = plans(&duplicated);
+    dup_cards[PlayerId::P1][0].ability = execute(1488, CombatStatPredicateV1::Always, brawl);
+    for slot in 0..4 {
+        dup_cards[PlayerId::P2][slot].effective_clan_id = 900;
+    }
+    let mut duplicate = game(duplicated, dup_cards);
+    let (report, _) = duplicate
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 9);
 }

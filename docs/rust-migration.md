@@ -1289,7 +1289,9 @@ artifact rather than an engine disagreement. The other three rounds are all unre
 1092515/2 (a loss, where the Vortex `577` recovery pays instead) mismatches in its own round
 0, 1073010/1 (his side did win the round before, but Spidee's Reprisal `Stop Opp. Ability`
 silences him, which is the one round in the corpus that separates the predicate from the
-source being live) opens on a deferred `Brawl:` source, and 925781/1 (Monkovski's `4449`, a
+source being live) opened on a deferred `Brawl:` source until revision 40 admitted the
+combat-stat Brawl grammars, so that draw is eligible now and is a candidate gate fixture
+rather than an unreachable round, and 925781/1 (Monkovski's `4449`, a
 loss with no prior win either) sits behind the Cosmohnuts `Tune Out` bonus. The engine test
 pins the three negative arms instead: a first round with no previous round to have won, a
 won round behind a lost one, and a lost current round behind a won previous one.
@@ -1412,6 +1414,11 @@ Min 2`. Nothing on that list is cheap in the way the last four slices were, beca
 them wants a channel or a context the projection does not have: a Courage position on a
 combat stat, a conditional Stop, a losing-side Pillz reduction, a Stop-triggered increase, a
 Brawl round counter, a clan gate. The board of admission-only slices is empty.
+
+**Three of those six prices were wrong.** Revision 37 took the Courage damage and Defeat
+Pillz pair, revision 39 took the Courage opponent-Life form, and revision 40 took Brawl -
+which is not a round counter at all. The clan gate is wrong too for its Oculus sub-shape.
+Read the classifier chain before believing any price in this paragraph.
 
 `Killshot: +N Pillz` is the one that looks cheapest on count and should not be taken on it.
 Its
@@ -1580,6 +1587,62 @@ pinned separately - the Min-clamped opponent-Life reduction by revision 33's rou
 `OwnerMovesFirst` on a post-round plan by Anita's existing arm - so the slice adds a
 composition rather than new arithmetic. The round where the owner wins having moved second,
 and the Min clamp under this predicate, are pinned by an engine test instead.
+
+Semantic revision 40 admits every combat-stat `Brawl:` grammar - 31 registry ids across 18
+printed forms - and is the largest slice the project has taken. It measured 7 and unlocked
+exactly 7: `874887`, `877920`, `1060341`, `1073010`, `1090418`, `1090817` and `1092840`,
+taking eligibility from 85 to 92.
+
+**This section priced it wrongly, and the error was conceptual rather than arithmetic.** It
+called `1488` a "Brawl round counter" and grouped it with the sources wanting a context the
+projection does not have. Brawl is not a round counter. It is an **anti-support magnitude**:
+the effect is multiplied by the number of distinct characters in the *opposing* hand sharing
+the *opposing selected card's* effective clan, which is `Per::Brawl` in the reference and the
+exact mirror of `Per::Support`. `docs/replay-triage.md` already described it correctly as a
+per-X multiplier, so the two documents contradicted each other and this one was wrong. The
+corpus refutes the round-counter reading outright: in 926165/2 the owner had won **zero**
+prior rounds and the effect still paid +4/+4, which a round counter would have scaled to
+nothing.
+
+The route matters as much as the reading. Support reaches a supported magnitude through the
+**registry**, where its text is policed by `reviewed_stat_description`, an exact single
+`format!` with no alternate spellings. Equalizer's `is_opponent_stars_linked` is refused by
+the registry in exactly the way `is_anti_support` is, and is admitted **compiler-side**
+instead, building the effect from the structured input and checking the text through
+`numeric_description_body_matches`, which does carry alternate spellings. Brawl mirrors
+Equalizer: `is_anti_support` stays an unsupported link in the registry, every existing
+`neutral_except_*` keeps its `!is_anti_support` guard, and one new gate and classifier carry
+the grammar. Taking the Support route instead would have meant loosening the registry and
+adding four arms to a function that returns one expected string.
+
+The count is the only genuinely new machinery, and it is smaller than it looks. It is
+selection-dependent - a property of the *opposing* slot, not the owner's - so it cannot be a
+per-owner-slot value, and `prepare_combat_resolution_with_post_round` cannot compute it
+because it receives only the two selected cards. But `prepare_combat_stat_diagnostic` one
+layer up already holds both full hands and both slots, and `effective_clan_character_count`
+already has the reference's `Card::clan_counts` semantics. So the number is derived there and
+carried on `ResolutionSourcePlan` beside `support_count`: no new public plan field, no new
+plan-validator rule, no new plan error, and none of the six `CombatStatCardPlanV1`
+construction sites touched. Copy falls out correctly for free - when a Copy adopts the
+opposing Brawl the copier becomes the effect's owner, so the hand it reads is the one its own
+plan already carries, which is how Support under Copy already behaves.
+
+28 of the 31 needed only the magnitude. Three - `1490`, `1703`, `3948`, all printing
+`Brawl: Damage + 1` - needed one alternate spelling with a space either side of the sign,
+which is the Hattori `304` fix again.
+
+Evidence is the strongest of any slice so far: four firing rounds across three printed levels
+and two clans, with and without Fury. 926165/2 is the decisive one - definition `1488`
+itself, a mixed-clan owner hand with no bonus at all, so nothing else can contribute, and it
+pins Brawl against Fury and an opposing Equalizer attack reduction in the same round. But
+**every Brawl round in the corpus has a count of exactly 4**, because every opposing hand in
+it is mono-clan with four distinct characters, so the server never separates "distinct
+characters of the opposing selected card's clan" from "opposing hand size" and never varies
+the count. Counts of 1, 2 and 4, the dedup by character id, and the fact that the number is
+read from the opposing hand rather than the owner's are all pinned by an engine test.
+
+Battle 1073010 stops being the unreachable round three other comments describe it as: its
+round 0 opened on a deferred `Brawl:` source, and that source is admitted now.
 
 ### Per-decision admission instead of whole-draw admission
 

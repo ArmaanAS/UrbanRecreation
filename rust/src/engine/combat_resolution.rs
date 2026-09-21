@@ -31,6 +31,12 @@ pub(super) struct ResolutionSourcePlan {
     pub effect: Option<DiagnosticCombatEffectV1>,
     pub post_round: Option<PostRoundSourceEffect>,
     pub support_count: u16,
+    /// The Brawl multiplier: how many distinct characters in the *opposing* hand share the
+    /// opposing selected card's effective clan. Derived one layer up, in
+    /// `prepare_combat_stat_diagnostic`, which is the lowest layer that holds both hands -
+    /// this one is handed only the two selected cards. It is a property of the opposing
+    /// slot, not of the owner's, which is why it cannot be a per-owner-slot value.
+    pub anti_support_count: u16,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -830,6 +836,7 @@ fn apply_power_damage_effect(
         value,
         multiplier,
         source.support_count,
+        source.anti_support_count,
         rounds_played,
         opponent_stars,
         0,
@@ -912,6 +919,7 @@ fn apply_attack_effect(
         value,
         multiplier,
         source.support_count,
+        source.anti_support_count,
         rounds_played,
         opponent_stars,
         opponent_damage,
@@ -932,6 +940,7 @@ fn effect_amount(
     value: u16,
     multiplier: DiagnosticMagnitudeV1,
     support_count: u16,
+    anti_support_count: u16,
     rounds_played: u8,
     opponent_stars: u16,
     // The opposing card's Damage as the Attack phase sees it: resolved, but before Fury.
@@ -941,6 +950,7 @@ fn effect_amount(
     let multiplier = match multiplier {
         DiagnosticMagnitudeV1::Fixed => 1,
         DiagnosticMagnitudeV1::SourceBonusSupport => u32::from(support_count),
+        DiagnosticMagnitudeV1::AntiSupport => u32::from(anti_support_count),
         DiagnosticMagnitudeV1::Growth => u32::from(rounds_played) + 1,
         DiagnosticMagnitudeV1::Degrowth => u32::from(MAX_ROUNDS.checked_sub(rounds_played).ok_or(
             CombatResolutionError {
