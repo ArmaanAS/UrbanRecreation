@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 38;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 39;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -653,9 +653,10 @@ pub(crate) fn victory_or_defeat_life_identity_matches(
 /// is only ever the clan Bonus and each conditional only ever a printed Ability.
 ///
 /// The conditional members reuse predicates the projection already resolves before a round
-/// is prepared. Courage `4533` (Ligea level 3) and Growth `1730` deliberately stay out:
-/// `4533` has no selected observation anywhere in the corpus, and `1730` is a round-scaled
-/// magnitude rather than a predicate, which a post-round plan cannot carry today.
+/// is prepared. Growth `1730` deliberately stays out: it is a round-scaled magnitude rather
+/// than a predicate, which a post-round plan cannot carry today. The Courage members are in
+/// as of semantic revision 39; they were previously grouped with `1730` under one candidate
+/// line, which is why the family read as one draw rather than the two it measures.
 const VICTORY_OPPONENT_LIFE_IDENTITIES: [(
     u32,
     &str,
@@ -663,7 +664,7 @@ const VICTORY_OPPONENT_LIFE_IDENTITIES: [(
     u16,
     u16,
     CombatStatPredicateV1,
-); 4] = [
+); 8] = [
     (
         680,
         "-2 Opp. Life Min 2",
@@ -698,6 +699,44 @@ const VICTORY_OPPONENT_LIFE_IDENTITIES: [(
         3,
         0,
         CombatStatPredicateV1::OwnerWonPreviousRound,
+    ),
+    // Dragomer Cr level 3. Its levels 4 and 5 print `3001` and `2302`, and neither has a
+    // registry definition at all, so both stay fail-closed with no special handling -
+    // the Doela Noel level-one `4843` case again.
+    (
+        3314,
+        "Courage: - 1 Opp. Life Min 0",
+        CombatStatEffectSourceV1::Ability,
+        1,
+        0,
+        CombatStatPredicateV1::OwnerMovesFirst,
+    ),
+    // Ligea prints the reduction at all three of her levels. Levels 1 and 2 carry
+    // byte-identical records under two ids, exactly as Diabolus does above, so each is
+    // admitted on its own evidence rather than one aliasing the other.
+    (
+        4531,
+        "Courage: - 3 Opp. Life Min 1",
+        CombatStatEffectSourceV1::Ability,
+        3,
+        1,
+        CombatStatPredicateV1::OwnerMovesFirst,
+    ),
+    (
+        4532,
+        "Courage: - 3 Opp. Life Min 1",
+        CombatStatEffectSourceV1::Ability,
+        3,
+        1,
+        CombatStatPredicateV1::OwnerMovesFirst,
+    ),
+    (
+        4533,
+        "Courage: - 3 Opp. Life Min 0",
+        CombatStatEffectSourceV1::Ability,
+        3,
+        0,
+        CombatStatPredicateV1::OwnerMovesFirst,
     ),
 ];
 
@@ -810,8 +849,15 @@ fn victory_opponent_life_shape_matches(
             PreviousRoundRequirementV1::Win,
             IndexRequirementV1::Any,
         ),
-        CombatStatPredicateV1::OwnerMovesFirst
-        | CombatStatPredicateV1::OwnerMovesSecond
+        // Courage carries its condition in the position field rather than the previous
+        // round or the hand slot, which is the one structural slot this grammar had not
+        // yet been shown. Everything else about the record is the reviewed Victory shape.
+        CombatStatPredicateV1::OwnerMovesFirst => (
+            PositionRequirementV1::Attacker,
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Any,
+        ),
+        CombatStatPredicateV1::OwnerMovesSecond
         | CombatStatPredicateV1::OwnerLostPreviousRound
         | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
     };
@@ -2699,6 +2745,20 @@ mod tests {
                 3,
                 CombatStatPredicateV1::OwnerWonPreviousRound,
             ),
+            // Courage carries its condition in the position field, and Ligea's first two
+            // levels are the only conditional members whose Min is not zero.
+            (
+                3314,
+                "Courage: - 1 Opp. Life Min 0",
+                1,
+                CombatStatPredicateV1::OwnerMovesFirst,
+            ),
+            (
+                4533,
+                "Courage: - 3 Opp. Life Min 0",
+                3,
+                CombatStatPredicateV1::OwnerMovesFirst,
+            ),
         ] {
             let conditional = registry.lookup_capture(id, description).unwrap();
             assert_eq!(
@@ -2713,13 +2773,29 @@ mod tests {
                 "conditional {id} as bonus",
             );
         }
-        // Courage `4533` has no selected observation anywhere in the corpus and Growth
-        // `1730` is a round-scaled magnitude rather than a predicate, so both stay deferred
-        // although they share this exact structure.
-        for (id, description) in [
-            (4533, "Courage: - 3 Opp. Life Min 0"),
-            (1730, "Growth: - 1 Opp. Life Min 4"),
-        ] {
+        // Ligea's first two levels print the same text under two ids and are the only
+        // conditional members with a non-zero Min, so they are checked apart from the loop
+        // above rather than by widening its tuple.
+        for id in [4531, 4532] {
+            let floored = registry
+                .lookup_capture(id, "Courage: - 3 Opp. Life Min 1")
+                .unwrap();
+            assert_eq!(
+                classify_victory_opponent_life(floored, CombatStatEffectSourceV1::Ability),
+                Some((3, 1, CombatStatPredicateV1::OwnerMovesFirst)),
+                "Ligea {id}",
+            );
+            assert_eq!(
+                classify_victory_opponent_life(floored, CombatStatEffectSourceV1::Bonus),
+                None,
+                "Ligea {id} as bonus",
+            );
+        }
+        // Growth `1730` is a round-scaled magnitude rather than a predicate, so it stays
+        // deferred although it shares this exact structure. Dragomer Cr's levels 4 and 5
+        // print `3001` and `2302`, which have no registry definition at all: they are
+        // fail-closed by absence and there is nothing here to assert about them.
+        for (id, description) in [(1730, "Growth: - 1 Opp. Life Min 4")] {
             let deferred = registry.lookup_capture(id, description).unwrap();
             assert_eq!(
                 classify_victory_opponent_life(deferred, CombatStatEffectSourceV1::Ability),

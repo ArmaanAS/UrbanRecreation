@@ -3655,24 +3655,57 @@ fn strict_catalog_match_admits_the_reviewed_conditional_victory_opponent_life_ca
     // Each reviewed conditional member is bound to one exact card, level and catalog id, and
     // carries the predicate its own printed text names. Diabolus prints the effect at both
     // levels under two distinct, byte-identical registry records.
-    for (key, catalog_id, life, predicate) in [
+    for (key, catalog_id, life, minimum, predicate) in [
         (
             CardKey::new(2058, 2),
             4708,
             4,
+            0,
             CombatStatPredicateV1::SelectedHandSlotsMatch,
         ),
         (
             CardKey::new(2270, 1),
             4301,
             3,
+            0,
             CombatStatPredicateV1::OwnerWonPreviousRound,
         ),
         (
             CardKey::new(2270, 2),
             3016,
             3,
+            0,
             CombatStatPredicateV1::OwnerWonPreviousRound,
+        ),
+        // Courage joined the table in semantic revision 39. Ligea prints the reduction at
+        // all three levels and is the only member whose Min is not zero.
+        (
+            CardKey::new(2114, 3),
+            3314,
+            1,
+            0,
+            CombatStatPredicateV1::OwnerMovesFirst,
+        ),
+        (
+            CardKey::new(2556, 1),
+            4531,
+            3,
+            1,
+            CombatStatPredicateV1::OwnerMovesFirst,
+        ),
+        (
+            CardKey::new(2556, 2),
+            4532,
+            3,
+            1,
+            CombatStatPredicateV1::OwnerMovesFirst,
+        ),
+        (
+            CardKey::new(2556, 3),
+            4533,
+            3,
+            0,
+            CombatStatPredicateV1::OwnerMovesFirst,
         ),
     ] {
         let prepared = CatalogCombatStatMatchV1::new(
@@ -3694,7 +3727,7 @@ fn strict_catalog_match_admits_the_reviewed_conditional_victory_opponent_life_ca
         assert_eq!(identity.registry_definition_id, catalog_id);
         assert_eq!(
             *effect,
-            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum: 0 }
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum }
         );
         assert_eq!(*actual_predicate, predicate);
         assert_eq!(
@@ -3705,19 +3738,21 @@ fn strict_catalog_match_admits_the_reviewed_conditional_victory_opponent_life_ca
                 effect:
                     urban_recreation_rust::engine::CombatStatEffectV1::ReduceOpponentLifeOnVictory {
                         life,
-                        minimum: 0,
+                        minimum,
                     },
             }
         );
     }
 
-    // Doela Noel level one prints the same text under catalog id 4843, which has no registry
-    // definition, so it stays fail-closed without any special handling. Ligea level three's
-    // Courage `4533` and Bekum's Growth `1730` share the structure but have no admitted
-    // evidence and no predicate a post-round plan can carry, respectively.
+    // A printed level whose catalog ability has no registry definition stays fail-closed
+    // without any special handling, which is what keeps Doela Noel level one and Dragomer
+    // Cr's upper two levels out. Bekum's Growth `1730` does have a definition and shares
+    // the structure, but its magnitude is round-scaled rather than a predicate, which a
+    // post-round plan cannot carry.
     for key in [
         CardKey::new(2058, 1), // Doela Noel L1, catalog ability 4843.
-        CardKey::new(2556, 3), // Ligea L3, Courage: - 3 Opp. Life Min 0.
+        CardKey::new(2114, 4), // Dragomer Cr L4, catalog ability 3001.
+        CardKey::new(2114, 5), // Dragomer Cr L5, catalog ability 2302.
         CardKey::new(1882, 2), // Bekum, Growth: - 1 Opp. Life Min 4.
     ] {
         assert!(

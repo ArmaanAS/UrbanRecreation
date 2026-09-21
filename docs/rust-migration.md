@@ -1544,6 +1544,43 @@ deferred - the prefix match already tolerates the space before its colon. The de
 were also stale: the same captures took the scanned corpus from 361 draws to 364 and moved
 `effectRegistryFingerprintFnv1a64`, which had not been regenerated.
 
+Semantic revision 39 admits the Courage form of the Victory opponent-Life reduction
+(`3314`, `4531`, `4532`, `4533`): the owner moving first and winning reduces the opposing
+player's Life by N, never below M. It measured 2 and unlocked exactly 2 - `957028` and
+`1081879` - taking eligibility from 83 to 85.
+
+The candidate line this came from was wrong in a way worth naming, because it is a new
+failure mode for this section. It read `[1730, 4533]` under the heading "conditional Victory
+opponent-Life", and those are **two different grammars filed under one name**. `1730` is
+`Growth: - 1 Opp. Life Min 4`, a round-scaled magnitude, and it stays deferred. Courage is
+four printed levels across two cards, not the one the line carried. Split and corrected, the
+Courage line measures 2 where the mixed line measured 1. A line that names a grammar it does
+not contain under-reports exactly like a line that omits a printed level, and it is harder
+to spot.
+
+Dragomer Cr is the caution on the other side. It prints the reduction at three levels, but
+levels 4 and 5 print catalog ability `3001` and `2302`, and **neither has a registry
+definition at all** - so they stay fail-closed by simply not being listed, the Doela Noel
+level-one `4843` case again. Enumerating a card's levels is not the same as enumerating a
+family's definitions, and only the second is what the line needs.
+
+The price was admission-only plus one predicate arm, as the identity table's own comment had
+implied was impossible. Courage carries its condition in the `positionRequirement` field,
+which `victory_opponent_life_shape_matches` had listed among the predicates it returns
+`false` for; the whole grammar change is that arm mapping `OwnerMovesFirst` to
+`(Attacker, Any, Any)`. That makes four consecutive candidates this section over-priced.
+
+**The evidence is thin and this is the exception, not the rule.** The corpus has exactly one
+paying round: 1091848/1, where Ligea moves first and wins, and side 1 goes from 10 to 6 -
+combat damage 1, then the Courage 3, with Min 1 not binding. Two further selections
+(1081879/0, 926470/3) are silenced by an opposing `Reprisal: Stop Opp. Ability` and a
+`Stop Opp. Ability`, which pins liveness rather than arithmetic, and two more lost the
+round. It is admitted on the same basis revision 36 used: every piece it composes is already
+pinned separately - the Min-clamped opponent-Life reduction by revision 33's rounds, and
+`OwnerMovesFirst` on a post-round plan by Anita's existing arm - so the slice adds a
+composition rather than new arithmetic. The round where the owner wins having moved second,
+and the Min clamp under this predicate, are pinned by an engine test instead.
+
 ### Per-decision admission instead of whole-draw admission
 
 Every slice above widens what the projection understands. There is a second axis, which

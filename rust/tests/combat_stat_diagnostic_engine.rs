@@ -3709,10 +3709,9 @@ fn victory_opponent_life_plan_is_identity_magnitude_and_predicate_locked() {
         })
     ));
 
-    // The deferred conditional siblings are still refused however a caller labels them:
-    // `4533` has no selected observation in the corpus and `1730` is a round-scaled
-    // magnitude rather than a predicate.
-    for unreviewed in [4533, 1730] {
+    // Growth `1730` is still refused however a caller labels it: it is a round-scaled
+    // magnitude rather than a predicate, and it is not a reviewed identity at all.
+    for unreviewed in [1730] {
         let mut foreign_id = victory_opponent_life_spec(7, 3, 20);
         foreign_id.cards[PlayerId::P1][0].ability = execute(
             unreviewed,
@@ -3733,6 +3732,26 @@ fn victory_opponent_life_plan_is_identity_magnitude_and_predicate_locked() {
             "unreviewed {unreviewed}",
         );
     }
+
+    // Courage `4533` became a reviewed identity in semantic revision 39, so a plan claiming
+    // its magnitude under the wrong condition is now refused for the sharper reason: the
+    // identity and the magnitude are its own, and only the predicate is wrong.
+    let mut unconditional_courage = victory_opponent_life_spec(7, 3, 20);
+    unconditional_courage.cards[PlayerId::P1][0].ability = execute(
+        4533,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 3,
+            minimum: 0,
+        },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(unconditional_courage),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentLifePredicate,
+            ..
+        })
+    ));
 
     // Every reviewed identity carries exactly one predicate, so a plan can neither add a
     // condition to an unconditional member nor swap in another condition for a conditional
@@ -4804,4 +4823,70 @@ fn killshot_opponent_life_triggers_on_the_attack_ratio_and_not_on_the_win() {
         .unwrap();
     assert!(!report.cards[PlayerId::P1].won);
     assert_eq!(report.players[PlayerId::P2].life, 18);
+}
+
+/// Courage on the Victory opponent-Life reduction composes two pieces the projection had
+/// already pinned separately: the Min-clamped reduction itself, and `OwnerMovesFirst` on a
+/// post-round plan. The corpus reaches the paying round (1091848/1) but not the round where
+/// the owner wins having moved second, nor the Min clamp on this predicate, so both are
+/// pinned here.
+#[test]
+fn courage_victory_opponent_life_needs_the_owner_to_move_first() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        4533,
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 3,
+            minimum: 0,
+        },
+    );
+
+    // Moving first and winning pays: three combat damage, then the three.
+    let mut first = game(base.clone(), cards.clone());
+    let (report, _) = first
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 14);
+
+    // Winning having moved second pays nothing at all.
+    let mut second = game(base.clone(), cards.clone());
+    let (report, _) = second
+        .make(input(PlayerId::P2, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+
+    // Losing pays nothing either, however the owner moved.
+    let mut lost = game(base, cards.clone());
+    let (report, _) = lost
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 20);
+
+    // Ligea's floored form leaves a target already at the Min alone rather than pulling it
+    // up. Zero printed damage keeps the combat ledger out of the way.
+    let quiet = base_spec(6, 0);
+    let mut quiet_cards = plans(&quiet);
+    quiet_cards[PlayerId::P1][0].ability = execute(
+        4531,
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 3,
+            minimum: 1,
+        },
+    );
+    let mut spec = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: quiet,
+        cards: quiet_cards,
+    };
+    spec.base_rules.players[PlayerId::P2].initial_life = 1;
+    let mut clamped = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = clamped
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 1);
 }

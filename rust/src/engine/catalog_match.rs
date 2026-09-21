@@ -58,7 +58,7 @@ const BERZERK_VICTORY_OPPONENT_LIFE_DESCRIPTION: &str = "-2 Opp. Life Min 2";
 /// definition — Doela Noel level one's `4843` — stays fail-closed with no special handling.
 /// The unconditional printed abilities are admitted by grammar instead, under the ordinary
 /// structural-alias rule every other post-round grammar uses.
-const VICTORY_OPPONENT_LIFE_ABILITY_CARDS: [(CardKey, u32, &str); 3] = [
+const VICTORY_OPPONENT_LIFE_ABILITY_CARDS: [(CardKey, u32, &str); 7] = [
     (
         CardKey { id: 2058, level: 2 },
         4708,
@@ -73,6 +73,30 @@ const VICTORY_OPPONENT_LIFE_ABILITY_CARDS: [(CardKey, u32, &str); 3] = [
         CardKey { id: 2270, level: 2 },
         3016,
         "Confidence: -3 Opp. Life, Min 0",
+    ),
+    // Dragomer Cr level 3. Levels 4 and 5 print `3001` and `2302`, neither of which has a
+    // registry definition, so they stay fail-closed by simply not being listed here.
+    (
+        CardKey { id: 2114, level: 3 },
+        3314,
+        "Courage: - 1 Opp. Life Min 0",
+    ),
+    // Ligea at all three levels. Levels 1 and 2 print byte-identical text under two ids, so
+    // the card and level are what separate them, exactly as for Diabolus above.
+    (
+        CardKey { id: 2556, level: 1 },
+        4531,
+        "Courage: - 3 Opp. Life Min 1",
+    ),
+    (
+        CardKey { id: 2556, level: 2 },
+        4532,
+        "Courage: - 3 Opp. Life Min 1",
+    ),
+    (
+        CardKey { id: 2556, level: 3 },
+        4533,
+        "Courage: - 3 Opp. Life Min 0",
     ),
 ];
 const RIOTS_CLAN_ID: u32 = 49;

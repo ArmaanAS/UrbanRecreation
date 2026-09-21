@@ -920,14 +920,17 @@ fn equalizer_opponent_life_id_is_reserved(source_id: u32) -> bool {
 /// onto another id, and no other magnitude can ride theirs. Every remaining printed ability
 /// goes through the plain grammar below.
 fn victory_opponent_life_id_is_reserved(source_id: u32) -> bool {
-    matches!(source_id, 680 | 3016 | 4301 | 4708)
+    matches!(
+        source_id,
+        680 | 3016 | 3314 | 4301 | 4531 | 4532 | 4533 | 4708
+    )
 }
 
-/// The conditional siblings this slice deliberately leaves out. `4533` has no selected
-/// observation anywhere in the corpus and `1730` is a round-scaled magnitude rather than a
-/// predicate, so neither may ride the plain grammar however a caller labels it.
+/// The conditional sibling this slice deliberately leaves out. `1730` is a round-scaled
+/// magnitude rather than a predicate, so it may not ride the plain grammar however a caller
+/// labels it. Its two paying rounds are good evidence for a later slice, not for this one.
 fn victory_opponent_life_id_is_deferred(source_id: u32) -> bool {
-    matches!(source_id, 1730 | 4533)
+    matches!(source_id, 1730)
 }
 
 fn victory_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffectV1) -> bool {
@@ -946,10 +949,22 @@ fn victory_opponent_life_effect_matches(source_id: u32, effect: CombatStatEffect
                 minimum: 0
             }
         ) | (
-            3016 | 4301,
+            3016 | 4301 | 4533,
             CombatStatEffectV1::ReduceOpponentLifeOnVictory {
                 life: 3,
                 minimum: 0
+            }
+        ) | (
+            3314,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 1,
+                minimum: 0
+            }
+        ) | (
+            4531 | 4532,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 3,
+                minimum: 1
             }
         )
     )

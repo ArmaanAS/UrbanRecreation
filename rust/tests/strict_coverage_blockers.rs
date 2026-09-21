@@ -179,7 +179,10 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         "prefixed +N Pillz (Confidence + Killshot)",
         &[1702, 2250, 4449, 4645],
     ),
-    ("wider permanent Life (Defeat/Growth Poison)", &[1266, 1282, 4561]),
+    (
+        "wider permanent Life (Defeat/Growth Poison)",
+        &[1266, 1282, 4561],
+    ),
     ("Courage: -4 Opp. Dmg, Min 2", &[304, 961]),
     ("Defeat: -2 Opp. Pillz, Min 4", &[912]),
     (
@@ -227,7 +230,10 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ("Growth Victory opponent Life", &[1730]),
     // The permanent-Life latch split by trigger. `Defeat : Heal` rides the same new
     // losing-round latch as `Defeat: Poison` and costs one extra text arm.
-    ("Defeat permanent Life (Poison + Heal)", &[898, 1625, 1790, 4561]),
+    (
+        "Defeat permanent Life (Poison + Heal)",
+        &[898, 1625, 1790, 4561],
+    ),
     ("Defeat Poison alone", &[4561]),
     ("Growth permanent Life Poison", &[1266, 1282]),
     // Brawl is an anti-support magnitude, not a round counter. The magnitude channel is

@@ -1099,10 +1099,12 @@ fn prepare_combat_stat_source(
     // the complete reviewed structure under other text - which is what `Night: -2 Opp. Life
     // Min 0` is - rejects when selected. The identity-locked members stay listed so a
     // malformed record or a wrong source slot cannot quietly become an inert no-op.
-    // Conditional siblings such as Courage 4533 and Growth 1730 differ in a structured
-    // field and keep their existing Disabled records.
-    let unadmitted_victory_opponent_life = matches!(source.id, 680 | 3016 | 4301 | 4708)
-        || source.description == "-2 Opp. Life Min 2"
+    // The Courage members joined the identity table in semantic revision 39; Growth 1730
+    // still differs in a structured field and keeps its existing Disabled record.
+    let unadmitted_victory_opponent_life = matches!(
+        source.id,
+        680 | 3016 | 3314 | 4301 | 4531 | 4532 | 4533 | 4708
+    ) || source.description == "-2 Opp. Life Min 2"
         || (source.description.starts_with('-')
             && source.description.contains("Opp. Life")
             && input.attribute_affected == AttributeAffectedV1::Life)
