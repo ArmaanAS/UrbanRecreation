@@ -179,7 +179,7 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         "prefixed +N Pillz (Confidence + Killshot)",
         &[1702, 2250, 4449, 4645],
     ),
-    ("wider permanent Life (Defeat/Growth Poison)", &[1282, 4561]),
+    ("wider permanent Life (Defeat/Growth Poison)", &[1266, 1282, 4561]),
     ("Courage: -4 Opp. Dmg, Min 2", &[304, 961]),
     ("Defeat: -2 Opp. Pillz, Min 4", &[912]),
     (
@@ -196,7 +196,60 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ("Killshot +N Pillz And Life", &[1768, 3106, 3318]),
     (
         "Killshot opponent Life + Pillz And Life",
-        &[1204, 1670, 1768, 1779, 1959, 3106, 3318, 4459, 4785, 5461, 5530],
+        &[
+            1204, 1670, 1768, 1779, 1959, 3106, 3318, 4459, 4785, 5461, 5530,
+        ],
+    ),
+    (
+        "Killshot opponent Life + own Pillz",
+        &[1204, 1670, 1779, 1959, 2250, 4459, 4645, 4785, 5461, 5530],
+    ),
+    (
+        "Killshot: +N Pillz with the third printed level",
+        &[2250, 4311, 4645],
+    ),
+    ("Killshot own Life gain", &[1231, 2956, 3760, 5065, 5066]),
+    (
+        "every Killshot grammar (the whole sureshot channel)",
+        &[
+            1204, 1231, 1670, 1768, 1779, 1959, 2250, 2497, 2956, 3106, 3318, 3480, 3760, 3894,
+            4311, 4459, 4645, 4785, 5065, 5066, 5461, 5530, 5775, 5776,
+        ],
+    ),
+    // Candidates priced on 2026-09-21. Each is measured as its own line before anything is
+    // admitted, and the combined lines are measured too, because neither additivity nor
+    // overlap can be assumed.
+    //
+    // The conditional Victory opponent-Life line used to read `[1730, 4533]`, which was two
+    // different grammars under one name and under-reported both. Courage is four printed
+    // levels across two cards; Growth is a round-scaled magnitude and its own line.
+    ("Courage Victory opponent Life", &[3314, 4531, 4532, 4533]),
+    ("Growth Victory opponent Life", &[1730]),
+    // The permanent-Life latch split by trigger. `Defeat : Heal` rides the same new
+    // losing-round latch as `Defeat: Poison` and costs one extra text arm.
+    ("Defeat permanent Life (Poison + Heal)", &[898, 1625, 1790, 4561]),
+    ("Defeat Poison alone", &[4561]),
+    ("Growth permanent Life Poison", &[1266, 1282]),
+    // Brawl is an anti-support magnitude, not a round counter. The magnitude channel is
+    // nearly all of the cost and is paid once, so the whole combat-stat set is measured
+    // beside its narrowest member.
+    ("Brawl Power And Damage", &[1488, 1759, 5339, 5340]),
+    (
+        "every combat-stat Brawl grammar",
+        &[
+            1488, 1490, 1556, 1703, 1707, 1759, 1834, 2560, 2859, 2905, 2917, 2973, 3047, 3219,
+            3272, 3303, 3855, 3936, 3948, 4463, 4826, 4897, 5255, 5339, 5340, 5376, 5497, 5519,
+            5524, 5527, 5759,
+        ],
+    ),
+    // The Oculus infiltration clan gate, narrowed to the members whose body is already an
+    // admitted grammar, so the line prices the gate itself rather than the bodies.
+    (
+        "Oculus infiltration clan gate (already-bodied members)",
+        &[
+            2931, 4667, 4672, 4680, 5299, 5353, 5603, 5604, 5619, 5814, 5906, 5908, 5909, 5911,
+            5912,
+        ],
     ),
 ];
 

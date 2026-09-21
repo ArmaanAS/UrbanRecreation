@@ -3,4 +3,4 @@
 # Derived, not hand-written. Regenerate with:
 #   UR_UPDATE_EXPECT=1 cargo test --manifest-path rust/Cargo.toml --locked
 # Then read `git diff` on this file: it is the slice's unlock evidence.
-37
+38

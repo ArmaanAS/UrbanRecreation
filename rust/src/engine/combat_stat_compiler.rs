@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 37;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 38;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -883,6 +883,51 @@ fn defeat_opponent_life_shape_matches(input: &StructuredEffectV1) -> bool {
     )
 }
 
+/// `Killshot: -N Opp. Life Min M` is the same opponent-Life reduction on the `sureshot`
+/// current-round channel: it pays when the owner's final attack is at least double the
+/// opposing one, which is a different question from winning the round. The registry has
+/// always parsed `sureshot`; nothing had ever asked it, so this is the first grammar whose
+/// trigger reads the resolved attacks rather than the round's winner.
+///
+/// The printed text is the plain Victory spelling under a prefix - unspaced `Min`, no comma
+/// before it - and not the `Defeat:` comma form, so the two sibling grammars cannot be
+/// admitted by each other's text.
+pub(crate) fn classify_killshot_opponent_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (life, minimum) = (input.value, input.value_min);
+    (life > 0
+        && definition.description() == format!("Killshot: -{life} Opp. Life Min {minimum}")
+        && killshot_opponent_life_shape_matches(input))
+    .then_some((life, minimum))
+}
+
+fn killshot_opponent_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            current_round: CurrentRoundRequirementV1::Sureshot,
+            side: AffectedSideV1::Opponent,
+            action: AttributeActionV1::Decrease,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+/// Structural half of the Killshot opponent-Life boundary, so replay preparation can call
+/// the complete reviewed shape under malformed or differently prefixed text a hazard rather
+/// than silently disabling it.
+pub(crate) fn has_killshot_opponent_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && killshot_opponent_life_shape_matches(input)
+}
+
 /// Recognize `Xantiax: -N Life, Min. M`: the only admitted post-round grammar that names
 /// no outcome and no beneficiary. Both players lose N, neither below M, whatever the round
 /// did. `Xantiax` is flavour on the printed text, not a condition - the structured record
@@ -1123,6 +1168,10 @@ pub(crate) fn classify_combat_stat_effect(
     }
     // The losing-side opponent-Life reduction has the same post-round execution channel.
     if classify_defeat_opponent_life(definition, source_kind).is_some() {
+        return None;
+    }
+    // So does the Killshot reduction, on the `sureshot` channel.
+    if classify_killshot_opponent_life(definition, source_kind).is_some() {
         return None;
     }
     // Recovery has its own post-round execution channel. Keep it out of this combat-stat
@@ -2256,6 +2305,103 @@ mod tests {
     }
 
     #[test]
+    fn killshot_opponent_life_is_admitted_by_grammar_and_stays_ability_only() {
+        let registry = registry();
+
+        for (id, description, life, minimum) in [
+            (1779, "Killshot: -2 Opp. Life Min 2", 2, 2),
+            (1959, "Killshot: -3 Opp. Life Min 2", 3, 2),
+            (4459, "Killshot: -3 Opp. Life Min 0", 3, 0),
+            (5461, "Killshot: -3 Opp. Life Min 0", 3, 0),
+            (5530, "Killshot: -3 Opp. Life Min 0", 3, 0),
+            (1670, "Killshot: -4 Opp. Life Min 0", 4, 0),
+            (4785, "Killshot: -5 Opp. Life Min 0", 5, 0),
+            (1204, "Killshot: -6 Opp. Life Min 0", 6, 0),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_killshot_opponent_life(definition, CombatStatEffectSourceV1::Ability),
+                Some((life, minimum)),
+                "definition {id}",
+            );
+            // No clan bonus prints this text, so a bonus claiming it is not the same source.
+            assert_eq!(
+                classify_killshot_opponent_life(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} as a bonus",
+            );
+            // It is post-round work, never a combat-stat modifier.
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id} as a combat stat",
+            );
+            // The sibling grammars must not claim it: they differ in the current-round
+            // requirement and, for Defeat, in the comma the text prints before `Min`.
+            assert_eq!(
+                classify_victory_opponent_life(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id} as Victory",
+            );
+            assert_eq!(
+                classify_defeat_opponent_life(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id} as Defeat",
+            );
+        }
+
+        // The printed numbers are authority, and so is the `sureshot` channel: a record
+        // whose text disagrees with its own structured magnitude or bound, or which asks a
+        // different outcome, is refused rather than trusted either way. `win` is the case
+        // that matters most - it is the plain Victory reduction wearing Killshot's text.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(4)),
+            ("valueMin", serde_json::json!(1)),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("currentRoundRequirement", serde_json::json!("lose")),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("sideAffected", serde_json::json!("player")),
+            ("attributeAction", serde_json::json!("increase")),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1959"]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_killshot_opponent_life(
+                    malformed
+                        .lookup_capture(1959, "Killshot: -3 Opp. Life Min 2")
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "malformed {field} = {value}",
+            );
+        }
+
+        // The other Killshot grammars share the `sureshot` channel and must stay out of
+        // this one: they move a different resource, or the owner's own.
+        for (id, description) in [
+            (2250, "Killshot: +3 Pillz"),
+            (1231, "Killshot: +3 Life"),
+            (1768, "Killshot: +2 Pillz And Life"),
+            (2497, "Killshot: Toxin 1, Min 0"),
+            (5776, "Killshot: -2 Opp. Pillz And Life, Min 0"),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_killshot_opponent_life(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id} is a different Killshot grammar",
+            );
+        }
+    }
+
+    #[test]
     fn copy_is_admitted_by_grammar_and_excludes_every_unreviewed_variant() {
         let registry = registry();
         // The registry holds many structurally identical Copy definitions; each is admitted
@@ -2765,9 +2911,14 @@ mod tests {
     #[test]
     fn observed_previous_round_inventory_is_exact_and_fail_closed() {
         let registry = registry();
+        // `591` arrived with the 2026-09-20 Dojo captures, and it is admitted rather than
+        // deferred even though it prints `Confidence : -1 Opp. Power, Min 1` with a space
+        // before the colon: the registry compiler's prefix match already tolerates that
+        // spacing, so the ordinary reviewed Confidence grammar picks it up unchanged. The
+        // inventory is the only thing that had to learn about it.
         let admitted = BTreeSet::from([
-            463, 465, 478, 520, 553, 555, 556, 560, 585, 634, 784, 801, 859, 883, 884, 921, 938,
-            965, 1053, 1091, 1107, 1278, 1286, 1303, 1395, 1417, 1839, 2628, 2657, 3827, 3829,
+            463, 465, 478, 520, 553, 555, 556, 560, 585, 591, 634, 784, 801, 859, 883, 884, 921,
+            938, 965, 1053, 1091, 1107, 1278, 1286, 1303, 1395, 1417, 1839, 2628, 2657, 3827, 3829,
             4316, 4399, 4464, 4623, 4711, 4838, 5406, 5881,
         ]);
         let deferred = BTreeSet::from([

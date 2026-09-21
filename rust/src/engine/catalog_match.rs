@@ -10,9 +10,9 @@ use super::combat_stat_compiler::{
     classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
     classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_regen_life_on_victory,
-    classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_killshot_opponent_life, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
@@ -1514,6 +1514,28 @@ fn prepare_catalog_source(
                 definition.id(),
             );
         }
+        // The Killshot reduction is the same grammar on the `sureshot` channel and is
+        // admitted by the same alias rule.
+        if classify_killshot_opponent_life(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_killshot_opponent_life_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
         // Xantiax charges both players and names no outcome, but it is admitted by the
         // same rule as every other generic post-round grammar: the catalog row has to be a
         // structural alias of the registry definition its text resolves to.
@@ -2089,6 +2111,34 @@ fn prepare_defeat_opponent_life_source(
             Some((
                 CombatStatPostRoundEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
                 CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum },
+                CombatStatPredicateV1::Always,
+            ))
+        },
+    )
+}
+
+fn prepare_killshot_opponent_life_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (life, minimum) = classify_killshot_opponent_life(definition, source_kind)?;
+            Some((
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnKillshot { life, minimum },
+                CombatStatEffectV1::ReduceOpponentLifeOnKillshot { life, minimum },
                 CombatStatPredicateV1::Always,
             ))
         },

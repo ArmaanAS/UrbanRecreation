@@ -1499,6 +1499,51 @@ in fact `active_effect` already evaluated `predicate_matches` over the post-roun
 only admission was closed. Check the code before pricing a slice from this paragraph, and
 rerun the measurement after any admission change rather than trusting the numbers above.
 
+Semantic revision 38 takes the Killshot opponent-Life reduction (`1204`, `1670`, `1779`,
+`1959`, `4459`, `4785`, `5461`, `5530`): the owner's final attack being at least double the
+opposing one reduces the opposing player's Life by N, never below M. It measured 2 and
+unlocked exactly 2 - `874837` and `875272` - taking eligibility from 81 to 83. Note that
+`875272` is the same draw this section named as the corpus's closest Killshot near miss; it
+became eligible because its Killshot *Life* blocker cleared, not because the near miss was
+resolved.
+
+Two things this section had wrong are worth recording, because both were found by
+measurement rather than by reading.
+
+* **The `sureshot` channel is worth 6 draws, not 15 sources.** "Fifteen blocked definitions
+  are waiting on it" is a reach number and does not convert. Measured as family lines: the
+  opponent-Life form 2, own Pillz 2, own Life gain 1, `+N Pillz And Life` 0, and *every*
+  Killshot grammar together 6 - mildly super-additive, since 2+2+1 is 5. There are also 24
+  Killshot definitions in the registry, not 15.
+* **The `Killshot: +N Pillz` line under-reported.** It carried `[2250, 4645]` and is missing
+  the third printed level `4311`. It still reads 2 with it, which is luck rather than
+  correctness, and is exactly the failure this section warns about two paragraphs above.
+
+The price was one new arm, not a new channel, and this section's "exists nowhere in the
+projection" was misleading about cost rather than wrong about fact. The registry has always
+parsed `sureshot` (`effect_registry.rs`); `PostRoundShapeV1` already varied
+`current_round`; the Min-clamped opponent-Life reduction was already executed on three
+channels; and both final attacks were already in scope in the `commit` match arm where the
+Victory and Defeat guards live. Only the guard expression was new. Read the classifier chain
+before believing a price in this section - that is now four times in two days.
+
+The guard's spelling is the one subtlety. `Condition::Killshot` in the reference is
+`attack >= opp_attack * 2` with **no** win requirement, unlike its `Backlash` neighbour, so
+it must not be written as `owner == winner && ratio`: at equal attacks, which zero power
+reaches, the ratio holds while `round_winner` may hand the round to the other side. The
+corpus cannot reach that round, nor the exact-double boundary, nor the Min clamp, so all
+three are pinned by an engine test instead. The corpus pins the two halves that matter:
+1337321/1 pays (Drakorah Cr at 56 against 14, 12 - 5 damage - 6 to 1) and 1337230/0 does
+not (the same card wins at 80 against 49, short of the double).
+
+Two defects on `main` surfaced while landing this and are fixed here rather than separately.
+The inventory test `observed_previous_round_inventory_is_exact_and_fail_closed` was failing
+before this slice began: `591` `Confidence : -1 Opp. Power, Min 1` arrived with the
+2026-09-20 Dojo captures and was in neither of the test's lists. It is admitted, not
+deferred - the prefix match already tolerates the space before its colon. The derived pins
+were also stale: the same captures took the scanned corpus from 361 draws to 364 and moved
+`effectRegistryFingerprintFnv1a64`, which had not been regenerated.
+
 ### Per-decision admission instead of whole-draw admission
 
 Every slice above widens what the projection understands. There is a second axis, which

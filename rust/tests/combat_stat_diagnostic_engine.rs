@@ -4729,3 +4729,79 @@ fn defeat_opponent_life_triggers_on_a_loss_and_respects_its_minimum() {
     assert_eq!(report.players[PlayerId::P1].life, 0);
     assert_eq!(report.players[PlayerId::P2].life, 1);
 }
+
+/// `Killshot: -N Opp. Life Min M` asks the attack ratio, not the winner. The corpus pins the
+/// paying and the non-paying halves (1337321/1 against 1337230/0) but reaches neither the
+/// exact-double boundary, the Min clamp, nor the case the reference makes possible and the
+/// obvious `owner == winner && ratio` spelling would get wrong: equal attacks, where the
+/// ratio holds for the side that did not win the round.
+#[test]
+fn killshot_opponent_life_triggers_on_the_attack_ratio_and_not_on_the_win() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1959,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnKillshot {
+            life: 2,
+            minimum: 1,
+        },
+    );
+
+    // Doubling pays: 6 x 6 = 36 against 6 x 1 = 6. Three combat damage, then the two.
+    let mut doubled = game(base.clone(), cards.clone());
+    let (report, _) = doubled
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 15);
+
+    // Exactly double is inside the boundary: 6 x 2 = 12 against 6 x 1 = 6.
+    let mut exact = game(base.clone(), cards.clone());
+    let (report, _) = exact
+        .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 15);
+
+    // Winning without doubling pays nothing, which is battle 1337230 round 0: 6 x 3 = 18
+    // against 6 x 2 = 12 wins the round but falls short of the 24 it needed.
+    let mut short = game(base.clone(), cards.clone());
+    let (report, _) = short
+        .make(input(PlayerId::P1, (0, 2, false), (0, 1, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+
+    // A target already at the Min is left alone rather than pulled up to it. Zero printed
+    // damage keeps the combat ledger out of the way so the clamp is the only thing moving.
+    let quiet = base_spec(6, 0);
+    let mut quiet_cards = plans(&quiet);
+    quiet_cards[PlayerId::P1][0].ability = cards[PlayerId::P1][0].ability.clone();
+    let mut spec = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: quiet,
+        cards: quiet_cards,
+    };
+    spec.base_rules.players[PlayerId::P2].initial_life = 2;
+    let mut clamped = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = clamped
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 1);
+
+    // The case that fixes the spelling of the guard. At zero attack on both sides the
+    // ratio `a >= 2b` holds trivially, while `round_winner` still has to give the round to
+    // somebody - and it does not give it to the Killshot's owner. The reference condition
+    // (`Condition::Killshot`) carries no win requirement, unlike its `Backlash` neighbour,
+    // so the owner pays out here even though it lost the round. Written as
+    // `owner == winner && ratio` this round would silently pay nothing.
+    let stalled = base_spec(0, 3);
+    let mut stalled_cards = plans(&stalled);
+    stalled_cards[PlayerId::P1][0].ability = cards[PlayerId::P1][0].ability.clone();
+    let mut tied = game(stalled, stalled_cards);
+    let (report, _) = tied
+        .make(input(PlayerId::P2, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 18);
+}

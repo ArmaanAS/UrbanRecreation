@@ -492,6 +492,13 @@ pub(super) enum PostRoundEffect {
         life: u16,
         minimum: u16,
     },
+    /// `Killshot: -N Opp. Life Min M`: paid when the owner's final attack is at least
+    /// double the opposing one, which the reference evaluates without reference to the
+    /// round's winner.
+    ReduceOpponentLifeOnKillshot {
+        life: u16,
+        minimum: u16,
+    },
     /// `Xantiax: -N Life, Min. M`: both players lose `life`, neither below `minimum`,
     /// whatever the round's outcome and whichever side owns the source.
     ReduceBothPlayersLife {
@@ -824,6 +831,28 @@ impl BaseRulesGame {
                             .max(minimum);
                     }
                     PostRoundEffect::ReduceOpponentLifeOnDefeat { .. } => {}
+                    // Killshot asks the attack ratio, not the winner. The reference
+                    // (`Condition::Killshot` in `ability.rs`) is `attack >= opp_attack * 2`
+                    // with no win requirement, unlike its `Backlash` neighbour, so this
+                    // must not be written as `owner == winner && ratio`: at equal attacks -
+                    // reachable at zero through a `Min 0` Power reduction - the ratio holds
+                    // while `round_winner` may hand the round to the other side. Both final
+                    // attacks are already resolved in `prepared`, so the trigger reads them
+                    // directly. Widen before doubling so a large attack cannot wrap. A
+                    // target already at or below Min is left untouched rather than pulled
+                    // up to it, exactly as the Victory and Defeat siblings do.
+                    PostRoundEffect::ReduceOpponentLifeOnKillshot { life, minimum }
+                        if u64::from(prepared[owner].result.attack)
+                            >= 2 * u64::from(prepared[owner.other()].result.attack)
+                            && position.players[owner.other()].life > minimum =>
+                    {
+                        let target = owner.other();
+                        position.players[target].life = position.players[target]
+                            .life
+                            .saturating_sub(life)
+                            .max(minimum);
+                    }
+                    PostRoundEffect::ReduceOpponentLifeOnKillshot { .. } => {}
                     // Xantiax is the only admitted post-round effect with no outcome
                     // channel and no beneficiary: it takes from both players at once. The
                     // owner winning, losing or being knocked out by this round's damage

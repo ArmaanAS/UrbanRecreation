@@ -146,6 +146,13 @@ pub enum CombatStatPostRoundEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// The `sureshot` sibling: the owner's final attack was at least double the opposing
+    /// one, so the opposing player's Life is reduced, bounded below by `minimum`. Winning
+    /// the round is neither required nor sufficient.
+    ReduceOpponentLifeOnKillshot {
+        life: u16,
+        minimum: u16,
+    },
     /// `Xantiax: -N Life, Min. M`: the round's outcome is irrelevant and so is which side
     /// owns the source - both players lose `life`, neither below `minimum`.
     ReduceBothPlayersLife {
@@ -289,6 +296,12 @@ pub enum CombatStatEffectV1 {
     /// Defeat-only opponent-Life reduction: the owner having lost is the trigger, and a
     /// target already at or below `minimum` is left alone.
     ReduceOpponentLifeOnDefeat {
+        life: u16,
+        minimum: u16,
+    },
+    /// Killshot opponent-Life reduction: doubling the opposing final attack is the trigger,
+    /// and a target already at or below `minimum` is left alone.
+    ReduceOpponentLifeOnKillshot {
         life: u16,
         minimum: u16,
     },
@@ -2201,6 +2214,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
+        | CombatStatEffectV1::ReduceOpponentLifeOnKillshot { .. }
         | CombatStatEffectV1::ReduceBothPlayersLife { .. }
         | CombatStatEffectV1::HealLifeOnVictory { .. }
         | CombatStatEffectV1::RegenLifeOnVictory { .. }
@@ -2278,6 +2292,11 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::ReduceOpponentLifeOnDefeat { life, minimum } => {
             Some(PostRoundSourceEffect::Fixed(
                 PostRoundEffect::ReduceOpponentLifeOnDefeat { life, minimum },
+            ))
+        }
+        CombatStatEffectV1::ReduceOpponentLifeOnKillshot { life, minimum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::ReduceOpponentLifeOnKillshot { life, minimum },
             ))
         }
         CombatStatEffectV1::ReduceBothPlayersLife { life, minimum } => Some(

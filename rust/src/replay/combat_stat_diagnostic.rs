@@ -18,17 +18,18 @@ use crate::engine::combat_stat_compiler::{
     classify_both_players_life_reduction, classify_combat_stat_effect, classify_defeat_life,
     classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_regen_life_on_victory,
-    classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_killshot_opponent_life, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
     compact_effect, has_both_players_life_reduction_shape, has_defeat_life_shape,
     has_defeat_opponent_pillz_shape, has_heal_life_on_victory_shape,
-    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
-    has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
-    has_victory_life_shape, has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
+    has_killshot_opponent_life_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape,
+    has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
+    has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
     has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -703,6 +704,17 @@ fn prepare_combat_stat_source(
             CombatStatPredicateV1::Always,
         ));
     }
+    // The Killshot sibling likewise carries no condition of its own: the attack ratio is
+    // resolved by the engine, not by the plan's predicate.
+    if let Some((life, minimum)) = classify_killshot_opponent_life(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnKillshot { life, minimum },
+            CombatStatEffectV1::ReduceOpponentLifeOnKillshot { life, minimum },
+            CombatStatPredicateV1::Always,
+        ));
+    }
     // Xantiax has no outcome channel and no beneficiary: both players pay it whatever the
     // round did, so the plan carries no predicate and the engine reads no winner.
     if let Some((life, minimum)) = classify_both_players_life_reduction(definition, source_kind) {
@@ -1095,6 +1107,15 @@ fn prepare_combat_stat_source(
             && source.description.contains("Opp. Life")
             && input.attribute_affected == AttributeAffectedV1::Life)
         || has_victory_opponent_life_shape(definition);
+    // Killshot's boundary is its own: the plain Victory clause above cannot reach it,
+    // because the printed text does not start with `-` and the reviewed Victory shape
+    // demands a won round where this one asks `sureshot`. Without this clause a malformed
+    // Killshot record or a wrong source slot would quietly become an inert disabled source
+    // instead of a selected hazard.
+    let unadmitted_killshot_opponent_life = (source.description.starts_with("Killshot: -")
+        && source.description.contains("Opp. Life")
+        && input.attribute_affected == AttributeAffectedV1::Life)
+        || has_killshot_opponent_life_shape(definition);
     // Xantiax's boundary is its own: the printed text over a wrong slot or structure, or
     // the complete both-sides shape under other text. Nothing else admitted reaches both
     // players at once, so any other record with that shape is a hazard rather than a
@@ -1138,6 +1159,7 @@ fn prepare_combat_stat_source(
         || unadmitted_argos_defeat_capped_pillz
         || unadmitted_anita_courage_damage_to_life
         || unadmitted_victory_opponent_life
+        || unadmitted_killshot_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
         || unadmitted_heal_life
@@ -1173,6 +1195,7 @@ fn prepare_combat_stat_source(
         || unadmitted_argos_defeat_capped_pillz
         || unadmitted_anita_courage_damage_to_life
         || unadmitted_victory_opponent_life
+        || unadmitted_killshot_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_heal_life
     {
