@@ -509,6 +509,10 @@ pub(super) enum PostRoundEffect {
     /// position so every later round pays it. Whether this round pays it too is the
     /// effect's own property.
     LatchOnVictory(LatchedEffectV1),
+    /// `Defeat: Poison N, Min M`. The same latch on the losing side: the owner having lost
+    /// the round is the trigger. Once latched it is indistinguishable from any other
+    /// permanent, so the repeat loop needs no knowledge of how it got there.
+    LatchOnDefeat(LatchedEffectV1),
 }
 
 #[derive(Clone, Copy)]
@@ -901,6 +905,15 @@ impl BaseRulesGame {
                             .map_err(|_| BaseRulesError::LatchedEffectOverflow { player: owner })?;
                     }
                     PostRoundEffect::LatchOnVictory(_) => {}
+                    // The losing-side latch mirrors it. An owner taken to zero by the round
+                    // it lost still latches, exactly as the reviewed Defeat opponent-Life
+                    // reduction still pays: the repeat loop's own guards decide from there.
+                    PostRoundEffect::LatchOnDefeat(effect) if owner == loser => {
+                        position.latched[owner]
+                            .push(effect)
+                            .map_err(|_| BaseRulesError::LatchedEffectOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::LatchOnDefeat(_) => {}
                 }
             }
             // Latched permanents repeat now, after this owner's own current-round effects

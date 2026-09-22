@@ -1644,6 +1644,29 @@ read from the opposing hand rather than the owner's are all pinned by an engine 
 Battle 1073010 stops being the unreachable round three other comments describe it as: its
 round 0 opened on a deferred `Brawl:` source, and that source is admitted now.
 
+Semantic revision 41 admits `Defeat: Poison N, Min M` (`4561`), the first permanent whose
+trigger is not a win. It measured 1 and unlocked exactly 1, `1130484` - the same battle that
+pins it - taking eligibility from 92 to 93.
+
+The latch *repeat loop* was already trigger-agnostic, but the latch *trigger* was not:
+`PostRoundEffect::LatchOnVictory` was the only way anything reached `position.latched`, and a
+loser-owned permanent was silently dropped. So this is one new arm rather than admission
+only, and `permanent_life_neutral_shape_matches` gains a `current_round` parameter where it
+had `Win` hardcoded. Everything else is reused verbatim: `LatchedEffectV1`, the repeat loop,
+the predicate set and `prepare_post_round_source`.
+
+The corpus pins it unusually well for a one-draw slice. In 1130484 Moloss loses round 0 and
+the latch does *not* pay that round, which independently confirms the delayed-latch property
+on the new channel; round 1 pays -1 against a side that won the round and took no combat
+damage, so nothing else can account for it; and round 2 pays again with the server naming it
+in `postRoundAbilities` as `isPermanent: true, quantity: 1`. 1066589/2 is the negative half,
+where the same card wins and nothing latches. The owner knocked out by the very round that
+latches, and the Min floor, are pinned by an engine test.
+
+`Defeat : Heal` (`898`, `1625`, `1790`) rides this same new channel and needs only one more
+text arm and classifier - note the space before its colon, which `Defeat: Poison` does not
+print. It measures 0 on its own and was left for a later slice rather than bundled here.
+
 ### Per-decision admission instead of whole-draw admission
 
 Every slice above widens what the projection understands. There is a second axis, which

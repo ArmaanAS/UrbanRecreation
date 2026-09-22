@@ -180,6 +180,12 @@ pub enum CombatStatPostRoundEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// `Defeat: Poison N, Min M`: the same latch, triggered by the owner losing the round
+    /// rather than winning it. Ability slot only.
+    PoisonOpponentLifeOnDefeat {
+        life: u16,
+        minimum: u16,
+    },
     /// `Toxin N, Min M`: Poison that also pays in its latching round. Ability slot only.
     ToxinOpponentLifeOnVictory {
         life: u16,
@@ -332,6 +338,11 @@ pub enum CombatStatEffectV1 {
     /// The opposing player loses `life` at the end of every round after the latch while
     /// above `minimum`, including a round in which the owner is knocked out.
     PoisonOpponentLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// Poison latched by a lost round instead of a won one.
+    PoisonOpponentLifeOnDefeat {
         life: u16,
         minimum: u16,
     },
@@ -1130,6 +1141,7 @@ fn validate_combat_stat_source_plan(
             return Ok(());
         }
         CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, .. }
+        | CombatStatEffectV1::PoisonOpponentLifeOnDefeat { life, .. }
         | CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, .. } => {
             if source != CombatStatEffectSourceV1::Ability
                 && !matches!(
@@ -2257,6 +2269,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::HealLifeOnVictory { .. }
         | CombatStatEffectV1::RegenLifeOnVictory { .. }
         | CombatStatEffectV1::PoisonOpponentLifeOnVictory { .. }
+        | CombatStatEffectV1::PoisonOpponentLifeOnDefeat { .. }
         | CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. } => return None,
     })
 }
@@ -2352,6 +2365,11 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         }
         CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, minimum } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnVictory(
+                LatchedEffectV1::PoisonOpponentLife { life, minimum },
+            )),
+        ),
+        CombatStatEffectV1::PoisonOpponentLifeOnDefeat { life, minimum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnDefeat(
                 LatchedEffectV1::PoisonOpponentLife { life, minimum },
             )),
         ),

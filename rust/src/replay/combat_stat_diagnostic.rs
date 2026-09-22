@@ -19,17 +19,18 @@ use crate::engine::combat_stat_compiler::{
     classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
     classify_killshot_opponent_life, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory,
+    classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
     compact_effect, has_both_players_life_reduction_shape, has_defeat_life_shape,
     has_defeat_opponent_pillz_shape, has_heal_life_on_victory_shape,
-    has_killshot_opponent_life_shape, has_poison_opponent_life_on_victory_shape,
-    has_reanimate_life_shape, has_regen_life_on_victory_shape,
-    has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
-    has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
+    has_killshot_opponent_life_shape, has_poison_opponent_life_on_defeat_shape,
+    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
+    has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
+    has_victory_life_shape, has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
     has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -956,6 +957,23 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    // The losing-side latch. Its outcome is the condition, so the plan carries no predicate
+    // and the engine reads the round's loser.
+    if let Some((life, minimum)) = classify_poison_opponent_life_on_defeat(definition, source_kind)
+    {
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect: CombatStatPostRoundEffectV1::PoisonOpponentLifeOnDefeat { life, minimum },
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: CombatStatEffectV1::PoisonOpponentLifeOnDefeat { life, minimum },
+            },
+        });
+    }
     if let Some((life, minimum, predicate)) =
         classify_toxin_opponent_life_on_victory(definition, source_kind)
     {
@@ -1143,7 +1161,13 @@ fn prepare_combat_stat_source(
         || has_heal_life_on_victory_shape(definition)
         || has_regen_life_on_victory_shape(definition)
         || has_poison_opponent_life_on_victory_shape(definition)
-        || has_toxin_opponent_life_on_victory_shape(definition);
+        || has_toxin_opponent_life_on_victory_shape(definition)
+        // The losing-side latch has the same two-sided boundary: its printed text over a
+        // wrong slot or structure, or the complete reviewed structure under other text.
+        // Without this a malformed `Defeat: Poison` record would become an inert disabled
+        // source rather than a selected hazard.
+        || source.description.starts_with("Defeat: Poison ")
+        || has_poison_opponent_life_on_defeat_shape(definition);
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {

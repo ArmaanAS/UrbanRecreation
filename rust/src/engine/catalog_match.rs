@@ -11,8 +11,9 @@ use super::combat_stat_compiler::{
     classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
     classify_killshot_opponent_life, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory,
+    classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
@@ -1589,6 +1590,7 @@ fn prepare_catalog_source(
         if classify_heal_life_on_victory(definition, source_kind).is_some()
             || classify_regen_life_on_victory(definition, source_kind).is_some()
             || classify_poison_opponent_life_on_victory(definition, source_kind).is_some()
+            || classify_poison_opponent_life_on_defeat(definition, source_kind).is_some()
             || classify_toxin_opponent_life_on_victory(definition, source_kind).is_some()
         {
             require_catalog_alias(
@@ -2323,6 +2325,17 @@ fn prepare_permanent_life_source(
                     CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
                     CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, minimum },
                     predicate,
+                ));
+            }
+            // The losing-side latch carries no condition of its own: the outcome is the
+            // condition, and the engine resolves it.
+            if let Some((life, minimum)) =
+                classify_poison_opponent_life_on_defeat(definition, source_kind)
+            {
+                return Some((
+                    CombatStatPostRoundEffectV1::PoisonOpponentLifeOnDefeat { life, minimum },
+                    CombatStatEffectV1::PoisonOpponentLifeOnDefeat { life, minimum },
+                    CombatStatPredicateV1::Always,
                 ));
             }
             let (life, minimum, predicate) =

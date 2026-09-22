@@ -73,7 +73,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 40;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 41;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1168,6 +1168,35 @@ pub(crate) fn has_poison_opponent_life_on_victory_shape(definition: &EffectDefin
     permanent_opponent_life_shape_matches(definition.structured_input(), false)
 }
 
+/// `Defeat: Poison N, Min M` is the plain Poison latch on the losing side: the owner having
+/// lost the round is what latches it, and every later round pays as usual. It is the first
+/// admitted permanent whose trigger is not a win, so the engine gains a `LatchOnDefeat`
+/// beside `LatchOnVictory`; the repeat loop and `LatchedEffectV1` are trigger-agnostic and
+/// are reused unchanged.
+///
+/// Note the printed text has no space before its colon, unlike the `Defeat : Heal` forms.
+pub(crate) fn classify_poison_opponent_life_on_defeat(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    (has_poison_opponent_life_on_defeat_shape(definition)
+        && definition.description()
+            == format!("Defeat: Poison {}, Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min))
+}
+
+pub(crate) fn has_poison_opponent_life_on_defeat_shape(definition: &EffectDefinitionV1) -> bool {
+    permanent_opponent_life_shape_matches_on(
+        definition.structured_input(),
+        false,
+        CurrentRoundRequirementV1::Lose,
+    )
+}
+
 /// `Toxin N, Min M`: Poison that also pays in its latching round. Card abilities only.
 /// Returns `(life, minimum)`.
 pub(crate) fn classify_toxin_opponent_life_on_victory(
@@ -1998,12 +2027,21 @@ fn permanent_own_life_shape_matches(input: &StructuredEffectV1, immediate: bool)
             AffectedSideV1::Player,
             AttributeActionV1::Increase,
             immediate,
+            CurrentRoundRequirementV1::Win,
         )
 }
 
 /// Poison and Toxin likewise: an opposing-Life decrease of `value` bounded below by
 /// `value_min`, with no cap, distinguished only by `isImmediatePermanent`.
 fn permanent_opponent_life_shape_matches(input: &StructuredEffectV1, immediate: bool) -> bool {
+    permanent_opponent_life_shape_matches_on(input, immediate, CurrentRoundRequirementV1::Win)
+}
+
+fn permanent_opponent_life_shape_matches_on(
+    input: &StructuredEffectV1,
+    immediate: bool,
+    current_round: CurrentRoundRequirementV1,
+) -> bool {
     input.value > 0
         && input.value_max == 0
         && permanent_life_neutral_shape_matches(
@@ -2011,6 +2049,7 @@ fn permanent_opponent_life_shape_matches(input: &StructuredEffectV1, immediate: 
             AffectedSideV1::Opponent,
             AttributeActionV1::Decrease,
             immediate,
+            current_round,
         )
 }
 
@@ -2019,11 +2058,14 @@ fn permanent_life_neutral_shape_matches(
     side: AffectedSideV1,
     action: AttributeActionV1,
     immediate: bool,
+    // Which round outcome latches it. Every permanent admitted before semantic revision 41
+    // latched on a win, and `Defeat: Poison` is the first that latches on a loss.
+    current_round: CurrentRoundRequirementV1,
 ) -> bool {
     input.value_condition == 0
         && input.position_requirement == PositionRequirementV1::Both
         && permanent_condition(input).is_some()
-        && input.current_round_requirement == CurrentRoundRequirementV1::Win
+        && input.current_round_requirement == current_round
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()

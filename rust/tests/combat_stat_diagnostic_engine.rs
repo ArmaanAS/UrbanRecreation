@@ -4977,3 +4977,78 @@ fn brawl_scales_by_the_opposing_hands_clan_count() {
         .unwrap();
     assert_eq!(report.cards[PlayerId::P1].power, 9);
 }
+
+/// `Defeat: Poison N, Min M` is the first admitted permanent whose trigger is not a win.
+/// The corpus pins the paying side well - 1130484 latches on a lost round 0, then pays -1 in
+/// rounds 1 and 2, the second of which the server names in `postRoundAbilities` with
+/// `isPermanent: true` - and pins the negative side in 1066589/2, where the same card wins
+/// and nothing latches. What it does not reach is the owner knocked out by the very round
+/// that latches, nor the Min floor, so both are pinned here.
+#[test]
+fn defeat_poison_latches_on_a_loss_and_repeats_from_the_next_round() {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        4561,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::PoisonOpponentLifeOnDefeat {
+            life: 1,
+            minimum: 3,
+        },
+    );
+
+    // Losing latches it, and Poison does not pay in its latching round.
+    let mut losing = game(base.clone(), cards.clone());
+    let (report, _) = losing
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 20);
+    // The next round pays it, whoever wins that round.
+    let (report, _) = losing
+        .make(input(PlayerId::P1, (1, 5, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 16);
+
+    // Winning latches nothing at all, which is battle 1066589 round 2.
+    let mut winning = game(base.clone(), cards.clone());
+    let (report, _) = winning
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    let (report, _) = winning
+        .make(input(PlayerId::P1, (1, 0, false), (1, 5, false)))
+        .unwrap();
+    // Only the 3 combat damage from the round it won, with nothing latched behind it.
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+
+    // An owner knocked out by the round it loses still latches, and the permanent goes on
+    // paying from the opposing side afterwards. The repeat loop's own guards decide that,
+    // which is why the latch arm does not test the owner's life.
+    let mut spec = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base.clone(),
+        cards: cards.clone(),
+    };
+    spec.base_rules.players[PlayerId::P1].initial_life = 3;
+    let mut knocked_out = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = knocked_out
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 0);
+    assert_eq!(report.players[PlayerId::P2].life, 20);
+
+    // A target already at the Min is left alone rather than pushed below it.
+    let mut floored = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    };
+    floored.base_rules.players[PlayerId::P2].initial_life = 3;
+    let mut clamped = CombatStatDiagnosticV1::new(floored).unwrap();
+    clamped
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    let (report, _) = clamped
+        .make(input(PlayerId::P1, (1, 0, false), (1, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 3);
+}
