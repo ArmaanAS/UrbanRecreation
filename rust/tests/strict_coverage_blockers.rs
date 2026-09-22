@@ -257,6 +257,14 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             5912,
         ],
     ),
+    // The clan gate narrowed again, to only those members whose body is a PLAIN numeric
+    // grammar - no Courage position, no Growth/Degrowth scaling, no Equalizer, no Stop.
+    // Those could be admitted by one orthogonal classifier that touches no existing
+    // `neutral_except_*` gate, which is much the safer shape of the slice.
+    (
+        "Oculus clan gate (plain numeric bodies only)",
+        &[4667, 5353, 5814, 5909, 5911, 5912],
+    ),
 ];
 
 fn root_path(path: &str) -> PathBuf {

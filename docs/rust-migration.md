@@ -1667,6 +1667,43 @@ latches, and the Min floor, are pinned by an engine test.
 text arm and classifier - note the space before its colon, which `Defeat: Poison` does not
 print. It measures 0 on its own and was left for a later slice rather than bundled here.
 
+#### The clan gate, measured but not taken
+
+The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and
+priced - but it was deliberately not taken on 2026-09-22, and the reason is a design fork
+worth writing down before someone rediscovers it.
+
+The gate itself is admission-only in the sense that matters: the context it needs already
+exists. `derive_effective_catalog_hand` computes `effective_clan_id` with the complete Oculus
+infiltration rule and hands it to `prepare_catalog_source` already, so the gate is decidable
+at construction time from the immutable four-card hand. No engine arm, no new context, no
+threading. The server corroborates the derivation in every observed round, because the bonus
+it gives each Oculus card is the infiltrated clan's bonus.
+
+The fork is *how many grammars the gate spans*. The 15 blocked members whose bodies are
+already admitted grammars are spread across five of them - plain numeric, a Courage position,
+Growth and Degrowth scaling, Equalizer, and `Stop Opp. Bonus`. Admitting the gate for all
+five means parameterising the `clan_requirement.is_empty()` conjunct in every
+`neutral_except_*` gate, and there are 39 such sites. That is the one change on the board
+where a mistake fails *open* - a gate accidentally loosened for a grammar that should not
+have it admits a source wrongly and no test necessarily notices, which is the exact failure
+the fail-closed shape exists to prevent.
+
+The narrow alternative is one orthogonal classifier, in the shape `classify_brawl_numeric`
+took: require a non-empty `clan_requirement`, require everything else neutral in its own
+gate, strip the `[clan:N]...` prefix and match the body, and touch no existing gate at all.
+
+**Measured, that fork costs two draws: the plain-numeric-only line unlocks 1, the full
+already-bodied set unlocks 3.** So the safe version is worth a third of the slice. Both lines
+are in `strict_coverage_blockers.rs` so the next attempt starts from the number rather than
+from the argument.
+
+Either way the gate needs one more thing: a `CombatStatPredicateV1::Never`. An unmet gate
+must leave the source *present but never firing* rather than absent, because a source that
+vanishes stops participating in Stop liveness. The corpus has four server-pinned
+unsatisfied-gate rounds to hold that arm honest, 1022847/2 being the clearest - the reduction
+provably does not apply and the opposing card's printed Power is unchanged.
+
 ### Per-decision admission instead of whole-draw admission
 
 Every slice above widens what the projection understands. There is a second axis, which
