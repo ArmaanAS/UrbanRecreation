@@ -295,6 +295,7 @@ impl ResourceCancellation {
             PostRoundResourceV1::Pillz => self.pillz,
             PostRoundResourceV1::PillzAndLife
             | PostRoundResourceV1::BothPlayersLife
+            | PostRoundResourceV1::BothPlayersPillz
             | PostRoundResourceV1::Permanent => false,
         }
     }

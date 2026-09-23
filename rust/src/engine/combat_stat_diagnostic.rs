@@ -322,6 +322,16 @@ pub enum CombatStatPostRoundEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// `Victory Or Defeat : +N Players Life`: whatever the outcome, each living player
+    /// gains `life`.
+    GainBothPlayersLifeOnVictoryOrDefeat {
+        life: u16,
+    },
+    /// `Victory Or Defeat : +N Players Pillz`: whatever the outcome, both players gain
+    /// `pillz`, a knocked-out one included.
+    GainBothPlayersPillzOnVictoryOrDefeat {
+        pillz: u16,
+    },
     /// `Heal N Max. M`: won rounds latch it, every later round pays `life` while the owner
     /// is below `maximum`. Admitted by exact text and shape from the Ability slot.
     HealLifeOnVictory {
@@ -569,6 +579,13 @@ pub enum CombatStatEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// The both-players Victory Or Defeat gains, Ability slot only.
+    GainBothPlayersLifeOnVictoryOrDefeat {
+        life: u16,
+    },
+    GainBothPlayersPillzOnVictoryOrDefeat {
+        pillz: u16,
+    },
     /// The projection's first repeating effect. A won round latches it into the owner's
     /// position and pays nothing itself; the base engine then pays `life` at the end of
     /// every later round while the owner is living and below `maximum`, whatever card is
@@ -778,6 +795,12 @@ pub enum InvalidCombatStatPlanReasonV1 {
     BothCardsModifierAgainstUnpinnedEffect,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
+    BothPlayersGainSource,
+    BothPlayersGainMagnitude,
+    BothPlayersGainPredicate,
+    /// `Victory Or Defeat : +N Players Life`, whose effect on a player the round has knocked
+    /// out no captured round shows.
+    BothPlayersLifeGainAgainstKnockout,
     DefeatPillzMagnitude,
     DefeatPillzPredicate,
     RoundScaledPostRoundSource,
@@ -1288,23 +1311,37 @@ fn life_lost_reader_life_can_rise(
 }
 
 /// True when anything could raise this player's Life: one of their own executable
-/// post-round effects that gains Life, or an opposing one that a Copy in their hand could
-/// adopt. No admitted effect raises the other player's Life, so the opposing hand matters
-/// only through what could be copied from it.
+/// post-round effects that gains Life for its owner or for both players, an opposing one
+/// that gains Life for both players, or either kind reaching them through a Copy - their own
+/// Copy adopting an opposing gain, or an opposing Copy adopting their own both-players gain.
 fn player_life_can_rise(
     hand: &[CombatStatCardPlanV1; HAND_SIZE],
     opposing: &[CombatStatCardPlanV1; HAND_SIZE],
 ) -> bool {
-    let gains_life = |plan: CombatStatSourcePlanV1| match plan {
-        CombatStatSourcePlanV1::Execute { effect, .. } => shared_post_round_effect(effect)
-            .is_some_and(|effect| effect.life_beneficiary() == LifeBeneficiaryV1::Owner),
+    let beneficiary = |plan: CombatStatSourcePlanV1| match plan {
+        CombatStatSourcePlanV1::Execute { effect, .. } => {
+            shared_post_round_effect(effect).map(PostRoundSourceEffect::life_beneficiary)
+        }
         CombatStatSourcePlanV1::CopyOpponentSource { .. }
         | CombatStatSourcePlanV1::Absent
         | CombatStatSourcePlanV1::Disabled { .. }
-        | CombatStatSourcePlanV1::RejectIfSelected { .. } => false,
+        | CombatStatSourcePlanV1::RejectIfSelected { .. } => None,
     };
-    source_plans(hand).any(gains_life)
-        || (hand_has_copy(hand) && source_plans(opposing).any(gains_life))
+    let any_gain = |hand: &[CombatStatCardPlanV1; HAND_SIZE]| {
+        source_plans(hand).any(|plan| {
+            matches!(
+                beneficiary(plan),
+                Some(LifeBeneficiaryV1::Owner | LifeBeneficiaryV1::Both)
+            )
+        })
+    };
+    let both_gain = |hand: &[CombatStatCardPlanV1; HAND_SIZE]| {
+        source_plans(hand).any(|plan| beneficiary(plan) == Some(LifeBeneficiaryV1::Both))
+    };
+    any_gain(hand)
+        || both_gain(opposing)
+        || (hand_has_copy(hand) && any_gain(opposing))
+        || (hand_has_copy(opposing) && both_gain(hand))
 }
 
 fn source_plans(
@@ -1402,6 +1439,7 @@ fn opponent_defeats_resource_cancellation(
                         }
                         PostRoundResourceV1::PillzAndLife
                         | PostRoundResourceV1::BothPlayersLife
+                        | PostRoundResourceV1::BothPlayersPillz
                         | PostRoundResourceV1::Permanent => true,
                     }),
                 CombatStatSourcePlanV1::Absent
@@ -2338,6 +2376,33 @@ fn validate_combat_stat_source_plan(
             Some(InvalidCombatStatPlanReasonV1::RoundScaledPostRoundMagnitude)
         } else if predicate != CombatStatPredicateV1::Always {
             Some(InvalidCombatStatPlanReasonV1::RoundScaledPostRoundPredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
+    }
+    // The both-players Victory Or Defeat Pillz gain is a card ability only, positive and
+    // unconditional. The Life form is refused outright: no round shows it meeting a
+    // knockout, which the Pillz form shows the server pays through.
+    if let CombatStatEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { life: amount }
+    | CombatStatEffectV1::GainBothPlayersPillzOnVictoryOrDefeat { pillz: amount } = effect
+    {
+        let reason = if matches!(
+            effect,
+            CombatStatEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { .. }
+        ) {
+            Some(InvalidCombatStatPlanReasonV1::BothPlayersLifeGainAgainstKnockout)
+        } else if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::BothPlayersGainSource)
+        } else if amount == 0 {
+            Some(InvalidCombatStatPlanReasonV1::BothPlayersGainMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::BothPlayersGainPredicate)
         } else {
             None
         };
@@ -3314,6 +3379,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnKillshot { .. }
         | CombatStatEffectV1::ReduceBothPlayersLife { .. }
+        | CombatStatEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { .. }
+        | CombatStatEffectV1::GainBothPlayersPillzOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::HealLifeOnVictory { .. }
         | CombatStatEffectV1::RegenLifeOnVictory { .. }
         | CombatStatEffectV1::PoisonOpponentLifeOnVictory { .. }
@@ -3408,6 +3475,16 @@ pub(crate) fn shared_post_round_effect(
         CombatStatEffectV1::ReduceBothPlayersLife { life, minimum } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::ReduceBothPlayersLife { life, minimum }),
         ),
+        CombatStatEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { life } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::GainBothPlayersLifeOnVictoryOrDefeat(life),
+            ))
+        }
+        CombatStatEffectV1::GainBothPlayersPillzOnVictoryOrDefeat { pillz } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::GainBothPlayersPillzOnVictoryOrDefeat(pillz),
+            ))
+        }
         CombatStatEffectV1::HealLifeOnVictory { life, maximum } => {
             Some(PostRoundSourceEffect::Fixed(
                 PostRoundEffect::LatchOnVictory(LatchedEffectV1::HealLife { life, maximum }),

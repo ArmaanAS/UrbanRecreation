@@ -6703,6 +6703,63 @@ fn bet_gates_compare_the_owner_pillz_used_strictly_and_ignore_fury() {
     }
 }
 
+/// `Victory Or Defeat : +N Players Pillz` pays both players whatever the outcome, and still
+/// pays a player the round has knocked out, as Naja Ld's does in 1024592/2 and 1024732/3. The
+/// Life form is refused: no round shows it meeting a knockout.
+#[test]
+fn players_pillz_pays_both_players_even_through_a_knockout() {
+    let players_pillz = execute(
+        5511,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainBothPlayersPillzOnVictoryOrDefeat { pillz: 3 },
+    );
+    for (p1_life, bet, won) in [(20, 0, false), (20, 3, true), (3, 0, false)] {
+        let mut base = base_spec(6, 3);
+        base.players[PlayerId::P1].initial_life = p1_life;
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = players_pillz;
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, bet, false), (0, 2, false)))
+            .unwrap();
+        assert_eq!(report.cards[PlayerId::P1].won, won);
+        assert_eq!(
+            report.players[PlayerId::P1].pillz,
+            20 - bet + 3,
+            "life {p1_life}"
+        );
+        assert_eq!(
+            report.players[PlayerId::P2].pillz,
+            20 - 2 + 3,
+            "life {p1_life}"
+        );
+        if p1_life == 3 {
+            assert_eq!(report.players[PlayerId::P1].life, 0);
+        }
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+    }
+
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        3187,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { life: 3 },
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::BothPlayersLifeGainAgainstKnockout,
+            ..
+        })
+    ));
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {

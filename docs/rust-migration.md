@@ -2271,6 +2271,28 @@ is pinned by `1415`/`4458` and the first-move predicate by Anita. The copier rea
 count, and counts of 1 and 2, are pinned by engine tests. The gate grows from 658 to 677
 rounds with 866431, 1011016, 1066481 and 876939 added and 1058545 and 1091904 extended.
 
+Semantic revision 59 admits `Victory Or Defeat : +3 Players Pillz` (`5511`): whatever the
+round's outcome, both players gain the Pillz. It measured 2 and unlocked exactly 2 -
+`1024592` and `1024732` - taking eligibility from 196 to 198. The record is the Victory Or
+Defeat own gain with `sideAffected: both`, a side only Xantiax had used, and Xantiax is a
+decrease, so neither grammar can reach the other; it is admitted by exact text over the
+complete shape, card abilities only, and pays after the bet. The server pins its one surprise twice: Naja Ld's
+own player is knocked out in both paying rounds and is paid anyway - 5 to 8 in 1024592/2
+and 0 to 3 in 1024732/3 - so, unlike Kubra's Defeat compound, which pays neither half to a
+knocked-out owner, this gain does not stop at a knockout.
+
+That is also why the Life form stays closed. `Victory Or Defeat : +N Players Life`
+(`3187`, `5321`) pays in four rounds (877167/0, 877476/1, 926165/0, 957643/0, each 3 or 2
+to both players) and would unlock four more draws, but none of those rounds knocks anybody
+out. Since the Pillz form shows the server paying these gains through a knockout, whether
+the Life form then brings a player back from 0 is exactly the question no round answers,
+and it decides a match. The compiler keeps the Life shape only so that replay calls it a
+selected hazard, and the plan validator refuses a Players Life plan outright
+(`BothPlayersLifeGainAgainstKnockout`). A captured round where it meets a knockout would
+settle it. The same question sits, unasked, under the Victory Or Defeat own Life gains
+admitted since revision 22, which assume a knockout is final. The gate grows from 677 to
+679 rounds, 1024592 and 1024732 each extended by a round.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

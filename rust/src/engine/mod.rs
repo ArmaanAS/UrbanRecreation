@@ -514,6 +514,7 @@ pub(super) enum PostRoundResourceV1 {
     Pillz,
     PillzAndLife,
     BothPlayersLife,
+    BothPlayersPillz,
     Permanent,
 }
 
@@ -543,7 +544,10 @@ impl PostRoundEffect {
             Self::GainOnePillzAndLifeOnVictory
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnDefeat(_) => PostRoundResourceV1::PillzAndLife,
-            Self::ReduceBothPlayersLife { .. } => PostRoundResourceV1::BothPlayersLife,
+            Self::ReduceBothPlayersLife { .. } | Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => {
+                PostRoundResourceV1::BothPlayersLife
+            }
+            Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => PostRoundResourceV1::BothPlayersPillz,
             Self::LatchOnVictory(_) | Self::LatchOnDefeat(_) => PostRoundResourceV1::Permanent,
         }
     }
@@ -640,7 +644,9 @@ impl PostRoundEffect {
             | Self::LatchOnVictory(_)
             | Self::LatchOnDefeat(_)
             | Self::GainPillzOnDefeat(_)
-            | Self::GainPillzAndLifeOnDefeat(_) => false,
+            | Self::GainPillzAndLifeOnDefeat(_)
+            | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
+            | Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => false,
         }
     }
 }
@@ -652,6 +658,8 @@ impl PostRoundEffect {
 pub(super) enum LifeBeneficiaryV1 {
     Nobody,
     Owner,
+    /// Both players, whichever owns the source (`Victory Or Defeat : +N Players Life`).
+    Both,
 }
 
 impl PostRoundEffect {
@@ -673,7 +681,9 @@ impl PostRoundEffect {
             | Self::LatchOnDefeat(
                 LatchedEffectV1::HealLife { .. } | LatchedEffectV1::RegenLife { .. },
             ) => LifeBeneficiaryV1::Owner,
-            Self::RecoverPaidPillzOnDefeat
+            Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => LifeBeneficiaryV1::Both,
+            Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
+            | Self::RecoverPaidPillzOnDefeat
             | Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainTwoPillzOnDefeatMaxEleven
             | Self::GainPillzOnVictory(_)
@@ -775,6 +785,13 @@ pub(super) enum PostRoundEffect {
         life: u16,
         minimum: u16,
     },
+    /// `Victory Or Defeat : +N Players Life`: whatever the outcome and whichever side owns
+    /// the source, each living player gains N. Like every other own Life gain it never
+    /// revives a player the round has taken to zero.
+    GainBothPlayersLifeOnVictoryOrDefeat(u16),
+    /// `Victory Or Defeat : +N Players Pillz`: both players gain N whatever the outcome,
+    /// a knocked-out one included, as Victory Or Defeat Pillz pays (1024592/2, 1024732/3).
+    GainBothPlayersPillzOnVictoryOrDefeat(u16),
     /// A permanent on a live source whose owner wins this round: latch it into the owner's
     /// position so every later round pays it. Whether this round pays it too is the
     /// effect's own property.
@@ -1199,6 +1216,30 @@ impl BaseRulesGame {
                                     .saturating_sub(life)
                                     .max(minimum);
                             }
+                        }
+                    }
+                    // The both-players gains name no outcome and no single beneficiary.
+                    // The owner's own gain comes first, then the opponent's; both are
+                    // additions, so the order is unobservable. Life follows the Victory Or
+                    // Defeat own gain and never revives a zero (no captured round shows a
+                    // knockout beside it); Pillz follows Victory Or Defeat Pillz and pays a
+                    // knocked-out owner too, as Naja Ld does in 1024592/2 and 1024732/3.
+                    PostRoundEffect::GainBothPlayersLifeOnVictoryOrDefeat(life) => {
+                        for player in [owner, owner.other()] {
+                            if position.players[player].life > 0 {
+                                position.players[player].life = position.players[player]
+                                    .life
+                                    .checked_add(life)
+                                    .ok_or(BaseRulesError::LifeIncreaseOverflow { player })?;
+                            }
+                        }
+                    }
+                    PostRoundEffect::GainBothPlayersPillzOnVictoryOrDefeat(pillz) => {
+                        for player in [owner, owner.other()] {
+                            position.players[player].pillz = position.players[player]
+                                .pillz
+                                .checked_add(pillz)
+                                .ok_or(BaseRulesError::PillzIncreaseOverflow { player })?;
                         }
                     }
                     // Ordinary Defeat Life is post-damage work for a loss that did not KO

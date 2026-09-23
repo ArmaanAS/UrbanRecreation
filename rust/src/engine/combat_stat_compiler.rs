@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 58;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 59;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1360,6 +1360,79 @@ fn both_players_life_reduction_shape_matches(input: &StructuredEffectV1) -> bool
     )
 }
 
+/// The resource a `Victory Or Defeat : +N Players ...` gain writes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BothPlayersGainV1 {
+    Life,
+    Pillz,
+}
+
+/// Recognize `Victory Or Defeat : +N Players Pillz`: whatever the round's outcome, both
+/// players gain N, a knocked-out one included (1024592/2, 1024732/3). It is the Victory Or
+/// Defeat own gain with `sideAffected: both`, the value only Xantiax had used, and on the
+/// increase action Xantiax never takes, so neither grammar can reach the other. Exact text
+/// and complete shape over every same-text registry record, card abilities only: no clan
+/// bonus prints it. Returns the resource and N.
+///
+/// `+N Players Life` has the same shape with `valueMin` 1 and pays in four captured rounds,
+/// but none of them knocks a player out. Since the Pillz form pays a player the round has
+/// knocked out, the server applies these gains after a knockout, and whether the Life form
+/// then revives a player at 0 is exactly what no round shows; it stays closed (a selected
+/// hazard in replay) until one does.
+pub(crate) fn classify_victory_or_defeat_both_players_gain(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(BothPlayersGainV1, u16)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let resource = both_players_gain_shape(definition)?;
+    if resource == BothPlayersGainV1::Life {
+        return None;
+    }
+    let amount = definition.structured_input().value;
+    let noun = match resource {
+        BothPlayersGainV1::Life => "Life",
+        BothPlayersGainV1::Pillz => "Pillz",
+    };
+    (definition.description() == format!("Victory Or Defeat : +{amount} Players {noun}"))
+        .then_some((resource, amount))
+}
+
+/// Structural half of the boundary, so replay preparation can reject a complete shape under
+/// malformed text instead of silently disabling it.
+pub(crate) fn has_victory_or_defeat_both_players_gain_shape(
+    definition: &EffectDefinitionV1,
+) -> bool {
+    both_players_gain_shape(definition).is_some()
+}
+
+fn both_players_gain_shape(definition: &EffectDefinitionV1) -> Option<BothPlayersGainV1> {
+    let input = definition.structured_input();
+    if input.value == 0 {
+        return None;
+    }
+    let shape = |attribute, value_min| {
+        shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_min: ShapeFieldV1::Exact(value_min),
+                current_round: CurrentRoundRequirementV1::Any,
+                side: AffectedSideV1::Both,
+                attribute,
+                ..POST_ROUND_SHAPE
+            },
+        )
+    };
+    if shape(AttributeAffectedV1::Life, 1) {
+        Some(BothPlayersGainV1::Life)
+    } else if shape(AttributeAffectedV1::Pillz, 0) {
+        Some(BothPlayersGainV1::Pillz)
+    } else {
+        None
+    }
+}
+
 /// `Equalizer: - N Opp. Life Min M`: a won round reduces the opposing player's Life by N
 /// per star of the opposing selected card, never below M. The two reviewed identities keep
 /// their exact record and either source slot, because a captured Copy materialises them as
@@ -2266,7 +2339,9 @@ pub(crate) fn classify_combat_stat_effect(
     if classify_victory_or_defeat_pillz(definition, source_kind) {
         return None;
     }
-    if classify_victory_or_defeat_life(definition, source_kind).is_some() {
+    if classify_victory_or_defeat_life(definition, source_kind).is_some()
+        || classify_victory_or_defeat_both_players_gain(definition, source_kind).is_some()
+    {
         return None;
     }
     if classify_equalizer_opponent_life_on_victory(definition, source_kind).is_some() {
@@ -4816,6 +4891,61 @@ mod tests {
                 classify_copy_opponent_source(definition),
                 None,
                 "{id} {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn players_pillz_is_admitted_and_players_life_stays_closed() {
+        let registry = registry();
+        let pillz = registry.get(5511).expect("registry definition");
+        assert_eq!(
+            classify_victory_or_defeat_both_players_gain(pillz, CombatStatEffectSourceV1::Ability),
+            Some((BothPlayersGainV1::Pillz, 3))
+        );
+        assert_eq!(
+            classify_victory_or_defeat_both_players_gain(pillz, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        assert_eq!(
+            classify_combat_stat_effect(pillz, CombatStatEffectSourceV1::Ability),
+            None
+        );
+        // The Life form keeps its shape, so replay can still call it a selected hazard, but
+        // is not admitted: no round shows it meeting a knockout.
+        for id in [3187, 5321] {
+            let life = registry.get(id).expect("registry definition");
+            assert!(has_victory_or_defeat_both_players_gain_shape(life), "{id}");
+            assert_eq!(
+                classify_victory_or_defeat_both_players_gain(
+                    life,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id}"
+            );
+        }
+        // The printed number is authority, and the Pillz record carries no `valueMin`.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("valueMin", serde_json::json!(1)),
+            ("sideAffected", serde_json::json!("player")),
+            ("currentRoundRequirement", serde_json::json!("win")),
+        ] {
+            let mut malformed = source.clone();
+            malformed["5511"]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_victory_or_defeat_both_players_gain(
+                    malformed.get(5511).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{field}"
             );
         }
     }

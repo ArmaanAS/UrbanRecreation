@@ -254,10 +254,13 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // `809` in 1023396/1, Ramak in 1011643/1 and 1025031/2.
     (1011183, 4),
     (1023274, 3),
-    (1024592, 2),
+    // Three rounds since revision 59: Naja Ld's `Victory Or Defeat : +3 Players Pillz` pays
+    // both players in round 2, her own knocked-out one included (5 to 8, 9 - 3 + 3 = 9).
+    (1024592, 3),
     // Three rounds since revision 52: Walker's `Defeat: +2 Pillz` takes 6 - 3 - 3 to 2 in
-    // round 1.
-    (1024732, 3),
+    // round 1. Four since revision 59, whose round 3 has Naja Ld's Players Pillz pay her
+    // knocked-out owner 0 to 3 and Ramak 8 - 1 + 3 = 10.
+    (1024732, 4),
     (1058151, 1),
     (1089933, 2),
     // Revision 32 `+N Life Per Damage`. Nyema's `492` pays her final 3 Damage beside the

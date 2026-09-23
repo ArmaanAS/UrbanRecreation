@@ -27,18 +27,19 @@ use crate::engine::combat_stat_compiler::{
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
-    classify_victory_pillz_per_damage, compact_effect, has_bet_gated_post_round_shape,
-    has_both_players_life_reduction_shape, has_brawl_post_round_shape, has_defeat_life_shape,
-    has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_equalizer_post_round_shape,
-    has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
-    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
-    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
+    compact_effect, has_bet_gated_post_round_shape, has_both_players_life_reduction_shape,
+    has_brawl_post_round_shape, has_defeat_life_shape, has_defeat_opponent_pillz_shape,
+    has_defeat_pillz_shape, has_equalizer_post_round_shape, has_heal_life_on_victory_shape,
+    has_killshot_opponent_life_shape, has_poison_opponent_life_on_defeat_shape,
+    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
+    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
     has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
-    has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
-    has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    has_victory_or_defeat_both_players_gain_shape, has_victory_or_defeat_opponent_life_shape,
+    has_victory_pillz_per_damage_shape, has_victory_pillz_shape, BothPlayersGainV1,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, effect_reads_support_count, unmodelled_source_context,
@@ -844,6 +845,29 @@ fn prepare_combat_stat_source(
             CombatStatPredicateV1::Always,
         ));
     }
+    if let Some((resource, amount)) =
+        classify_victory_or_defeat_both_players_gain(definition, source_kind)
+    {
+        let (post_round, effect) = match resource {
+            BothPlayersGainV1::Life => (
+                CombatStatPostRoundEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { life: amount },
+                CombatStatEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { life: amount },
+            ),
+            BothPlayersGainV1::Pillz => (
+                CombatStatPostRoundEffectV1::GainBothPlayersPillzOnVictoryOrDefeat {
+                    pillz: amount,
+                },
+                CombatStatEffectV1::GainBothPlayersPillzOnVictoryOrDefeat { pillz: amount },
+            ),
+        };
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round,
+            effect,
+            CombatStatPredicateV1::Always,
+        ));
+    }
     // Xantiax has no outcome channel and no beneficiary: both players pay it whatever the
     // round did, so the plan carries no predicate and the engine reads no winner.
     if let Some((life, minimum)) = classify_both_players_life_reduction(definition, source_kind) {
@@ -1349,6 +1373,11 @@ fn prepare_combat_stat_source(
     // disabled no-op.
     let unadmitted_both_players_life_reduction = source.description.starts_with("Xantiax")
         || has_both_players_life_reduction_shape(definition);
+    // The both-players Victory Or Defeat gains: the printed `Players` text over a wrong
+    // slot or structure, or the complete shape under other text, rejects when selected.
+    let unadmitted_both_players_gain = (source.description.starts_with("Victory Or Defeat")
+        && source.description.contains("Players"))
+        || has_victory_or_defeat_both_players_gain_shape(definition);
     // The post-round Brawl grammars have the same two-sided boundary: a `Brawl:` text over a
     // resource it could pay - a wrong slot, a wrong structure, numbers the text disagrees
     // with - or the complete anti-support shape under other text rejects when selected.
@@ -1468,6 +1497,7 @@ fn prepare_combat_stat_source(
         || unadmitted_killshot_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
+        || unadmitted_both_players_gain
         || unadmitted_brawl_post_round
         || unadmitted_support_post_round
         || unadmitted_stop_triggered
@@ -1511,6 +1541,7 @@ fn prepare_combat_stat_source(
         || unadmitted_killshot_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
+        || unadmitted_both_players_gain
         || unadmitted_brawl_post_round
         || unadmitted_support_post_round
         || unadmitted_stop_triggered

@@ -19,8 +19,9 @@ use super::combat_stat_compiler::{
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
-    classify_victory_pillz_per_damage, compact_effect, is_copy_opponent_source_description,
+    classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
+    compact_effect, is_copy_opponent_source_description, BothPlayersGainV1,
     VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::effect_reads_support_count;
@@ -1979,6 +1980,28 @@ fn prepare_catalog_source(
                 definition.id(),
             );
         }
+        // The both-players Victory Or Defeat gains follow the same rule.
+        if classify_victory_or_defeat_both_players_gain(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                both_players_gain_effect,
+            );
+        }
         // The plain permanent grammars follow the Victory Life rule: the catalog row must
         // be a structural alias of the registry definition its text resolves to. A
         // same-text row under another numeric identity cannot latch a permanent.
@@ -2617,6 +2640,29 @@ fn prepare_both_players_life_reduction_source(
             ))
         },
     )
+}
+
+fn both_players_gain_effect(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(
+    CombatStatPostRoundEffectV1,
+    CombatStatEffectV1,
+    CombatStatPredicateV1,
+)> {
+    let (resource, amount) = classify_victory_or_defeat_both_players_gain(definition, source_kind)?;
+    Some(match resource {
+        BothPlayersGainV1::Life => (
+            CombatStatPostRoundEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { life: amount },
+            CombatStatEffectV1::GainBothPlayersLifeOnVictoryOrDefeat { life: amount },
+            CombatStatPredicateV1::Always,
+        ),
+        BothPlayersGainV1::Pillz => (
+            CombatStatPostRoundEffectV1::GainBothPlayersPillzOnVictoryOrDefeat { pillz: amount },
+            CombatStatEffectV1::GainBothPlayersPillzOnVictoryOrDefeat { pillz: amount },
+            CombatStatPredicateV1::Always,
+        ),
+    })
 }
 
 fn prepare_reanimate_life_source(
