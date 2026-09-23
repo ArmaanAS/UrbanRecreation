@@ -318,6 +318,13 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             287, 425, 490, 589, 1084, 1680, 2320, 2328, 3939, 4525, 5015, 5540, 5564, 5598,
         ],
     ),
+    // `Stop:` over the plain numeric body, measured 2026-09-23. The two draws whose
+    // opposing hand holds a `Stop Opp. Ability` stay refused by construction.
+    (
+        "Stop: combat-stat numeric",
+        &[505, 654, 908, 1203, 1474, 1984, 2175, 5923],
+    ),
+    ("Stop: Pillz", &[646, 918]),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

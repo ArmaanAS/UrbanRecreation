@@ -5,9 +5,9 @@
 
 use super::CopiedSourceKindV1;
 use super::{
-    CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatEffectSourceV1, CombatStatEffectV1,
-    CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPostRoundEffectV1,
-    CombatStatPredicateV1,
+    CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatCardPlanV1,
+    CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1,
+    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, HAND_SIZE,
 };
 
 /// Every source-copying Copy grammar this projection admits, as the exact printed text it
@@ -74,7 +74,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 47;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 48;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -129,7 +129,8 @@ fn copy_opponent_source_shape_matches(
         | CombatStatPredicateV1::SelectedHandSlotsMatch
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
-        | CombatStatPredicateV1::OwnerHandUnison => return false,
+        | CombatStatPredicateV1::OwnerHandUnison
+        | CombatStatPredicateV1::OwnerAbilityStopped => return false,
     };
     input.value == 0
         && input.value_min == 0
@@ -997,7 +998,8 @@ fn victory_opponent_life_shape_matches(
         | CombatStatPredicateV1::SelectedHandSlotsDiffer
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
-        | CombatStatPredicateV1::OwnerHandUnison => return false,
+        | CombatStatPredicateV1::OwnerHandUnison
+        | CombatStatPredicateV1::OwnerAbilityStopped => return false,
     };
     input.value == life
         && input.value_min == minimum
@@ -1585,6 +1587,9 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_day_night_numeric(definition) {
         return Some(classified);
     }
+    if let Some(classified) = classify_stop_triggered_numeric(definition, source_kind) {
+        return Some(classified);
+    }
     let input = definition.structured_input();
     if input.position_requirement == PositionRequirementV1::Both && neutral_except_position(input) {
         if let CompiledEffectV1::Supported(effect) = definition.compiled() {
@@ -1798,6 +1803,75 @@ fn classify_day_night_numeric(
     let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
         .then_some((effect, predicate))
+}
+
+/// True when any opposing source could stop an ability: an executable `Stop Opp. Ability`
+/// in either slot of any card, or a Copy, which could adopt one.
+pub(crate) fn opponent_can_stop_an_ability(opponent: &[CombatStatCardPlanV1; HAND_SIZE]) -> bool {
+    opponent.iter().any(|card| {
+        [card.ability, card.bonus].into_iter().any(|plan| {
+            matches!(
+                plan,
+                CombatStatSourcePlanV1::Execute {
+                    effect: CombatStatEffectV1::StopOpponentAbility,
+                    ..
+                } | CombatStatSourcePlanV1::CopyOpponentSource { .. }
+            )
+        })
+    })
+}
+
+/// Recognize `Stop:` over the plain fixed numeric body: the effect fires only when the
+/// owner's own ability is stopped by the opposing character. The registry carries the
+/// prefix as `isInverted`, which every other grammar requires false, and nothing else
+/// differs from the plain record. Card abilities only - no clan bonus prints one.
+///
+/// Every selected `Stop:` round in the corpus is a round in which it did not fire, and the
+/// projection models exactly that: the predicate never holds, and construction refuses a
+/// match in which an opposing source could stop the ability (see
+/// `validate_stop_triggered_context`).
+fn classify_stop_triggered_numeric(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    if !input.is_inverted
+        || input.position_requirement != PositionRequirementV1::Both
+        || !neutral_except_inverted(input)
+    {
+        return None;
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
+    let body = definition.description().strip_prefix("Stop: ")?;
+    numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
+        .then_some((effect, CombatStatPredicateV1::OwnerAbilityStopped))
+}
+
+fn neutral_except_inverted(input: &StructuredEffectV1) -> bool {
+    input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && input.is_inverted
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
 }
 
 fn classify_equalizer_numeric(
@@ -2617,7 +2691,8 @@ fn position_description_matches(
         | CombatStatPredicateV1::SelectedHandSlotsDiffer
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
-        | CombatStatPredicateV1::OwnerHandUnison => return false,
+        | CombatStatPredicateV1::OwnerHandUnison
+        | CombatStatPredicateV1::OwnerAbilityStopped => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -2641,7 +2716,8 @@ fn index_description_matches(
         | CombatStatPredicateV1::OwnerLostPreviousRound
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
-        | CombatStatPredicateV1::OwnerHandUnison => return false,
+        | CombatStatPredicateV1::OwnerHandUnison
+        | CombatStatPredicateV1::OwnerAbilityStopped => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -2667,7 +2743,8 @@ fn previous_round_description_matches(
         | CombatStatPredicateV1::SelectedHandSlotsDiffer
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
-        | CombatStatPredicateV1::OwnerHandUnison => None,
+        | CombatStatPredicateV1::OwnerHandUnison
+        | CombatStatPredicateV1::OwnerAbilityStopped => None,
     };
     body.is_some_and(|body| {
         numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
@@ -2750,7 +2827,8 @@ fn numeric_description_body_matches(
             body == format!("Damage +{value}") || body == format!("Damage + {value}")
         }
         (AffectedSideV1::Player, CombatStatV1::Attack, StatOperationV1::Increase, None) => {
-            body == format!("Attack +{value}")
+            // `908` prints `Stop: Atk. +N`.
+            body == format!("Attack +{value}") || body == format!("Atk. +{value}")
         }
         (AffectedSideV1::Player, CombatStatV1::PowerAndDamage, StatOperationV1::Increase, None) => {
             body == format!("Power And Damage +{value}")
@@ -4116,6 +4194,67 @@ mod tests {
             };
             assert_eq!(classified, expected, "{source:?}");
         }
+    }
+
+    #[test]
+    fn stop_triggered_numeric_is_admitted_over_the_inverted_shape() {
+        let registry = registry();
+        for id in [505, 654, 908, 1203, 1474, 1984, 2175, 5923] {
+            let definition = registry.get(id).expect("registry definition");
+            let classified =
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability);
+            assert!(
+                matches!(
+                    classified,
+                    Some((
+                        SupportedEffectV1::ModifyCombatStat { .. },
+                        CombatStatPredicateV1::OwnerAbilityStopped,
+                    ))
+                ),
+                "definition {id}: {classified:?}",
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} as a bonus",
+            );
+        }
+        // The Pillz forms are post-round work and stay closed.
+        for id in [646, 918] {
+            assert_eq!(
+                classify_combat_stat_effect(
+                    registry.get(id).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "definition {id}",
+            );
+        }
+        // The inverted flag is the only structured trace of the prefix: without it the
+        // `Stop:` text is refused, and the flag under plain text is refused too.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        let mut plain = source.clone();
+        plain["1474"]["abilityData"]["isInverted"] = serde_json::json!(false);
+        let plain = EffectRegistryV1::from_reader(plain.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_stop_triggered_numeric(
+                plain.get(1474).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None
+        );
+        let mut retexted = source.clone();
+        retexted["1474"]["description"] = serde_json::json!("Damage +4");
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_combat_stat_effect(
+                retexted.get(1474).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None
+        );
     }
 
     #[test]

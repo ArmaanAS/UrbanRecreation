@@ -10,9 +10,9 @@ use super::combat_resolution::{
 use super::combat_stat_compiler::{
     anita_courage_damage_to_life_identity_matches, argos_defeat_capped_pillz_identity_matches,
     conditional_stop_predicate_admitted, equalizer_opponent_life_on_victory_identity_matches,
-    komboka_victory_pillz_and_life_identity_matches, permanent_predicate_admitted,
-    victory_opponent_life_identity_matches, victory_opponent_life_predicate,
-    victory_or_defeat_pillz_identity_matches,
+    komboka_victory_pillz_and_life_identity_matches, opponent_can_stop_an_ability,
+    permanent_predicate_admitted, victory_opponent_life_identity_matches,
+    victory_opponent_life_predicate, victory_or_defeat_pillz_identity_matches,
 };
 use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
@@ -89,6 +89,11 @@ pub enum CombatStatPredicateV1 {
     /// `Unison :` - every card in the owner's hand shares the owner's selected card's
     /// effective clan (Oculus infiltration counts).
     OwnerHandUnison,
+    /// `Stop:` - the owner's own ability was stopped by the opposing character. No captured
+    /// round has ever shown it fire, so the projection models only the half the server has
+    /// pinned: construction refuses any match in which an opposing source could stop the
+    /// owner's ability, and within every match it admits the condition cannot hold.
+    OwnerAbilityStopped,
 }
 
 /// Public provenance metadata for an admitted post-round effect. The hot path converts this
@@ -554,6 +559,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     BrawlPostRoundSource,
     BrawlPostRoundMagnitude,
     BrawlPostRoundPredicate,
+    /// A `Stop:` source faces a hand that could stop its owner's ability, the one case the
+    /// projection does not model.
+    StopTriggeredAgainstStopAbility,
     ReprisalStopOpponentAbilityCard,
     ReprisalStopOpponentAbilityEffect,
     ReprisalStopOpponentAbilityIdentity,
@@ -760,6 +768,12 @@ impl CombatStatDiagnosticV1 {
                     &spec.cards[player],
                     &spec.cards[player.other()],
                 )?;
+                validate_stop_triggered_context(
+                    player,
+                    slot,
+                    &spec.cards[player],
+                    &spec.cards[player.other()],
+                )?;
             }
         }
         let base_rules = BaseRulesGame::new(spec.base_rules.clone());
@@ -879,6 +893,37 @@ fn validate_ability_support_context(
 /// A condition does not soften this. The predicate depends on the round, not on the draw,
 /// so every conditional Copy has some legal line in which it does adopt, and admitting one
 /// whose target is unresolvable would only move the failure to that line.
+/// A `Stop:` source fires only when an opposing source stops its owner's ability, which no
+/// captured round has shown. The projection models it as never firing, which is sound only
+/// while nothing opposite can stop that ability: a `Stop Opp. Ability` in any opposing slot,
+/// under any predicate, or a Copy that could adopt one. A match with either is refused
+/// rather than executed on an unpinned rule.
+fn validate_stop_triggered_context(
+    player: PlayerId,
+    hand_slot: HandSlot,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> Result<(), CombatStatPlanErrorV1> {
+    let CombatStatSourcePlanV1::Execute {
+        source_id,
+        predicate: CombatStatPredicateV1::OwnerAbilityStopped,
+        ..
+    } = own[hand_slot.index()].ability
+    else {
+        return Ok(());
+    };
+    if opponent_can_stop_an_ability(opponent) {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            CombatStatEffectSourceV1::Ability,
+            source_id,
+            InvalidCombatStatPlanReasonV1::StopTriggeredAgainstStopAbility,
+        ));
+    }
+    Ok(())
+}
+
 fn validate_copy_targets(
     player: PlayerId,
     hand_slot: HandSlot,
@@ -1971,6 +2016,7 @@ fn validate_combat_stat_source_plan(
             CombatStatPredicateV1::OwnerMovesFirst
                 | CombatStatPredicateV1::OwnerMovesSecond
                 | CombatStatPredicateV1::OwnerHandUnison
+                | CombatStatPredicateV1::OwnerAbilityStopped
         ) || (matches!(
             predicate,
             CombatStatPredicateV1::SelectedHandSlotsMatch
@@ -2154,6 +2200,8 @@ fn predicate_matches(
         CombatStatPredicateV1::SelectedHandSlotsDiffer => owner_slot != opponent_slot,
         CombatStatPredicateV1::MatchIsNight => night,
         CombatStatPredicateV1::MatchIsDay => !night,
+        // Construction guarantees no opposing source can stop the owner's ability.
+        CombatStatPredicateV1::OwnerAbilityStopped => false,
     }
 }
 

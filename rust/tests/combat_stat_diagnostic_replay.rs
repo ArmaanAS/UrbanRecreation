@@ -395,6 +395,14 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1091314, 3),
     (877308, 4),
     (878120, 4),
+    // Revision 48 admits `Stop:` over the plain numeric body, modelled as the half the
+    // server has shown: it never fires unless its owner's ability is stopped, and nothing
+    // opposite these cards can stop one. Curie's `Stop: Damage +4` stays at 4 Damage in
+    // 1009300/3, Nantosuelte's 4 Damage survives the opposing `Stop: -3 Opp. Dmg, Min 3` in
+    // 1025645/0, and Belladone's attack is 27, not 34, in 925051/3.
+    (1009300, 4),
+    (1025645, 3),
+    (925051, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

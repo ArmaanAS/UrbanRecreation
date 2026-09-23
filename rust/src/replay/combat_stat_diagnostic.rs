@@ -32,7 +32,7 @@ use crate::engine::combat_stat_compiler::{
     has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
     has_victory_life_shape, has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
-    has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
+    has_victory_pillz_shape, opponent_can_stop_an_ability, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
@@ -355,6 +355,42 @@ struct PreparedCombatStatCardV1 {
     compact_plan: CombatStatCardPlanV1,
 }
 
+/// A `Stop:` source facing a hand that could stop its owner's ability is the one case the
+/// projection does not model, and the engine refuses a plan that puts it there. A capture is
+/// concrete, though, so rather than refusing the whole replay the source becomes a selected
+/// hazard: a round that selects it is refused, and every other round is still checked
+/// against the server.
+fn downgrade_unmodelled_stop_triggered_sources(prepared: &mut PreparedCombatStatCardsV1) {
+    for player in PlayerId::ALL {
+        if !opponent_can_stop_an_ability(&prepared.compact_plans[player.other()]) {
+            continue;
+        }
+        for slot in 0..HAND_SIZE {
+            let CombatStatSourcePlanV1::Execute {
+                source_id,
+                predicate: CombatStatPredicateV1::OwnerAbilityStopped,
+                ..
+            } = prepared.compact_plans[player][slot].ability
+            else {
+                continue;
+            };
+            prepared.compact_plans[player][slot].ability =
+                CombatStatSourcePlanV1::RejectIfSelected { source_id };
+            if let CombatStatProjectionDispositionV1::Execute { identity, .. } =
+                &prepared.metadata[player][slot].ability
+            {
+                prepared.metadata[player][slot].ability =
+                    CombatStatProjectionDispositionV1::Disabled {
+                        identity: identity.clone(),
+                        reason: CombatStatDisabledReasonV1::UnsupportedSelectedHazard {
+                            registry_reasons: Box::new([]),
+                        },
+                    };
+            }
+        }
+    }
+}
+
 struct PreparedCombatStatCardsV1 {
     metadata: ByPlayer<[CombatStatCardPreparationV1; HAND_SIZE]>,
     compact_plans: ByPlayer<[CombatStatCardPlanV1; HAND_SIZE]>,
@@ -370,7 +406,8 @@ impl CombatStatDiagnosticReplayV1 {
         let base = BaseRulesReplay::new(replay, catalog)
             .map_err(CombatStatDiagnosticPreparationErrorV1::Replay)?;
         let battle_id = base.battle_id();
-        let prepared = prepare_combat_stat_cards(base.replay(), catalog, registry, battle_id)?;
+        let mut prepared = prepare_combat_stat_cards(base.replay(), catalog, registry, battle_id)?;
+        downgrade_unmodelled_stop_triggered_sources(&mut prepared);
         let match_spec = CombatStatDiagnosticMatchSpecV1 {
             base_rules: base.match_spec().clone(),
             cards: prepared.compact_plans,
@@ -1165,6 +1202,12 @@ fn prepare_combat_stat_source(
                 | AttributeAffectedV1::LifeAndPillz
         ))
         || has_brawl_post_round_shape(definition);
+    // `Stop:` fires on the owner's own ability being stopped, which the projection admits
+    // only over a numeric body and only where nothing opposite can stop it. Any other
+    // `Stop:` record - the Pillz forms, a malformed body, the inverted flag under other
+    // text - rejects when selected rather than acting as an inert disabled source.
+    let unadmitted_stop_triggered =
+        source.description.starts_with("Stop: ") || definition.structured_input().is_inverted;
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
@@ -1221,6 +1264,7 @@ fn prepare_combat_stat_source(
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
         || unadmitted_brawl_post_round
+        || unadmitted_stop_triggered
         || unadmitted_heal_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
@@ -1258,6 +1302,7 @@ fn prepare_combat_stat_source(
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
         || unadmitted_brawl_post_round
+        || unadmitted_stop_triggered
         || unadmitted_heal_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {

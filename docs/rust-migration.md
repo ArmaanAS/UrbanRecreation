@@ -1893,6 +1893,35 @@ those three rest on the composition basis and on engine tests. The gate grows fr
 459 rounds: 877308, 878120 and 1089742 in full, and 1069721, 926584, 876882, 1091314,
 1080662 and 1091644 extended.
 
+Semantic revision 48 admits `Stop:` over the plain fixed numeric body - `Stop: Damage +3`
+(`505`), `Stop: -3 Opp. Dmg, Min 3` (`654`), `Stop: Atk. +N` (`908`), `Stop: Power +4`
+(`1203`), `Stop: Damage +4` (`1474`), `Stop: -3 Opp Pow. & Dmg,min 1` (`1984`), `Stop: -2
+Opp Power, Min 3` (`2175`) and `Stop: -13 Opp Attack, Min 0` (`5923`) - and models only
+the half of it the server has shown. It measured 4 in that narrow form and unlocked exactly 4
+- `925051`, `1009300`, `1023396` and `1025645` - taking eligibility from 123 to 127.
+
+`Stop:` fires when the owner's own ability is stopped by the opposing character; the
+registry marks it `isInverted`, which every other grammar requires false, and the reference
+protects the ability from the stop and then fires on it. Every one of the eleven selected
+`Stop:` rounds in the corpus is a round where it did not fire - including 963931/3, where an
+opposing `Stop Opp. Bonus` does not trigger it - and none shows it firing. So the effect is
+admitted under an `OwnerAbilityStopped` predicate that never holds, and the plan validator
+refuses any match in which it could: a `Stop Opp. Ability` anywhere in the opposing hand,
+under any predicate, or a Copy that could adopt one. The catalog raises that refusal as the
+unsupported `Stop:` source it is, so the coverage report still counts 945989 and 947370 -
+the two draws facing Lumia Cr's Stop - as blocked rather than structurally refused. Replay
+is concrete, so there such a source becomes a selected hazard instead of refusing the whole
+capture, which keeps 1069345 and 947370 replayable up to the round that selects it. The
+firing half needs a captured round in which the owner plays Lumia Cr or Spidee's Reprisal
+against a revealed `Stop:` card; two of them would lift the refusal for those two draws.
+
+The Pillz forms (`646`, `918`) are post-round and stay closed, and an unadmitted `Stop:`
+record is now a selected hazard at the replay boundary rather than an inert disabled source.
+That shortens 1058005, which had replayed four rounds past Izsobahd's selected `Stop: -3
+Pillz Opp. Min 1`; it lost that round, so nothing had been missed, but the replay was right
+by luck. The gate grows from 459 to 470 rounds, with 1009300 and 925051 in full and
+1025645 to three rounds.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

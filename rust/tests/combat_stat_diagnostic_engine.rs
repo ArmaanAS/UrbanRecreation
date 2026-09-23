@@ -5825,3 +5825,96 @@ fn a_conditional_stop_is_live_only_when_its_condition_holds() {
         })
     ));
 }
+
+fn stop_triggered_spec() -> CombatStatDiagnosticMatchSpecV1 {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1474,
+        CombatStatPredicateV1::OwnerAbilityStopped,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Damage,
+            CombatStatOperationV1::Increase,
+            4,
+            None,
+            None,
+            CombatStatMagnitudeV1::Fixed,
+        ),
+    );
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+/// `Stop:` pays only when its owner's own ability is stopped. Eleven selected rounds pin the
+/// half where it is not, and none pins the half where it is, so construction refuses any
+/// match in which an opposing source - a `Stop Opp. Ability` in any slot under any
+/// predicate, or a Copy that could adopt one - could stop it, and within every other match
+/// the effect never fires. An opposing `Stop Opp. Bonus` stops nothing it needs (963931/3).
+#[test]
+fn a_stop_triggered_source_never_fires_where_nothing_can_stop_it() {
+    let mut diag = CombatStatDiagnosticV1::new(stop_triggered_spec()).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].damage, 3);
+
+    let mut stop_bonus = stop_triggered_spec();
+    stop_bonus.cards[PlayerId::P2][0].ability = execute(
+        40,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    assert!(CombatStatDiagnosticV1::new(stop_bonus).is_ok());
+
+    for opposing in [
+        execute(
+            40,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::StopOpponentAbility,
+        ),
+        execute(
+            425,
+            CombatStatPredicateV1::OwnerMovesFirst,
+            CombatStatEffectV1::StopOpponentAbility,
+        ),
+        CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 846,
+            copied: CopiedSourceKindV1::Ability,
+            predicate: CombatStatPredicateV1::Always,
+        },
+    ] {
+        let mut spec = stop_triggered_spec();
+        // An unselected card is enough: the refusal is about what could happen in any line.
+        spec.cards[PlayerId::P2][3].ability = opposing;
+        spec.cards[PlayerId::P2][3].source_ability_support_count = u16::from(matches!(
+            opposing,
+            CombatStatSourcePlanV1::CopyOpponentSource { .. }
+        ));
+        assert!(
+            matches!(
+                CombatStatDiagnosticV1::new(spec),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::StopTriggeredAgainstStopAbility,
+                    ..
+                })
+            ),
+            "{opposing:?}",
+        );
+    }
+
+    // No clan bonus prints one.
+    let mut bonus = stop_triggered_spec();
+    bonus.cards[PlayerId::P1][0].bonus = bonus.cards[PlayerId::P1][0].ability;
+    bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(bonus),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::ConditionalBonus,
+            ..
+        })
+    ));
+}

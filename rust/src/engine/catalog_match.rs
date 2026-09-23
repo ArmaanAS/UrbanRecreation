@@ -521,6 +521,38 @@ impl CatalogCombatStatMatchV1 {
             });
         }
 
+        // A `Stop:` source is admitted only where nothing opposite can stop its owner's
+        // ability. The engine refuses such a plan too; refusing it here, as the unsupported
+        // source it is, keeps the coverage report counting it as a blocker.
+        for player in PlayerId::ALL {
+            let opponent = compact_cards[player.other()]
+                .each_ref()
+                .map(|card| card.expect("all eight compact cards were prepared"));
+            if !super::combat_stat_compiler::opponent_can_stop_an_ability(&opponent) {
+                continue;
+            }
+            for slot in HandSlot::ALL {
+                let card = metadata[player][slot.index()]
+                    .as_ref()
+                    .expect("all eight metadata cards were prepared");
+                if let CatalogCombatStatSourceDispositionV1::Execute {
+                    identity,
+                    predicate: CombatStatPredicateV1::OwnerAbilityStopped,
+                    ..
+                } = &card.ability
+                {
+                    return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                        player,
+                        hand_slot: slot,
+                        source_kind: CombatStatEffectSourceV1::Ability,
+                        catalog_id: identity.catalog_id,
+                        description: identity.description.clone(),
+                        registry_definition_id: identity.registry_definition_id,
+                        registry_reasons: Box::new([]),
+                    });
+                }
+            }
+        }
         let match_spec = CombatStatDiagnosticMatchSpecV1 {
             base_rules: BaseRulesMatchSpec {
                 battle_rule_id: input.battle_rule_id,
