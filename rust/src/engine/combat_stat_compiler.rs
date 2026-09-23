@@ -74,7 +74,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 45;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 46;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -128,7 +128,8 @@ fn copy_opponent_source_shape_matches(
         | CombatStatPredicateV1::OwnerWonPreviousRound
         | CombatStatPredicateV1::SelectedHandSlotsMatch
         | CombatStatPredicateV1::MatchIsNight
-        | CombatStatPredicateV1::MatchIsDay => return false,
+        | CombatStatPredicateV1::MatchIsDay
+        | CombatStatPredicateV1::OwnerHandUnison => return false,
     };
     input.value == 0
         && input.value_min == 0
@@ -864,7 +865,8 @@ fn victory_opponent_life_shape_matches(
         | CombatStatPredicateV1::OwnerLostPreviousRound
         | CombatStatPredicateV1::SelectedHandSlotsDiffer
         | CombatStatPredicateV1::MatchIsNight
-        | CombatStatPredicateV1::MatchIsDay => return false,
+        | CombatStatPredicateV1::MatchIsDay
+        | CombatStatPredicateV1::OwnerHandUnison => return false,
     };
     input.value == life
         && input.value_min == minimum
@@ -1434,6 +1436,9 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_round_scaled_numeric(definition) {
         return Some(classified);
     }
+    if let Some(classified) = classify_unison_numeric(definition, source_kind) {
+        return Some(classified);
+    }
     if let Some(classified) = classify_position_numeric(definition, source_kind) {
         return Some(classified);
     }
@@ -1496,6 +1501,56 @@ fn admitted_supported_effect(
                     && matches!(stat, CombatStatV1::PowerAndDamage))
         }
     }
+}
+
+/// `Unison :` over a fixed numeric body. The registry marks the prefix with
+/// `isClanmatesCountLinked` and refuses it as a linked magnitude, but it is a gate, not a
+/// magnitude: the printed amount applies once when every card in the owner's hand shares
+/// the owner's selected card's effective clan.
+fn classify_unison_numeric(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    if !input.is_clanmates_count_linked || !neutral_except_clanmates_count(input) {
+        return None;
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
+    let body = definition
+        .description()
+        .strip_prefix("Unison : ")
+        .or_else(|| definition.description().strip_prefix("Unison: "))?;
+    numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
+        .then_some((effect, CombatStatPredicateV1::OwnerHandUnison))
+}
+
+fn neutral_except_clanmates_count(input: &StructuredEffectV1) -> bool {
+    input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
 }
 
 fn classify_position_numeric(
@@ -2427,7 +2482,8 @@ fn position_description_matches(
         | CombatStatPredicateV1::SelectedHandSlotsMatch
         | CombatStatPredicateV1::SelectedHandSlotsDiffer
         | CombatStatPredicateV1::MatchIsNight
-        | CombatStatPredicateV1::MatchIsDay => return false,
+        | CombatStatPredicateV1::MatchIsDay
+        | CombatStatPredicateV1::OwnerHandUnison => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -2450,7 +2506,8 @@ fn index_description_matches(
         | CombatStatPredicateV1::OwnerWonPreviousRound
         | CombatStatPredicateV1::OwnerLostPreviousRound
         | CombatStatPredicateV1::MatchIsNight
-        | CombatStatPredicateV1::MatchIsDay => return false,
+        | CombatStatPredicateV1::MatchIsDay
+        | CombatStatPredicateV1::OwnerHandUnison => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -2475,7 +2532,8 @@ fn previous_round_description_matches(
         | CombatStatPredicateV1::SelectedHandSlotsMatch
         | CombatStatPredicateV1::SelectedHandSlotsDiffer
         | CombatStatPredicateV1::MatchIsNight
-        | CombatStatPredicateV1::MatchIsDay => None,
+        | CombatStatPredicateV1::MatchIsDay
+        | CombatStatPredicateV1::OwnerHandUnison => None,
     };
     body.is_some_and(|body| {
         numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
@@ -2784,6 +2842,73 @@ mod tests {
                 ),
                 None,
                 "malformed {field}",
+            );
+        }
+    }
+
+    #[test]
+    fn unison_numeric_is_admitted_as_a_whole_hand_gate() {
+        let registry = registry();
+        for id in [
+            3743, 3833, 3841, 3843, 3890, 3900, 4052, 4075, 4553, 5311, 5318,
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            let classified =
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability);
+            assert!(
+                matches!(
+                    classified,
+                    Some((
+                        SupportedEffectV1::ModifyCombatStat {
+                            multiplier: MagnitudeMultiplierV1::Fixed,
+                            ..
+                        },
+                        CombatStatPredicateV1::OwnerHandUnison,
+                    ))
+                ),
+                "definition {id}: {classified:?}",
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} as a bonus",
+            );
+        }
+        // The flag without the text, or the text without the flag, is refused, and so is a
+        // Unison over any body this grammar does not name.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        let mut unflagged = source.clone();
+        unflagged["5318"]["abilityData"]["isClanmatesCountLinked"] = serde_json::json!(false);
+        let unflagged = EffectRegistryV1::from_reader(unflagged.to_string().as_bytes()).unwrap();
+        assert!(classify_unison_numeric(
+            unflagged.get(5318).unwrap(),
+            CombatStatEffectSourceV1::Ability
+        )
+        .is_none());
+        let mut retexted = source.clone();
+        let body = retexted["5318"]["description"]
+            .as_str()
+            .unwrap()
+            .replace("Unison : ", "Courage: ");
+        retexted["5318"]["description"] = serde_json::json!(body);
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_combat_stat_effect(
+                retexted.get(5318).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None
+        );
+        for id in [3839, 3953, 3973, 4015, 4033, 4119, 4695] {
+            assert_eq!(
+                classify_combat_stat_effect(
+                    registry.get(id).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "definition {id}",
             );
         }
     }

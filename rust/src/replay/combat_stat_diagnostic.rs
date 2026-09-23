@@ -1172,8 +1172,11 @@ fn prepare_combat_stat_source(
             && input.attribute_action == AttributeActionV1::Increase);
     // A near-miss of an admitted permanent grammar is a selected hazard: its plain text in
     // the wrong slot or over a malformed structure, or its complete permanent shape under
-    // text whose numbers or grammar disagree with it - which is what `Growth:`, `Unison :`
-    // and `Revenge:` Poison are, structurally indistinguishable from the plain record.
+    // text whose numbers or grammar disagree with it - which is what `Revenge:` Poison was
+    // before revision 32 admitted it. `Growth:` and `Unison :` Poison were once described
+    // here as the same case, but they are not: Growth carries `isOverdrive` and Unison the
+    // clan-mates link, so no admitted shape reaches them and they get a clause of their own
+    // at the end of this one rather than falling through to an inert disabled source.
     // `Defeat`, `Killshot`, `Symmetry`, `Asymmetry`, `Perfect`, `Backlash`, Victory-or-Defeat
     // and clan-gated forms differ in their structured fields and keep the visible-but-
     // disabled record every other permanent has.
@@ -1190,7 +1193,13 @@ fn prepare_combat_stat_source(
         // Without this a malformed `Defeat: Poison` record would become an inert disabled
         // source rather than a selected hazard.
         || source.description.starts_with("Defeat: Poison ")
-        || has_poison_opponent_life_on_defeat_shape(definition);
+        || has_poison_opponent_life_on_defeat_shape(definition)
+        // `Unison :` and `Growth:` permanents carry the clan-mates link or `isOverdrive`
+        // beside the plain permanent structure, so none of the shapes above reach them;
+        // without this they would be inert disabled sources whose latch replay drops.
+        || ((source.description.starts_with("Unison") || source.description.starts_with("Growth"))
+            && input.is_permanent
+            && input.attribute_affected == AttributeAffectedV1::Life);
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {

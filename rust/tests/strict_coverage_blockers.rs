@@ -289,6 +289,15 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             923, 1717, 1788, 2710, 3276, 4302, 4517, 4518, 4519, 4829, 5357, 5555, 5848,
         ],
     ),
+    // `Unison :` over the plain fixed numeric body, measured 2026-09-23. Unison is a gate on
+    // the owner's whole hand sharing one effective clan, not the magnitude the registry's
+    // clan-mates link suggests.
+    (
+        "Unison fixed numeric",
+        &[
+            3743, 3833, 3841, 3843, 3890, 3900, 4052, 4075, 4553, 5311, 5318,
+        ],
+    ),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

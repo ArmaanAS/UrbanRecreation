@@ -5671,3 +5671,80 @@ fn a_copied_per_life_left_reads_the_copiers_life() {
     assert_eq!(report.cards[PlayerId::P1].power, 11);
     assert_eq!(report.cards[PlayerId::P2].power, 13);
 }
+
+/// `Unison :` is a gate on the owner's whole hand sharing the selected card's effective
+/// clan, not the multiplier the registry's clan-mates link suggests (1069608/2 pays the
+/// printed +3 with four clan-mates, not +12). The corpus's only non-mono Unison round is on
+/// a Stop body (1079813/3), so the gate's negative half, the Oculus that completes it and a
+/// copier judged on its own hand are pinned here.
+#[test]
+fn unison_needs_the_owners_whole_hand_in_one_effective_clan() {
+    let unison_power = execute(
+        5318,
+        CombatStatPredicateV1::OwnerHandUnison,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            3,
+            None,
+            None,
+            CombatStatMagnitudeV1::Fixed,
+        ),
+    );
+    // (P1 hand clans, P1 power)
+    for (clans, expected) in [
+        // `base_spec` gives every card its own clan: not Unison.
+        ([None, None, None, None], 6),
+        // Three of four is still not Unison.
+        ([Some(900), Some(900), Some(900), None], 6),
+        // All four, whether native or by an infiltrating Oculus's effective clan.
+        ([Some(900), Some(900), Some(900), Some(900)], 9),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = unison_power;
+        for (slot, clan) in clans.iter().enumerate() {
+            if let Some(clan) = clan {
+                cards[PlayerId::P1][slot].effective_clan_id = *clan;
+            }
+        }
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(report.cards[PlayerId::P1].power, expected, "{clans:?}");
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+    }
+
+    // A copier adopting the opposing Unison ability is judged on its own hand: here the
+    // copier's hand is mixed while the original owner's is mono, so only the owner pays.
+    let mut spec = copy_spec(CopiedSourceKindV1::Ability, unison_power);
+    for slot in 0..4 {
+        spec.cards[PlayerId::P2][slot].effective_clan_id = 900;
+    }
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 7);
+    assert_eq!(report.cards[PlayerId::P2].power, 10);
+
+    // No clan bonus prints a Unison, so a Bonus-slot plan carrying the predicate is refused.
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].bonus = unison_power;
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::ConditionalBonus,
+            ..
+        })
+    ));
+}

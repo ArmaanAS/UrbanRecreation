@@ -1823,6 +1823,42 @@ Left`, which reads the copier's own Life, are pinned by engine tests.
 The older clan-bonus projection learned the magnitude only to refuse it, so a caller there
 cannot hand it a `Per Life Left` plan that would silently pay nothing.
 
+Semantic revision 46 admits `Unison :` over the plain fixed numeric body (`3743`, `3833`,
+`3841`, `3843`, `3890`, `3900`, `4052`, `4075`, `4553`, `5311`, `5318`) under a new
+`OwnerHandUnison` predicate: the printed amount applies once when every card in the owner's
+hand shares the owner's selected card's effective clan, an infiltrating Oculus included. It
+measured 5 and unlocked exactly 5, taking eligibility from 112 to 117.
+
+The registry was misleading about what Unison is, and so was this document. It carries the
+prefix as `isClanmatesCountLinked` - on all 29 Unison records it is the only field that
+differs from the same-text plain record - and refuses it as a linked *magnitude*. It is a
+gate: 1069608/2 pays Sauropsite's printed +3 with four clan-mates, not +12, and that +3
+turns a 45-against-49 loss into a 72-against-49 win. The TypeScript condition is
+`hand.getClanCards(card) === 4`. The whole hand counts, spent cards included, which
+1088323/3 pins by paying in round 3. The predicate is evaluated at resolution from the
+plans' `effective_clan_id`, beside the Brawl count, so a copier adopting a Unison effect is
+judged on its own hand. It is Ability only; the plan validator refuses it from the Bonus
+slot.
+
+Eight paying rounds pin the positive composition across eight definitions, and the
+negative half is server-pinned on another body: 1079813/3, the corpus's only non-mono
+Unison round, leaves Viperine's `Unison : Stop Opp. Bonus` inert. The mixed hand, the
+Oculus that completes a hand and the copier are pinned by engine tests. The gate grows from
+419 to 433 rounds with the Unison rounds of 1069608, 947488, 1131144, 867173, 1088323, 1090531 and 1092773;
+867173 stops at two rounds: Prince Candle's unadmitted Combust (`4799`, now in the gate's
+disabled set) is selected in round 1 and pays in round 2.
+
+Two claims in the revision 32 and 33 write-ups above are wrong and are corrected here.
+`Growth:` and `Unison :` Poison do not carry exactly the plain Poison structure - Growth
+carries `isOverdrive` and Unison the clan-mates link - so they did not become near-miss
+hazards when the plain grammar was admitted. They fell through to inert disabled sources,
+which let a capture replay past a latch it then dropped (1078555 continues past round 0 and
+then mismatches). The replay boundary now makes an unadmitted `Growth:` or `Unison :` Life
+permanent a selected hazard. The strict constructor had always refused them, so the solver
+was never affected. 926226, whose longest replayable prefix had reached four rounds past an
+inert Unison permanent, now stops where it is selected; its gate fixture was only ever two
+rounds.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

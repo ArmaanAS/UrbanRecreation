@@ -23,7 +23,8 @@ mod support;
 const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (875032, 2),
     (875155, 1),
-    (1088323, 2),
+    // Four rounds since revision 46, whose Unison reduction pays in round 3.
+    (1088323, 4),
     (1089001, 1),
     (1024673, 2),
     (1060199, 3),
@@ -173,7 +174,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // round 3 while Agnes knocks its owner out.
     (963039, 3),
     (926226, 2),
-    (1090531, 2),
+    // Three rounds since revision 46: Tina 5 + 2 - 3 = 3 under the Unison reduction.
+    (1090531, 3),
     (1091585, 3),
     (1091904, 2),
     (1092369, 4),
@@ -201,7 +203,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1089626, 1),
     (1090887, 3),
     (1092578, 1),
-    (1092773, 1),
+    // Four rounds since revision 46, whose Unison Damage +3 pays in round 1.
+    (1092773, 4),
     (1092840, 3),
     (1093275, 1),
     // Revision 30 plain `-N Opp Pillz. Min M`. Dalhia Cr's `339` takes Callie from 12 - 5
@@ -363,6 +366,16 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1079173, 4),
     (1079650, 4),
     (876752, 2),
+    // Revision 46 admits `Unison :` over the plain fixed numeric body: the printed amount
+    // applies once when every card in the owner's hand shares the selected card's effective
+    // clan. Sauropsite's `5318` takes 5/3 to 8/6 in 1069608/2 and so wins at 72 against 49,
+    // where 45 would lose; Aurora falls from 7 to 4 under `4553` in 1131144/0; Wesley 6 - 2
+    // - 2 = 2 in 1088323/3 shows the whole-hand condition holds after cards are spent.
+    // 867173 stops at two rounds, where Prince Candle's unadmitted Combust latches.
+    (1069608, 3),
+    (947488, 2),
+    (1131144, 1),
+    (867173, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

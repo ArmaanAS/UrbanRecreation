@@ -86,6 +86,9 @@ pub enum CombatStatPredicateV1 {
     MatchIsNight,
     /// `Day:` - Clint City is in daylight for this match.
     MatchIsDay,
+    /// `Unison :` - every card in the owner's hand shares the owner's selected card's
+    /// effective clan (Oculus infiltration counts).
+    OwnerHandUnison,
 }
 
 /// Public provenance metadata for an admitted post-round effect. The hot path converts this
@@ -1957,7 +1960,9 @@ fn validate_combat_stat_source_plan(
     if source == CombatStatEffectSourceV1::Bonus
         && (matches!(
             predicate,
-            CombatStatPredicateV1::OwnerMovesFirst | CombatStatPredicateV1::OwnerMovesSecond
+            CombatStatPredicateV1::OwnerMovesFirst
+                | CombatStatPredicateV1::OwnerMovesSecond
+                | CombatStatPredicateV1::OwnerHandUnison
         ) || (matches!(
             predicate,
             CombatStatPredicateV1::SelectedHandSlotsMatch
@@ -2090,6 +2095,7 @@ fn active_effect(
     opponent_slot: HandSlot,
     previous_round_winner: Option<PlayerId>,
     night: bool,
+    owner_unison: bool,
 ) -> Option<CombatStatEffectV1> {
     match plan {
         CombatStatSourcePlanV1::Execute {
@@ -2102,6 +2108,7 @@ fn active_effect(
             opponent_slot,
             previous_round_winner,
             night,
+            owner_unison,
         ) =>
         {
             Some(effect)
@@ -2124,8 +2131,10 @@ fn predicate_matches(
     opponent_slot: HandSlot,
     previous_round_winner: Option<PlayerId>,
     night: bool,
+    owner_unison: bool,
 ) -> bool {
     match predicate {
+        CombatStatPredicateV1::OwnerHandUnison => owner_unison,
         CombatStatPredicateV1::Always => true,
         CombatStatPredicateV1::OwnerMovesFirst => owner == first_mover,
         CombatStatPredicateV1::OwnerMovesSecond => owner != first_mover,
@@ -2163,6 +2172,12 @@ fn prepare_combat_stat_diagnostic(
         effective_clan_character_count(validated[PlayerId::P2].slot, &cards[PlayerId::P2]),
         effective_clan_character_count(validated[PlayerId::P1].slot, &cards[PlayerId::P1]),
     );
+    let unison = |player: PlayerId| {
+        let clan = cards[player][validated[player].slot.index()].effective_clan_id;
+        cards[player]
+            .iter()
+            .all(|card| card.effective_clan_id == clan)
+    };
     let plans = ByPlayer::new(
         resolution_card_plan(
             selected[PlayerId::P1],
@@ -2175,6 +2190,7 @@ fn prepare_combat_stat_diagnostic(
             anti_support[PlayerId::P1],
             night,
             life[PlayerId::P1],
+            unison(PlayerId::P1),
         ),
         resolution_card_plan(
             selected[PlayerId::P2],
@@ -2187,6 +2203,7 @@ fn prepare_combat_stat_diagnostic(
             anti_support[PlayerId::P2],
             night,
             life[PlayerId::P2],
+            unison(PlayerId::P2),
         ),
     );
     prepare_combat_resolution_with_post_round(validated, plans, rounds_played)
@@ -2210,6 +2227,7 @@ fn resolved_source_plan(
     opponent_slot: HandSlot,
     previous_round_winner: Option<PlayerId>,
     night: bool,
+    owner_unison: bool,
 ) -> CombatStatSourcePlanV1 {
     match plan {
         CombatStatSourcePlanV1::CopyOpponentSource {
@@ -2223,6 +2241,7 @@ fn resolved_source_plan(
                 opponent_slot,
                 previous_round_winner,
                 night,
+                owner_unison,
             ) {
                 return CombatStatSourcePlanV1::Absent;
             }
@@ -2249,6 +2268,7 @@ fn resolution_card_plan(
     anti_support_count: u16,
     night: bool,
     owner_life: u16,
+    owner_unison: bool,
 ) -> ResolutionCardPlan {
     // Resolve each source once. Copy substitution and the predicate are the same work for
     // the combat effect and the post-round effect, and a source only ever supplies one of
@@ -2264,6 +2284,7 @@ fn resolution_card_plan(
                 opponent_slot,
                 previous_round_winner,
                 night,
+                owner_unison,
             ),
             owner,
             first_mover,
@@ -2271,6 +2292,7 @@ fn resolution_card_plan(
             opponent_slot,
             previous_round_winner,
             night,
+            owner_unison,
         );
         ResolutionSourcePlan {
             effect: effect.and_then(shared_effect),
