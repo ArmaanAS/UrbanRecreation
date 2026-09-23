@@ -2293,6 +2293,41 @@ settle it. The same question sits, unasked, under the Victory Or Defeat own Life
 admitted since revision 22, which assume a knockout is final. The gate grows from 677 to
 679 rounds, 1024592 and 1024732 each extended by a round.
 
+Semantic revision 60 admits the rest of the Killshot channel that revisions 38 and 49
+opened: `Killshot: +N Pillz` (`2250`, `4311`, `4645`), `Killshot: +N Life` (`1231`,
+`2956`, `3760`), its capped `Max. 14` form (`5065`, `5066`), `Killshot: Toxin 1, Min 0`
+(`2497`, a permanent latched on the ratio) and `Unison: Killshot: +4 Life` (`3894`). It
+measured 7 and unlocked 8 - `925578`, `949959`, `1059895`, `1079263`, `1080007`,
+`1090887`, `1092141` and `1131294` - taking eligibility from 198 to 206; `949959` also
+needed revision 56's Zenith bonus.
+
+**This slice rests on composition alone, and says so.** The corpus now has the two firing
+Killshot rounds this section once set as the bar - 1337321/1 and /2 - but neither is one of
+these grammars: of 26 selected Killshot rounds only three fire, and every selection of the
+admitted forms falls short (Firmin wins 104 against 70 needing 140 in 1025470/2, Tara 49
+against 34 needing 68 in 1079263/3, Madrat 49 against 28 needing 56 in 1080007/3 - each a
+win that pays and latches nothing). What they compose is pinned elsewhere: the trigger by
+1337321/1-2 and the non-firing wins, the own Life and Pillz gains by the compound's halves
+in 1337321/2, the living-owner guard by Kubra's knocked-out rounds, Heal's cap by 1130609/3,
+the Toxin latch by 963039 and a latch on a trigger other than a win by revision 41, and the
+Unison gate by revision 46. The engine gains three arms on one `killshot_holds` helper, the
+two existing Killshot arms now calling it too.
+
+Two contexts are refused rather than guessed, at no cost in draws. The ratio holds at 0
+against 0 for the side that loses the tie; revision 38 reads that as paying and the
+reference would not, so a match where both final Attacks could reach 0 - a Min 0 Attack or
+Power cut on each side, or a `Cards` cut that reaches both - is refused for every Killshot
+(`KillshotAgainstZeroAttacks`). And revision 57's refusal of a Killshot beside `Tune Out`
+now covers the new grammars through the exhaustive `reads_final_attacks`: 925868, where Paw
+Paw prints both, stays refused. That refusal had been raised only for combat-stat sources:
+the catalog's unmodelled-context loops ignored `ExecutePostRound`, so a refused post-round
+source would have shown as a structural refusal. Both loops now report it as the
+unsupported source it is. In replay the `Killshot` hazard clause covers the whole channel,
+which turns Molch's `Killshot: -2 Opp. Pillz And Life` (1011102/1, 949566/0) from an inert
+source that matched the server by losing into a selected hazard; neither was a gate round.
+The gate stays at 679 rounds: the non-firing rounds of the unlocked draws were already in
+it with the sources inert, and now replay with them executing.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

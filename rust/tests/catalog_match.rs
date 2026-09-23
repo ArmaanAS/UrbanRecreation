@@ -4053,3 +4053,45 @@ fn strict_catalog_match_prepares_the_unconditional_exchanges_and_refuses_the_pre
         );
     }
 }
+
+/// A post-round source refused by its context is reported as the unsupported source it is,
+/// like a combat-stat one, so the coverage report keeps counting it as a blocker rather than
+/// a structural refusal. 925868's Paw Paw prints `Killshot: +3 Life` beside the Cosmohnuts
+/// `Tune Out` bonus, the pairing construction refuses because no round shows a Killshot
+/// judged on the Attacks Tune Out replaces.
+#[test]
+fn a_post_round_source_refused_by_its_context_is_an_unsupported_source() {
+    let catalog = catalog();
+    let registry = registry();
+    let hive = [
+        CardKey::new(1536, 5),
+        CardKey::new(1605, 2),
+        CardKey::new(1556, 3),
+        CardKey::new(1552, 3),
+    ];
+    let cosmohnuts = [
+        CardKey::new(2386, 3),
+        CardKey::new(2377, 4),
+        CardKey::new(2436, 2),
+        CardKey::new(2497, 3),
+    ];
+    let result = CatalogCombatStatMatchV1::new(
+        input(hive, cosmohnuts, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    );
+    assert!(
+        matches!(
+            &result,
+            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                player: PlayerId::P2,
+                source_kind: CombatStatEffectSourceV1::Ability,
+                description,
+                registry_reasons,
+                ..
+            }) if description == "Killshot: +3 Life" && registry_reasons.is_empty()
+        ),
+        "{result:?}"
+    );
+}

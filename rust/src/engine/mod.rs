@@ -529,6 +529,7 @@ impl PostRoundEffect {
             | Self::ReduceOpponentPillzOnVictory { .. }
             | Self::ReduceOpponentPillzOnDefeat { .. }
             | Self::GainPillzEqualToFinalDamageOnVictory
+            | Self::GainPillzOnKillshot(_)
             | Self::GainPillzOnDefeat(_) => PostRoundResourceV1::Pillz,
             Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
@@ -540,7 +541,8 @@ impl PostRoundEffect {
             | Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
             | Self::ReduceOpponentLifeOnVictory { .. }
             | Self::ReduceOpponentLifeOnDefeat { .. }
-            | Self::ReduceOpponentLifeOnKillshot { .. } => PostRoundResourceV1::Life,
+            | Self::ReduceOpponentLifeOnKillshot { .. }
+            | Self::GainLifeOnKillshot { .. } => PostRoundResourceV1::Life,
             Self::GainOnePillzAndLifeOnVictory
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnDefeat(_) => PostRoundResourceV1::PillzAndLife,
@@ -548,7 +550,9 @@ impl PostRoundEffect {
                 PostRoundResourceV1::BothPlayersLife
             }
             Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => PostRoundResourceV1::BothPlayersPillz,
-            Self::LatchOnVictory(_) | Self::LatchOnDefeat(_) => PostRoundResourceV1::Permanent,
+            Self::LatchOnVictory(_) | Self::LatchOnDefeat(_) | Self::LatchOnKillshot(_) => {
+                PostRoundResourceV1::Permanent
+            }
         }
     }
 }
@@ -618,9 +622,11 @@ impl PostRoundSourceEffect {
 impl PostRoundEffect {
     pub(super) const fn reads_final_attacks(self) -> bool {
         match self {
-            Self::ReduceOpponentLifeOnKillshot { .. } | Self::GainPillzAndLifeOnKillshot { .. } => {
-                true
-            }
+            Self::ReduceOpponentLifeOnKillshot { .. }
+            | Self::GainPillzAndLifeOnKillshot { .. }
+            | Self::GainPillzOnKillshot(_)
+            | Self::GainLifeOnKillshot { .. }
+            | Self::LatchOnKillshot(_) => true,
             Self::RecoverPaidPillzOnDefeat
             | Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainOnePillzAndLifeOnVictory
@@ -675,6 +681,10 @@ impl PostRoundEffect {
             | Self::GainLifeOnVictoryOrDefeat { .. }
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnDefeat(_)
+            | Self::GainLifeOnKillshot { .. }
+            | Self::LatchOnKillshot(
+                LatchedEffectV1::HealLife { .. } | LatchedEffectV1::RegenLife { .. },
+            )
             | Self::LatchOnVictory(
                 LatchedEffectV1::HealLife { .. } | LatchedEffectV1::RegenLife { .. },
             )
@@ -683,6 +693,11 @@ impl PostRoundEffect {
             ) => LifeBeneficiaryV1::Owner,
             Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => LifeBeneficiaryV1::Both,
             Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
+            | Self::GainPillzOnKillshot(_)
+            | Self::LatchOnKillshot(
+                LatchedEffectV1::PoisonOpponentLife { .. }
+                | LatchedEffectV1::ToxinOpponentLife { .. },
+            )
             | Self::RecoverPaidPillzOnDefeat
             | Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainTwoPillzOnDefeatMaxEleven
@@ -805,6 +820,17 @@ pub(super) enum PostRoundEffect {
     GainPillzAndLifeOnKillshot {
         amount: u16,
     },
+    /// `Killshot: +N Pillz`: the compound's Pillz half on its own.
+    GainPillzOnKillshot(u16),
+    /// `Killshot: +N Life` and its `Max. M` form: the compound's Life half on its own, under
+    /// Heal's cap when `maximum` is non-zero.
+    GainLifeOnKillshot {
+        life: u16,
+        maximum: u16,
+    },
+    /// `Killshot: Toxin N, Min M`: the same latch as `LatchOnVictory`, triggered by the
+    /// attack ratio instead of the win.
+    LatchOnKillshot(LatchedEffectV1),
     /// `Defeat: +N Pillz`: a living loser's own Pillz rise by N.
     GainPillzOnDefeat(u16),
     /// `Defeat: +N Pillz And Life`: a living loser gains N Pillz and then N Life.
@@ -1168,12 +1194,12 @@ impl BaseRulesGame {
                     // reachable at zero through a `Min 0` Power reduction - the ratio holds
                     // while `round_winner` may hand the round to the other side. Both final
                     // attacks are already resolved in `prepared`, so the trigger reads them
-                    // directly. Widen before doubling so a large attack cannot wrap. A
-                    // target already at or below Min is left untouched rather than pulled
-                    // up to it, exactly as the Victory and Defeat siblings do.
+                    // directly; every Killshot arm asks `killshot_holds`, so the trigger has
+                    // one spelling. A target already at or below Min is left untouched
+                    // rather than pulled up to it, exactly as the Victory and Defeat
+                    // siblings do.
                     PostRoundEffect::ReduceOpponentLifeOnKillshot { life, minimum }
-                        if u64::from(prepared[owner].result.attack)
-                            >= 2 * u64::from(prepared[owner.other()].result.attack)
+                        if killshot_holds(&prepared, owner)
                             && position.players[owner.other()].life > minimum =>
                     {
                         let target = owner.other();
@@ -1187,9 +1213,7 @@ impl BaseRulesGame {
                     // trigger above: the attack ratio, not the winner, and a living owner.
                     // Pillz then Life, each checked, as Komboka pays them.
                     PostRoundEffect::GainPillzAndLifeOnKillshot { amount }
-                        if u64::from(prepared[owner].result.attack)
-                            >= 2 * u64::from(prepared[owner.other()].result.attack)
-                            && position.players[owner].life > 0 =>
+                        if killshot_holds(&prepared, owner) && position.players[owner].life > 0 =>
                     {
                         position.players[owner].pillz = position.players[owner]
                             .pillz
@@ -1201,6 +1225,48 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainPillzAndLifeOnKillshot { .. } => {}
+                    // The compound's halves on their own: the same trigger and the same
+                    // living owner, one resource each (1337321/2 names both halves
+                    // separately in `postRoundAbilities`).
+                    PostRoundEffect::GainPillzOnKillshot(pillz)
+                        if killshot_holds(&prepared, owner) && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(pillz)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainPillzOnKillshot(_) => {}
+                    // The capped Life half is Heal's cap, read when this effect pays: an owner
+                    // already at or past it gains nothing, and a gain that would overshoot
+                    // stops exactly there, as the capped Life conversion does (1130609/3).
+                    PostRoundEffect::GainLifeOnKillshot { life, maximum }
+                        if killshot_holds(&prepared, owner) && position.players[owner].life > 0 =>
+                    {
+                        let current = position.players[owner].life;
+                        if maximum == 0 || current < maximum {
+                            let raised = current
+                                .checked_add(life)
+                                .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                            position.players[owner].life = if maximum == 0 {
+                                raised
+                            } else {
+                                raised.min(maximum)
+                            };
+                        }
+                    }
+                    PostRoundEffect::GainLifeOnKillshot { .. } => {}
+                    // The ratio latches exactly what a win latches for plain Toxin. Like the
+                    // losing-side latch it asks nothing of the owner's own Life: the repeat
+                    // loop's guards decide from here, and Toxin pays in this round too.
+                    PostRoundEffect::LatchOnKillshot(effect)
+                        if killshot_holds(&prepared, owner) =>
+                    {
+                        position.latched[owner]
+                            .push(effect)
+                            .map_err(|_| BaseRulesError::LatchedEffectOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::LatchOnKillshot(_) => {}
                     // Xantiax is the only admitted post-round effect with no outcome
                     // channel and no beneficiary: it takes from both players at once. The
                     // owner winning, losing or being knocked out by this round's damage
@@ -1465,6 +1531,12 @@ fn prepare_base_rules_selection(
             won: false,
         },
     })
+}
+
+/// The Killshot trigger: the owner's final attack is at least double the opposing one,
+/// whoever the round went to. Widened before doubling so a large attack cannot wrap.
+fn killshot_holds(prepared: &ByPlayer<PreparedSelection>, owner: PlayerId) -> bool {
+    u64::from(prepared[owner].result.attack) >= 2 * u64::from(prepared[owner.other()].result.attack)
 }
 
 fn round_winner(first_mover: PlayerId, prepared: &ByPlayer<PreparedSelection>) -> PlayerId {

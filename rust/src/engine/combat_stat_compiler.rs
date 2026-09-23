@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 59;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 60;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1315,6 +1315,147 @@ pub(crate) fn has_killshot_opponent_life_shape(definition: &EffectDefinitionV1) 
     input.value > 0 && killshot_opponent_life_shape_matches(input)
 }
 
+/// What one of the remaining Killshot grammars pays once the attack ratio holds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum KillshotPostRoundEffectV1 {
+    /// `Killshot: +N Pillz`.
+    GainPillz { pillz: u16 },
+    /// `Killshot: +N Life`, its capped `Killshot: +N Life Max. M` and its `Unison:` form.
+    /// `maximum == 0` is the uncapped form.
+    GainLife { life: u16, maximum: u16 },
+    /// `Killshot: Toxin N, Min M`: the plain Toxin permanent, latched by the ratio.
+    ToxinOpponentLife { life: u16, minimum: u16 },
+}
+
+impl KillshotPostRoundEffectV1 {
+    /// The public and compact representations, which catalog and replay preparation must
+    /// build identically.
+    pub(crate) fn effects(self) -> (CombatStatPostRoundEffectV1, CombatStatEffectV1) {
+        match self {
+            Self::GainPillz { pillz } => (
+                CombatStatPostRoundEffectV1::GainPillzOnKillshot { pillz },
+                CombatStatEffectV1::GainPillzOnKillshot { pillz },
+            ),
+            Self::GainLife { life, maximum } => (
+                CombatStatPostRoundEffectV1::GainLifeOnKillshot { life, maximum },
+                CombatStatEffectV1::GainLifeOnKillshot { life, maximum },
+            ),
+            Self::ToxinOpponentLife { life, minimum } => (
+                CombatStatPostRoundEffectV1::ToxinOpponentLifeOnKillshot { life, minimum },
+                CombatStatEffectV1::ToxinOpponentLifeOnKillshot { life, minimum },
+            ),
+        }
+    }
+}
+
+/// Recognize the Killshot grammars that compose pieces the projection already executes: the
+/// two halves of the `Killshot: +N Pillz And Life` compound on their own (`Killshot: +N
+/// Pillz`, `Killshot: +N Life`), the Life half under Heal's cap (`Killshot: +N Life Max. M`)
+/// and under the `Unison:` hand gate (`Unison: Killshot: +N Life`, printed tight, unlike the
+/// spaced `Unison :` of the numeric forms), and the plain immediate Toxin latched by the
+/// ratio instead of by a win (`Killshot: Toxin N, Min M`). Each is the shape of the grammar
+/// it composes with `sureshot` in the current-round field, and the Unison form additionally
+/// carries the clan-mates link, which is the gate and not a magnitude. Exact text rebuilt
+/// from the record's own numbers, card abilities only: no clan bonus prints a Killshot.
+///
+/// The opposing `Killshot: -N Opp. Pillz And Life, Min M` compound, a capped or gated Pillz
+/// form, a capped Unison form and a Killshot on any other permanent have no shape here and
+/// stay closed. Returns the effect and the one predicate the printed prefix names.
+pub(crate) fn classify_killshot_post_round(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(KillshotPostRoundEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    if source_kind != CombatStatEffectSourceV1::Ability || input.value == 0 {
+        return None;
+    }
+    let (effect, predicate, text) = if killshot_own_pillz_shape_matches(input) {
+        (
+            KillshotPostRoundEffectV1::GainPillz { pillz: input.value },
+            CombatStatPredicateV1::Always,
+            format!("Killshot: +{} Pillz", input.value),
+        )
+    } else if killshot_own_life_shape_matches(input, false) {
+        (
+            KillshotPostRoundEffectV1::GainLife {
+                life: input.value,
+                maximum: input.value_max,
+            },
+            CombatStatPredicateV1::Always,
+            if input.value_max == 0 {
+                format!("Killshot: +{} Life", input.value)
+            } else {
+                format!("Killshot: +{} Life Max. {}", input.value, input.value_max)
+            },
+        )
+    } else if killshot_own_life_shape_matches(input, true) && input.value_max == 0 {
+        (
+            KillshotPostRoundEffectV1::GainLife {
+                life: input.value,
+                maximum: 0,
+            },
+            CombatStatPredicateV1::OwnerHandUnison,
+            format!("Unison: Killshot: +{} Life", input.value),
+        )
+    } else if killshot_toxin_shape_matches(input) {
+        (
+            KillshotPostRoundEffectV1::ToxinOpponentLife {
+                life: input.value,
+                minimum: input.value_min,
+            },
+            CombatStatPredicateV1::Always,
+            format!("Killshot: Toxin {}, Min {}", input.value, input.value_min),
+        )
+    } else {
+        return None;
+    };
+    (definition.description() == text).then_some((effect, predicate))
+}
+
+/// Structural half of the Killshot boundary above, so replay preparation can call a complete
+/// shape under malformed text a hazard rather than silently disabling it.
+pub(crate) fn has_killshot_post_round_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && (killshot_own_pillz_shape_matches(input)
+            || killshot_own_life_shape_matches(input, false)
+            || killshot_own_life_shape_matches(input, true)
+            || killshot_toxin_shape_matches(input))
+}
+
+fn killshot_own_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            current_round: CurrentRoundRequirementV1::Sureshot,
+            attribute: AttributeAffectedV1::Pillz,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+/// The own Life gain reads a `Max. M` cap, and `clanmates_count` is the `Unison:` gate.
+fn killshot_own_life_shape_matches(input: &StructuredEffectV1, clanmates_count: bool) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_max: ShapeFieldV1::Read,
+            current_round: CurrentRoundRequirementV1::Sureshot,
+            clanmates_count,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+/// The plain immediate Toxin structure, unconditional, on the `sureshot` channel.
+fn killshot_toxin_shape_matches(input: &StructuredEffectV1) -> bool {
+    permanent_opponent_life_shape_matches_on(input, true, CurrentRoundRequirementV1::Sureshot)
+        && matches!(
+            permanent_condition(input),
+            Some((CombatStatPredicateV1::Always, _))
+        )
+}
+
 /// Recognize `Xantiax: -N Life, Min. M`: the only admitted post-round grammar that names
 /// no outcome and no beneficiary. Both players lose N, neither below M, whatever the round
 /// did. `Xantiax` is flavour on the printed text, not a condition - the structured record
@@ -2300,9 +2441,11 @@ pub(crate) fn classify_combat_stat_effect(
     if classify_defeat_opponent_life(definition, source_kind).is_some() {
         return None;
     }
-    // So does the Killshot reduction, on the `sureshot` channel, and its compound gain.
+    // So does the Killshot reduction, on the `sureshot` channel, its compound gain and the
+    // Killshot own gains and Toxin latch.
     if classify_killshot_opponent_life(definition, source_kind).is_some()
         || classify_killshot_pillz_and_life(definition, source_kind).is_some()
+        || classify_killshot_post_round(definition, source_kind).is_some()
     {
         return None;
     }
@@ -3697,6 +3840,10 @@ pub(crate) struct PostRoundShapeV1 {
     /// The `Bet > N Pillz:` gate, carried as `betPillzLink` and `valueCondition`. False for
     /// every other grammar, which then requires both neutral as before.
     pub(crate) bet_gated: bool,
+    /// The `Unison:` gate, carried as `isClanmatesCountLinked`. Only `Unison: Killshot: +N
+    /// Life` names it; every other grammar requires the flag false, so none of them can
+    /// admit a Unison record.
+    pub(crate) clanmates_count: bool,
 }
 
 /// The one unconditional slot: no previous-round requirement and no hand-slot requirement.
@@ -3722,6 +3869,7 @@ const POST_ROUND_SHAPE: PostRoundShapeV1 = PostRoundShapeV1 {
     support: false,
     round_scale: None,
     bet_gated: false,
+    clanmates_count: false,
 };
 
 /// True when `input` is exactly the record `shape` describes. The fields the shape does not
@@ -3759,7 +3907,7 @@ fn shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
         && !input.is_pillz_linked
         && !input.is_lost_life_linked
         && !input.is_lost_pillz_linked
-        && !input.is_clanmates_count_linked
+        && input.is_clanmates_count_linked == shape.clanmates_count
         && !input.is_anti_clanmates_count_linked
         && !input.is_permanent
         && !input.is_immediate_permanent
@@ -6054,6 +6202,227 @@ mod tests {
                 classify_killshot_opponent_life(definition, CombatStatEffectSourceV1::Ability),
                 None,
                 "definition {id} is a different Killshot grammar",
+            );
+        }
+    }
+
+    #[test]
+    fn killshot_own_gains_unison_and_toxin_are_admitted_by_grammar_and_stay_ability_only() {
+        use KillshotPostRoundEffectV1::{GainLife, GainPillz, ToxinOpponentLife};
+        let registry = registry();
+        let always = CombatStatPredicateV1::Always;
+        for (id, description, effect, predicate) in [
+            (2250, "Killshot: +3 Pillz", GainPillz { pillz: 3 }, always),
+            (4311, "Killshot: +3 Pillz", GainPillz { pillz: 3 }, always),
+            (4645, "Killshot: +2 Pillz", GainPillz { pillz: 2 }, always),
+            (
+                1231,
+                "Killshot: +3 Life",
+                GainLife {
+                    life: 3,
+                    maximum: 0,
+                },
+                always,
+            ),
+            (
+                3760,
+                "Killshot: +3 Life",
+                GainLife {
+                    life: 3,
+                    maximum: 0,
+                },
+                always,
+            ),
+            (
+                2956,
+                "Killshot: +4 Life",
+                GainLife {
+                    life: 4,
+                    maximum: 0,
+                },
+                always,
+            ),
+            (
+                5065,
+                "Killshot: +5 Life Max. 14",
+                GainLife {
+                    life: 5,
+                    maximum: 14,
+                },
+                always,
+            ),
+            (
+                5066,
+                "Killshot: +5 Life Max. 14",
+                GainLife {
+                    life: 5,
+                    maximum: 14,
+                },
+                always,
+            ),
+            (
+                3894,
+                "Unison: Killshot: +4 Life",
+                GainLife {
+                    life: 4,
+                    maximum: 0,
+                },
+                CombatStatPredicateV1::OwnerHandUnison,
+            ),
+            (
+                2497,
+                "Killshot: Toxin 1, Min 0",
+                ToxinOpponentLife {
+                    life: 1,
+                    minimum: 0,
+                },
+                always,
+            ),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_killshot_post_round(definition, CombatStatEffectSourceV1::Ability),
+                Some((effect, predicate)),
+                "definition {id}",
+            );
+            // No clan bonus prints a Killshot.
+            assert_eq!(
+                classify_killshot_post_round(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} as a bonus",
+            );
+            assert!(has_killshot_post_round_shape(definition), "shape {id}");
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id} as a combat stat",
+            );
+            // The neighbouring grammars never claim it.
+            let ability = CombatStatEffectSourceV1::Ability;
+            assert_eq!(classify_killshot_opponent_life(definition, ability), None);
+            assert_eq!(classify_killshot_pillz_and_life(definition, ability), None);
+            assert_eq!(classify_victory_life(definition, ability), None);
+            assert_eq!(classify_victory_pillz(definition, ability), None);
+            assert_eq!(
+                classify_toxin_opponent_life_on_victory(definition, ability),
+                None
+            );
+            assert_eq!(classify_unison_numeric(definition, ability), None);
+        }
+
+        // The rest of the channel stays closed: the admitted opposing reduction and the
+        // compound have their own grammars, the opposing Pillz-and-Life compound and the
+        // whole-hand `Team:` form have none.
+        for (id, description) in [
+            (1204, "Killshot: -6 Opp. Life Min 0"),
+            (1768, "Killshot: +2 Pillz And Life"),
+            (5775, "Killshot: -2 Opp. Pillz And Life, Min 2"),
+            (5776, "Killshot: -2 Opp. Pillz And Life, Min 0"),
+            (3480, "Team: Killshot: -2 Opp. Life Min 2"),
+        ] {
+            let definition = registry.lookup_capture(id, description).unwrap();
+            assert_eq!(
+                classify_killshot_post_round(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id}",
+            );
+            assert!(!has_killshot_post_round_shape(definition), "shape {id}");
+        }
+
+        // The printed numbers and the channel are authority. A record whose text disagrees
+        // with its own magnitude or cap, that asks a won round - the plain Victory grammar
+        // wearing Killshot's text - or that gates a form no card prints gated is refused.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, description, field, value) in [
+            ("1231", "Killshot: +3 Life", "value", serde_json::json!(4)),
+            (
+                "1231",
+                "Killshot: +3 Life",
+                "valueMax",
+                serde_json::json!(14),
+            ),
+            (
+                "1231",
+                "Killshot: +3 Life",
+                "currentRoundRequirement",
+                serde_json::json!("win"),
+            ),
+            (
+                "1231",
+                "Killshot: +3 Life",
+                "isClanmatesCountLinked",
+                serde_json::json!(true),
+            ),
+            (
+                "1231",
+                "Killshot: +3 Life",
+                "sideAffected",
+                serde_json::json!("opponent"),
+            ),
+            (
+                "1231",
+                "Killshot: +3 Life",
+                "isPermanent",
+                serde_json::json!(true),
+            ),
+            (
+                "2250",
+                "Killshot: +3 Pillz",
+                "isClanmatesCountLinked",
+                serde_json::json!(true),
+            ),
+            (
+                "2250",
+                "Killshot: +3 Pillz",
+                "valueMax",
+                serde_json::json!(9),
+            ),
+            (
+                "5065",
+                "Killshot: +5 Life Max. 14",
+                "isClanmatesCountLinked",
+                serde_json::json!(true),
+            ),
+            (
+                "3894",
+                "Unison: Killshot: +4 Life",
+                "isClanmatesCountLinked",
+                serde_json::json!(false),
+            ),
+            (
+                "2497",
+                "Killshot: Toxin 1, Min 0",
+                "isImmediatePermanent",
+                serde_json::json!(false),
+            ),
+            (
+                "2497",
+                "Killshot: Toxin 1, Min 0",
+                "indexRequirement",
+                serde_json::json!("symmetry"),
+            ),
+            (
+                "2497",
+                "Killshot: Toxin 1, Min 0",
+                "currentRoundRequirement",
+                serde_json::json!("win"),
+            ),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_killshot_post_round(
+                    malformed
+                        .lookup_capture(id.parse().unwrap(), description)
+                        .unwrap(),
+                    CombatStatEffectSourceV1::Ability,
+                ),
+                None,
+                "malformed {id} {field} = {value}",
             );
         }
     }

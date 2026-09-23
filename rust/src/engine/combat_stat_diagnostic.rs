@@ -270,6 +270,23 @@ pub enum CombatStatPostRoundEffectV1 {
     GainPillzAndLifeOnKillshot {
         amount: u16,
     },
+    /// `Killshot: +N Pillz`: the compound's Pillz half on its own, paid to a living owner.
+    GainPillzOnKillshot {
+        pillz: u16,
+    },
+    /// `Killshot: +N Life`, `Killshot: +N Life Max. M` and `Unison: Killshot: +N Life`: the
+    /// compound's Life half on its own, paid to a living owner and never past `maximum`
+    /// when that is non-zero. The Unison gate is the plan's predicate.
+    GainLifeOnKillshot {
+        life: u16,
+        maximum: u16,
+    },
+    /// `Killshot: Toxin N, Min M`: the attack ratio latches the plain Toxin, which then pays
+    /// in the latching round and every later one exactly as a won Toxin does.
+    ToxinOpponentLifeOnKillshot {
+        life: u16,
+        minimum: u16,
+    },
     /// `Defeat: +N Pillz`: a living loser gains N Pillz.
     GainPillzOnDefeat {
         pillz: u16,
@@ -527,6 +544,19 @@ pub enum CombatStatEffectV1 {
     /// The Killshot compound own gain, Ability slot only.
     GainPillzAndLifeOnKillshot {
         amount: u16,
+    },
+    /// The compound's halves on their own and the ratio-latched Toxin, Ability slot only.
+    /// Only the uncapped Life gain may carry a predicate, and only the `Unison:` gate.
+    GainPillzOnKillshot {
+        pillz: u16,
+    },
+    GainLifeOnKillshot {
+        life: u16,
+        maximum: u16,
+    },
+    ToxinOpponentLifeOnKillshot {
+        life: u16,
+        minimum: u16,
     },
     /// The Defeat own Pillz gain and its compound, Ability slot only.
     GainPillzOnDefeat {
@@ -793,6 +823,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// A `Cards` modifier facing an opposing cancel of its stat or an opposing Copy, neither
     /// of which any round has shown meeting one.
     BothCardsModifierAgainstUnpinnedEffect,
+    /// A Killshot in a match where both final Attacks could reach 0: the ratio then holds
+    /// for the side that loses the tie, and no round shows whether that pays.
+    KillshotAgainstZeroAttacks,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
     BothPlayersGainSource,
@@ -808,6 +841,11 @@ pub enum InvalidCombatStatPlanReasonV1 {
     RoundScaledPostRoundPredicate,
     KillshotPillzAndLifeMagnitude,
     KillshotPillzAndLifePredicate,
+    /// The Killshot own gains and the Killshot Toxin latch: card abilities only, a positive
+    /// magnitude, and no predicate except `Unison:` on the uncapped Life gain.
+    KillshotPostRoundSource,
+    KillshotPostRoundMagnitude,
+    KillshotPostRoundPredicate,
     ResourceCancellationSource,
     /// A resource canceller faces an opposing effect whose cancellation no captured round
     /// has shown: a permanent, a compound, a both-players reduction, a Copy, or - for Pillz
@@ -1295,6 +1333,21 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect)
         }
+        // A Killshot reads `attack >= 2 x opposing attack`, which holds at 0 against 0 for
+        // whichever side then loses the tie. Revision 38 reads that as paying, the reference
+        // would not (its Life and Pillz modifiers default to a win), and no round separates
+        // them - so a match where both final Attacks could reach 0, by a Min 0 Attack or
+        // Power reduction on each side or by a `Cards` one that reduces both, is refused.
+        CombatStatSourcePlanV1::Execute { effect, .. }
+            if is_killshot(effect)
+                && ((source_plans(own).any(zeroes_opposing_attack)
+                    && source_plans(opponent).any(zeroes_opposing_attack))
+                    || source_plans(own)
+                        .chain(source_plans(opponent))
+                        .any(zeroes_both_attacks)) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::KillshotAgainstZeroAttacks)
+        }
         _ => None,
     }
 }
@@ -1365,6 +1418,45 @@ fn simplifies_attack(plan: CombatStatSourcePlanV1) -> bool {
         plan,
         CombatStatSourcePlanV1::Execute {
             effect: CombatStatEffectV1::SimplifyAttackToPillz,
+            ..
+        }
+    )
+}
+
+/// A reduction that can take the opposing card's Attack to 0: a Min 0 cut of its Attack, or
+/// of its Power, on either the opposing side alone or both.
+fn zeroes_opposing_attack(plan: CombatStatSourcePlanV1) -> bool {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Opponent | CombatStatAffectedSideV1::Both,
+                stat: CombatStatAttributeV1::Attack
+                    | CombatStatAttributeV1::Power
+                    | CombatStatAttributeV1::PowerAndDamage,
+                operation: CombatStatOperationV1::Decrease,
+                minimum: Some(0),
+                ..
+            },
+            ..
+        }
+    )
+}
+
+/// A `Cards` reduction to Min 0, which can take both Attacks to 0 on its own.
+fn zeroes_both_attacks(plan: CombatStatSourcePlanV1) -> bool {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Both,
+                stat: CombatStatAttributeV1::Attack
+                    | CombatStatAttributeV1::Power
+                    | CombatStatAttributeV1::PowerAndDamage,
+                operation: CombatStatOperationV1::Decrease,
+                minimum: Some(0),
+                ..
+            },
             ..
         }
     )
@@ -2466,6 +2558,33 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    // Its halves on their own and the ratio-latched Toxin are card abilities only with a
+    // positive magnitude. The one predicate any of them prints is `Unison:`, on the
+    // uncapped Life gain; a capped or Pillz form under a gate has never been printed.
+    if let CombatStatEffectV1::GainPillzOnKillshot { pillz: amount }
+    | CombatStatEffectV1::GainLifeOnKillshot { life: amount, .. }
+    | CombatStatEffectV1::ToxinOpponentLifeOnKillshot { life: amount, .. } = effect
+    {
+        let unison_life = matches!(
+            effect,
+            CombatStatEffectV1::GainLifeOnKillshot { maximum: 0, .. }
+        ) && predicate == CombatStatPredicateV1::OwnerHandUnison;
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::KillshotPostRoundSource)
+        } else if amount == 0 {
+            Some(InvalidCombatStatPlanReasonV1::KillshotPostRoundMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always && !unison_life {
+            Some(InvalidCombatStatPlanReasonV1::KillshotPostRoundPredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
+    }
     if matches!(
         effect,
         CombatStatEffectV1::CancelOpponentResourceModifiers { .. }
@@ -3370,6 +3489,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { .. }
         | CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { .. }
         | CombatStatEffectV1::GainPillzAndLifeOnKillshot { .. }
+        | CombatStatEffectV1::GainPillzOnKillshot { .. }
+        | CombatStatEffectV1::GainLifeOnKillshot { .. }
+        | CombatStatEffectV1::ToxinOpponentLifeOnKillshot { .. }
         | CombatStatEffectV1::GainPillzOnDefeat { .. }
         | CombatStatEffectV1::GainPillzAndLifeOnDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerRound { .. }
@@ -3554,6 +3676,17 @@ pub(crate) fn shared_post_round_effect(
         }
         CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzAndLifeOnKillshot { amount }),
+        ),
+        CombatStatEffectV1::GainPillzOnKillshot { pillz } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::GainPillzOnKillshot(pillz),
+        )),
+        CombatStatEffectV1::GainLifeOnKillshot { life, maximum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::GainLifeOnKillshot { life, maximum }),
+        ),
+        CombatStatEffectV1::ToxinOpponentLifeOnKillshot { life, minimum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnKillshot(
+                LatchedEffectV1::ToxinOpponentLife { life, minimum },
+            )),
         ),
         CombatStatEffectV1::GainPillzOnDefeat { pillz } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainPillzOnDefeat(pillz),
@@ -5286,5 +5419,217 @@ mod tests {
             4414,
         );
         assert!(CombatStatDiagnosticV1::new(damage_cancel).is_ok());
+    }
+
+    /// Round two: both players play slot 1, nobody bets, P2 moves first and wins 6 x 1
+    /// against 31 x 1 while dealing 3.
+    fn second_round() -> BaseRulesRoundInput {
+        BaseRulesRoundInput {
+            first_mover: PlayerId::P2,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(1, 0, false),
+                BaseRulesSelection::new(1, 0, false),
+            ),
+        }
+    }
+
+    fn killshot_game(effect: CombatStatEffectV1, p1_pillz: u16) -> CombatStatDiagnosticV1 {
+        CombatStatDiagnosticV1::new(spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            2250,
+            effect,
+            p1_pillz,
+        ))
+        .unwrap()
+    }
+
+    /// The Killshot own gains and the Toxin latch share revision 38's trigger: P1's 6 power
+    /// against P2's 31 doubles at ten Pillz (66 against 31) and only wins at five (36).
+    #[test]
+    fn killshot_own_gains_and_toxin_latch_pay_on_the_attack_ratio_alone() {
+        let pillz = CombatStatEffectV1::GainPillzOnKillshot { pillz: 3 };
+        let (report, _) = killshot_game(pillz, 10).make(input(10, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].pillz, 3, "10 - 10 + 3");
+        let (report, _) = killshot_game(pillz, 10).make(input(5, false)).unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(
+            report.players[PlayerId::P1].pillz,
+            5,
+            "a plain win pays nothing"
+        );
+
+        let life = CombatStatEffectV1::GainLifeOnKillshot {
+            life: 3,
+            maximum: 0,
+        };
+        let (report, _) = killshot_game(life, 10).make(input(10, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].life, 23);
+        let (report, _) = killshot_game(life, 10).make(input(5, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P1].life, 20);
+
+        // Heal's cap: an overshoot stops at Max, and an owner at or past Max gains nothing.
+        let capped = CombatStatEffectV1::GainLifeOnKillshot {
+            life: 5,
+            maximum: 22,
+        };
+        for (start, expected) in [(20, 22), (18, 22), (16, 21), (22, 22), (24, 24)] {
+            let mut spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 5065, capped, 10);
+            spec.base_rules.players[PlayerId::P1].initial_life = start;
+            let (report, _) = CombatStatDiagnosticV1::new(spec)
+                .unwrap()
+                .make(input(10, false))
+                .unwrap();
+            assert_eq!(report.players[PlayerId::P1].life, expected, "from {start}");
+        }
+
+        // Toxin latches on the ratio and pays at once: 20 - 3 combat damage - 1, then one
+        // more in a round P1 loses. A plain win latches nothing.
+        let toxin = CombatStatEffectV1::ToxinOpponentLifeOnKillshot {
+            life: 1,
+            minimum: 0,
+        };
+        let mut latched = killshot_game(toxin, 10);
+        let (report, _) = latched.make(input(10, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P2].life, 16);
+        let before = latched.position().clone();
+        let (report, undo) = latched.make(second_round()).unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P2].life, 15);
+        latched.unmake(undo);
+        assert_eq!(latched.position(), &before);
+        let mut plain = killshot_game(toxin, 10);
+        let (report, _) = plain.make(input(5, false)).unwrap();
+        assert_eq!(report.players[PlayerId::P2].life, 17);
+        let (report, _) = plain.make(second_round()).unwrap();
+        assert_eq!(report.players[PlayerId::P2].life, 17);
+
+        // At zero attack on both sides the ratio holds for the side that loses the tie, as
+        // it does for revision 38's reduction: a living loser gains, a knocked-out one does
+        // not, and the latch is taken either way.
+        let stalled = |effect, p1_life| {
+            let mut spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 2250, effect, 0);
+            spec.base_rules.players[PlayerId::P1].hand[0].power = 0;
+            spec.base_rules.players[PlayerId::P2].hand[0].power = 0;
+            spec.base_rules.players[PlayerId::P1].initial_life = p1_life;
+            let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+            let (report, _) = game
+                .make(BaseRulesRoundInput {
+                    first_mover: PlayerId::P2,
+                    selections: ByPlayer::new(
+                        BaseRulesSelection::new(0, 0, false),
+                        BaseRulesSelection::new(0, 0, false),
+                    ),
+                })
+                .unwrap();
+            assert!(!report.cards[PlayerId::P1].won);
+            report
+        };
+        assert_eq!(stalled(pillz, 20).players[PlayerId::P1].pillz, 3);
+        assert_eq!(stalled(life, 20).players[PlayerId::P1].life, 20);
+        assert_eq!(stalled(life, 3).players[PlayerId::P1].life, 0);
+        assert_eq!(stalled(pillz, 3).players[PlayerId::P1].pillz, 0);
+        assert_eq!(stalled(toxin, 3).players[PlayerId::P2].life, 19);
+    }
+
+    #[test]
+    fn killshot_post_round_plans_are_ability_only_positive_and_only_unison_gates_life() {
+        let life = CombatStatEffectV1::GainLifeOnKillshot {
+            life: 4,
+            maximum: 0,
+        };
+        let plan = |effect, predicate| CombatStatSourcePlanV1::Execute {
+            source_id: 3894,
+            predicate,
+            effect,
+        };
+        let reason = |spec| match CombatStatDiagnosticV1::new(spec) {
+            Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(reason),
+            _ => None,
+        };
+        for effect in [
+            CombatStatEffectV1::GainPillzOnKillshot { pillz: 3 },
+            life,
+            CombatStatEffectV1::ToxinOpponentLifeOnKillshot {
+                life: 1,
+                minimum: 0,
+            },
+        ] {
+            assert!(CombatStatDiagnosticV1::new(spec_with_p1(
+                CombatStatEffectSourceV1::Ability,
+                3894,
+                effect,
+                10
+            ))
+            .is_ok());
+            assert_eq!(
+                reason(spec_with_p1(
+                    CombatStatEffectSourceV1::Bonus,
+                    3894,
+                    effect,
+                    10
+                )),
+                Some(InvalidCombatStatPlanReasonV1::KillshotPostRoundSource)
+            );
+        }
+        let zero = CombatStatEffectV1::GainPillzOnKillshot { pillz: 0 };
+        assert_eq!(
+            reason(spec_with_p1(
+                CombatStatEffectSourceV1::Ability,
+                2250,
+                zero,
+                10
+            )),
+            Some(InvalidCombatStatPlanReasonV1::KillshotPostRoundMagnitude)
+        );
+        // `Unison:` is the one predicate printed, and only on the uncapped Life gain.
+        for (effect, predicate, admitted) in [
+            (life, CombatStatPredicateV1::OwnerHandUnison, true),
+            (life, CombatStatPredicateV1::OwnerWonPreviousRound, false),
+            (
+                CombatStatEffectV1::GainLifeOnKillshot {
+                    life: 5,
+                    maximum: 14,
+                },
+                CombatStatPredicateV1::OwnerHandUnison,
+                false,
+            ),
+            (
+                CombatStatEffectV1::GainPillzOnKillshot { pillz: 3 },
+                CombatStatPredicateV1::OwnerHandUnison,
+                false,
+            ),
+            (
+                CombatStatEffectV1::ToxinOpponentLifeOnKillshot {
+                    life: 1,
+                    minimum: 0,
+                },
+                CombatStatPredicateV1::OwnerHandUnison,
+                false,
+            ),
+        ] {
+            let mut spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 3894, effect, 10);
+            spec.cards[PlayerId::P1][0].ability = plan(effect, predicate);
+            let expected =
+                (!admitted).then_some(InvalidCombatStatPlanReasonV1::KillshotPostRoundPredicate);
+            assert_eq!(reason(spec), expected, "{effect:?} under {predicate:?}");
+        }
+
+        // The gate itself: a mixed hand never pays, a mono-clan one pays on the ratio.
+        for (mono, expected) in [(false, 20), (true, 24)] {
+            let mut spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 3894, life, 10);
+            spec.cards[PlayerId::P1][0].ability =
+                plan(life, CombatStatPredicateV1::OwnerHandUnison);
+            if mono {
+                for card in spec.cards[PlayerId::P1].iter_mut() {
+                    card.effective_clan_id = 1;
+                }
+            }
+            let (report, _) = CombatStatDiagnosticV1::new(spec)
+                .unwrap()
+                .make(input(10, false))
+                .unwrap();
+            assert_eq!(report.players[PlayerId::P1].life, expected, "mono {mono}");
+        }
     }
 }

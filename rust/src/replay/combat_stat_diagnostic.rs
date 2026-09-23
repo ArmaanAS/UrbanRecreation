@@ -21,10 +21,10 @@ use crate::engine::combat_stat_compiler::{
     classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
     classify_equalizer_post_round_gain, classify_heal_life_on_victory,
     classify_killshot_opponent_life, classify_killshot_pillz_and_life,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
-    classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory, classify_round_scaled_post_round,
+    classify_support_post_round, classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
     classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
@@ -32,9 +32,9 @@ use crate::engine::combat_stat_compiler::{
     compact_effect, has_bet_gated_post_round_shape, has_both_players_life_reduction_shape,
     has_brawl_post_round_shape, has_defeat_life_shape, has_defeat_opponent_pillz_shape,
     has_defeat_pillz_shape, has_equalizer_post_round_shape, has_heal_life_on_victory_shape,
-    has_killshot_opponent_life_shape, has_poison_opponent_life_on_defeat_shape,
-    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
-    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    has_killshot_opponent_life_shape, has_killshot_post_round_shape,
+    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
     has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_both_players_gain_shape, has_victory_or_defeat_opponent_life_shape,
@@ -868,6 +868,18 @@ fn prepare_combat_stat_source(
             CombatStatPredicateV1::Always,
         ));
     }
+    // Its halves on their own, the capped and Unison Life forms and the ratio-latched Toxin.
+    // The ratio is the engine's; the plan carries only the Unison gate, when printed.
+    if let Some((effect, predicate)) = classify_killshot_post_round(definition, source_kind) {
+        let (post_round_effect, compact_effect) = effect.effects();
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            predicate,
+        ));
+    }
     // Xantiax has no outcome channel and no beneficiary: both players pay it whatever the
     // round did, so the plan carries no predicate and the engine reads no winner.
     if let Some((life, minimum)) = classify_both_players_life_reduction(definition, source_kind) {
@@ -1278,11 +1290,11 @@ fn prepare_combat_stat_source(
     // Plain Victory Pillz is the same kind of near-miss boundary: the literal `+N Pillz`
     // text over a wrong structure or slot, or the complete reviewed structure under other
     // text, rejects when selected. Its `Confidence:` form joined the grammar in revision 36
-    // and its `Courage:` form in revision 55, and each takes the boundary with it, so either
+    // and its `Courage:` form in revision 58, and each takes the boundary with it, so either
     // text over a wrong structure is a hazard too. The other prefixed forms (`Stop:`,
-    // `Growth:`, `Killshot:`, `Perfect:`, `Defeat:`, `Revenge:`) and the capped
-    // `+3 Pillz Max. 9` differ structurally and keep their visible-but-disabled records;
-    // `Brawl:`, `Support:` and `Equalizer:` have their own post-round boundaries.
+    // `Growth:`, `Perfect:`, `Defeat:`, `Revenge:`) and the capped `+3 Pillz Max. 9` differ
+    // structurally and keep their visible-but-disabled records; `Brawl:`, `Support:`,
+    // `Equalizer:` and `Killshot:` have their own post-round boundaries.
     let unadmitted_victory_pillz = ((source.description.starts_with('+')
         || source.description.starts_with("Confidence: +")
         || source.description.starts_with("Courage: +"))
@@ -1360,13 +1372,19 @@ fn prepare_combat_stat_source(
         || has_victory_opponent_life_shape(definition);
     // Killshot's boundary is its own: the plain Victory clause above cannot reach it,
     // because the printed text does not start with `-` and the reviewed Victory shape
-    // demands a won round where this one asks `sureshot`. Without this clause a malformed
-    // Killshot record or a wrong source slot would quietly become an inert disabled source
-    // instead of a selected hazard.
-    let unadmitted_killshot_opponent_life = (source.description.starts_with("Killshot: -")
-        && source.description.contains("Opp. Life")
-        && input.attribute_affected == AttributeAffectedV1::Life)
-        || has_killshot_opponent_life_shape(definition);
+    // demands a won round where this one asks `sureshot`. Since revision 55 every Killshot
+    // grammar the registry holds is admitted except the opposing Pillz-and-Life compound and
+    // the whole-hand `Team:` form, so the boundary is the channel itself: any `Killshot`
+    // text that reached here - a wrong slot, a wrong structure, numbers the text disagrees
+    // with, that opposing compound - the complete admitted shape under other text, and any
+    // other record asking `sureshot` reject when selected. Before revision 55 the own gains,
+    // the Toxin latch and the compound were inert disabled sources in replay, which let a
+    // capture replay past a Killshot round it could not pay.
+    let unadmitted_killshot = source.description.contains("Killshot")
+        || input.current_round_requirement
+            == crate::effect_registry::CurrentRoundRequirementV1::Sureshot
+        || has_killshot_opponent_life_shape(definition)
+        || has_killshot_post_round_shape(definition);
     // Xantiax's boundary is its own: the printed text over a wrong slot or structure, or
     // the complete both-sides shape under other text. Nothing else admitted reaches both
     // players at once, so any other record with that shape is a hazard rather than a
@@ -1453,9 +1471,10 @@ fn prepare_combat_stat_source(
     // here as the same case, but they are not: Growth carries `isOverdrive` and Unison the
     // clan-mates link, so no admitted shape reaches them and they get a clause of their own
     // at the end of this one rather than falling through to an inert disabled source.
-    // `Defeat`, `Killshot`, `Symmetry`, `Asymmetry`, `Perfect`, `Backlash`, Victory-or-Defeat
-    // and clan-gated forms differ in their structured fields and keep the visible-but-
-    // disabled record every other permanent has.
+    // `Defeat`, `Symmetry`, `Asymmetry`, `Perfect`, `Backlash`, Victory-or-Defeat and
+    // clan-gated forms differ in their structured fields and keep the visible-but-disabled
+    // record every other permanent has; a `Killshot` permanent is admitted or a selected
+    // hazard by the Killshot clause above.
     let unadmitted_heal_life = source.description.starts_with("Heal ")
         || source.description.starts_with("Regen ")
         || source.description.starts_with("Poison ")
@@ -1494,7 +1513,7 @@ fn prepare_combat_stat_source(
         || unadmitted_argos_defeat_capped_pillz
         || unadmitted_anita_courage_damage_to_life
         || unadmitted_victory_opponent_life
-        || unadmitted_killshot_opponent_life
+        || unadmitted_killshot
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
         || unadmitted_both_players_gain
@@ -1538,7 +1557,7 @@ fn prepare_combat_stat_source(
         || unadmitted_argos_defeat_capped_pillz
         || unadmitted_anita_courage_damage_to_life
         || unadmitted_victory_opponent_life
-        || unadmitted_killshot_opponent_life
+        || unadmitted_killshot
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
         || unadmitted_both_players_gain

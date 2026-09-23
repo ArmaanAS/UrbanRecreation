@@ -6760,6 +6760,86 @@ fn players_pillz_pays_both_players_even_through_a_knockout() {
     ));
 }
 
+/// Every Killshot reads `attack >= 2 x opposing attack`, which holds at 0 against 0 for the
+/// side that then loses the tie; no round shows whether that pays, so a match where both
+/// final Attacks could reach 0 is refused - a Min 0 Attack or Power cut on each side, or one
+/// `Cards` cut that reaches both - and one side's cut alone is admitted.
+#[test]
+fn killshot_is_refused_where_both_attacks_could_reach_zero() {
+    let killshot = execute(
+        2250,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnKillshot { pillz: 3 },
+    );
+    let cut = |side, stat, minimum| {
+        execute(
+            7,
+            CombatStatPredicateV1::Always,
+            modifier(
+                side,
+                stat,
+                CombatStatOperationV1::Decrease,
+                3,
+                Some(minimum),
+                None,
+                CombatStatMagnitudeV1::Fixed,
+            ),
+        )
+    };
+    let opposing = CombatStatAffectedSideV1::Opponent;
+    for (own_cut, opposing_cut, refused) in [
+        (
+            Some(cut(opposing, CombatStatAttributeV1::Attack, 0)),
+            Some(cut(opposing, CombatStatAttributeV1::Power, 0)),
+            true,
+        ),
+        (
+            Some(cut(opposing, CombatStatAttributeV1::Attack, 0)),
+            None,
+            false,
+        ),
+        (
+            Some(cut(opposing, CombatStatAttributeV1::Attack, 0)),
+            Some(cut(opposing, CombatStatAttributeV1::Attack, 1)),
+            false,
+        ),
+        (
+            Some(cut(
+                CombatStatAffectedSideV1::Both,
+                CombatStatAttributeV1::Attack,
+                0,
+            )),
+            None,
+            true,
+        ),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = killshot;
+        if let Some(plan) = own_cut {
+            cards[PlayerId::P1][1].ability = plan;
+        }
+        if let Some(plan) = opposing_cut {
+            cards[PlayerId::P2][1].ability = plan;
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        assert_eq!(
+            matches!(
+                result,
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::KillshotAgainstZeroAttacks,
+                    ..
+                })
+            ),
+            refused,
+            "{own_cut:?} / {opposing_cut:?}"
+        );
+    }
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {
