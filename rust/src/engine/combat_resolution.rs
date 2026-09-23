@@ -8,8 +8,8 @@ use super::clan_bonus_diagnostic::{
     DiagnosticMagnitudeV1, DiagnosticStatOperationV1,
 };
 use super::{
-    BaseRulesCardResult, ByPlayer, PlayerId, PostRoundEffect, PostRoundPlan, PostRoundSourceEffect,
-    PreparedSelection, ValidatedSelection, FURY_DAMAGE, MAX_ROUNDS,
+    BaseRulesCardResult, ByPlayer, PlayerId, PostRoundEffect, PostRoundPlan, PostRoundResourceV1,
+    PostRoundSourceEffect, PreparedSelection, ValidatedSelection, FURY_DAMAGE, MAX_ROUNDS,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -257,6 +257,37 @@ fn add_cancellation(mask: &mut StatMask, source: ResolutionSourcePlan) {
         source.effect
     {
         mask.insert(stat);
+    }
+}
+
+/// The end-of-round resources a player's live sources cancel for the opposing selected card.
+#[derive(Clone, Copy, Default)]
+struct ResourceCancellation {
+    life: bool,
+    pillz: bool,
+}
+
+impl ResourceCancellation {
+    fn add(&mut self, source: ResolutionSourcePlan) {
+        if let Some(DiagnosticCombatEffectV1::CancelOpponentResourceModifiers { resources }) =
+            source.effect
+        {
+            self.life = true;
+            self.pillz |= resources == crate::effect_registry::ResourceCancellationV1::PillzAndLife;
+        }
+    }
+
+    /// Whether this cancellation drops `effect`. Construction refuses a canceller facing a
+    /// compound, both-players or permanent effect, so those are never reached here; they are
+    /// left in place rather than given an unpinned meaning.
+    fn cancels(self, effect: PostRoundEffect) -> bool {
+        match effect.resource() {
+            PostRoundResourceV1::Life => self.life,
+            PostRoundResourceV1::Pillz => self.pillz,
+            PostRoundResourceV1::PillzAndLife
+            | PostRoundResourceV1::BothPlayersLife
+            | PostRoundResourceV1::Permanent => false,
+        }
     }
 }
 
@@ -552,6 +583,22 @@ pub(super) fn prepare_combat_resolution_with_post_round(
             attack[PlayerId::P2],
         ),
     );
+    // `Cancel Opp. Life Modif.` and its Pillz form drop the opposing selected card's
+    // end-of-round effects on those resources for the round. They are ordinary live
+    // sources - a Stop removes them - and touch only the other player's effects: the
+    // canceller's own end-of-round work is untouched (1131225/3, 926420/2).
+    let mut resource_cancellations = ByPlayer::new(
+        ResourceCancellation::default(),
+        ResourceCancellation::default(),
+    );
+    for player in PlayerId::ALL {
+        if live[player].ability {
+            resource_cancellations[player].add(selected_plans[player].ability);
+        }
+        if live[player].bonus {
+            resource_cancellations[player].add(selected_plans[player].bonus);
+        }
+    }
     let post_round = ByPlayer::new(
         PostRoundPlan {
             ability: live[PlayerId::P1]
@@ -566,7 +613,8 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         selected_plans[PlayerId::P1].ability.anti_support_count,
                     )
                 })
-                .transpose()?,
+                .transpose()?
+                .filter(|effect| !resource_cancellations[PlayerId::P2].cancels(*effect)),
             bonus: live[PlayerId::P1]
                 .bonus
                 .then_some(selected_plans[PlayerId::P1].bonus.post_round)
@@ -579,7 +627,8 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         selected_plans[PlayerId::P1].bonus.anti_support_count,
                     )
                 })
-                .transpose()?,
+                .transpose()?
+                .filter(|effect| !resource_cancellations[PlayerId::P2].cancels(*effect)),
         },
         PostRoundPlan {
             ability: live[PlayerId::P2]
@@ -594,7 +643,8 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         selected_plans[PlayerId::P2].ability.anti_support_count,
                     )
                 })
-                .transpose()?,
+                .transpose()?
+                .filter(|effect| !resource_cancellations[PlayerId::P1].cancels(*effect)),
             bonus: live[PlayerId::P2]
                 .bonus
                 .then_some(selected_plans[PlayerId::P2].bonus.post_round)
@@ -607,7 +657,8 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         selected_plans[PlayerId::P2].bonus.anti_support_count,
                     )
                 })
-                .transpose()?,
+                .transpose()?
+                .filter(|effect| !resource_cancellations[PlayerId::P1].cancels(*effect)),
         },
     );
     Ok(PreparedCombatResolution {

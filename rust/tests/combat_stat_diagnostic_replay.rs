@@ -31,7 +31,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1081463, 4),
     (1069193, 1),
     (1089513, 2),
-    (901400, 2),
+    // Three rounds since revision 49, whose round 2 selects Wilkinson's Pillz & Life cancel
+    // against a hand with nothing for it to cancel.
+    (901400, 3),
     (874837, 2),
     (1011643, 2),
     (1011768, 1),
@@ -403,6 +405,20 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1009300, 4),
     (1025645, 3),
     (925051, 4),
+    // Revision 49 admits `Cancel Opp. Life Modif.` and `Cancel Opp. Pillz & Life Modif.` -
+    // the opposing selected card's end-of-round effects on those resources are dropped for
+    // the round - and `Killshot: +N Pillz And Life`. Ryujin Cr's Life cancel keeps Glenn's
+    // `-3 Opp. Life Min 3` from taking 6 to 3 in 1337321/0, Sylvia Ld's Berzerk bonus in
+    // 1337265/0, Hal Gladius' Equalizer reduction in 943231/0 and Aurora's `+3 Life` in
+    // 1131208/0. Torkan's Killshot compound pays 2 and 2 at 38 against 14 in 1337321/2 and
+    // not at 66 against 36 in 956805/0.
+    (1337321, 3),
+    (1337230, 3),
+    (1337265, 2),
+    (943231, 1),
+    (1131208, 1),
+    (956805, 1),
+    (877357, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -1953,10 +1969,14 @@ fn selected_pillz_and_life_cancellation_rejects_before_admitted_recovery_can_run
 
         let prepared =
             CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        // Since revision 49 the canceller is admitted, but only where nothing opposite has an
+        // effect whose cancellation is unpinned. The Pillz half of `Cancel Opp. Pillz & Life`
+        // has no paying round, and the opposing recovery is Pillz, so the canceller is a
+        // selected hazard here rather than an executed control.
         assert!(matches!(
             prepared.preparation()[control_player][control_slot].ability,
             CombatStatProjectionDispositionV1::Disabled {
-                reason: CombatStatDisabledReasonV1::UnsupportedPromisedControl { .. },
+                reason: CombatStatDisabledReasonV1::UnsupportedSelectedHazard { .. },
                 ..
             }
         ));

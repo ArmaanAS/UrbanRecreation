@@ -74,7 +74,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 48;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 49;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1093,6 +1093,35 @@ pub(crate) fn classify_killshot_opponent_life(
     .then_some((life, minimum))
 }
 
+/// Recognize `Killshot: +N Pillz And Life`: an owner whose final attack at least doubles the
+/// opposing one gains N Pillz and N Life. It is the Komboka compound gain on the Killshot
+/// trigger revision 38 admitted, by exact text and complete shape, card abilities only.
+pub(crate) fn classify_killshot_pillz_and_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let amount = definition.structured_input().value;
+    (has_killshot_pillz_and_life_shape(definition)
+        && definition.description() == format!("Killshot: +{amount} Pillz And Life"))
+    .then_some(amount)
+}
+
+pub(crate) fn has_killshot_pillz_and_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                current_round: CurrentRoundRequirementV1::Sureshot,
+                attribute: AttributeAffectedV1::LifeAndPillz,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
 fn killshot_opponent_life_shape_matches(input: &StructuredEffectV1) -> bool {
     shape_matches(
         input,
@@ -1502,8 +1531,10 @@ pub(crate) fn classify_combat_stat_effect(
     if classify_defeat_opponent_life(definition, source_kind).is_some() {
         return None;
     }
-    // So does the Killshot reduction, on the `sureshot` channel.
-    if classify_killshot_opponent_life(definition, source_kind).is_some() {
+    // So does the Killshot reduction, on the `sureshot` channel, and its compound gain.
+    if classify_killshot_opponent_life(definition, source_kind).is_some()
+        || classify_killshot_pillz_and_life(definition, source_kind).is_some()
+    {
         return None;
     }
     // Recovery has its own post-round execution channel. Keep it out of this combat-stat
@@ -1616,8 +1647,9 @@ fn admitted_supported_effect(
         | SupportedEffectV1::ProtectOwnAbility
         | SupportedEffectV1::ProtectOwnBonus
         | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. } => true,
-        // No clan bonus prints an Exchange.
-        SupportedEffectV1::ExchangePrintedCombatStat { .. } => {
+        // No clan bonus prints an Exchange or a resource canceller.
+        SupportedEffectV1::ExchangePrintedCombatStat { .. }
+        | SupportedEffectV1::CancelOpponentResourceModifiers { .. } => {
             source_kind == CombatStatEffectSourceV1::Ability
         }
         SupportedEffectV1::ModifyCombatStat {
@@ -2761,7 +2793,8 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | SupportedEffectV1::ProtectOwnAbility
         | SupportedEffectV1::ProtectOwnBonus
         | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
-        | SupportedEffectV1::ExchangePrintedCombatStat { .. } => return false,
+        | SupportedEffectV1::ExchangePrintedCombatStat { .. }
+        | SupportedEffectV1::CancelOpponentResourceModifiers { .. } => return false,
     };
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Growth => "Growth: ",
@@ -2926,6 +2959,9 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
             Some(CombatStatEffectV1::ExchangePrintedCombatStat {
                 stat: compact_stat(stat),
             })
+        }
+        SupportedEffectV1::CancelOpponentResourceModifiers { resources } => {
+            Some(CombatStatEffectV1::CancelOpponentResourceModifiers { resources })
         }
     }
 }

@@ -97,6 +97,11 @@ pub enum DiagnosticCombatEffectV1 {
     ExchangePrintedCombatStat {
         stat: DiagnosticCombatStatV1,
     },
+    /// The opposing selected card's end-of-round effects on the named resources are
+    /// cancelled for the round.
+    CancelOpponentResourceModifiers {
+        resources: crate::effect_registry::ResourceCancellationV1,
+    },
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and

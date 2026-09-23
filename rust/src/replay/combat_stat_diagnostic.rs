@@ -19,9 +19,10 @@ use crate::engine::combat_stat_compiler::{
     classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
     classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
     classify_heal_life_on_victory, classify_killshot_opponent_life,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_killshot_pillz_and_life, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory,
+    classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
@@ -32,15 +33,16 @@ use crate::engine::combat_stat_compiler::{
     has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
     has_victory_life_shape, has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
-    has_victory_pillz_shape, opponent_can_stop_an_ability, VictoryOrDefeatLifeEffectV1,
+    has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
-    derive_effective_catalog_hand, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
-    ByPlayer, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1,
-    CombatStatDiagnosticV1, CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1,
-    CombatStatPlanErrorV1, CombatStatPostRoundEffectV1, CombatStatPredicateV1,
-    CombatStatSourcePlanV1, PlayerId, HAND_SIZE,
+    derive_effective_catalog_hand, unmodelled_source_context, BaseRulesPosition,
+    BaseRulesRoundInput, BaseRulesRoundReport, ByPlayer, CombatStatCardPlanV1,
+    CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1,
+    CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatPlanErrorV1,
+    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, PlayerId,
+    HAND_SIZE,
 };
 use std::error::Error;
 use std::fmt;
@@ -355,37 +357,42 @@ struct PreparedCombatStatCardV1 {
     compact_plan: CombatStatCardPlanV1,
 }
 
-/// A `Stop:` source facing a hand that could stop its owner's ability is the one case the
-/// projection does not model, and the engine refuses a plan that puts it there. A capture is
-/// concrete, though, so rather than refusing the whole replay the source becomes a selected
-/// hazard: a round that selects it is refused, and every other round is still checked
-/// against the server.
+/// Some sources are admitted only where their context is one the corpus has pinned - a
+/// `Stop:` source nothing opposite can stop, a resource canceller facing nothing whose
+/// cancellation is unpinned - and the engine refuses a plan that puts them elsewhere. A
+/// capture is concrete, though, so rather than refusing the whole replay such a source
+/// becomes a selected hazard: a round that selects it is refused, and every other round is
+/// still checked against the server.
 fn downgrade_unmodelled_stop_triggered_sources(prepared: &mut PreparedCombatStatCardsV1) {
     for player in PlayerId::ALL {
-        if !opponent_can_stop_an_ability(&prepared.compact_plans[player.other()]) {
-            continue;
-        }
+        let opponent = prepared.compact_plans[player.other()];
         for slot in 0..HAND_SIZE {
-            let CombatStatSourcePlanV1::Execute {
-                source_id,
-                predicate: CombatStatPredicateV1::OwnerAbilityStopped,
-                ..
-            } = prepared.compact_plans[player][slot].ability
-            else {
-                continue;
-            };
-            prepared.compact_plans[player][slot].ability =
-                CombatStatSourcePlanV1::RejectIfSelected { source_id };
-            if let CombatStatProjectionDispositionV1::Execute { identity, .. } =
-                &prepared.metadata[player][slot].ability
-            {
-                prepared.metadata[player][slot].ability =
-                    CombatStatProjectionDispositionV1::Disabled {
+            for bonus in [false, true] {
+                let card = &mut prepared.compact_plans[player][slot];
+                let plan = if bonus { card.bonus } else { card.ability };
+                if unmodelled_source_context(plan, &opponent).is_none() {
+                    continue;
+                }
+                let CombatStatSourcePlanV1::Execute { source_id, .. } = plan else {
+                    continue;
+                };
+                let hazard = CombatStatSourcePlanV1::RejectIfSelected { source_id };
+                let metadata = &mut prepared.metadata[player][slot];
+                let disposition = if bonus {
+                    card.bonus = hazard;
+                    &mut metadata.bonus
+                } else {
+                    card.ability = hazard;
+                    &mut metadata.ability
+                };
+                if let CombatStatProjectionDispositionV1::Execute { identity, .. } = disposition {
+                    *disposition = CombatStatProjectionDispositionV1::Disabled {
                         identity: identity.clone(),
                         reason: CombatStatDisabledReasonV1::UnsupportedSelectedHazard {
                             registry_reasons: Box::new([]),
                         },
                     };
+                }
             }
         }
     }
@@ -750,6 +757,15 @@ fn prepare_combat_stat_source(
             source.id,
             CombatStatPostRoundEffectV1::ReduceOpponentLifeOnKillshot { life, minimum },
             CombatStatEffectV1::ReduceOpponentLifeOnKillshot { life, minimum },
+            CombatStatPredicateV1::Always,
+        ));
+    }
+    if let Some(amount) = classify_killshot_pillz_and_life(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainPillzAndLifeOnKillshot { amount },
+            CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount },
             CombatStatPredicateV1::Always,
         ));
     }

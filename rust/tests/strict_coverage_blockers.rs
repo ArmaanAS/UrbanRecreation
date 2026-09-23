@@ -325,6 +325,18 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         &[505, 654, 908, 1203, 1474, 1984, 2175, 5923],
     ),
     ("Stop: Pillz", &[646, 918]),
+    // `Cancel Opp. Life Modif.`, `Cancel Opp. Pillz & Life Modif.` and the Killshot compound
+    // gain, measured 2026-09-23. The cancellers are refused wherever the opposing hand holds
+    // an effect whose cancellation is unpinned.
+    ("Cancel Opp. Life Modif.", &[1172, 1202, 1336, 3518, 4778]),
+    ("Cancel Opp. Pillz & Life Modif.", &[1497, 1502, 1704, 3321]),
+    ("Killshot: +N Pillz And Life", &[1768, 3106, 3318]),
+    (
+        "resource cancellers + Killshot compound",
+        &[
+            1172, 1202, 1336, 1497, 1502, 1704, 1768, 3106, 3318, 3321, 3518, 4778,
+        ],
+    ),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

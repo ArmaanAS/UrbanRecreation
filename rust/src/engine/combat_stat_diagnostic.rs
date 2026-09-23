@@ -19,7 +19,7 @@ use super::{
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
     DiagnosticCombatEffectV1, DiagnosticCombatStatV1, DiagnosticMagnitudeV1,
     DiagnosticStatOperationV1, HandSlot, LatchedEffectV1, PlayerId, PostRoundEffect,
-    PostRoundSourceEffect, ValidatedSelection, HAND_SIZE,
+    PostRoundResourceV1, PostRoundSourceEffect, ValidatedSelection, HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -171,6 +171,11 @@ pub enum CombatStatPostRoundEffectV1 {
         per_count: u16,
         maximum: u16,
     },
+    /// `Killshot: +N Pillz And Life`: an attack at least double the opposing one gives a
+    /// living owner N Pillz and N Life.
+    GainPillzAndLifeOnKillshot {
+        amount: u16,
+    },
     /// The two reviewed unconditional Victory opponent-Life reductions.
     ReduceOpponentLifeOnVictory {
         life: u16,
@@ -262,6 +267,11 @@ pub enum CombatStatEffectV1 {
     ExchangePrintedCombatStat {
         stat: CombatStatAttributeV1,
     },
+    /// While live, the opposing selected card's end-of-round effects on the named resources
+    /// are dropped for the round. Ability slot only.
+    CancelOpponentResourceModifiers {
+        resources: crate::effect_registry::ResourceCancellationV1,
+    },
     /// Fixed non-stat post-round work. Identity and source are checked at plan
     /// construction; its values are intentionally not caller-configurable.
     RecoverPaidPillzOnDefeat,
@@ -350,6 +360,10 @@ pub enum CombatStatEffectV1 {
     GainPillzOnVictoryPerAntiSupport {
         per_count: u16,
         maximum: u16,
+    },
+    /// The Killshot compound own gain, Ability slot only.
+    GainPillzAndLifeOnKillshot {
+        amount: u16,
     },
     /// Unconditional Victory-only opponent-Life reduction with a fixed magnitude and
     /// lower bound, admitted solely for the two reviewed identities.
@@ -562,6 +576,14 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// A `Stop:` source faces a hand that could stop its owner's ability, the one case the
     /// projection does not model.
     StopTriggeredAgainstStopAbility,
+    KillshotPillzAndLifeSource,
+    KillshotPillzAndLifeMagnitude,
+    KillshotPillzAndLifePredicate,
+    ResourceCancellationSource,
+    /// A resource canceller faces an opposing effect whose cancellation no captured round
+    /// has shown: a permanent, a compound, a both-players reduction, a Copy, or - for Pillz
+    /// and Life - any Pillz effect.
+    ResourceCancellationAgainstUnpinnedEffect,
     ReprisalStopOpponentAbilityCard,
     ReprisalStopOpponentAbilityEffect,
     ReprisalStopOpponentAbilityIdentity,
@@ -904,24 +926,80 @@ fn validate_stop_triggered_context(
     own: &[CombatStatCardPlanV1; HAND_SIZE],
     opponent: &[CombatStatCardPlanV1; HAND_SIZE],
 ) -> Result<(), CombatStatPlanErrorV1> {
-    let CombatStatSourcePlanV1::Execute {
-        source_id,
-        predicate: CombatStatPredicateV1::OwnerAbilityStopped,
-        ..
-    } = own[hand_slot.index()].ability
-    else {
-        return Ok(());
-    };
-    if opponent_can_stop_an_ability(opponent) {
-        return Err(invalid_combat_stat_execute(
-            player,
-            hand_slot,
+    for (source, plan) in [
+        (
             CombatStatEffectSourceV1::Ability,
-            source_id,
-            InvalidCombatStatPlanReasonV1::StopTriggeredAgainstStopAbility,
-        ));
+            own[hand_slot.index()].ability,
+        ),
+        (
+            CombatStatEffectSourceV1::Bonus,
+            own[hand_slot.index()].bonus,
+        ),
+    ] {
+        if let Some(reason) = unmodelled_source_context(plan, opponent) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_plan_id(plan).unwrap_or(0),
+                reason,
+            ));
+        }
     }
     Ok(())
+}
+
+/// The sources admitted only where their context is one the corpus has pinned, and why a
+/// given opposing hand is not: a `Stop:` source facing anything that could stop its owner's
+/// ability, and a resource canceller facing an effect whose cancellation is unpinned.
+/// Construction refuses them (catalog as an unsupported source, replay as a selected
+/// hazard, the engine as an invalid plan).
+pub(crate) fn unmodelled_source_context(
+    plan: CombatStatSourcePlanV1,
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> Option<InvalidCombatStatPlanReasonV1> {
+    match plan {
+        CombatStatSourcePlanV1::Execute {
+            predicate: CombatStatPredicateV1::OwnerAbilityStopped,
+            ..
+        } if opponent_can_stop_an_ability(opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::StopTriggeredAgainstStopAbility)
+        }
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::CancelOpponentResourceModifiers { resources },
+            ..
+        } if opponent_defeats_resource_cancellation(resources, opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::ResourceCancellationAgainstUnpinnedEffect)
+        }
+        _ => None,
+    }
+}
+
+fn opponent_defeats_resource_cancellation(
+    resources: crate::effect_registry::ResourceCancellationV1,
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    opponent.iter().any(|card| {
+        [card.ability, card.bonus]
+            .into_iter()
+            .any(|plan| match plan {
+                CombatStatSourcePlanV1::CopyOpponentSource { .. } => true,
+                CombatStatSourcePlanV1::Execute { effect, .. } => shared_post_round_effect(effect)
+                    .is_some_and(|effect| match effect.resource() {
+                        PostRoundResourceV1::Life => false,
+                        PostRoundResourceV1::Pillz => {
+                            resources
+                                == crate::effect_registry::ResourceCancellationV1::PillzAndLife
+                        }
+                        PostRoundResourceV1::PillzAndLife
+                        | PostRoundResourceV1::BothPlayersLife
+                        | PostRoundResourceV1::Permanent => true,
+                    }),
+                CombatStatSourcePlanV1::Absent
+                | CombatStatSourcePlanV1::Disabled { .. }
+                | CombatStatSourcePlanV1::RejectIfSelected { .. } => false,
+            })
+    })
 }
 
 fn validate_copy_targets(
@@ -1757,6 +1835,51 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    // The Killshot compound and the resource cancellers are card abilities only; the
+    // compound needs a positive amount and no predicate of its own.
+    if let CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount } = effect {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KillshotPillzAndLifeSource,
+            ));
+        }
+        if amount == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KillshotPillzAndLifeMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::KillshotPillzAndLifePredicate,
+            ));
+        }
+        return Ok(());
+    }
+    if matches!(
+        effect,
+        CombatStatEffectV1::CancelOpponentResourceModifiers { .. }
+    ) && source != CombatStatEffectSourceV1::Ability
+    {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::ResourceCancellationSource,
+        ));
+    }
     // The post-round `Brawl:` grammars are card abilities only and unconditional; the
     // magnitude is the printed amount per anti-support count, which must be positive.
     if let CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport { per_count, .. }
@@ -2419,6 +2542,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         }
         CombatStatEffectV1::ProtectOwnAbility => DiagnosticCombatEffectV1::ProtectOwnAbility,
         CombatStatEffectV1::ProtectOwnBonus => DiagnosticCombatEffectV1::ProtectOwnBonus,
+        CombatStatEffectV1::CancelOpponentResourceModifiers { resources } => {
+            DiagnosticCombatEffectV1::CancelOpponentResourceModifiers { resources }
+        }
         CombatStatEffectV1::ExchangePrintedCombatStat { stat } => {
             DiagnosticCombatEffectV1::ExchangePrintedCombatStat {
                 stat: match stat {
@@ -2469,6 +2595,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
         | CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
         | CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { .. }
+        | CombatStatEffectV1::GainPillzAndLifeOnKillshot { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnKillshot { .. }
         | CombatStatEffectV1::ReduceBothPlayersLife { .. }
@@ -2480,7 +2607,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
     })
 }
 
-fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourceEffect> {
+pub(crate) fn shared_post_round_effect(
+    effect: CombatStatEffectV1,
+) -> Option<PostRoundSourceEffect> {
     match effect {
         CombatStatEffectV1::RecoverPaidPillzOnDefeat => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::RecoverPaidPillzOnDefeat,
@@ -2611,6 +2740,9 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { per_count, maximum } => {
             Some(PostRoundSourceEffect::GainPillzOnVictoryPerAntiSupport { per_count, maximum })
         }
+        CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzAndLifeOnKillshot { amount }),
+        ),
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentAbility
         | CombatStatEffectV1::StopOpponentBonus
@@ -2619,7 +2751,8 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         | CombatStatEffectV1::ProtectOwnAbility
         | CombatStatEffectV1::ProtectOwnBonus
         | CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. }
-        | CombatStatEffectV1::ExchangePrintedCombatStat { .. } => None,
+        | CombatStatEffectV1::ExchangePrintedCombatStat { .. }
+        | CombatStatEffectV1::CancelOpponentResourceModifiers { .. } => None,
     }
 }
 

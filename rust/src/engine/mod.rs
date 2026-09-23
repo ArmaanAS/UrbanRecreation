@@ -460,6 +460,60 @@ pub(super) enum PostRoundSourceEffect {
     },
 }
 
+/// Which end-of-round resource a post-round effect writes, for `Cancel Opp. ... Modif.`.
+/// The compound, both-players and permanent kinds are the ones whose cancellation no
+/// captured round has shown; construction refuses a canceller facing any of them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum PostRoundResourceV1 {
+    Life,
+    Pillz,
+    PillzAndLife,
+    BothPlayersLife,
+    Permanent,
+}
+
+impl PostRoundEffect {
+    pub(super) const fn resource(self) -> PostRoundResourceV1 {
+        match self {
+            Self::RecoverPaidPillzOnDefeat
+            | Self::GainOnePillzOnVictoryOrDefeat
+            | Self::GainTwoPillzOnDefeatMaxEleven
+            | Self::GainPillzOnVictory(_)
+            | Self::GainPillzOnVictoryMax { .. }
+            | Self::ReduceOpponentPillzOnVictory { .. }
+            | Self::ReduceOpponentPillzOnDefeat { .. }
+            | Self::GainPillzEqualToFinalDamageOnVictory => PostRoundResourceV1::Pillz,
+            Self::GainLifeEqualToFinalDamageOnCourageVictory
+            | Self::GainLifeOnVictory(_)
+            | Self::GainLifePerFinalDamageOnVictory { .. }
+            | Self::GainLifeOnDefeat(_)
+            | Self::ReanimateLife(_)
+            | Self::GainLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentLifeOnVictory { .. }
+            | Self::ReduceOpponentLifeOnDefeat { .. }
+            | Self::ReduceOpponentLifeOnKillshot { .. } => PostRoundResourceV1::Life,
+            Self::GainOnePillzAndLifeOnVictory | Self::GainPillzAndLifeOnKillshot { .. } => {
+                PostRoundResourceV1::PillzAndLife
+            }
+            Self::ReduceBothPlayersLife { .. } => PostRoundResourceV1::BothPlayersLife,
+            Self::LatchOnVictory(_) | Self::LatchOnDefeat(_) => PostRoundResourceV1::Permanent,
+        }
+    }
+}
+
+impl PostRoundSourceEffect {
+    pub(super) const fn resource(self) -> PostRoundResourceV1 {
+        match self {
+            Self::Fixed(effect) => effect.resource(),
+            Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. } => PostRoundResourceV1::Life,
+            Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
+            | Self::GainPillzOnVictoryPerAntiSupport { .. } => PostRoundResourceV1::Pillz,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum PostRoundEffect {
     RecoverPaidPillzOnDefeat,
@@ -539,6 +593,11 @@ pub(super) enum PostRoundEffect {
     /// the round is the trigger. Once latched it is indistinguishable from any other
     /// permanent, so the repeat loop needs no knowledge of how it got there.
     LatchOnDefeat(LatchedEffectV1),
+    /// `Killshot: +N Pillz And Life`: the owner's final attack at least doubling the opposing
+    /// one gives a living owner N Pillz and then N Life.
+    GainPillzAndLifeOnKillshot {
+        amount: u16,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -898,6 +957,24 @@ impl BaseRulesGame {
                             .max(minimum);
                     }
                     PostRoundEffect::ReduceOpponentLifeOnKillshot { .. } => {}
+                    // The Killshot compound is the Komboka pair of own gains on the Killshot
+                    // trigger above: the attack ratio, not the winner, and a living owner.
+                    // Pillz then Life, each checked, as Komboka pays them.
+                    PostRoundEffect::GainPillzAndLifeOnKillshot { amount }
+                        if u64::from(prepared[owner].result.attack)
+                            >= 2 * u64::from(prepared[owner.other()].result.attack)
+                            && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(amount)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(amount)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainPillzAndLifeOnKillshot { .. } => {}
                     // Xantiax is the only admitted post-round effect with no outcome
                     // channel and no beneficiary: it takes from both players at once. The
                     // owner winning, losing or being knocked out by this round's damage

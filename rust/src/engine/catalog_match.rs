@@ -10,10 +10,10 @@ use super::combat_stat_compiler::{
     classify_conditional_stop, classify_copy_opponent_source, classify_defeat_life,
     classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_regen_life_on_victory,
-    classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
@@ -521,30 +521,43 @@ impl CatalogCombatStatMatchV1 {
             });
         }
 
-        // A `Stop:` source is admitted only where nothing opposite can stop its owner's
-        // ability. The engine refuses such a plan too; refusing it here, as the unsupported
-        // source it is, keeps the coverage report counting it as a blocker.
+        // Some sources are admitted only where their context is one the corpus has pinned:
+        // a `Stop:` source where nothing opposite can stop its owner's ability, a resource
+        // canceller where nothing opposite has an effect whose cancellation is unpinned.
+        // The engine refuses such a plan too; refusing it here, as the unsupported source it
+        // is, keeps the coverage report counting it as a blocker.
         for player in PlayerId::ALL {
             let opponent = compact_cards[player.other()]
                 .each_ref()
                 .map(|card| card.expect("all eight compact cards were prepared"));
-            if !super::combat_stat_compiler::opponent_can_stop_an_ability(&opponent) {
-                continue;
-            }
             for slot in HandSlot::ALL {
+                let compact = compact_cards[player][slot.index()]
+                    .expect("all eight compact cards were prepared");
                 let card = metadata[player][slot.index()]
                     .as_ref()
                     .expect("all eight metadata cards were prepared");
-                if let CatalogCombatStatSourceDispositionV1::Execute {
-                    identity,
-                    predicate: CombatStatPredicateV1::OwnerAbilityStopped,
-                    ..
-                } = &card.ability
-                {
+                for (source_kind, plan, disposition) in [
+                    (
+                        CombatStatEffectSourceV1::Ability,
+                        compact.ability,
+                        &card.ability,
+                    ),
+                    (CombatStatEffectSourceV1::Bonus, compact.bonus, &card.bonus),
+                ] {
+                    if super::combat_stat_diagnostic::unmodelled_source_context(plan, &opponent)
+                        .is_none()
+                    {
+                        continue;
+                    }
+                    let CatalogCombatStatSourceDispositionV1::Execute { identity, .. } =
+                        disposition
+                    else {
+                        continue;
+                    };
                     return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
                         player,
                         hand_slot: slot,
-                        source_kind: CombatStatEffectSourceV1::Ability,
+                        source_kind,
                         catalog_id: identity.catalog_id,
                         description: identity.description.clone(),
                         registry_definition_id: identity.registry_definition_id,
@@ -1518,6 +1531,35 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
                 definition.id(),
+            );
+        }
+        // The Killshot compound gain follows the same rule.
+        if classify_killshot_pillz_and_life(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let amount = classify_killshot_pillz_and_life(definition, source_kind)?;
+                    Some((
+                        CombatStatPostRoundEffectV1::GainPillzAndLifeOnKillshot { amount },
+                        CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount },
+                        CombatStatPredicateV1::Always,
+                    ))
+                },
             );
         }
         // So does the Pillz-per-Damage conversion, whose predicate the printed prefix names.

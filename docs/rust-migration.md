@@ -1922,6 +1922,40 @@ Pillz Opp. Min 1`; it lost that round, so nothing had been missed, but the repla
 by luck. The gate grows from 459 to 470 rounds, with 1009300 and 925051 in full and
 1025645 to three rounds.
 
+Semantic revision 49 admits `Cancel Opp. Life Modif.` (`1172`, `1202`, `1336`, `3518`,
+`4778`) and `Cancel Opp. Pillz & Life Modif.` (`1497`, `1502`, `1704`, `3321`) - while
+live, the opposing selected card's end-of-round effects on those resources are dropped for
+the round - together with `Killshot: +N Pillz And Life` (`1768`, `3106`, `3318`), the
+Komboka pair of own gains on revision 38's Killshot trigger. It measured 3 and unlocked
+exactly 3 - `877357`, `1337230` and `1337321` - taking eligibility from 127 to 130.
+
+The cancel is modelled only as far as the server has shown it. The registry compiled the
+`stop_modif` action for combat stats and refused it over Life, so it gains one arm and a
+`ResourceCancellationV1`; the canceller is an ordinary live source in the `effect` slot, so
+a Stop removes it, and resolution drops the other player's bound post-round effects by
+resource - one exhaustive `resource()` over `PostRoundEffect`. The Life half is pinned four
+times: Ryujin Cr stops Glenn's `-3 Opp. Life Min 3` in 1337321/0, Sylvia Ld's Berzerk bonus
+in 1337265/0, Hal Gladius' Equalizer reduction in 943231/0 and Aurora's `+3 Life` in
+1131208/0, and the canceller's own effects are untouched (1131225/3, 926420/2). Nothing
+shows the Pillz half paying, nothing shows a cancel meeting an opposing permanent, a
+compound, Xantiax or a Copy, and the reference's own reading of those is uncertain - it
+lets a permanent latch and skips only the round's payment. So the plan validator refuses
+a canceller facing any of those in the opposing hand, and for the Pillz and Life form any
+opposing Pillz effect too; the catalog raises it as an unsupported source and replay as a
+selected hazard, as revision 48 does for `Stop:`. That costs the two AI-Lycs draws,
+925651 and 926420, whose Defeat Recover the Pillz half would cancel; a captured round in
+which a Pillz and Life canceller meets an opposing Pillz effect would settle it.
+
+The Killshot compound pays in 1337321/2 at 38 against 14 - Life 6 to 8, Pillz 5 - 5 + 2 =
+2, both halves named in `postRoundAbilities` - and does not at 66 against 36 in 956805/0;
+exactly double and a knocked-out owner are pinned by engine tests. The `Day:` cancel
+(`2369`) keeps its text context and stays closed. The gate grows from 470 to 485 rounds with
+1337321, 1337230, 1337265, 943231, 1131208, 956805 and 877357, and 901400 extended. Two
+unadmitted sources join its disabled set because the rounds that select them are the cancel
+rounds: Sylvia Ld's `Backlash: - 3 Life Min 3` (`2853`) and a `Defeat: +1 Opp. Life`
+(`1783`); both are cancelled in those rounds anyway, which is why the server and the
+projection agree there.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

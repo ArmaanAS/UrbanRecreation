@@ -196,6 +196,14 @@ pub struct StructuredEffectV1 {
     pub is_immediate_permanent: bool,
 }
 
+/// The end-of-round resources a `Cancel Opp. ... Modif.` source cancels.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceCancellationV1 {
+    Life,
+    PillzAndLife,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CombatStatV1 {
@@ -274,6 +282,11 @@ pub enum SupportedEffectV1 {
     /// The two selected characters swap their printed values of the stat.
     ExchangePrintedCombatStat {
         stat: CombatStatV1,
+    },
+    /// The opposing selected character's end-of-round effects on the named resources are
+    /// cancelled for the round.
+    CancelOpponentResourceModifiers {
+        resources: ResourceCancellationV1,
     },
     /// The owner's own Ability cannot be stopped by the opposing character.
     ProtectOwnAbility,
@@ -1167,6 +1180,28 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
                 None
             }
         }
+        // The same action over the end-of-round resources rather than a combat stat.
+        (AttributeActionV1::StopModifier, SpecialActionV1::None, None)
+            if matches!(
+                input.attribute_affected,
+                AttributeAffectedV1::Life | AttributeAffectedV1::LifeAndPillz
+            ) =>
+        {
+            if input.side_affected == AffectedSideV1::Opponent {
+                Some(SupportedEffectV1::CancelOpponentResourceModifiers {
+                    resources: if input.attribute_affected == AttributeAffectedV1::Life {
+                        ResourceCancellationV1::Life
+                    } else {
+                        ResourceCancellationV1::PillzAndLife
+                    },
+                })
+            } else {
+                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
+                    side: input.side_affected,
+                });
+                None
+            }
+        }
         _ => {
             if input.attribute_action != AttributeActionV1::None {
                 reasons.insert(UnsupportedReasonV1::AttributeAction {
@@ -1284,6 +1319,12 @@ fn unreviewed_description_context(
         // The unconditional Exchanges only. `Confidence:`, `Courage:`, `Reprisal:`,
         // `Symmetry:`/`Asymmetry:` and `Unison :` are different descriptions and refused
         // here, even where the registry carries no structured trace of the condition.
+        SupportedEffectV1::CancelOpponentResourceModifiers { resources } => match resources {
+            ResourceCancellationV1::Life => description == "Cancel Opp. Life Modif.",
+            ResourceCancellationV1::PillzAndLife => {
+                description == "Cancel Opp. Pillz & Life Modif."
+            }
+        },
         SupportedEffectV1::ExchangePrintedCombatStat { stat } => match stat {
             CombatStatV1::Power => description == "Power Exchange",
             CombatStatV1::Damage => description == "Damage Exchange",
@@ -1855,6 +1896,31 @@ mod tests {
                 "effect {id}",
             );
         }
+    }
+
+    #[test]
+    fn a_resource_cancel_compiles_only_the_two_unconditional_printed_grammars() {
+        let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
+        for (ids, resources) in [
+            (
+                [1172, 1202, 1336, 3518, 4778].as_slice(),
+                ResourceCancellationV1::Life,
+            ),
+            (
+                [1497, 1502, 1704, 3321].as_slice(),
+                ResourceCancellationV1::PillzAndLife,
+            ),
+        ] {
+            for &id in ids {
+                assert_eq!(
+                    registry.get(id).unwrap().compiled().supported(),
+                    Some(SupportedEffectV1::CancelOpponentResourceModifiers { resources }),
+                    "effect {id}",
+                );
+            }
+        }
+        // The `Day:` form carries its context in the text and stays refused.
+        assert_eq!(registry.get(2369).unwrap().compiled().supported(), None);
     }
 
     #[test]

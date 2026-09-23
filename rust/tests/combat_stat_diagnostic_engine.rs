@@ -2,6 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use urban_recreation_rust::catalog::CardKey;
+use urban_recreation_rust::effect_registry::ResourceCancellationV1;
 use urban_recreation_rust::engine::{
     BaseRulesError, BaseRulesMatchSpec, BaseRulesPlayerSpec, BaseRulesPosition,
     BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CombatStatAffectedSideV1,
@@ -5914,6 +5915,215 @@ fn a_stop_triggered_source_never_fires_where_nothing_can_stop_it() {
         CombatStatDiagnosticV1::new(bonus),
         Err(CombatStatPlanErrorV1::InvalidExecute {
             reason: InvalidCombatStatPlanReasonV1::ConditionalBonus,
+            ..
+        })
+    ));
+}
+
+fn cancel(resources: ResourceCancellationV1) -> CombatStatSourcePlanV1 {
+    execute(
+        1172,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CancelOpponentResourceModifiers { resources },
+    )
+}
+
+/// `Cancel Opp. Life Modif.` drops the opposing selected card's end-of-round Life effects for
+/// the round; the canceller's own are untouched, and a stopped canceller cancels nothing. The
+/// corpus pins the Life half four times (1337321/0, 1337265/0, 943231/0, 1131208/0); the
+/// arms it cannot reach, and every context the construction refuses, are pinned here.
+#[test]
+fn a_life_cancel_drops_only_the_opposing_life_effects_of_the_round() {
+    let reduction = execute(
+        512,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 3,
+            minimum: 0,
+        },
+    );
+    let spec = |opposing: CombatStatSourcePlanV1| {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = cancel(ResourceCancellationV1::Life);
+        cards[PlayerId::P2][0].ability = opposing;
+        (base, cards)
+    };
+
+    // P2 wins and its Victory reduction is cancelled: only the 3 combat Damage lands.
+    let (base, cards) = spec(reduction);
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P2].won);
+    assert_eq!(report.players[PlayerId::P1].life, 17);
+
+    // A Pillz effect is not a Life effect: the Life cancel leaves it alone.
+    let (base, cards) = spec(execute(
+        1150,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+    ));
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].pillz, 20 - 5 + 2);
+
+    // The canceller's own end-of-round work is not cancelled (1131225/3).
+    let (base, mut cards) = spec(CombatStatSourcePlanV1::Absent);
+    cards[PlayerId::P1][0].bonus = execute(
+        43,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 20 + 3);
+
+    // A stopped canceller cancels nothing.
+    let (base, mut cards) = spec(reduction);
+    cards[PlayerId::P2][0].bonus = execute(
+        40,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    cards[PlayerId::P2][0].source_bonus_support_count = 1;
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 20 - 3 - 3);
+
+    // Construction refuses a canceller facing anything whose cancellation is unpinned: a
+    // permanent, a compound, a both-players reduction, or a Copy - in any opposing slot.
+    for opposing in [
+        execute(
+            206,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+                life: 1,
+                minimum: 0,
+            },
+        ),
+        execute(
+            1768,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount: 2 },
+        ),
+        execute(
+            1379,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceBothPlayersLife {
+                life: 1,
+                minimum: 0,
+            },
+        ),
+        CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 846,
+            copied: CopiedSourceKindV1::Ability,
+            predicate: CombatStatPredicateV1::Always,
+        },
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = cancel(ResourceCancellationV1::Life);
+        cards[PlayerId::P2][3].ability = opposing;
+        cards[PlayerId::P2][3].source_ability_support_count = u16::from(matches!(
+            opposing,
+            CombatStatSourcePlanV1::CopyOpponentSource { .. }
+        ));
+        assert!(
+            matches!(
+                CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                    base_rules: base,
+                    cards,
+                }),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason:
+                        InvalidCombatStatPlanReasonV1::ResourceCancellationAgainstUnpinnedEffect,
+                    ..
+                })
+            ),
+            "{opposing:?}",
+        );
+    }
+
+    // The Pillz and Life form, whose Pillz half no round has shown paying, is also refused
+    // against any opposing Pillz effect; the Life form is not.
+    for (resources, refused) in [
+        (ResourceCancellationV1::PillzAndLife, true),
+        (ResourceCancellationV1::Life, false),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = cancel(resources);
+        cards[PlayerId::P2][3].ability = execute(
+            1150,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+        );
+        assert_eq!(
+            CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            })
+            .is_err(),
+            refused,
+            "{resources:?}",
+        );
+    }
+}
+
+/// `Killshot: +N Pillz And Life` is the Komboka pair of own gains on the Killshot trigger:
+/// the owner's final attack at least doubling the opposing one, not the winner, and a living
+/// owner. The corpus pins it paying at 38 against 14 (1337321/2) and not at 66 against 36
+/// (956805/0); exactly double and a knocked-out owner are pinned here.
+#[test]
+fn killshot_pillz_and_life_pays_a_living_owner_at_double_the_opposing_attack() {
+    let spec = || {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(
+            1768,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount: 2 },
+        );
+        (base, cards)
+    };
+    // (P1 bet, P2 bet, pays): attack = 6 x (bet + 1).
+    for (p1, p2, pays) in [(3, 1, true), (4, 1, true), (2, 1, false), (0, 5, false)] {
+        let (base, cards) = spec();
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, p1, false), (0, p2, false)))
+            .unwrap();
+        let gain = if pays { 2 } else { 0 };
+        assert_eq!(
+            report.players[PlayerId::P1].pillz,
+            20 - p1 + gain,
+            "{p1} vs {p2}"
+        );
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+    }
+    // No clan bonus prints it.
+    let (base, mut cards) = spec();
+    cards[PlayerId::P1][0].bonus = cards[PlayerId::P1][0].ability;
+    cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::KillshotPillzAndLifeSource,
             ..
         })
     ));
