@@ -486,6 +486,7 @@ impl PostRoundEffect {
             Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
             | Self::GainLifeOnDefeat(_)
             | Self::ReanimateLife(_)
             | Self::GainLifeOnVictoryOrDefeat { .. }
@@ -554,6 +555,11 @@ pub(super) enum PostRoundEffect {
     GainLifePerFinalDamageOnVictory {
         life_per_damage: u16,
         maximum: u16,
+    },
+    /// `+N Life Per Opp. Damage`: the winner's own Life rises by `life_per_damage` for
+    /// every point of the *losing* card's final resolved Damage, Fury included.
+    GainLifePerOpponentFinalDamageOnVictory {
+        life_per_damage: u16,
     },
     GainLifeOnDefeat(u16),
     ReanimateLife(u16),
@@ -882,6 +888,20 @@ impl BaseRulesGame {
                         }
                     }
                     PostRoundEffect::GainLifePerFinalDamageOnVictory { .. } => {}
+                    PostRoundEffect::GainLifePerOpponentFinalDamageOnVictory {
+                        life_per_damage,
+                    } if owner == winner && position.players[owner].life > 0 => {
+                        let gain = prepared[owner.other()]
+                            .result
+                            .damage
+                            .checked_mul(life_per_damage)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(gain)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainLifePerOpponentFinalDamageOnVictory { .. } => {}
                     // The reviewed Victory Or Defeat Life sources are ordinary Life
                     // gains, not Reanimate: a living owner gains after either outcome,
                     // while a KO remains terminal.  Keep the addition checked so the

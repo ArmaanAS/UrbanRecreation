@@ -39,6 +39,11 @@ pub(super) struct ResolutionSourcePlan {
     pub anti_support_count: u16,
     /// The owner's Life at the start of the round, for `Per Life Left` magnitudes.
     pub owner_life: u16,
+    /// The owner's Pillz at the start of the round, before the bet, for `Per Pillz Left`.
+    pub owner_pillz: u16,
+    /// The owner's match-start Pillz less `owner_pillz`, never below zero, for
+    /// `Per Pillz Lost`.
+    pub owner_pillz_lost: u16,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -958,6 +963,8 @@ fn apply_power_damage_effect(
         source.support_count,
         source.anti_support_count,
         source.owner_life,
+        source.owner_pillz,
+        source.owner_pillz_lost,
         rounds_played,
         opponent_stars,
         0,
@@ -1042,6 +1049,8 @@ fn apply_attack_effect(
         source.support_count,
         source.anti_support_count,
         source.owner_life,
+        source.owner_pillz,
+        source.owner_pillz_lost,
         rounds_played,
         opponent_stars,
         opponent_damage,
@@ -1064,6 +1073,8 @@ fn effect_amount(
     support_count: u16,
     anti_support_count: u16,
     owner_life: u16,
+    owner_pillz: u16,
+    owner_pillz_lost: u16,
     rounds_played: u8,
     opponent_stars: u16,
     // The opposing card's Damage as the Attack phase sees it: resolved, but before Fury.
@@ -1084,6 +1095,8 @@ fn effect_amount(
         DiagnosticMagnitudeV1::OpponentStars => u32::from(opponent_stars),
         DiagnosticMagnitudeV1::OpponentDamage => u32::from(opponent_damage),
         DiagnosticMagnitudeV1::OwnerLife => u32::from(owner_life),
+        DiagnosticMagnitudeV1::OwnerPillz => u32::from(owner_pillz),
+        DiagnosticMagnitudeV1::OwnerPillzLost => u32::from(owner_pillz_lost),
     };
     u32::from(value)
         .checked_mul(multiplier)

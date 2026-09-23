@@ -70,6 +70,10 @@ pub enum CombatStatMagnitudeV1 {
     AntiSupport,
     /// `Per Life Left`. Scaled by the owner's own Life at the start of the round.
     OwnerLife,
+    /// `Per Pillz Left`. The owner's Pillz at the start of the round, before the bet.
+    OwnerPillz,
+    /// `Per Pillz Lost`. The owner's match-start Pillz less their round-start Pillz.
+    OwnerPillzLost,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -136,6 +140,11 @@ pub enum CombatStatPostRoundEffectV1 {
     GainLifePerFinalDamageOnVictory {
         life_per_damage: u16,
         maximum: u16,
+    },
+    /// `+N Life Per Opp. Damage`: the winner's own Life rises by `life_per_damage` for
+    /// every point of the *losing* card's final resolved Damage, Fury included.
+    GainLifePerOpponentFinalDamageOnVictory {
+        life_per_damage: u16,
     },
     GainLifeOnDefeat {
         life: u16,
@@ -318,6 +327,11 @@ pub enum CombatStatEffectV1 {
     GainLifePerFinalDamageOnVictory {
         life_per_damage: u16,
         maximum: u16,
+    },
+    /// `+N Life Per Opp. Damage`: the winner's own Life rises by `life_per_damage` for
+    /// every point of the *losing* card's final resolved Damage, Fury included.
+    GainLifePerOpponentFinalDamageOnVictory {
+        life_per_damage: u16,
     },
     /// Ordinary Defeat Life applies only after a surviving loss. The hot path retains the
     /// exact positive magnitude but no strings or registry access.
@@ -846,6 +860,16 @@ impl CombatStatDiagnosticV1 {
         let previous_round_winner = self.base_rules.position().previous_round_winner;
         let players = self.base_rules.position().players;
         let life = ByPlayer::new(players[PlayerId::P1].life, players[PlayerId::P2].life);
+        let pillz = ByPlayer::new(players[PlayerId::P1].pillz, players[PlayerId::P2].pillz);
+        let initial = &self.spec.base_rules.players;
+        let pillz_lost = ByPlayer::new(
+            initial[PlayerId::P1]
+                .initial_pillz
+                .saturating_sub(players[PlayerId::P1].pillz),
+            initial[PlayerId::P2]
+                .initial_pillz
+                .saturating_sub(players[PlayerId::P2].pillz),
+        );
         let prepared = prepare_combat_stat_diagnostic(
             validated,
             &self.spec.cards,
@@ -854,6 +878,8 @@ impl CombatStatDiagnosticV1 {
             previous_round_winner,
             self.spec.base_rules.night,
             life,
+            pillz,
+            pillz_lost,
         )?;
         let (report, base_rules) =
             self.base_rules
@@ -2011,6 +2037,22 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    if let CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { life_per_damage } = effect
+    {
+        if source != CombatStatEffectSourceV1::Ability
+            || life_per_damage == 0
+            || predicate != CombatStatPredicateV1::Always
+        {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::VictoryLifePerDamageSource,
+            ));
+        }
+        return Ok(());
+    }
     if let CombatStatEffectV1::GainLifeOnDefeat { life } = effect {
         if source != CombatStatEffectSourceV1::Ability {
             return Err(invalid_combat_stat_execute(
@@ -2139,7 +2181,12 @@ fn validate_combat_stat_source_plan(
             | CombatStatMagnitudeV1::OpponentStars
             | CombatStatMagnitudeV1::AntiSupport
             | CombatStatMagnitudeV1::OwnerLife
+            | CombatStatMagnitudeV1::OwnerPillz
+            | CombatStatMagnitudeV1::OwnerPillzLost
     ) && predicate != CombatStatPredicateV1::Always
+        && !(multiplier == CombatStatMagnitudeV1::OwnerPillz
+            && predicate == CombatStatPredicateV1::OwnerHandUnison
+            && source == CombatStatEffectSourceV1::Ability)
     {
         return Err(invalid_combat_stat_execute(
             player,
@@ -2352,6 +2399,8 @@ fn prepare_combat_stat_diagnostic(
     previous_round_winner: Option<PlayerId>,
     night: bool,
     life: ByPlayer<u16>,
+    pillz: ByPlayer<u16>,
+    pillz_lost: ByPlayer<u16>,
 ) -> Result<PreparedCombatResolution, CombatStatDiagnosticErrorV1> {
     let selected = ByPlayer::new(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
@@ -2385,6 +2434,8 @@ fn prepare_combat_stat_diagnostic(
             anti_support[PlayerId::P1],
             night,
             life[PlayerId::P1],
+            pillz[PlayerId::P1],
+            pillz_lost[PlayerId::P1],
             unison(PlayerId::P1),
         ),
         resolution_card_plan(
@@ -2398,6 +2449,8 @@ fn prepare_combat_stat_diagnostic(
             anti_support[PlayerId::P2],
             night,
             life[PlayerId::P2],
+            pillz[PlayerId::P2],
+            pillz_lost[PlayerId::P2],
             unison(PlayerId::P2),
         ),
     );
@@ -2463,6 +2516,8 @@ fn resolution_card_plan(
     anti_support_count: u16,
     night: bool,
     owner_life: u16,
+    owner_pillz: u16,
+    owner_pillz_lost: u16,
     owner_unison: bool,
 ) -> ResolutionCardPlan {
     // Resolve each source once. Copy substitution and the predicate are the same work for
@@ -2495,6 +2550,8 @@ fn resolution_card_plan(
             support_count,
             anti_support_count,
             owner_life,
+            owner_pillz,
+            owner_pillz_lost,
         }
     };
     ResolutionCardPlan {
@@ -2542,6 +2599,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 CombatStatMagnitudeV1::AntiSupport => DiagnosticMagnitudeV1::AntiSupport,
                 CombatStatMagnitudeV1::OpponentDamage => DiagnosticMagnitudeV1::OpponentDamage,
                 CombatStatMagnitudeV1::OwnerLife => DiagnosticMagnitudeV1::OwnerLife,
+                CombatStatMagnitudeV1::OwnerPillz => DiagnosticMagnitudeV1::OwnerPillz,
+                CombatStatMagnitudeV1::OwnerPillzLost => DiagnosticMagnitudeV1::OwnerPillzLost,
             },
         },
         CombatStatEffectV1::StopOpponentAbility => DiagnosticCombatEffectV1::StopOpponentAbility,
@@ -2603,6 +2662,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentPillzOnDefeat { .. }
         | CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory
         | CombatStatEffectV1::GainLifePerFinalDamageOnVictory { .. }
+        | CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
         | CombatStatEffectV1::ReanimateLife { .. }
         | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
@@ -2677,6 +2737,11 @@ pub(crate) fn shared_post_round_effect(
                 maximum,
             },
         )),
+        CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { life_per_damage } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::GainLifePerOpponentFinalDamageOnVictory { life_per_damage },
+            ))
+        }
         CombatStatEffectV1::GainLifeOnDefeat { life } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainLifeOnDefeat(life),
         )),

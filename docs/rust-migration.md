@@ -1988,6 +1988,35 @@ Unison Copy adopts in 1069193/0, 875230/0, 946400/0 and 876574/0 - the last with
 completing the hand - and is stopped in 1130425/1 and 947121/2. The gate grows from 485 to
 497 rounds with 1009386, 901613 and 1130977 added and 875375, 947488 and 1093500 extended.
 
+Semantic revision 51 admits two more magnitudes on revision 45's route and one post-round
+grammar: `+N Atk Per Pillz Left` (`955`, `1015`), its `Unison :` form (`4119`) and `-N Opp
+Att. Per Pillz Left, Min M` (`1425`); `+N Attack Per Pillz Lost` (`5175`, `5305`); and `+N
+Life Per Opp. Damage` (`3779`). It measured 5 - 3 for the Pillz magnitudes, 2 for the Life
+conversion - and unlocked exactly 5: `948654`, `1060510`, `1065557`, `1078736` and
+`1088580`, taking eligibility from 136 to 141.
+
+`Per Pillz Left` reads the owner's Pillz at the start of the round, before this round's bet,
+and `Per Pillz Lost` the match-start Pillz less that, never below zero. The server decides
+the timing: El Divino Cr's `+1 Atk Per Pillz Left` adds 12 in 1065557/0 and Pinscherite's
+Unison form 12 in 1088580/0, where an after-bet read gives one less, and 867173/3, in round
+3, separates round start from match start (6 x 7 + 6 - 6 = 42 with Kent's Pillz at 6).
+Nolegs' `+2 Attack Per Pillz Lost` pays 2 x 12 in 1060510/3 and Korapacce's 2 x 11 in
+1058545/3, again before the bet. Both values are read in `make` from the position and the
+match spec and carried on `ResolutionSourcePlan` beside the owner's Life. The validator keeps
+both magnitudes unconditional except the one reviewed pairing, Pillz Left under
+`OwnerHandUnison` from the Ability slot.
+
+`+N Life Per Opp. Damage` pays a living winner N per point of the losing card's final
+Damage: Malfass gains 5 for Callie's 5 in 1078736/1 and 6 for Spidee's 6 in 1065673/3, and
+losses pay nothing (926226/3, 948654/0). Neither paying opponent furied, so whether an
+opposing Fury counts is not pinned; it is read as final Damage, Fury included, which is what
+the reference's END phase sees and what the own-Damage conversions are pinned to. It had also
+been an inert disabled source in replay - 1078736 ran past round 1 and mismatched - and an
+unadmitted form is now a selected hazard there. The gate grows from 497 to 512 rounds,
+replaying 1065557, 1078736, 1060510 and 1092578 in full and 1088580 to three rounds; a
+`Courage: +5 Life` (`5592`) joins its disabled set, selected in one of those rounds and
+losing it.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

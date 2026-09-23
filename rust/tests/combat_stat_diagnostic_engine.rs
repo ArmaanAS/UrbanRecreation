@@ -6191,3 +6191,160 @@ fn a_conditional_exchange_or_copy_does_nothing_when_its_predicate_fails() {
         assert_eq!(report.cards[PlayerId::P1].power, expected, "mono {mono}");
     }
 }
+
+fn owner_pillz_spec(
+    multiplier: CombatStatMagnitudeV1,
+    predicate: CombatStatPredicateV1,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        955,
+        predicate,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Attack,
+            CombatStatOperationV1::Increase,
+            1,
+            None,
+            None,
+            multiplier,
+        ),
+    );
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+/// `Per Pillz Left` reads the owner's Pillz at the start of the round, before this round's
+/// bet (1065557/0, 1088580/0, 867173/3), and `Per Pillz Lost` the match-start Pillz less
+/// that (1060510/3, 1058545/3). A Pillz count above the match start, which no capture
+/// reaches, loses nothing.
+#[test]
+fn per_pillz_magnitudes_read_the_round_start_pillz_before_the_bet() {
+    // Round one: 20 Pillz left, none lost, whatever the bet.
+    let spec = owner_pillz_spec(
+        CombatStatMagnitudeV1::OwnerPillz,
+        CombatStatPredicateV1::Always,
+    );
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 4, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 6 * 5 + 20);
+
+    let spec = owner_pillz_spec(
+        CombatStatMagnitudeV1::OwnerPillzLost,
+        CombatStatPredicateV1::Always,
+    );
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 4, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 6 * 5);
+
+    // After a round that cost 7, the next round reads 13 left and 7 lost.
+    for (multiplier, bonus) in [
+        (CombatStatMagnitudeV1::OwnerPillz, 13),
+        (CombatStatMagnitudeV1::OwnerPillzLost, 7),
+    ] {
+        let mut spec = owner_pillz_spec(multiplier, CombatStatPredicateV1::Always);
+        spec.cards[PlayerId::P1][1].ability = spec.cards[PlayerId::P1][0].ability;
+        spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+        let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+        diag.make(input(PlayerId::P1, (0, 7, false), (0, 0, false)))
+            .unwrap();
+        let (report, _) = diag
+            .make(input(PlayerId::P2, (1, 2, false), (1, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].attack,
+            6 * 3 + bonus,
+            "{multiplier:?}"
+        );
+    }
+
+    // More Pillz than the match started with is no loss at all.
+    let mut spec = owner_pillz_spec(
+        CombatStatMagnitudeV1::OwnerPillzLost,
+        CombatStatPredicateV1::Always,
+    );
+    spec.cards[PlayerId::P1][1].ability = spec.cards[PlayerId::P1][0].ability;
+    spec.cards[PlayerId::P1][0].ability = execute(
+        1150,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 5 },
+    );
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].pillz, 25);
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 6);
+
+    // The Unison form is gated on the whole hand, and only Pillz Left may carry it.
+    let spec = owner_pillz_spec(
+        CombatStatMagnitudeV1::OwnerPillz,
+        CombatStatPredicateV1::OwnerHandUnison,
+    );
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 6);
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(owner_pillz_spec(
+            CombatStatMagnitudeV1::OwnerPillzLost,
+            CombatStatPredicateV1::OwnerHandUnison
+        )),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,
+            ..
+        })
+    ));
+}
+
+/// `+N Life Per Opp. Damage` pays a living winner N per point of the losing card's final
+/// Damage (1078736/1, 1065673/3) and nothing on a loss (926226/3, 948654/0). Whether an
+/// opposing Fury counts is unpinned - neither paying opponent furied - and it is read as the
+/// final Damage, Fury included, as the reference and the own-Damage conversions do.
+#[test]
+fn life_per_opposing_damage_pays_the_winner_the_losing_cards_final_damage() {
+    let spec = || {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(
+            3779,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { life_per_damage: 1 },
+        );
+        CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }
+    };
+    let mut diag = CombatStatDiagnosticV1::new(spec()).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 20 + 3);
+
+    // The losing card's Fury is part of its final Damage.
+    let mut diag = CombatStatDiagnosticV1::new(spec()).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 9, false), (0, 0, true)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 20 + 3 + 2);
+
+    // A loss pays nothing.
+    let mut diag = CombatStatDiagnosticV1::new(spec()).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 20 - 3);
+}

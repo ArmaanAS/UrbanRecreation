@@ -84,7 +84,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 50;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 51;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -601,6 +601,33 @@ pub(crate) fn classify_victory_life_per_damage(
         (PreviousRoundRequirementV1::Lose | PreviousRoundRequirementV1::Win, _) => return None,
     };
     (definition.description() == text).then_some((input.value, input.value_max, predicate))
+}
+
+/// `+N Life Per Opp. Damage`: the winner's Life rises by N per point of the opposing
+/// card's final resolved Damage. Unconditional, uncapped, card abilities only.
+pub(crate) fn classify_victory_life_per_opponent_damage(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    if source_kind != CombatStatEffectSourceV1::Ability
+        || !has_victory_life_per_opponent_damage_shape(definition)
+    {
+        return None;
+    }
+    let value = definition.structured_input().value;
+    (definition.description() == format!("+{value} Life Per Opp. Damage")).then_some(value)
+}
+
+pub(crate) fn has_victory_life_per_opponent_damage_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                special: SpecialActionV1::ConvertOpponentDamageToLife,
+                ..POST_ROUND_SHAPE
+            },
+        )
 }
 
 /// Structural half of the Life-per-Damage boundary, over any previous-round condition and
@@ -1568,6 +1595,7 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_victory_opponent_pillz(definition, source_kind).is_some()
         || classify_victory_pillz_per_damage(definition, source_kind).is_some()
         || classify_victory_life_per_damage(definition, source_kind).is_some()
+        || classify_victory_life_per_opponent_damage(definition, source_kind).is_some()
     {
         return None;
     }
@@ -1616,6 +1644,9 @@ pub(crate) fn classify_combat_stat_effect(
         return Some(classified);
     }
     if let Some(classified) = classify_life_left_numeric(definition) {
+        return Some(classified);
+    }
+    if let Some(classified) = classify_pillz_numeric(definition, source_kind) {
         return Some(classified);
     }
     if let Some(classified) = classify_round_scaled_numeric(definition) {
@@ -2177,6 +2208,123 @@ fn classify_life_left_numeric(
         },
         CombatStatPredicateV1::Always,
     ))
+}
+
+/// `+N Atk Per Pillz Left` (and its `Unison :` form), `-N Opp Att. Per Pillz Left, Min M`
+/// and `+N Attack Per Pillz Lost`: scaled by the owner's Pillz at round start, before the
+/// bet, or by the Pillz spent since the match began.
+fn classify_pillz_numeric(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    let (multiplier, unison) = match (
+        input.is_pillz_linked,
+        input.is_lost_pillz_linked,
+        input.is_clanmates_count_linked,
+    ) {
+        (true, false, false) => (MagnitudeMultiplierV1::OwnerPillz, false),
+        (true, false, true) => (MagnitudeMultiplierV1::OwnerPillz, true),
+        (false, true, false) => (MagnitudeMultiplierV1::OwnerPillzLost, false),
+        _ => return None,
+    };
+    if !neutral_except_pillz_linked(input) {
+        return None;
+    }
+    if unison && source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    if input.special_action != SpecialActionV1::None || input.is_support || input.value == 0 {
+        return None;
+    }
+    let v = input.value;
+    let (side, operation, expected) = match (
+        multiplier,
+        input.side_affected,
+        input.attribute_action,
+        input.attribute_affected,
+    ) {
+        (
+            MagnitudeMultiplierV1::OwnerPillz,
+            AffectedSideV1::Player,
+            AttributeActionV1::Increase,
+            AttributeAffectedV1::Attack,
+        ) if input.value_min == 0 && input.value_max == 0 => (
+            AffectedSideV1::Player,
+            StatOperationV1::Increase,
+            if unison {
+                format!("Unison : +{v} Atk Per Pillz Left")
+            } else {
+                format!("+{v} Atk Per Pillz Left")
+            },
+        ),
+        (
+            MagnitudeMultiplierV1::OwnerPillz,
+            AffectedSideV1::Opponent,
+            AttributeActionV1::Decrease,
+            AttributeAffectedV1::Attack,
+        ) if !unison && input.value_max == 0 => (
+            AffectedSideV1::Opponent,
+            StatOperationV1::Decrease,
+            format!("-{v} Opp Att. Per Pillz Left, Min {}", input.value_min),
+        ),
+        (
+            MagnitudeMultiplierV1::OwnerPillzLost,
+            AffectedSideV1::Player,
+            AttributeActionV1::Increase,
+            AttributeAffectedV1::Attack,
+        ) if input.value_min == 0 && input.value_max == 0 => (
+            AffectedSideV1::Player,
+            StatOperationV1::Increase,
+            format!("+{v} Attack Per Pillz Lost"),
+        ),
+        _ => return None,
+    };
+    if definition.description() != expected {
+        return None;
+    }
+    Some((
+        SupportedEffectV1::ModifyCombatStat {
+            side,
+            stat: CombatStatV1::Attack,
+            operation,
+            value: v,
+            minimum: (operation == StatOperationV1::Decrease).then_some(input.value_min),
+            maximum: None,
+            multiplier,
+        },
+        if unison {
+            CombatStatPredicateV1::OwnerHandUnison
+        } else {
+            CombatStatPredicateV1::Always
+        },
+    ))
+}
+
+/// The Pillz-link gate: every flag neutral except exactly one of the two Pillz links, and
+/// the clan-mates link, which only the `Unison :` form may carry (checked by the caller).
+fn neutral_except_pillz_linked(input: &StructuredEffectV1) -> bool {
+    input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && (input.is_pillz_linked != input.is_lost_pillz_linked)
+        && !input.is_lost_life_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
 }
 
 fn neutral_except_life_linked(input: &StructuredEffectV1) -> bool {
@@ -2972,7 +3120,9 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | MagnitudeMultiplierV1::AntiSupport
         | MagnitudeMultiplierV1::OpponentStars
         | MagnitudeMultiplierV1::OpponentDamage
-        | MagnitudeMultiplierV1::OwnerLife => return false,
+        | MagnitudeMultiplierV1::OwnerLife
+        | MagnitudeMultiplierV1::OwnerPillz
+        | MagnitudeMultiplierV1::OwnerPillzLost => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -3102,6 +3252,8 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 MagnitudeMultiplierV1::AntiSupport => CombatStatMagnitudeV1::AntiSupport,
                 MagnitudeMultiplierV1::OpponentDamage => CombatStatMagnitudeV1::OpponentDamage,
                 MagnitudeMultiplierV1::OwnerLife => CombatStatMagnitudeV1::OwnerLife,
+                MagnitudeMultiplierV1::OwnerPillz => CombatStatMagnitudeV1::OwnerPillz,
+                MagnitudeMultiplierV1::OwnerPillzLost => CombatStatMagnitudeV1::OwnerPillzLost,
             },
         }),
         SupportedEffectV1::StopOpponentAbility => Some(CombatStatEffectV1::StopOpponentAbility),
@@ -3263,6 +3415,94 @@ mod tests {
     }
 
     #[test]
+    fn per_pillz_and_life_per_opposing_damage_are_admitted_by_exact_text() {
+        let registry = registry();
+        for (id, multiplier, predicate) in [
+            (
+                955,
+                MagnitudeMultiplierV1::OwnerPillz,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                1015,
+                MagnitudeMultiplierV1::OwnerPillz,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                1425,
+                MagnitudeMultiplierV1::OwnerPillz,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                4119,
+                MagnitudeMultiplierV1::OwnerPillz,
+                CombatStatPredicateV1::OwnerHandUnison,
+            ),
+            (
+                5175,
+                MagnitudeMultiplierV1::OwnerPillzLost,
+                CombatStatPredicateV1::Always,
+            ),
+            (
+                5305,
+                MagnitudeMultiplierV1::OwnerPillzLost,
+                CombatStatPredicateV1::Always,
+            ),
+        ] {
+            let classified = classify_combat_stat_effect(
+                registry.get(id).expect("registry definition"),
+                CombatStatEffectSourceV1::Ability,
+            );
+            assert!(
+                matches!(
+                    classified,
+                    Some((SupportedEffectV1::ModifyCombatStat { multiplier: actual, .. }, p))
+                        if actual == multiplier && p == predicate
+                ),
+                "definition {id}: {classified:?}",
+            );
+        }
+        let definition = registry.get(3779).unwrap();
+        assert_eq!(
+            classify_victory_life_per_opponent_damage(
+                definition,
+                CombatStatEffectSourceV1::Ability
+            ),
+            Some(1)
+        );
+        assert_eq!(
+            classify_victory_life_per_opponent_damage(definition, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        assert_eq!(
+            classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+            None
+        );
+        // The Pillz link without its text, and the text over the Life link, are refused.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("isPillzLinked", serde_json::json!(false)),
+            ("isLifeLinked", serde_json::json!(true)),
+            ("value", serde_json::json!(2)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["955"]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_combat_stat_effect(
+                    malformed.get(955).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "malformed {field} = {value}",
+            );
+        }
+    }
+
+    #[test]
     fn unison_numeric_is_admitted_as_a_whole_hand_gate() {
         let registry = registry();
         for id in [
@@ -3318,8 +3558,9 @@ mod tests {
             None
         );
         // `3953`, the Unison Damage Exchange, is the conditional stat-Copy grammar's since
-        // revision 50.
-        for id in [3839, 3973, 4015, 4033, 4119, 4695] {
+        // revision 50, and `4119`, the Unison Pillz-Left Attack, the Pillz magnitude's since
+        // revision 51.
+        for id in [3839, 3973, 4015, 4033, 4695] {
             assert_eq!(
                 classify_combat_stat_effect(
                     registry.get(id).unwrap(),

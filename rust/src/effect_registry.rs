@@ -251,6 +251,12 @@ pub enum MagnitudeMultiplierV1 {
     AntiSupport,
     /// `Per Life Left`. Scaled by the owner's own Life at the start of the round.
     OwnerLife,
+    /// `Per Pillz Left`. Scaled by the owner's own Pillz at the start of the round, before
+    /// this round's bet is paid.
+    OwnerPillz,
+    /// `Per Pillz Lost`. Scaled by the owner's match-start Pillz less their Pillz at the
+    /// start of the round, never below zero.
+    OwnerPillzLost,
 }
 
 /// Compact, string-free building blocks safe to copy into later round plans.
@@ -1368,7 +1374,10 @@ fn reviewed_stat_description(
         MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
         MagnitudeMultiplierV1::OpponentStars => "Equalizer: ",
         MagnitudeMultiplierV1::AntiSupport => "Brawl: ",
-        MagnitudeMultiplierV1::OpponentDamage | MagnitudeMultiplierV1::OwnerLife => return false,
+        MagnitudeMultiplierV1::OpponentDamage
+        | MagnitudeMultiplierV1::OwnerLife
+        | MagnitudeMultiplierV1::OwnerPillz
+        | MagnitudeMultiplierV1::OwnerPillzLost => return false,
     };
     let expected = match (side, operation) {
         (AffectedSideV1::Player, StatOperationV1::Increase) => {

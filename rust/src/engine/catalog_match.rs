@@ -15,11 +15,11 @@ use super::combat_stat_compiler::{
     classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
     classify_reanimate_life, classify_regen_life_on_victory,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
-    classify_victory_life_per_damage, classify_victory_opponent_life,
-    classify_victory_opponent_pillz, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
-    compact_effect, is_copy_opponent_source_description, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
+    classify_victory_opponent_life, classify_victory_opponent_pillz,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
+    classify_victory_pillz_per_damage, compact_effect, is_copy_opponent_source_description,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::CopiedSourceKindV1;
 use super::{
@@ -1585,6 +1585,39 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
                 definition.id(),
+            );
+        }
+        if classify_victory_life_per_opponent_damage(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let life_per_damage =
+                        classify_victory_life_per_opponent_damage(definition, source_kind)?;
+                    Some((
+                        CombatStatPostRoundEffectV1::GainLifePerOpponentFinalDamageOnVictory {
+                            life_per_damage,
+                        },
+                        CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory {
+                            life_per_damage,
+                        },
+                        CombatStatPredicateV1::Always,
+                    ))
+                },
             );
         }
         // And the Life conversion, whose predicate the printed prefix names.

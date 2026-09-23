@@ -62,6 +62,10 @@ pub enum DiagnosticMagnitudeV1 {
     AntiSupport,
     /// `Per Life Left`. Scaled by the owner's own Life at the start of the round.
     OwnerLife,
+    /// `Per Pillz Left`. The owner's Pillz at the start of the round, before the bet.
+    OwnerPillz,
+    /// `Per Pillz Lost`. The owner's match-start Pillz less their round-start Pillz.
+    OwnerPillzLost,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -170,6 +174,7 @@ pub enum InvalidDiagnosticPlanReasonV1 {
     /// evaluated here however a caller labels it.
     AntiSupportMagnitude,
     OwnerLifeMagnitude,
+    OwnerPillzMagnitude,
     RoundScaledMagnitude,
     ZeroMagnitude,
 }
@@ -490,6 +495,18 @@ fn validate_diagnostic_source_plan(
             InvalidDiagnosticPlanReasonV1::AntiSupportMagnitude,
         ));
     }
+    if matches!(
+        multiplier,
+        DiagnosticMagnitudeV1::OwnerPillz | DiagnosticMagnitudeV1::OwnerPillzLost
+    ) {
+        return Err(invalid_diagnostic_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidDiagnosticPlanReasonV1::OwnerPillzMagnitude,
+        ));
+    }
     if multiplier == DiagnosticMagnitudeV1::OwnerLife {
         return Err(invalid_diagnostic_execute(
             player,
@@ -614,6 +631,8 @@ fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {
             // This older projection has no opposing-hand context and admits no Brawl.
             anti_support_count: 0,
             owner_life: 0,
+            owner_pillz: 0,
+            owner_pillz_lost: 0,
             effect: executing_effect(plan.ability),
             post_round: None,
             support_count: 0,
@@ -621,6 +640,8 @@ fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {
         bonus: ResolutionSourcePlan {
             anti_support_count: 0,
             owner_life: 0,
+            owner_pillz: 0,
+            owner_pillz_lost: 0,
             effect: executing_effect(plan.bonus),
             post_round: None,
             support_count: plan.source_bonus_support_count,

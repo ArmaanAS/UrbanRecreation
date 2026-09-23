@@ -345,6 +345,11 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ),
     ("conditional stat Copy by grammar", &[1409, 4126]),
     ("Unison source Copy", &[3994, 4141, 4767, 5108]),
+    // The Pillz Left / Pillz Lost magnitudes and `+N Life Per Opp. Damage`, measured
+    // 2026-09-23.
+    ("Per Pillz Left", &[955, 1015, 1425, 4119]),
+    ("Per Pillz Lost", &[5175, 5305]),
+    ("Life per opposing Damage", &[3779]),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

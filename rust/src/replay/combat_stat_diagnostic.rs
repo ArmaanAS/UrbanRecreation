@@ -23,15 +23,16 @@ use crate::engine::combat_stat_compiler::{
     classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
     classify_reanimate_life, classify_regen_life_on_victory,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
-    classify_victory_life_per_damage, classify_victory_opponent_life,
-    classify_victory_opponent_pillz, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
-    compact_effect, has_both_players_life_reduction_shape, has_brawl_post_round_shape,
-    has_defeat_life_shape, has_defeat_opponent_pillz_shape, has_heal_life_on_victory_shape,
-    has_killshot_opponent_life_shape, has_poison_opponent_life_on_defeat_shape,
-    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
-    has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
-    has_victory_life_shape, has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
+    classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
+    classify_victory_opponent_life, classify_victory_opponent_pillz,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
+    classify_victory_pillz_per_damage, compact_effect, has_both_players_life_reduction_shape,
+    has_brawl_post_round_shape, has_defeat_life_shape, has_defeat_opponent_pillz_shape,
+    has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
+    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape,
+    has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
+    has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
     has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -922,6 +923,19 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some(life_per_damage) =
+        classify_victory_life_per_opponent_damage(definition, source_kind)
+    {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainLifePerOpponentFinalDamageOnVictory {
+                life_per_damage,
+            },
+            CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { life_per_damage },
+            CombatStatPredicateV1::Always,
+        ));
+    }
     if let Some((life_per_damage, maximum, predicate)) =
         classify_victory_life_per_damage(definition, source_kind)
     {
@@ -1144,6 +1158,10 @@ fn prepare_combat_stat_source(
     // The Pillz-per-Damage conversion is a closed grammar over one special action: any
     // record that converts Damage to Pillz, prints the text, or carries the complete shape
     // under another hand-slot prefix rejects when selected.
+    let unadmitted_victory_life_per_opponent_damage =
+        source.description.ends_with("Life Per Opp. Damage")
+            || definition.structured_input().special_action
+                == SpecialActionV1::ConvertOpponentDamageToLife;
     let unadmitted_victory_pillz_per_damage = source.description.ends_with("Pillz Per Damage")
         || definition.structured_input().special_action == SpecialActionV1::ConvertDamageToPillz
         || has_victory_pillz_per_damage_shape(definition);
@@ -1271,6 +1289,7 @@ fn prepare_combat_stat_source(
         || unadmitted_victory_opponent_pillz
         || unadmitted_defeat_opponent_pillz
         || unadmitted_victory_pillz_per_damage
+        || unadmitted_victory_life_per_opponent_damage
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz
@@ -1309,6 +1328,7 @@ fn prepare_combat_stat_source(
         || unadmitted_victory_opponent_pillz
         || unadmitted_defeat_opponent_pillz
         || unadmitted_victory_pillz_per_damage
+        || unadmitted_victory_life_per_opponent_damage
         || unadmitted_defeat_life
         || unadmitted_reanimate_life
         || unadmitted_argos_defeat_capped_pillz

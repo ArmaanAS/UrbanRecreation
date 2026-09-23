@@ -205,10 +205,14 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1092141, 2),
     (1092201, 3),
     (1060341, 1),
-    (1060510, 3),
+    // Four rounds since revision 51: Nolegs' `+2 Attack Per Pillz Lost` pays 2 x 12 in
+    // round 3.
+    (1060510, 4),
     (1089626, 1),
     (1090887, 3),
-    (1092578, 1),
+    // Four rounds since revision 51, whose `-1 Opp Att. Per Pillz Left, Min 15` meets Argos
+    // already below its Min in round 1 and leaves him alone.
+    (1092578, 4),
     // Four rounds since revision 46, whose Unison Damage +3 pays in round 1.
     (1092773, 4),
     (1092840, 3),
@@ -431,6 +435,14 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1009386, 2),
     (901613, 2),
     (1130977, 3),
+    // Revision 51 admits the `Per Pillz Left` and `Per Pillz Lost` Attack magnitudes and
+    // `+N Life Per Opp. Damage`. Pillz Left reads the owner's Pillz before the round's bet:
+    // El Divino Cr's `+1 Atk Per Pillz Left` adds 12 in 1065557/0 (after the bet it would be
+    // 11), and Pinscherite's Unison form adds 12 in 1088580/0. Malfass gains 5 Life for
+    // Callie's 5 Damage in 1078736/1.
+    (1065557, 4),
+    (1088580, 3),
+    (1078736, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
