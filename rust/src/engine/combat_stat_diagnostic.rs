@@ -139,6 +139,23 @@ pub enum CombatStatPostRoundEffectV1 {
         per_star: u16,
         minimum: u16,
     },
+    /// `Brawl: - N Opp. Life Min M`: the winner reduces the opposing player's Life by N per
+    /// anti-support count, never below `minimum`.
+    ReduceOpponentLifeOnVictoryPerAntiSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    /// `Brawl: -N Opp. Pillz, Min M`: the same reduction on the opposing player's Pillz.
+    ReduceOpponentPillzOnVictoryPerAntiSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    /// `Brawl: +N Pillz` and its `Max. M` form: the winner's own Pillz rise by N per
+    /// anti-support count, never past `maximum` when that is non-zero.
+    GainPillzOnVictoryPerAntiSupport {
+        per_count: u16,
+        maximum: u16,
+    },
     /// The two reviewed unconditional Victory opponent-Life reductions.
     ReduceOpponentLifeOnVictory {
         life: u16,
@@ -296,6 +313,23 @@ pub enum CombatStatEffectV1 {
     ReduceOpponentLifeOnVictoryPerOpponentStars {
         per_star: u16,
         minimum: u16,
+    },
+    /// Victory-only opponent-Life reduction whose magnitude is the printed amount times the
+    /// owner's anti-support count, bound at resolution like Equalizer's stars. Ability slot
+    /// only, unconditional.
+    ReduceOpponentLifeOnVictoryPerAntiSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    /// The same anti-support-scaled reduction on the opposing player's Pillz.
+    ReduceOpponentPillzOnVictoryPerAntiSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    /// The anti-support-scaled own Pillz gain, capped at `maximum` when that is non-zero.
+    GainPillzOnVictoryPerAntiSupport {
+        per_count: u16,
+        maximum: u16,
     },
     /// Unconditional Victory-only opponent-Life reduction with a fixed magnitude and
     /// lower bound, admitted solely for the two reviewed identities.
@@ -502,6 +536,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     EqualizerOpponentLifeIdentity,
     EqualizerOpponentLifeEffect,
     EqualizerOpponentLifePredicate,
+    BrawlPostRoundSource,
+    BrawlPostRoundMagnitude,
+    BrawlPostRoundPredicate,
     ReprisalStopOpponentAbilityCard,
     ReprisalStopOpponentAbilityEffect,
     ReprisalStopOpponentAbilityIdentity,
@@ -1656,6 +1693,41 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    // The post-round `Brawl:` grammars are card abilities only and unconditional; the
+    // magnitude is the printed amount per anti-support count, which must be positive.
+    if let CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport { per_count, .. }
+    | CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport { per_count, .. }
+    | CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { per_count, .. } = effect
+    {
+        if source != CombatStatEffectSourceV1::Ability {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::BrawlPostRoundSource,
+            ));
+        }
+        if per_count == 0 {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::BrawlPostRoundMagnitude,
+            ));
+        }
+        if predicate != CombatStatPredicateV1::Always {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::BrawlPostRoundPredicate,
+            ));
+        }
+        return Ok(());
+    }
     if let CombatStatEffectV1::ReduceOpponentPillzOnDefeat { pillz, .. } = effect {
         if source != CombatStatEffectSourceV1::Ability {
             return Err(invalid_combat_stat_execute(
@@ -2263,6 +2335,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
+        | CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
+        | CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnKillshot { .. }
         | CombatStatEffectV1::ReduceBothPlayersLife { .. }
@@ -2385,6 +2460,25 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
                     minimum,
                 },
             )
+        }
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport { per_count, minimum } => {
+            Some(
+                PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerAntiSupport {
+                    per_count,
+                    minimum,
+                },
+            )
+        }
+        CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport { per_count, minimum } => {
+            Some(
+                PostRoundSourceEffect::ReduceOpponentPillzOnVictoryPerAntiSupport {
+                    per_count,
+                    minimum,
+                },
+            )
+        }
+        CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { per_count, maximum } => {
+            Some(PostRoundSourceEffect::GainPillzOnVictoryPerAntiSupport { per_count, maximum })
         }
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentAbility

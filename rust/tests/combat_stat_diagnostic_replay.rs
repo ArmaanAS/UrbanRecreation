@@ -292,6 +292,28 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // where the target's own bet has already taken it to 0, so it distinguishes nothing.
     (1078999, 3),
     (1092515, 1),
+    // Revision 42 admits the post-round `Brawl:` grammars: a won round pays the printed
+    // amount once per distinct character in the opposing hand sharing the opposing selected
+    // card's clan, onto the opposing Life, the opposing Pillz or the owner's own Pillz. Every
+    // count in the corpus is 4. Fomalhaut Ld's `2893` takes 12 - 4 Damage - 4 to 4 in
+    // 1093451/1; Eeok Ld's `5650` takes 12 - 1 - 4 to 7 in 1058545/0 with its Min 3 not
+    // binding; Macey Rook's `4380` meets the Min 0 floor in 964213/3 (2 - 1 = 1, the Berzerk
+    // bonus leaves it alone at its Min 2, Brawl takes it to 0). Sirrena's capped `5822` and
+    // `5844` take 12 - 7 + 4 to exactly the Max of 9 in 1066739/0, 1091848/0 and 1092020/0,
+    // so the cap is reached but never binds below the uncapped sum. A loss pays nothing:
+    // Macey Rook in 1024524/2 and 1088716/2, Fomalhaut Ld in 1079263/0, and Newell's `5172`
+    // in 1078669/1, its only selection, so the opposing Pillz form has no paying round and
+    // rests on the revision-30 reduction arm it binds to.
+    (1093451, 3),
+    (1058545, 2),
+    (964213, 4),
+    (1066739, 1),
+    (1091848, 3),
+    (1092020, 4),
+    (1024524, 4),
+    (1088716, 4),
+    (1079263, 4),
+    (1078669, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

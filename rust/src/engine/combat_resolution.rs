@@ -540,7 +540,12 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 .then_some(selected_plans[PlayerId::P1].ability.post_round)
                 .flatten()
                 .map(|effect| {
-                    bind_post_round_effect(PlayerId::P1, effect, opponent_stars[PlayerId::P1])
+                    bind_post_round_effect(
+                        PlayerId::P1,
+                        effect,
+                        opponent_stars[PlayerId::P1],
+                        selected_plans[PlayerId::P1].ability.anti_support_count,
+                    )
                 })
                 .transpose()?,
             bonus: live[PlayerId::P1]
@@ -548,7 +553,12 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 .then_some(selected_plans[PlayerId::P1].bonus.post_round)
                 .flatten()
                 .map(|effect| {
-                    bind_post_round_effect(PlayerId::P1, effect, opponent_stars[PlayerId::P1])
+                    bind_post_round_effect(
+                        PlayerId::P1,
+                        effect,
+                        opponent_stars[PlayerId::P1],
+                        selected_plans[PlayerId::P1].bonus.anti_support_count,
+                    )
                 })
                 .transpose()?,
         },
@@ -558,7 +568,12 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 .then_some(selected_plans[PlayerId::P2].ability.post_round)
                 .flatten()
                 .map(|effect| {
-                    bind_post_round_effect(PlayerId::P2, effect, opponent_stars[PlayerId::P2])
+                    bind_post_round_effect(
+                        PlayerId::P2,
+                        effect,
+                        opponent_stars[PlayerId::P2],
+                        selected_plans[PlayerId::P2].ability.anti_support_count,
+                    )
                 })
                 .transpose()?,
             bonus: live[PlayerId::P2]
@@ -566,7 +581,12 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 .then_some(selected_plans[PlayerId::P2].bonus.post_round)
                 .flatten()
                 .map(|effect| {
-                    bind_post_round_effect(PlayerId::P2, effect, opponent_stars[PlayerId::P2])
+                    bind_post_round_effect(
+                        PlayerId::P2,
+                        effect,
+                        opponent_stars[PlayerId::P2],
+                        selected_plans[PlayerId::P2].bonus.anti_support_count,
+                    )
                 })
                 .transpose()?,
         },
@@ -585,9 +605,39 @@ fn bind_post_round_effect(
     player: PlayerId,
     effect: PostRoundSourceEffect,
     opponent_stars: u16,
+    anti_support_count: u16,
 ) -> Result<PostRoundEffect, CombatResolutionError> {
+    let per_anti_support = |per_count: u16| {
+        per_count
+            .checked_mul(anti_support_count)
+            .ok_or(CombatResolutionError {
+                player,
+                stage: CombatResolutionArithmeticStage::EffectMagnitude,
+            })
+    };
     match effect {
         PostRoundSourceEffect::Fixed(effect) => Ok(effect),
+        PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerAntiSupport { per_count, minimum } => {
+            Ok(PostRoundEffect::ReduceOpponentLifeOnVictory {
+                life: per_anti_support(per_count)?,
+                minimum,
+            })
+        }
+        PostRoundSourceEffect::ReduceOpponentPillzOnVictoryPerAntiSupport {
+            per_count,
+            minimum,
+        } => Ok(PostRoundEffect::ReduceOpponentPillzOnVictory {
+            pillz: per_anti_support(per_count)?,
+            minimum,
+        }),
+        PostRoundSourceEffect::GainPillzOnVictoryPerAntiSupport { per_count, maximum } => {
+            let pillz = per_anti_support(per_count)?;
+            Ok(if maximum == 0 {
+                PostRoundEffect::GainPillzOnVictory(pillz)
+            } else {
+                PostRoundEffect::GainPillzOnVictoryMax { pillz, maximum }
+            })
+        }
         PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerOpponentStars {
             per_star,
             minimum,

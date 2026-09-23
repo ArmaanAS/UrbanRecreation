@@ -6,7 +6,8 @@
 use super::CopiedSourceKindV1;
 use super::{
     CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatEffectSourceV1, CombatStatEffectV1,
-    CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPredicateV1,
+    CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPostRoundEffectV1,
+    CombatStatPredicateV1,
 };
 
 /// Every source-copying Copy grammar this projection admits, as the exact printed text it
@@ -73,7 +74,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 41;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 42;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1042,6 +1043,123 @@ pub(crate) fn equalizer_opponent_life_on_victory_identity_matches(
     ) && matches!(definition_id, 1415 | 4458)
 }
 
+/// What a post-round `Brawl:` grammar pays, before resolution binds the count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BrawlPostRoundEffectV1 {
+    ReduceOpponentLife {
+        per_count: u16,
+        minimum: u16,
+    },
+    ReduceOpponentPillz {
+        per_count: u16,
+        minimum: u16,
+    },
+    /// `maximum == 0` is the uncapped form.
+    GainPillz {
+        per_count: u16,
+        maximum: u16,
+    },
+}
+
+impl BrawlPostRoundEffectV1 {
+    /// The public and compact representations, which catalog and replay preparation must
+    /// build identically.
+    pub(crate) fn effects(self) -> (CombatStatPostRoundEffectV1, CombatStatEffectV1) {
+        match self {
+            Self::ReduceOpponentLife { per_count, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+                    per_count,
+                    minimum,
+                },
+                CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+                    per_count,
+                    minimum,
+                },
+            ),
+            Self::ReduceOpponentPillz { per_count, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport {
+                    per_count,
+                    minimum,
+                },
+                CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport {
+                    per_count,
+                    minimum,
+                },
+            ),
+            Self::GainPillz { per_count, maximum } => (
+                CombatStatPostRoundEffectV1::GainPillzOnVictoryPerAntiSupport {
+                    per_count,
+                    maximum,
+                },
+                CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { per_count, maximum },
+            ),
+        }
+    }
+}
+
+/// Recognize the post-round `Brawl:` grammars: a won round pays the printed amount once per
+/// distinct character in the opposing hand sharing the opposing selected card's effective
+/// clan - the anti-support count combat-stat Brawl already reads - onto the opposing Life,
+/// the opposing Pillz or the owner's own Pillz. Each is the plain Victory grammar of that
+/// resource with the one per-X flag every other post-round shape requires false, so the
+/// count is bound at resolution the way Equalizer's stars are and the bound effect is paid by
+/// the arm that already pays the plain grammar. Exact printed text rebuilt from the record's
+/// own numbers, complete structured shape, card abilities only: no clan bonus prints one.
+pub(crate) fn classify_brawl_post_round(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<BrawlPostRoundEffectV1> {
+    let input = definition.structured_input();
+    if source_kind != CombatStatEffectSourceV1::Ability || input.value == 0 {
+        return None;
+    }
+    let (effect, text) = if brawl_opponent_life_shape_matches(input) {
+        (
+            BrawlPostRoundEffectV1::ReduceOpponentLife {
+                per_count: input.value,
+                minimum: input.value_min,
+            },
+            format!("Brawl: - {} Opp. Life Min {}", input.value, input.value_min),
+        )
+    } else if brawl_opponent_pillz_shape_matches(input) {
+        (
+            BrawlPostRoundEffectV1::ReduceOpponentPillz {
+                per_count: input.value,
+                minimum: input.value_min,
+            },
+            format!(
+                "Brawl: -{} Opp. Pillz, Min {}",
+                input.value, input.value_min
+            ),
+        )
+    } else if brawl_own_pillz_shape_matches(input) {
+        (
+            BrawlPostRoundEffectV1::GainPillz {
+                per_count: input.value,
+                maximum: input.value_max,
+            },
+            if input.value_max == 0 {
+                format!("Brawl: +{} Pillz", input.value)
+            } else {
+                format!("Brawl: +{} Pillz, Max. {}", input.value, input.value_max)
+            },
+        )
+    } else {
+        return None;
+    };
+    (definition.description() == text).then_some(effect)
+}
+
+/// Structural half of the post-round Brawl boundary, so replay preparation can reject a
+/// complete shape under malformed text instead of silently disabling it.
+pub(crate) fn has_brawl_post_round_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && (brawl_opponent_life_shape_matches(input)
+            || brawl_opponent_pillz_shape_matches(input)
+            || brawl_own_pillz_shape_matches(input))
+}
+
 /// Strictly recognize Argos' printed Defeat Pillz effect. Its cap is applied after a
 /// live clan bonus in the shared END phase, so it requires a distinct typed path.
 pub(crate) fn classify_argos_defeat_capped_pillz(
@@ -1283,6 +1401,12 @@ pub(crate) fn classify_combat_stat_effect(
         return None;
     }
     if classify_equalizer_opponent_life_on_victory(definition, source_kind).is_some() {
+        return None;
+    }
+    // The post-round Brawl grammars bind their count on the same channel as Equalizer's.
+    // `classify_brawl_numeric` already refuses a Life or Pillz record, so this is the
+    // convention every post-round grammar keeps rather than a live guard.
+    if classify_brawl_post_round(definition, source_kind).is_some() {
         return None;
     }
     if classify_reprisal_stop_opponent_ability(definition, source_kind) {
@@ -1724,6 +1848,10 @@ pub(crate) struct PostRoundShapeV1 {
     pub(crate) action: AttributeActionV1,
     pub(crate) special: SpecialActionV1,
     pub(crate) opponent_stars_linked: bool,
+    /// The Brawl magnitude. Like the stars link it is a per-X flag every other grammar
+    /// requires false, so a grammar that does not name it can never admit an anti-support
+    /// record.
+    pub(crate) anti_support: bool,
 }
 
 /// The one unconditional slot: no previous-round requirement and no hand-slot requirement.
@@ -1745,6 +1873,7 @@ const POST_ROUND_SHAPE: PostRoundShapeV1 = PostRoundShapeV1 {
     action: AttributeActionV1::Increase,
     special: SpecialActionV1::None,
     opponent_stars_linked: false,
+    anti_support: false,
 };
 
 /// True when `input` is exactly the record `shape` describes. The fields the shape does not
@@ -1772,7 +1901,7 @@ fn shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
         && input.bet_pillz_link == BetPillzLinkV1::No
         && !input.is_inverted
         && !input.is_support
-        && !input.is_anti_support
+        && input.is_anti_support == shape.anti_support
         && !input.is_overdrive
         && !input.is_divide
         && !input.is_life_linked
@@ -1991,6 +2120,45 @@ fn equalizer_opponent_life_on_victory_shape_matches(input: &StructuredEffectV1) 
             // The magnitude is the opposing card's stars, which is the one place an
             // admitted post-round grammar reads a per-X flag.
             opponent_stars_linked: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+fn brawl_opponent_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            side: AffectedSideV1::Opponent,
+            action: AttributeActionV1::Decrease,
+            anti_support: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+fn brawl_opponent_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            side: AffectedSideV1::Opponent,
+            attribute: AttributeAffectedV1::Pillz,
+            action: AttributeActionV1::Decrease,
+            anti_support: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+fn brawl_own_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_max: ShapeFieldV1::Read,
+            attribute: AttributeAffectedV1::Pillz,
+            anti_support: true,
             ..POST_ROUND_SHAPE
         },
     )
@@ -2460,6 +2628,160 @@ mod tests {
     }
 
     #[test]
+    fn post_round_brawl_is_admitted_by_exact_text_and_complete_shape() {
+        let registry = registry();
+        for (id, expected) in [
+            (
+                2893,
+                BrawlPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 0,
+                },
+            ),
+            (
+                3551,
+                BrawlPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 0,
+                },
+            ),
+            (
+                4380,
+                BrawlPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 0,
+                },
+            ),
+            (
+                4381,
+                BrawlPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 0,
+                },
+            ),
+            (
+                5457,
+                BrawlPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 0,
+                },
+            ),
+            (
+                5650,
+                BrawlPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 3,
+                },
+            ),
+            (
+                5172,
+                BrawlPostRoundEffectV1::ReduceOpponentPillz {
+                    per_count: 1,
+                    minimum: 1,
+                },
+            ),
+            (
+                4583,
+                BrawlPostRoundEffectV1::GainPillz {
+                    per_count: 1,
+                    maximum: 0,
+                },
+            ),
+            (
+                5822,
+                BrawlPostRoundEffectV1::GainPillz {
+                    per_count: 1,
+                    maximum: 9,
+                },
+            ),
+            (
+                5844,
+                BrawlPostRoundEffectV1::GainPillz {
+                    per_count: 1,
+                    maximum: 9,
+                },
+            ),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_brawl_post_round(definition, CombatStatEffectSourceV1::Ability),
+                Some(expected),
+                "definition {id}",
+            );
+            assert!(
+                has_brawl_post_round_shape(definition),
+                "definition {id} shape"
+            );
+            // No clan bonus prints one, so the Bonus slot is a hazard, not a source.
+            assert_eq!(
+                classify_brawl_post_round(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} as a bonus",
+            );
+            // Post-round work never doubles as a combat-stat modifier.
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id} must stay out of the combat-stat grammars",
+            );
+        }
+
+        // The plain Victory grammars never admit an anti-support record: the per-X flag is
+        // part of every post-round shape, not a field they ignore.
+        for id in [2893, 5172, 4583, 5822] {
+            let definition = registry.get(id).unwrap();
+            assert!(!has_victory_opponent_life_shape(definition), "{id}");
+            assert!(!has_victory_opponent_pillz_shape(definition), "{id}");
+            assert!(!has_victory_pillz_shape(definition), "{id}");
+        }
+        // The combat-stat and clan-gated Brawls are not post-round records.
+        for id in [1488, 1490, 5519, 3666, 3667] {
+            let definition = registry.get(id).unwrap();
+            assert!(!has_brawl_post_round_shape(definition), "{id}");
+        }
+
+        // Text and structure must corroborate. A record whose printed numbers disagree with
+        // its own, or which differs in any structured field, is refused.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("2893", "value", serde_json::json!(2)),
+            ("5650", "valueMin", serde_json::json!(2)),
+            ("5822", "valueMax", serde_json::json!(11)),
+            ("4583", "valueMax", serde_json::json!(9)),
+            ("5172", "valueMin", serde_json::json!(0)),
+            ("2893", "isAntiSupport", serde_json::json!(false)),
+            ("2893", "currentRoundRequirement", serde_json::json!("lose")),
+            ("2893", "positionRequirement", serde_json::json!("attacker")),
+            ("5822", "previousRoundRequirement", serde_json::json!("win")),
+            ("5172", "isPermanent", serde_json::json!(true)),
+            ("4583", "sideAffected", serde_json::json!("opponent")),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_brawl_post_round(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "malformed {id} {field} = {value}",
+            );
+        }
+        // The complete shape under other text is a hazard for replay, not a source.
+        let mut retexted = source.clone();
+        retexted["2893"]["description"] = serde_json::json!("Brawl: -1 Opp. Life Min 0");
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        let definition = retexted.get(2893).unwrap();
+        assert_eq!(
+            classify_brawl_post_round(definition, CombatStatEffectSourceV1::Ability),
+            None
+        );
+        assert!(has_brawl_post_round_shape(definition));
+    }
+
+    #[test]
     fn brawl_is_admitted_by_grammar_across_every_combat_stat_form() {
         let registry = registry();
 
@@ -2492,8 +2814,7 @@ mod tests {
         }
 
         // The clan-gated Brawls carry a condition this grammar does not model, and the
-        // Life and Pillz Brawls are post-round channels rather than combat stats. All of
-        // them keep their existing records.
+        // Life and Pillz Brawls are the post-round Brawl grammars rather than combat stats.
         for id in [3666, 3667, 2893, 5650, 4583, 5172, 5822, 5844] {
             let definition = registry.get(id).expect("registry definition");
             assert_eq!(

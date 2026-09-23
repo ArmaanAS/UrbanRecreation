@@ -1667,6 +1667,53 @@ latches, and the Min floor, are pinned by an engine test.
 text arm and classifier - note the space before its colon, which `Defeat: Poison` does not
 print. It measures 0 on its own and was left for a later slice rather than bundled here.
 
+Semantic revision 42 admits the post-round `Brawl:` grammars - `Brawl: - 1 Opp. Life Min M`
+(`2893`, `3551`, `4380`, `4381`, `5457`, `5650`), `Brawl: +1 Pillz` (`4583`) and its `Max. 9`
+form (`5822`, `5844`), and `Brawl: -1 Opp. Pillz, Min 1` (`5172`). A won round pays the
+printed amount once per distinct character in the opposing hand sharing the opposing
+selected card's effective clan, which is the anti-support count revision 40 introduced for
+the combat-stat forms. It measured 4 (3 from the Life line, 1 from the Pillz line) and
+unlocked exactly 4 - `964213`, `1024524`, `1088716` and `1092020` - taking eligibility from
+93 to 97. The same measurement showed the family pairs super-additively with its neighbours:
+with Power Exchange it reads 7, not 6, and with the full Oculus gate 8, not 7, because some
+draws are blocked by one member of each.
+
+The price was the Equalizer route with a different multiplier, not a new channel. The count
+was already on `ResolutionSourcePlan` from revision 40, one call short of the bind stage:
+`bind_post_round_effect` gained an `anti_support_count` parameter, and each Brawl effect
+binds to the fixed arm that already pays its plain grammar - the Victory opponent-Life
+reduction, the Victory opposing Pillz reduction, the Victory Pillz gain. The only new engine
+arithmetic is `GainPillzOnVictoryMax`, Argos' cap on the winner-only gain: a value already at
+or above Max is left alone and otherwise clamped once, after the multiplied amount, which is
+the TypeScript `BasicModifier.mod` rule. On the compiler side `PostRoundShapeV1` gained an
+`anti_support` field beside `opponent_stars_linked`, so every existing shape still requires
+the flag false and none of them can admit an anti-support record; the classifier rebuilds
+the printed text from the record's own numbers, card abilities only.
+
+Evidence is good for the Life half and thinner for the Pillz half. Every count in the corpus
+is 4. Fomalhaut Ld's `2893` takes 12 - 4 Damage - 4 to 4 in 1093451/1, Eeok Ld's `5650`
+takes 12 - 1 - 4 to 7 in 1058545/0 with Min 3 not binding, and Macey Rook's `4380` meets
+the Min 0 floor three times, most usefully in 876752/1 where 8 - 3 = 5, the Berzerk bonus
+takes it to 3 and Brawl to 0, which also pins bonus-before-ability (the other order leaves
+1). Sirrena's capped gain lands exactly on its Max of 9 in 1066739/0, 1091848/0 and
+1092020/0 (12 - 7 + 4), so the cap is reached but never binds below the uncapped sum. Newell's
+opposing Pillz form is selected once, in 1078669/1, and loses. So the binding cap, Min 3
+binding, the opposing Pillz reduction paying, and counts other than 4 are pinned by engine
+tests, on the revision 36/39 basis: every piece composed here - the count, the Min-clamped
+reductions, Argos' cap arithmetic - is already server-pinned on its own. The gate grows from
+318 to 349 rounds with 1093451, 1058545, 964213, 1066739, 1091848, 1092020, 1024524,
+1088716, 1079263 and 1078669.
+
+Six printed levels stay fail-closed because their catalog ids own no registry definition:
+Fomalhaut Ld L1/L2 (`5529`, `5456`), Newell L3 (`1504`), Sirrena L3's `Max. 11` (`5824`),
+and the level-one `Min 5` texts of Buga Baga Ld and Eeok Ld (`5506`, `5509`), which are not
+in the registry at all. `3666`/`3667` are clan-gated combat-stat Brawls and are not this
+family. The replay boundary gains an `unadmitted_brawl_post_round` clause, so a `Brawl:`
+text over a Life or Pillz record, or the complete shape under other text, rejects when
+selected. The Xantiax clause was found missing from the compact `RejectIfSelected` list
+while doing this - a malformed both-sides record would have become an inert `Disabled`
+source rather than a hazard - and is added there too; no corpus source changed disposition.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

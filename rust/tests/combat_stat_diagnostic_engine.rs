@@ -5052,3 +5052,256 @@ fn defeat_poison_latches_on_a_loss_and_repeats_from_the_next_round() {
         .unwrap();
     assert_eq!(report.players[PlayerId::P2].life, 3);
 }
+
+/// P1 holds a post-round `Brawl:` source in slot 0; every other source is absent, both hands
+/// are 6/3 and each card starts in its own clan. `opposing_clan_mates` of P2's four cards
+/// then share the clan of P2's slot 0, which is the card every round below selects, so the
+/// anti-support count is `opposing_clan_mates.max(1)`.
+fn brawl_post_round_spec(
+    effect: CombatStatEffectV1,
+    opposing_clan_mates: usize,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(2893, CombatStatPredicateV1::Always, effect);
+    for slot in 0..opposing_clan_mates {
+        cards[PlayerId::P2][slot].effective_clan_id = 900;
+    }
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+const BRAWL_OPPONENT_LIFE: CombatStatEffectV1 =
+    CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+        per_count: 1,
+        minimum: 3,
+    };
+
+/// The corpus pins the post-round Brawl reduction at a count of 4 only - 1093451/1,
+/// 1058545/0, and the Min 0 floor in 964213/3 - so the counts of 1 and 2, the Min 3 floor
+/// binding, a stopped source and exact make/unmake are pinned here.
+#[test]
+fn brawl_opponent_life_scales_by_the_count_clamps_once_and_unmakes() {
+    for (mates, life) in [(1, 16), (2, 15), (4, 13)] {
+        let spec = brawl_post_round_spec(BRAWL_OPPONENT_LIFE, mates);
+        let mut diag = game(spec.base_rules, spec.cards);
+        let start = diag.position().clone();
+        let start_hash = position_hash(&start);
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        // Three combat Damage, then the count.
+        assert_eq!(report.players[PlayerId::P2].life, life);
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+        assert_eq!(position_hash(diag.position()), start_hash);
+    }
+
+    // The clamp is applied once, after multiplying: 8 - 3 = 5, then - 4 stops at 3.
+    let mut spec = brawl_post_round_spec(BRAWL_OPPONENT_LIFE, 4);
+    spec.base_rules.players[PlayerId::P2].initial_life = 8;
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 3);
+
+    // A target the combat Damage already took to or below the Min is left alone.
+    let mut spec = brawl_post_round_spec(BRAWL_OPPONENT_LIFE, 4);
+    spec.base_rules.players[PlayerId::P2].initial_life = 5;
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 2);
+
+    // A loss pays nothing, as Macey Rook in 1024524/2.
+    let spec = brawl_post_round_spec(BRAWL_OPPONENT_LIFE, 4);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 20);
+
+    // A stopped source pays nothing: only the combat Damage lands.
+    let mut spec = brawl_post_round_spec(BRAWL_OPPONENT_LIFE, 4);
+    spec.cards[PlayerId::P2][0].ability = execute(
+        4437,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+
+    // An overflowing magnitude is refused atomically rather than wrapped.
+    let spec = brawl_post_round_spec(
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+            per_count: u16::MAX,
+            minimum: 0,
+        },
+        2,
+    );
+    let mut diag = game(spec.base_rules, spec.cards);
+    let before = diag.position().clone();
+    assert!(matches!(
+        diag.make(input(PlayerId::P1, (0, 5, false), (0, 0, false))),
+        Err(CombatStatDiagnosticErrorV1::ArithmeticOverflow {
+            player: PlayerId::P1,
+            ..
+        })
+    ));
+    assert_eq!(diag.position(), &before);
+}
+
+/// Sirrena's capped gain reaches exactly its Max of 9 three times in the corpus (1066739/0,
+/// 1091848/0, 1092020/0: 12 - 7 + 4) but never binds below the uncapped sum, and the
+/// uncapped `4583` pays once (1130527/0). The binding cap, an owner already at or above it,
+/// and the other counts are pinned here.
+#[test]
+fn brawl_own_pillz_scales_by_the_count_and_respects_its_cap() {
+    let capped = CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport {
+        per_count: 1,
+        maximum: 9,
+    };
+    let uncapped = CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport {
+        per_count: 1,
+        maximum: 0,
+    };
+    // (effect, count, starting Pillz, bet, final Pillz)
+    for (effect, mates, pillz, bet, expected) in [
+        (uncapped, 1, 20, 5, 16),
+        (uncapped, 4, 20, 5, 19),
+        (uncapped, 4, 12, 6, 10),
+        // The corpus's case, landing exactly on the Max.
+        (capped, 4, 12, 7, 9),
+        // The cap binding: 12 - 5 + 4 would be 11.
+        (capped, 4, 12, 5, 9),
+        (capped, 2, 12, 7, 7),
+        // An owner still at or above the Max after its bet gains nothing and is not lowered.
+        (capped, 4, 12, 2, 10),
+        (capped, 4, 12, 3, 9),
+    ] {
+        let mut spec = brawl_post_round_spec(effect, mates);
+        spec.base_rules.players[PlayerId::P1].initial_pillz = pillz;
+        let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, bet, false), (0, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(
+            report.players[PlayerId::P1].pillz,
+            expected,
+            "{effect:?} x{mates} from {pillz} betting {bet}"
+        );
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+    }
+
+    // A loss gains nothing.
+    let spec = brawl_post_round_spec(capped, 4);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 20);
+}
+
+/// Newell's `-1 Opp. Pillz, Min 1` is selected once in the corpus and loses (1078669/1), so
+/// the paying arithmetic rests on the revision-30 reduction arm it binds to; it is pinned
+/// here at each count, onto and across the floor, and at the floor.
+#[test]
+fn brawl_opponent_pillz_scales_by_the_count_and_clamps_at_its_floor() {
+    let effect = CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport {
+        per_count: 1,
+        minimum: 1,
+    };
+    // (count, opposing Pillz, final opposing Pillz), the target betting nothing.
+    for (mates, pillz, expected) in [(1, 20, 19), (4, 20, 16), (4, 5, 1), (4, 3, 1), (4, 1, 1)] {
+        let mut spec = brawl_post_round_spec(effect, mates);
+        spec.base_rules.players[PlayerId::P2].initial_pillz = pillz;
+        let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P2].pillz, expected);
+    }
+
+    let spec = brawl_post_round_spec(effect, 4);
+    let mut diag = game(spec.base_rules, spec.cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 15);
+}
+
+#[test]
+fn brawl_post_round_plan_is_ability_only_positive_and_unconditional() {
+    for effect in [
+        BRAWL_OPPONENT_LIFE,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport {
+            per_count: 1,
+            minimum: 1,
+        },
+        CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport {
+            per_count: 1,
+            maximum: 9,
+        },
+    ] {
+        let mut bonus = brawl_post_round_spec(effect, 4);
+        bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+        bonus.cards[PlayerId::P1][0].bonus = execute(2893, CombatStatPredicateV1::Always, effect);
+        bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(bonus),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::BrawlPostRoundSource,
+                ..
+            })
+        ));
+
+        let mut conditional = brawl_post_round_spec(effect, 4);
+        conditional.cards[PlayerId::P1][0].ability =
+            execute(2893, CombatStatPredicateV1::OwnerMovesFirst, effect);
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(conditional),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::BrawlPostRoundPredicate,
+                ..
+            })
+        ));
+    }
+    for zero in [
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+            per_count: 0,
+            minimum: 0,
+        },
+        CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport {
+            per_count: 0,
+            minimum: 1,
+        },
+        CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport {
+            per_count: 0,
+            maximum: 0,
+        },
+    ] {
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(brawl_post_round_spec(zero, 4)),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::BrawlPostRoundMagnitude,
+                ..
+            })
+        ));
+    }
+}

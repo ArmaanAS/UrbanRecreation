@@ -248,6 +248,18 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             5524, 5527, 5759,
         ],
     ),
+    // The post-round `Brawl:` grammars, measured 2026-09-23: the Victory opponent-Life
+    // reduction, the Victory Pillz gain capped or not, and the Victory opposing Pillz
+    // reduction, each multiplied by the anti-support count.
+    (
+        "post-round Brawl opponent Life",
+        &[2893, 3551, 4380, 4381, 5457, 5650],
+    ),
+    ("post-round Brawl Pillz", &[4583, 5172, 5822, 5844]),
+    (
+        "every post-round Brawl grammar",
+        &[2893, 3551, 4380, 4381, 4583, 5172, 5457, 5650, 5822, 5844],
+    ),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

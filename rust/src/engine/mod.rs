@@ -437,7 +437,27 @@ pub(super) struct PostRoundPlan {
 #[derive(Clone, Copy)]
 pub(super) enum PostRoundSourceEffect {
     Fixed(PostRoundEffect),
-    ReduceOpponentLifeOnVictoryPerOpponentStars { per_star: u16, minimum: u16 },
+    ReduceOpponentLifeOnVictoryPerOpponentStars {
+        per_star: u16,
+        minimum: u16,
+    },
+    /// The post-round `Brawl:` grammars. Each is an ordinary Victory effect whose printed
+    /// amount is multiplied by the owner's anti-support count - the distinct characters in
+    /// the opposing hand sharing the opposing selected card's effective clan - and binds to
+    /// the fixed arm that already pays it. The clamp is applied once, after multiplying.
+    ReduceOpponentLifeOnVictoryPerAntiSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    ReduceOpponentPillzOnVictoryPerAntiSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    /// `maximum == 0` is the uncapped `Brawl: +N Pillz`.
+    GainPillzOnVictoryPerAntiSupport {
+        per_count: u16,
+        maximum: u16,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -452,6 +472,12 @@ pub(super) enum PostRoundEffect {
     GainLifeOnVictory(u16),
     /// Plain `+N Pillz`: the round winner's own Pillz rise by the printed amount.
     GainPillzOnVictory(u16),
+    /// The capped own gain `Brawl: +N Pillz, Max. M` binds to: the winner's own Pillz rise by
+    /// `pillz`, never past `maximum`, and an owner already at or above it gains nothing.
+    GainPillzOnVictoryMax {
+        pillz: u16,
+        maximum: u16,
+    },
     /// Plain `-N Opp Pillz. Min M`: the round winner takes `pillz` from the opposing
     /// player's remaining Pillz, never below `minimum`.
     ReduceOpponentPillzOnVictory {
@@ -705,6 +731,21 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainPillzOnVictory(_) => {}
+                    // The capped form is the same living-winner gain with Argos' cap
+                    // arithmetic: the TypeScript modifier leaves a value already at or above
+                    // Max alone and otherwise clamps once, after the multiplied amount.
+                    PostRoundEffect::GainPillzOnVictoryMax { pillz, maximum }
+                        if owner == winner && position.players[owner].life > 0 =>
+                    {
+                        let current = position.players[owner].pillz;
+                        if current < maximum {
+                            position.players[owner].pillz = current
+                                .checked_add(pillz)
+                                .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?
+                                .min(maximum);
+                        }
+                    }
+                    PostRoundEffect::GainPillzOnVictoryMax { .. } => {}
                     // The opposing reduction is Victory-only and reads the target's Pillz
                     // after both bets have been paid, which is where the TypeScript
                     // reference applies END modifiers. A target already at or below Min is

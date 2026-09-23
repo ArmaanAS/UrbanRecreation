@@ -15,18 +15,18 @@ use crate::effect_registry::{
 };
 use crate::engine::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_both_players_life_reduction, classify_combat_stat_effect, classify_defeat_life,
-    classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_regen_life_on_victory,
-    classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_both_players_life_reduction, classify_brawl_post_round, classify_combat_stat_effect,
+    classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_heal_life_on_victory, classify_killshot_opponent_life,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
-    compact_effect, has_both_players_life_reduction_shape, has_defeat_life_shape,
-    has_defeat_opponent_pillz_shape, has_heal_life_on_victory_shape,
+    compact_effect, has_both_players_life_reduction_shape, has_brawl_post_round_shape,
+    has_defeat_life_shape, has_defeat_opponent_pillz_shape, has_heal_life_on_victory_shape,
     has_killshot_opponent_life_shape, has_poison_opponent_life_on_defeat_shape,
     has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
     has_regen_life_on_victory_shape, has_toxin_opponent_life_on_victory_shape,
@@ -831,6 +831,16 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some(brawl) = classify_brawl_post_round(definition, source_kind) {
+        let (post_round_effect, compact_effect) = brawl.effects();
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            CombatStatPredicateV1::Always,
+        ));
+    }
     if let Some((pillz, minimum)) = classify_defeat_opponent_pillz(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -1054,18 +1064,19 @@ fn prepare_combat_stat_source(
     // text over a wrong structure or slot, or the complete reviewed structure under other
     // text, rejects when selected. Its `Confidence:` form joined the grammar in revision 36
     // and takes the boundary with it, so `Confidence: +N Pillz` over a wrong structure is a
-    // hazard too. The other prefixed forms (`Stop:`, `Growth:`, `Courage:`, `Brawl:`,
-    // `Killshot:`, `Perfect:`, `Equalizer:`, `Defeat:`, `Revenge:`), the capped `+3 Pillz
-    // Max. 9` and `Support: + 1 Pillz` differ structurally and keep their
-    // visible-but-disabled records.
+    // hazard too. The other prefixed forms (`Stop:`, `Growth:`, `Courage:`, `Killshot:`,
+    // `Perfect:`, `Equalizer:`, `Defeat:`, `Revenge:`), the capped `+3 Pillz Max. 9` and
+    // `Support: + 1 Pillz` differ structurally and keep their visible-but-disabled records;
+    // `Brawl:` has its own post-round grammar and boundary below.
     let unadmitted_victory_pillz = ((source.description.starts_with('+')
         || source.description.starts_with("Confidence: +"))
         && source.description.ends_with(" Pillz")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_victory_pillz_shape(definition);
-    // The opposing reduction has the same two-sided boundary. `Stop:`, `Growth:`, `Brawl:`,
+    // The opposing reduction has the same two-sided boundary. `Stop:`, `Growth:`,
     // `Bet > N Pillz:` and clan-gated forms differ structurally and stay
-    // visible-but-disabled; the dotted `Opp. Pillz` compounds are other grammars entirely.
+    // visible-but-disabled, `Brawl:` is its own grammar below, and the dotted `Opp. Pillz`
+    // compounds are other grammars entirely.
     let unadmitted_victory_opponent_pillz = (source.description.starts_with('-')
         && source.description.contains("Opp Pillz")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
@@ -1142,6 +1153,18 @@ fn prepare_combat_stat_source(
     // disabled no-op.
     let unadmitted_both_players_life_reduction = source.description.starts_with("Xantiax")
         || has_both_players_life_reduction_shape(definition);
+    // The post-round Brawl grammars have the same two-sided boundary: a `Brawl:` text over a
+    // resource it could pay - a wrong slot, a wrong structure, numbers the text disagrees
+    // with - or the complete anti-support shape under other text rejects when selected.
+    // The combat-stat `Brawl:` forms name Power, Damage or Attack and are not reached.
+    let unadmitted_brawl_post_round = (source.description.starts_with("Brawl: ")
+        && matches!(
+            input.attribute_affected,
+            AttributeAffectedV1::Life
+                | AttributeAffectedV1::Pillz
+                | AttributeAffectedV1::LifeAndPillz
+        ))
+        || has_brawl_post_round_shape(definition);
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
@@ -1188,6 +1211,7 @@ fn prepare_combat_stat_source(
         || unadmitted_killshot_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
+        || unadmitted_brawl_post_round
         || unadmitted_heal_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
@@ -1223,6 +1247,8 @@ fn prepare_combat_stat_source(
         || unadmitted_victory_opponent_life
         || unadmitted_killshot_opponent_life
         || unadmitted_komboka_victory_pillz_and_life
+        || unadmitted_both_players_life_reduction
+        || unadmitted_brawl_post_round
         || unadmitted_heal_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {

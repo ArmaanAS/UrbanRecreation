@@ -3767,3 +3767,138 @@ fn strict_catalog_match_admits_the_reviewed_conditional_victory_opponent_life_ca
         );
     }
 }
+
+#[test]
+fn strict_catalog_match_prepares_post_round_brawl_from_the_printed_ability() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let hand = |key| {
+        [
+            key,
+            CardKey::new(123, 1),
+            CardKey::new(124, 1),
+            CardKey::new(138, 1),
+        ]
+    };
+
+    // Every printed level with a registry definition executes with its own numbers, from
+    // the Ability slot, on the channel its resource names.
+    for (key, catalog_id, effect) in [
+        (
+            CardKey::new(1582, 4),
+            2893,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+                per_count: 1,
+                minimum: 0,
+            },
+        ),
+        (
+            CardKey::new(1582, 3),
+            5457,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+                per_count: 1,
+                minimum: 0,
+            },
+        ),
+        (
+            CardKey::new(2530, 2),
+            4380,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+                per_count: 1,
+                minimum: 0,
+            },
+        ),
+        (
+            CardKey::new(2027, 2),
+            5650,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+                per_count: 1,
+                minimum: 3,
+            },
+        ),
+        (
+            CardKey::new(1679, 2),
+            5172,
+            CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport {
+                per_count: 1,
+                minimum: 1,
+            },
+        ),
+        (
+            CardKey::new(2563, 4),
+            4583,
+            CombatStatPostRoundEffectV1::GainPillzOnVictoryPerAntiSupport {
+                per_count: 1,
+                maximum: 0,
+            },
+        ),
+        (
+            CardKey::new(2563, 1),
+            5822,
+            CombatStatPostRoundEffectV1::GainPillzOnVictoryPerAntiSupport {
+                per_count: 1,
+                maximum: 9,
+            },
+        ),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(hand(key), opponent, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect: prepared_effect,
+            predicate,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as post-round Brawl")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id), "{key:?}");
+        assert!(identity.registry_alias_ids.contains(&catalog_id), "{key:?}");
+        assert_eq!(*prepared_effect, effect, "{key:?}");
+        assert_eq!(*predicate, CombatStatPredicateV1::Always, "{key:?}");
+    }
+
+    // The printed levels whose catalog ids no registry definition owns stay fail-closed:
+    // the same text never lends another card's definition. Fomalhaut Ld L2 and L1, Buga
+    // Baga Ld L1, Eeok Ld L1, Newell L3, and Sirrena L3's `Max. 11`. The two level-one
+    // `Min 5` texts are not in the registry at all, so they fail at the text lookup rather
+    // than at the alias rule; either way nothing is admitted.
+    for (key, catalog_id) in [
+        (CardKey::new(1582, 2), 5456),
+        (CardKey::new(1582, 1), 5529),
+        (CardKey::new(1729, 1), 5506),
+        (CardKey::new(2027, 1), 5509),
+        (CardKey::new(1679, 3), 1504),
+        (CardKey::new(2563, 3), 5824),
+    ] {
+        let result = CatalogCombatStatMatchV1::new(
+            input(hand(key), opponent, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        );
+        assert!(
+            matches!(
+                result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player: PlayerId::P1,
+                    source_kind: CombatStatEffectSourceV1::Ability,
+                    catalog_id: Some(id),
+                    ..
+                } | CatalogCombatStatMatchErrorV1::Lookup {
+                    player: PlayerId::P1,
+                    source_kind: CombatStatEffectSourceV1::Ability,
+                    catalog_id: Some(id),
+                    ..
+                }) if id == catalog_id
+            ),
+            "{key:?} must stay fail-closed: {:?}",
+            result.as_ref().err(),
+        );
+    }
+}

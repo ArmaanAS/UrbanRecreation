@@ -6,7 +6,7 @@
 
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_both_players_life_reduction, classify_combat_stat_effect,
+    classify_both_players_life_reduction, classify_brawl_post_round, classify_combat_stat_effect,
     classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
     classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
@@ -1451,6 +1451,28 @@ fn prepare_catalog_source(
                 definition.id(),
             );
         }
+        // The post-round Brawl grammars are the plain Victory reductions and gain with an
+        // anti-support magnitude, and follow the same rule.
+        if classify_brawl_post_round(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_brawl_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
         // So does the Pillz-per-Damage conversion, whose predicate the printed prefix names.
         if classify_victory_pillz_per_damage(definition, source_kind).is_some() {
             require_catalog_alias(
@@ -1992,6 +2014,31 @@ fn prepare_victory_opponent_pillz_source(
                 CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
                 CombatStatPredicateV1::Always,
             ))
+        },
+    )
+}
+
+fn prepare_brawl_post_round_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    registry_definition_id: u32,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    prepare_post_round_source(
+        registry,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        registry_definition_id,
+        |definition, source_kind| {
+            let (effect, compact_effect) =
+                classify_brawl_post_round(definition, source_kind)?.effects();
+            Some((effect, compact_effect, CombatStatPredicateV1::Always))
         },
     )
 }
