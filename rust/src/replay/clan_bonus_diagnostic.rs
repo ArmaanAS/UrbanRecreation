@@ -516,6 +516,7 @@ fn prepare_diagnostic_source(
                     | SupportedEffectV1::ProtectOwnBonus
                     | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
                     | SupportedEffectV1::ExchangePrintedCombatStat { .. }
+                    | SupportedEffectV1::ImposePrintedCombatStat { .. }
                     | SupportedEffectV1::CancelOpponentResourceModifiers { .. }
                     | SupportedEffectV1::SimplifyAttackToPillz
             ) {
@@ -667,6 +668,7 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<DiagnosticCombatEffectV1>
         | SupportedEffectV1::ProtectOwnBonus
         | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
         | SupportedEffectV1::ExchangePrintedCombatStat { .. }
+        | SupportedEffectV1::ImposePrintedCombatStat { .. }
         | SupportedEffectV1::CancelOpponentResourceModifiers { .. }
         | SupportedEffectV1::SimplifyAttackToPillz => None,
         SupportedEffectV1::CancelOpponentCombatStatModifiers { stat } => Some(

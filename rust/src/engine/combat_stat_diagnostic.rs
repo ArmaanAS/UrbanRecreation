@@ -452,6 +452,11 @@ pub enum CombatStatEffectV1 {
     ExchangePrintedCombatStat {
         stat: CombatStatAttributeV1,
     },
+    /// `Damage Impose`: the opposing selected card's stat becomes the owner's printed value,
+    /// in the Copy phase. Ability slot only, unconditional.
+    ImposePrintedCombatStat {
+        stat: CombatStatAttributeV1,
+    },
     /// While live, the opposing selected card's end-of-round effects on the named resources
     /// are dropped for the round. Ability slot only.
     CancelOpponentResourceModifiers {
@@ -808,6 +813,9 @@ impl Error for CombatStatPlanMismatchV1 {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InvalidCombatStatPlanReasonV1 {
     AmbiguousOculusClanGate,
+    /// A `Damage Impose` facing an opposing `Cancel Opp. Damage Modif.` (or a Copy that
+    /// could adopt one): no captured round shows which of the two wins.
+    UnmodelledImposeContext,
     CappedIncrease,
     CompoundPredicateAndMagnitude,
     ConditionalBonus,
@@ -1418,6 +1426,15 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect)
         }
+        // `Damage Impose` writes the owner's printed Damage onto the opposing card in the
+        // Copy phase. No round shows one meeting an opposing Cancel of Damage modifiers, or a
+        // Copy that could adopt one, so either in the opposing hand refuses it.
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ImposePrintedCombatStat { .. },
+            ..
+        } if hand_has_copy(opponent) || source_plans(opponent).any(cancels_damage_modifiers) => {
+            Some(InvalidCombatStatPlanReasonV1::UnmodelledImposeContext)
+        }
         // Recover raises its owner's Pillz with no cap, which commutes with every other gain
         // but not with an opposing reduction towards a floor: the two orders differ exactly
         // when the floor binds, and no round pins the server's (1093173/1 shows it is not the
@@ -1751,10 +1768,24 @@ fn meets_unpinned_protection(
         }
         | CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat }
         | CombatStatEffectV1::CopyOpponentPrintedCombatStat { stat }
-        | CombatStatEffectV1::ExchangePrintedCombatStat { stat } => unpinned(stat),
+        | CombatStatEffectV1::ExchangePrintedCombatStat { stat }
+        | CombatStatEffectV1::ImposePrintedCombatStat { stat } => unpinned(stat),
         CombatStatEffectV1::SimplifyAttackToPillz => true,
         _ => false,
     }
+}
+
+/// An opposing Cancel of Damage modifiers, alone or with Power.
+fn cancels_damage_modifiers(plan: CombatStatSourcePlanV1) -> bool {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::Damage | CombatStatAttributeV1::PowerAndDamage,
+            },
+            ..
+        }
+    )
 }
 
 /// A Power reduction whose floor is 0, from either side's opposing phase.
@@ -3200,6 +3231,23 @@ fn validate_combat_stat_source_plan(
             InvalidCombatStatPlanReasonV1::AttackSimplificationSource,
         ));
     }
+    // `Damage Impose` is a card ability, unconditional, and on Damage only: `Power Impose`
+    // and the prefixed forms have no observed round.
+    if let CombatStatEffectV1::ImposePrintedCombatStat { stat } = effect {
+        if source != CombatStatEffectSourceV1::Ability
+            || stat != CombatStatAttributeV1::Damage
+            || predicate != CombatStatPredicateV1::Always
+        {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ConditionalControl,
+            ));
+        }
+        return Ok(());
+    }
     // A Stop under one of the conditions the compiler admits by grammar is the one control
     // effect that may carry a predicate; the Reprisal Stop is checked by identity above.
     let conditional_stop = matches!(
@@ -3211,6 +3259,7 @@ fn validate_combat_stat_source_plan(
         effect,
         CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. }
             | CombatStatEffectV1::ExchangePrintedCombatStat { .. }
+            | CombatStatEffectV1::ImposePrintedCombatStat { .. }
     ) && source == CombatStatEffectSourceV1::Ability
         && matches!(
             predicate,
@@ -3801,6 +3850,16 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 },
             }
         }
+        CombatStatEffectV1::ImposePrintedCombatStat { stat } => {
+            DiagnosticCombatEffectV1::ImposePrintedCombatStat {
+                stat: match stat {
+                    CombatStatAttributeV1::Attack => DiagnosticCombatStatV1::Attack,
+                    CombatStatAttributeV1::Damage => DiagnosticCombatStatV1::Damage,
+                    CombatStatAttributeV1::Power => DiagnosticCombatStatV1::Power,
+                    CombatStatAttributeV1::PowerAndDamage => DiagnosticCombatStatV1::PowerAndDamage,
+                },
+            }
+        }
         CombatStatEffectV1::CopyOpponentPrintedCombatStat { stat } => {
             DiagnosticCombatEffectV1::CopyOpponentPrintedCombatStat {
                 stat: match stat {
@@ -4132,6 +4191,7 @@ pub(crate) fn shared_post_round_effect(
         | CombatStatEffectV1::ProtectOwnBonus
         | CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. }
         | CombatStatEffectV1::ExchangePrintedCombatStat { .. }
+        | CombatStatEffectV1::ImposePrintedCombatStat { .. }
         | CombatStatEffectV1::CancelOpponentResourceModifiers { .. }
         | CombatStatEffectV1::SimplifyAttackToPillz => None,
     }

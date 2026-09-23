@@ -7545,6 +7545,143 @@ fn unison_life_gains_are_refused_beside_an_unpinned_effect_on_their_resource() {
     }
 }
 
+/// `Damage Impose` writes the owner's printed Damage onto the opposing card in the Copy phase,
+/// before every modifier: the opposing card's own increase lands on the imposed value
+/// (874712/1: Tina's +2 on Kochar's 2 is the server's 4), an owner's reduction takes it down
+/// further (901292/0: 2 to 1 under Min 1), and `Protection: Power And Damage` does not refuse
+/// it (1091314/3).
+#[test]
+fn damage_impose_overwrites_the_opposing_damage_before_every_modifier() {
+    let impose = execute(
+        2921,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ImposePrintedCombatStat {
+            stat: CombatStatAttributeV1::Damage,
+        },
+    );
+    let mut base = base_spec(6, 5);
+    base.players[PlayerId::P1].hand[0].damage = 2;
+    // (P2's ability, P1's bonus, P2's final Damage)
+    let own_increase = execute(
+        883,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 2),
+    );
+    let owner_cut = execute(
+        7,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Damage, 5, 1),
+    );
+    let protection = execute(
+        1355,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ProtectOwnCombatStat {
+            stat: CombatStatAttributeV1::PowerAndDamage,
+        },
+    );
+    for (opposing, own_bonus, damage) in [
+        (None, None, 2),
+        (Some(own_increase), None, 4),
+        (None, Some(owner_cut), 1),
+        (Some(protection), None, 2),
+    ] {
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = impose;
+        if let Some(plan) = own_bonus {
+            cards[PlayerId::P1][0].bonus = plan;
+            cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        }
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][0].ability = plan;
+        }
+        let mut diag = game(base.clone(), cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P2].damage,
+            damage,
+            "{opposing:?} {own_bonus:?}"
+        );
+        // The owner keeps its own printed Damage.
+        assert_eq!(report.cards[PlayerId::P1].damage, 2);
+    }
+}
+
+/// No round shows an Impose meeting an opposing Cancel of Damage modifiers or a Copy that
+/// could adopt one, so construction refuses either; a single-stat `Protection : Damage`
+/// facing one is refused from its own side, like any change to its stat group.
+#[test]
+fn damage_impose_is_refused_beside_an_opposing_damage_cancel_or_copy() {
+    let impose = execute(
+        2921,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ImposePrintedCombatStat {
+            stat: CombatStatAttributeV1::Damage,
+        },
+    );
+    let cancel = |stat| {
+        execute(
+            5064,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat },
+        )
+    };
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    let damage_protection = execute(
+        728,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ProtectOwnCombatStat {
+            stat: CombatStatAttributeV1::Damage,
+        },
+    );
+    for (opposing, reason) in [
+        (
+            cancel(CombatStatAttributeV1::Damage),
+            Some(InvalidCombatStatPlanReasonV1::UnmodelledImposeContext),
+        ),
+        (
+            cancel(CombatStatAttributeV1::PowerAndDamage),
+            Some(InvalidCombatStatPlanReasonV1::UnmodelledImposeContext),
+        ),
+        (
+            copy,
+            Some(InvalidCombatStatPlanReasonV1::UnmodelledImposeContext),
+        ),
+        (
+            damage_protection,
+            Some(InvalidCombatStatPlanReasonV1::SingleStatProtectionAgainstUnpinnedEffect),
+        ),
+        (cancel(CombatStatAttributeV1::Power), None),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = impose;
+        cards[PlayerId::P2][2].ability = opposing;
+        if matches!(opposing, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+            cards[PlayerId::P2][2].source_ability_support_count = 1;
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        match reason {
+            Some(expected) => assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) if reason == expected
+                ),
+                "{opposing:?}"
+            ),
+            None => assert!(result.is_ok(), "{opposing:?}"),
+        }
+    }
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {

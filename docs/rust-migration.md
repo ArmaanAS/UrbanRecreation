@@ -2485,6 +2485,25 @@ Chiropterine. A new exhaustive `life_writes` decides it, the Life twin of revisi
 `pillz_writes`. The plain `Defeat: +N Life` keeps the admission it had before the question was
 found. The gate grows from 745 to 761 rounds, the paying 878178/0 among them.
 
+Semantic revision 66 admits `Damage Impose` (`2921`, `4490`), the third printed-stat overwrite:
+the Copy action with `sideAffected: opponent`, which writes the owner's printed Damage onto the
+opposing card. It runs in the Copy phase beside Copy and Exchange, before every modifier, and
+it is admitted from card abilities only, unconditionally, by its one text. `Power Impose` has
+no record, and the prefixed forms have no observed round. The family line read 4 and the
+slice unlocked 3 - `1025031`, `1091314` and `1093275` - taking eligibility from 226 to 229;
+956805 turns out to hold a Copy as its second blocker.
+
+The server pins the phase. Sgt Stormblade imposes his printed 2 on Nebula in 1091314/3 and on
+Pr Hide in 1093275/1, and Kochar his 2 on AI-Lycs in 956805/1. The opposing card's own
+increase then lands on the imposed value (874712/1: Tina's Revenge +2 makes the server's 4, the
+round docs/replay-triage.md records the TypeScript engine getting wrong). The owner's own
+reduction takes it lower still (901292/0: 2 to 1 under `-5 Opp Damage, Min 1`). And Nebula's
+`Protection: Power And Damage` does not refuse it (1091314/3). No round shows an Impose
+meeting an opposing Cancel of Damage modifiers, or a Copy that could adopt one, and
+construction refuses both (`UnmodelledImposeContext`). The single-stat Protection refusal of
+revision 62 now names the Impose as a change to the Damage group. The gate grows from 761 to
+768 rounds.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

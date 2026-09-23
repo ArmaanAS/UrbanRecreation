@@ -332,6 +332,29 @@ fn apply_printed_stat_copy(
     let (stat, exchange) = match source.effect {
         Some(DiagnosticCombatEffectV1::CopyOpponentPrintedCombatStat { stat }) => (stat, false),
         Some(DiagnosticCombatEffectV1::ExchangePrintedCombatStat { stat }) => (stat, true),
+        // `Damage Impose` is the other half of an Exchange: only the opposing card takes the
+        // owner's printed value. 956805/1, 1091314/3 and 1093275/1 impose 2 over printed 5,
+        // 4 and 4; 874712/1 has Tina's own +2 land on the imposed 2 (server 4), 901292/0
+        // Kochar's own -5 Opp Damage, Min 1 take it to 1, and 1091314/3 shows Nebula's
+        // `Protection: Power And Damage` does not refuse it. Opposing Cancels are refused at
+        // construction, since no round shows one meeting an Impose.
+        Some(DiagnosticCombatEffectV1::ImposePrintedCombatStat { stat }) => {
+            let (own_power, own_damage) = printed[origin];
+            if matches!(
+                stat,
+                DiagnosticCombatStatV1::Power | DiagnosticCombatStatV1::PowerAndDamage
+            ) {
+                power[origin.other()] = own_power;
+            }
+            if matches!(
+                stat,
+                DiagnosticCombatStatV1::Damage | DiagnosticCombatStatV1::PowerAndDamage
+            ) {
+                damage[origin.other()] = own_damage;
+            }
+            let _ = opponent_cancellation;
+            return;
+        }
         _ => return,
     };
     let (own_power, own_damage) = printed[origin];

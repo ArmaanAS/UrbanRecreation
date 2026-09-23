@@ -232,7 +232,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Four rounds since revision 46, whose Unison Damage +3 pays in round 1.
     (1092773, 4),
     (1092840, 3),
-    (1093275, 1),
+    // Four rounds since revision 66: Sgt Stormblade's `Damage Impose` takes Pr Hide to its
+    // own printed 2 in round 1.
+    (1093275, 4),
     // Revision 30 plain `-N Opp Pillz. Min M`. Dalhia Cr's `339` takes Callie from 12 - 5
     // to exactly the Min of 4 in 1131294/0 (a rule-3 draw), and in 1091644/1 finds AI-Lycs
     // already on the Min after his Defeat recovery (6 - 6, recover 4) and changes nothing.
@@ -437,7 +439,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (926584, 3),
     (876882, 2),
     (1089742, 4),
-    (1091314, 3),
+    // Four rounds since revision 66: Stormblade imposes his printed 2 on Nebula in round 3,
+    // whose `Protection: Power And Damage` does not refuse it.
+    (1091314, 4),
     (877308, 4),
     (878120, 4),
     // Revision 48 admits `Stop:` over the plain numeric body, modelled as the half the
@@ -462,7 +466,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Four rounds since revision 62: Matriochka's `Protection: Attack` leaves Sue's `-1 Opp
     // Power And Damage, Min 3` to take her 8/4 to 7/3 in round 1 (7 x 3 = 21).
     (1131208, 4),
-    (956805, 1),
+    // Four rounds since revision 66: Kochar imposes his printed 2 on AI-Lycs in round 1.
+    (956805, 4),
     (877357, 3),
     // Revision 50 admits the stat Copies and Exchanges under the predicates the projection
     // resolves, and Unison source Copy. Suplicius Cr's Courage Power Exchange pays moving

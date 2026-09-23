@@ -292,6 +292,10 @@ pub enum SupportedEffectV1 {
     ExchangePrintedCombatStat {
         stat: CombatStatV1,
     },
+    /// The opposing character's stat is replaced by the owner's own printed value.
+    ImposePrintedCombatStat {
+        stat: CombatStatV1,
+    },
     /// The opposing selected character's end-of-round effects on the named resources are
     /// cancelled for the round.
     CancelOpponentResourceModifiers {
@@ -1119,19 +1123,15 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
         // magnitude. `Power Exchange` and `Damage Exchange` use the same action with
         // `sideAffected: both` and swap the two printed values instead.
         (AttributeActionV1::Copy, SpecialActionV1::None, Some(stat)) => {
-            if !matches!(
-                input.side_affected,
-                AffectedSideV1::Player | AffectedSideV1::Both
-            ) {
-                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
-                    side: input.side_affected,
-                });
-                None
-            } else if input.value == 0 && input.value_min == 0 && input.value_max == 0 {
-                Some(if input.side_affected == AffectedSideV1::Both {
-                    SupportedEffectV1::ExchangePrintedCombatStat { stat }
-                } else {
-                    SupportedEffectV1::CopyOpponentPrintedCombatStat { stat }
+            if input.value == 0 && input.value_min == 0 && input.value_max == 0 {
+                // `<stat> Impose` writes the owner's printed value onto the opposing card:
+                // the same action with `sideAffected: opponent`.
+                Some(match input.side_affected {
+                    AffectedSideV1::Both => SupportedEffectV1::ExchangePrintedCombatStat { stat },
+                    AffectedSideV1::Opponent => SupportedEffectV1::ImposePrintedCombatStat { stat },
+                    AffectedSideV1::Player => {
+                        SupportedEffectV1::CopyOpponentPrintedCombatStat { stat }
+                    }
                 })
             } else {
                 reasons.insert(UnsupportedReasonV1::NonZeroControlValues);
@@ -1370,6 +1370,11 @@ fn unreviewed_description_context(
                 description == "Cancel Opp. Pillz & Life Modif."
             }
         },
+        // Only `Damage Impose` has observed rounds; `Power Impose` and every prefixed form
+        // (`Reprisal:`, `Unison :`, `Day:`, `Versus`) stay out.
+        SupportedEffectV1::ImposePrintedCombatStat { stat } => {
+            stat == CombatStatV1::Damage && description == "Damage Impose"
+        }
         SupportedEffectV1::ExchangePrintedCombatStat { stat } => match stat {
             CombatStatV1::Power => description == "Power Exchange",
             CombatStatV1::Damage => description == "Damage Exchange",
@@ -1843,6 +1848,37 @@ mod tests {
                 .compiled()
                 .unsupported_reasons()
                 .contains(&UnsupportedReasonV1::LinkedMagnitude { link }));
+        }
+    }
+
+    #[test]
+    fn damage_impose_compiles_by_its_one_printed_text() {
+        let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
+        for id in [2921, 4490] {
+            assert_eq!(
+                registry.get(id).unwrap().compiled().supported(),
+                Some(SupportedEffectV1::ImposePrintedCombatStat {
+                    stat: CombatStatV1::Damage
+                }),
+                "effect {id}"
+            );
+        }
+        // The same record under another text, or imposing Power, is refused.
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(dictionary_path()).unwrap()).unwrap();
+        for (field, value) in [
+            ("description", serde_json::json!("Power Impose")),
+            ("description", serde_json::json!("Reprisal: Damage Impose")),
+        ] {
+            let mut malformed = source.clone();
+            malformed["2921"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                malformed.get(2921).unwrap().compiled().supported(),
+                None,
+                "{field} = {value}"
+            );
         }
     }
 

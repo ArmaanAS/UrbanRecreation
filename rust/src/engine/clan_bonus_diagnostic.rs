@@ -106,6 +106,10 @@ pub enum DiagnosticCombatEffectV1 {
     ExchangePrintedCombatStat {
         stat: DiagnosticCombatStatV1,
     },
+    /// The opposing selected card's stat is replaced by the owner's printed value.
+    ImposePrintedCombatStat {
+        stat: DiagnosticCombatStatV1,
+    },
     /// The opposing selected card's end-of-round effects on the named resources are
     /// cancelled for the round.
     CancelOpponentResourceModifiers {

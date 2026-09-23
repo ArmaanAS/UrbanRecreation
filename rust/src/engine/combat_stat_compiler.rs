@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 65;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 66;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -2830,8 +2830,9 @@ fn admitted_supported_effect(
         | SupportedEffectV1::ProtectOwnAbility
         | SupportedEffectV1::ProtectOwnBonus
         | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. } => true,
-        // No clan bonus prints an Exchange or a resource canceller.
+        // No clan bonus prints an Exchange, an Impose or a resource canceller.
         SupportedEffectV1::ExchangePrintedCombatStat { .. }
+        | SupportedEffectV1::ImposePrintedCombatStat { .. }
         | SupportedEffectV1::CancelOpponentResourceModifiers { .. } => {
             source_kind == CombatStatEffectSourceV1::Ability
         }
@@ -4677,6 +4678,7 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | SupportedEffectV1::ProtectOwnBonus
         | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
         | SupportedEffectV1::ExchangePrintedCombatStat { .. }
+        | SupportedEffectV1::ImposePrintedCombatStat { .. }
         | SupportedEffectV1::CancelOpponentResourceModifiers { .. }
         | SupportedEffectV1::SimplifyAttackToPillz => return false,
     };
@@ -4847,6 +4849,11 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
         SupportedEffectV1::ProtectOwnBonus => Some(CombatStatEffectV1::ProtectOwnBonus),
         SupportedEffectV1::CopyOpponentPrintedCombatStat { stat } => {
             Some(CombatStatEffectV1::CopyOpponentPrintedCombatStat {
+                stat: compact_stat(stat),
+            })
+        }
+        SupportedEffectV1::ImposePrintedCombatStat { stat } => {
+            Some(CombatStatEffectV1::ImposePrintedCombatStat {
                 stat: compact_stat(stat),
             })
         }
