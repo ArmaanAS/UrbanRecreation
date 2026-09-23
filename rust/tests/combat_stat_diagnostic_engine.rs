@@ -773,8 +773,9 @@ fn victory_pillz_plan_is_ability_only_positive_and_carries_only_confidence() {
     ));
 
     // Revision 36 admits one predicate beside `Always`: the previous-round win that
-    // `Confidence:` prints. Every other condition is still refused, so a `Revenge:` or a
-    // hand-slot form cannot borrow the grammar.
+    // `Confidence:` prints, and revision 58 the first move that `Courage:` prints. Every
+    // other condition is still refused, so a `Revenge:` or a hand-slot form cannot borrow
+    // the grammar.
     let mut confidence = archimedes_spec();
     confidence.cards[PlayerId::P1][0].ability = execute(
         1702,
@@ -782,12 +783,15 @@ fn victory_pillz_plan_is_ability_only_positive_and_carries_only_confidence() {
         VICTORY_PILLZ,
     );
     assert!(CombatStatDiagnosticV1::new(confidence).is_ok());
+    let mut courage = archimedes_spec();
+    courage.cards[PlayerId::P1][0].ability =
+        execute(5474, CombatStatPredicateV1::OwnerMovesFirst, VICTORY_PILLZ);
+    assert!(CombatStatDiagnosticV1::new(courage).is_ok());
 
     for predicate in [
         CombatStatPredicateV1::OwnerLostPreviousRound,
         CombatStatPredicateV1::SelectedHandSlotsDiffer,
         CombatStatPredicateV1::SelectedHandSlotsMatch,
-        CombatStatPredicateV1::OwnerMovesFirst,
         CombatStatPredicateV1::OwnerMovesSecond,
     ] {
         let mut conditional = archimedes_spec();
@@ -2010,13 +2014,11 @@ fn equalizer_opponent_life_public_plans_are_exact_and_copy_can_use_either_source
             ..
         })
     ));
-    assert!(matches!(
-        CombatStatDiagnosticV1::new(vod_spec(CardKey::new(9_999, 1), 9_1415, equalizer)),
-        Err(CombatStatPlanErrorV1::InvalidExecute {
-            reason: InvalidCombatStatPlanReasonV1::EqualizerOpponentLifeIdentity,
-            ..
-        })
-    ));
+    // Since revision 58 an unreserved id carrying the reduction is the grammar the two
+    // reviewed identities pinned (El Cazador's `5793`), card abilities only.
+    assert!(
+        CombatStatDiagnosticV1::new(vod_spec(CardKey::new(9_999, 1), 9_1415, equalizer)).is_ok()
+    );
 }
 
 #[test]
@@ -6830,4 +6832,359 @@ fn clan_gates_read_the_owner_card_the_opposing_hand_and_the_previous_card() {
             ..
         })
     ));
+}
+
+/// The post-round gates and magnitudes of revision 58: `Support:` scales a Victory Life or
+/// Pillz effect by the owner's Support count, `Equalizer:` by the opposing selected card's
+/// stars, and `Courage:` pays only a winner that moved first. The corpus pins counts of 3
+/// and 4 (866431/0, 1058545/2), opposing levels 2 and 5 (1092729/1, 1066481/0) and the
+/// first-move predicate on Anita's conversion; these pin the edges.
+mod post_round_gates {
+    use super::*;
+
+    fn card(id: u32, level: u8, clan: u32) -> urban_recreation_rust::engine::BaseRulesCardSpec {
+        urban_recreation_rust::engine::BaseRulesCardSpec {
+            key: CardKey::new(id, level),
+            clan_id: clan,
+            power: 6,
+            damage: 3,
+        }
+    }
+
+    /// P1 slot 0 holds `effect`; `mates` of P1's four cards (slot 0 first) share effective clan
+    /// 900, every other card is its own clan. P2's slot 0 is level `opposing_level`.
+    fn spec(
+        effect: CombatStatEffectV1,
+        predicate: CombatStatPredicateV1,
+        mates: usize,
+        opposing_level: u8,
+    ) -> CombatStatDiagnosticMatchSpecV1 {
+        let base = BaseRulesMatchSpec {
+            battle_rule_id: 10,
+            night: false,
+            players: ByPlayer::new(
+                BaseRulesPlayerSpec {
+                    initial_life: 20,
+                    initial_pillz: 20,
+                    hand: std::array::from_fn(|index| {
+                        card(100 + index as u32, 3, 100 + index as u32)
+                    }),
+                },
+                BaseRulesPlayerSpec {
+                    initial_life: 20,
+                    initial_pillz: 20,
+                    hand: std::array::from_fn(|index| {
+                        card(
+                            200 + index as u32,
+                            if index == 0 { opposing_level } else { 3 },
+                            200 + index as u32,
+                        )
+                    }),
+                },
+            ),
+        };
+        let plan = |side: PlayerId, index: usize| {
+            let card = base.players[side].hand[index];
+            CombatStatCardPlanV1 {
+                key: card.key,
+                effective_clan_id: if side == PlayerId::P1 && index < mates {
+                    900
+                } else {
+                    card.clan_id
+                },
+                ability: CombatStatSourcePlanV1::Absent,
+                bonus: CombatStatSourcePlanV1::Absent,
+                source_bonus_support_count: 0,
+                source_ability_support_count: 0,
+            }
+        };
+        let mut cards = ByPlayer::new(
+            std::array::from_fn(|index| plan(PlayerId::P1, index)),
+            std::array::from_fn(|index| plan(PlayerId::P2, index)),
+        );
+        cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1789,
+            predicate,
+            effect,
+        };
+        CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }
+    }
+
+    fn input(first: PlayerId, p1_pillz: u16, p2_pillz: u16) -> BaseRulesRoundInput {
+        BaseRulesRoundInput {
+            first_mover: first,
+            selections: ByPlayer::new(
+                BaseRulesSelection::new(0, p1_pillz, false),
+                BaseRulesSelection::new(0, p2_pillz, false),
+            ),
+        }
+    }
+
+    fn with_count(
+        mut spec: CombatStatDiagnosticMatchSpecV1,
+        count: u16,
+    ) -> CombatStatDiagnosticMatchSpecV1 {
+        spec.cards[PlayerId::P1][0].source_ability_support_count = count;
+        spec
+    }
+
+    #[test]
+    fn support_post_round_scales_by_the_owners_count_and_clamps_once() {
+        let life = CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerSupport {
+            per_count: 1,
+            minimum: 0,
+        };
+        for mates in 1..=4 {
+            let mates_u16 = mates as u16;
+            // Opponent: 20 - 3 combat Damage - count.
+            let mut game = CombatStatDiagnosticV1::new(with_count(
+                spec(life, CombatStatPredicateV1::Always, mates, 3),
+                mates_u16,
+            ))
+            .unwrap();
+            let start = game.position().clone();
+            let (report, undo) = game.make(input(PlayerId::P1, 5, 0)).unwrap();
+            assert!(report.cards[PlayerId::P1].won);
+            assert_eq!(
+                report.players[PlayerId::P2].life,
+                17 - mates_u16,
+                "x{mates}"
+            );
+            game.unmake(undo);
+            assert_eq!(game.position(), &start);
+
+            let mut gain = CombatStatDiagnosticV1::new(with_count(
+                spec(
+                    CombatStatEffectV1::GainLifeOnVictoryPerSupport { per_count: 1 },
+                    CombatStatPredicateV1::Always,
+                    mates,
+                    3,
+                ),
+                mates_u16,
+            ))
+            .unwrap();
+            let (report, _) = gain.make(input(PlayerId::P1, 5, 0)).unwrap();
+            assert_eq!(report.players[PlayerId::P1].life, 20 + mates_u16);
+
+            let mut pillz = CombatStatDiagnosticV1::new(with_count(
+                spec(
+                    CombatStatEffectV1::GainPillzOnVictoryPerSupport { per_count: 1 },
+                    CombatStatPredicateV1::Always,
+                    mates,
+                    3,
+                ),
+                mates_u16,
+            ))
+            .unwrap();
+            let (report, _) = pillz.make(input(PlayerId::P1, 5, 0)).unwrap();
+            assert_eq!(report.players[PlayerId::P1].pillz, 20 - 5 + mates_u16);
+        }
+        // Min 1 floor, applied once after multiplying: 5 - 3 = 2, then - 4 stops at 1.
+        let floored = CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerSupport {
+            per_count: 1,
+            minimum: 1,
+        };
+        let mut floor_spec = with_count(spec(floored, CombatStatPredicateV1::Always, 4, 3), 4);
+        floor_spec.base_rules.players[PlayerId::P2].initial_life = 5;
+        let (report, _) = CombatStatDiagnosticV1::new(floor_spec)
+            .unwrap()
+            .make(input(PlayerId::P1, 5, 0))
+            .unwrap();
+        assert_eq!(report.players[PlayerId::P2].life, 1);
+        // A loss pays nothing.
+        let (report, _) = CombatStatDiagnosticV1::new(with_count(
+            spec(life, CombatStatPredicateV1::Always, 4, 3),
+            4,
+        ))
+        .unwrap()
+        .make(input(PlayerId::P1, 0, 5))
+        .unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P2].life, 20);
+    }
+
+    #[test]
+    fn support_post_round_plans_need_their_count_an_ability_and_no_predicate() {
+        let life = CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerSupport {
+            per_count: 1,
+            minimum: 0,
+        };
+        // The Support context must be the hand's count, not zero and not another number.
+        for wrong in [0, 3] {
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(with_count(
+                    spec(life, CombatStatPredicateV1::Always, 2, 3),
+                    wrong
+                )),
+                Err(CombatStatPlanErrorV1::InvalidAbilitySupportContext { .. })
+            ));
+        }
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(with_count(
+                spec(life, CombatStatPredicateV1::OwnerMovesFirst, 2, 3),
+                2
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::SupportPostRoundPredicate,
+                ..
+            })
+        ));
+        let mut bonus = spec(life, CombatStatPredicateV1::Always, 2, 3);
+        bonus.cards[PlayerId::P1][0].bonus = bonus.cards[PlayerId::P1][0].ability;
+        bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+        bonus.cards[PlayerId::P1][0].source_bonus_support_count = 2;
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(bonus),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::SupportPostRoundSource,
+                ..
+            })
+        ));
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(with_count(
+                spec(
+                    CombatStatEffectV1::GainLifeOnVictoryPerSupport { per_count: 0 },
+                    CombatStatPredicateV1::Always,
+                    2,
+                    3
+                ),
+                2
+            )),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::SupportPostRoundMagnitude,
+                ..
+            })
+        ));
+    }
+
+    /// A Copy adopting an opposing Support post-round effect pays the copier's own count, as a
+    /// copied combat-stat Support does.
+    #[test]
+    fn copied_support_post_round_reads_the_copiers_hand() {
+        let life = CombatStatEffectV1::GainLifeOnVictoryPerSupport { per_count: 1 };
+        // P2 slot 0 owns the Support source in a hand of 4 clan-mates; P1 slot 0 copies it with 2.
+        let mut copied = spec(life, CombatStatPredicateV1::Always, 2, 3);
+        let source = copied.cards[PlayerId::P1][0].ability;
+        copied.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 2918,
+            copied: CopiedSourceKindV1::Ability,
+            predicate: CombatStatPredicateV1::Always,
+        };
+        copied.cards[PlayerId::P1][0].source_ability_support_count = 2;
+        for index in 0..4 {
+            copied.cards[PlayerId::P2][index].effective_clan_id = 901;
+        }
+        copied.cards[PlayerId::P2][0].ability = source;
+        copied.cards[PlayerId::P2][0].source_ability_support_count = 4;
+        let (report, _) = CombatStatDiagnosticV1::new(copied)
+            .unwrap()
+            .make(input(PlayerId::P1, 5, 0))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P1].life, 22);
+    }
+
+    #[test]
+    fn equalizer_post_round_scales_by_the_opposing_stars() {
+        for level in [1_u8, 2, 5] {
+            let stars = u16::from(level);
+            let (report, _) = CombatStatDiagnosticV1::new(spec(
+                CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 },
+                CombatStatPredicateV1::Always,
+                1,
+                level,
+            ))
+            .unwrap()
+            .make(input(PlayerId::P1, 5, 0))
+            .unwrap();
+            assert_eq!(report.players[PlayerId::P1].life, 20 + stars);
+            let (report, _) = CombatStatDiagnosticV1::new(spec(
+                CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star: 1 },
+                CombatStatPredicateV1::Always,
+                1,
+                level,
+            ))
+            .unwrap()
+            .make(input(PlayerId::P1, 5, 0))
+            .unwrap();
+            assert_eq!(report.players[PlayerId::P1].pillz, 15 + stars);
+            // El Cazador's Min 0 grammar, now any non-reserved id.
+            let (report, _) = CombatStatDiagnosticV1::new(spec(
+                CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                    per_star: 1,
+                    minimum: 0,
+                },
+                CombatStatPredicateV1::Always,
+                1,
+                level,
+            ))
+            .unwrap()
+            .make(input(PlayerId::P1, 5, 0))
+            .unwrap();
+            assert_eq!(report.players[PlayerId::P2].life, 17 - stars);
+        }
+        let mut bonus = spec(
+            CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star: 1 },
+            CombatStatPredicateV1::Always,
+            1,
+            3,
+        );
+        bonus.cards[PlayerId::P1][0].bonus = bonus.cards[PlayerId::P1][0].ability;
+        bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+        bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(bonus),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::EqualizerPostRoundSource,
+                ..
+            })
+        ));
+        // The two reviewed identities still refuse any other effect.
+        let mut reserved = spec(
+            CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 },
+            CombatStatPredicateV1::Always,
+            1,
+            3,
+        );
+        reserved.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 1415,
+            predicate: CombatStatPredicateV1::Always,
+            effect: CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 },
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(reserved),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::EqualizerOpponentLifeEffect,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn courage_victory_gains_pay_only_a_first_moving_winner() {
+        for (effect, life, pillz) in [
+            (CombatStatEffectV1::GainLifeOnVictory { life: 5 }, 25, 15),
+            (CombatStatEffectV1::GainPillzOnVictory { pillz: 1 }, 20, 16),
+        ] {
+            let first = spec(effect, CombatStatPredicateV1::OwnerMovesFirst, 1, 3);
+            let (report, _) = CombatStatDiagnosticV1::new(first.clone())
+                .unwrap()
+                .make(input(PlayerId::P1, 5, 0))
+                .unwrap();
+            assert!(report.cards[PlayerId::P1].won);
+            assert_eq!(report.players[PlayerId::P1].life, life);
+            assert_eq!(report.players[PlayerId::P1].pillz, pillz);
+            // Winning having moved second pays nothing.
+            let (report, _) = CombatStatDiagnosticV1::new(first)
+                .unwrap()
+                .make(input(PlayerId::P2, 5, 0))
+                .unwrap();
+            assert!(report.cards[PlayerId::P1].won);
+            assert_eq!(report.players[PlayerId::P1].life, 20);
+            assert_eq!(report.players[PlayerId::P1].pillz, 15);
+        }
+    }
 }

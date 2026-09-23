@@ -641,6 +641,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         effect,
                         opponent_stars[PlayerId::P1],
                         selected_plans[PlayerId::P1].ability.anti_support_count,
+                        selected_plans[PlayerId::P1].ability.support_count,
                         rounds_played,
                     )
                 })
@@ -656,6 +657,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         effect,
                         opponent_stars[PlayerId::P1],
                         selected_plans[PlayerId::P1].bonus.anti_support_count,
+                        selected_plans[PlayerId::P1].bonus.support_count,
                         rounds_played,
                     )
                 })
@@ -673,6 +675,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         effect,
                         opponent_stars[PlayerId::P2],
                         selected_plans[PlayerId::P2].ability.anti_support_count,
+                        selected_plans[PlayerId::P2].ability.support_count,
                         rounds_played,
                     )
                 })
@@ -688,6 +691,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         effect,
                         opponent_stars[PlayerId::P2],
                         selected_plans[PlayerId::P2].bonus.anti_support_count,
+                        selected_plans[PlayerId::P2].bonus.support_count,
                         rounds_played,
                     )
                 })
@@ -717,6 +721,9 @@ fn bind_post_round_effect(
     effect: PostRoundSourceEffect,
     opponent_stars: u16,
     anti_support_count: u16,
+    // The source's own Support context: the owner's effective-clan character count, which
+    // plan validation pins for every source whose effect reads it.
+    support_count: u16,
     rounds_played: u8,
 ) -> Result<PostRoundEffect, CombatResolutionError> {
     // The same factors the combat-stat Growth and Degrowth magnitudes use: the zero-based
@@ -734,6 +741,22 @@ fn bind_post_round_effect(
     let per_anti_support = |per_count: u16| {
         per_count
             .checked_mul(anti_support_count)
+            .ok_or(CombatResolutionError {
+                player,
+                stage: CombatResolutionArithmeticStage::EffectMagnitude,
+            })
+    };
+    let per_support = |per_count: u16| {
+        per_count
+            .checked_mul(support_count)
+            .ok_or(CombatResolutionError {
+                player,
+                stage: CombatResolutionArithmeticStage::EffectMagnitude,
+            })
+    };
+    let per_star = |per_star: u16| {
+        per_star
+            .checked_mul(opponent_stars)
             .ok_or(CombatResolutionError {
                 player,
                 stage: CombatResolutionArithmeticStage::EffectMagnitude,
@@ -791,16 +814,33 @@ fn bind_post_round_effect(
             })
         }
         PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerOpponentStars {
-            per_star,
+            per_star: amount,
             minimum,
-        } => {
-            let life = per_star
-                .checked_mul(opponent_stars)
-                .ok_or(CombatResolutionError {
-                    player,
-                    stage: CombatResolutionArithmeticStage::EffectMagnitude,
-                })?;
-            Ok(PostRoundEffect::ReduceOpponentLifeOnVictory { life, minimum })
+        } => Ok(PostRoundEffect::ReduceOpponentLifeOnVictory {
+            life: per_star(amount)?,
+            minimum,
+        }),
+        // Equalizer's own gains take the same stars and pay through the plain Victory gains.
+        PostRoundSourceEffect::GainLifeOnVictoryPerOpponentStars { per_star: amount } => {
+            Ok(PostRoundEffect::GainLifeOnVictory(per_star(amount)?))
+        }
+        PostRoundSourceEffect::GainPillzOnVictoryPerOpponentStars { per_star: amount } => {
+            Ok(PostRoundEffect::GainPillzOnVictory(per_star(amount)?))
+        }
+        // Support's count is its owner's own hand, carried on the source; each form binds to
+        // the arm that pays its plain Victory grammar, so the Min clamp is applied once, after
+        // multiplying.
+        PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerSupport { per_count, minimum } => {
+            Ok(PostRoundEffect::ReduceOpponentLifeOnVictory {
+                life: per_support(per_count)?,
+                minimum,
+            })
+        }
+        PostRoundSourceEffect::GainLifeOnVictoryPerSupport { per_count } => {
+            Ok(PostRoundEffect::GainLifeOnVictory(per_support(per_count)?))
+        }
+        PostRoundSourceEffect::GainPillzOnVictoryPerSupport { per_count } => {
+            Ok(PostRoundEffect::GainPillzOnVictory(per_support(per_count)?))
         }
     }
 }

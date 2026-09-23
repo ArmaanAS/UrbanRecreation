@@ -461,6 +461,28 @@ pub(super) enum PostRoundSourceEffect {
         per_count: u16,
         maximum: u16,
     },
+    /// The post-round `Support:` grammars. The printed amount is multiplied by the owner's
+    /// Support count - the distinct characters in its own hand sharing its selected card's
+    /// effective clan, already on the source's resolution plan - and binds to the fixed arm
+    /// that pays the plain grammar, clamped once after multiplying.
+    ReduceOpponentLifeOnVictoryPerSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    GainLifeOnVictoryPerSupport {
+        per_count: u16,
+    },
+    GainPillzOnVictoryPerSupport {
+        per_count: u16,
+    },
+    /// The post-round `Equalizer:` own gains: the printed amount times the opposing selected
+    /// card's stars, bound to the plain Victory gain.
+    GainLifeOnVictoryPerOpponentStars {
+        per_star: u16,
+    },
+    GainPillzOnVictoryPerOpponentStars {
+        per_star: u16,
+    },
     /// The `Growth:`/`Degrowth:` Victory grammars: the printed amount scaled by the round,
     /// bound to the fixed arm that pays the plain grammar.
     ReduceOpponentLifeOnVictoryPerRound {
@@ -534,25 +556,35 @@ impl PostRoundSourceEffect {
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
             | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
-            | Self::GainLifeOnVictoryPerRound { .. } => PostRoundResourceV1::Life,
+            | Self::GainLifeOnVictoryPerRound { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerOpponentStars { .. } => PostRoundResourceV1::Life,
             Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
             | Self::GainPillzOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentPillzOnVictoryPerRound { .. }
-            | Self::GainPillzOnVictoryPerRound { .. } => PostRoundResourceV1::Pillz,
+            | Self::GainPillzOnVictoryPerRound { .. }
+            | Self::GainPillzOnVictoryPerSupport { .. }
+            | Self::GainPillzOnVictoryPerOpponentStars { .. } => PostRoundResourceV1::Pillz,
         }
     }
 
     pub(super) const fn life_beneficiary(self) -> LifeBeneficiaryV1 {
         match self {
             Self::Fixed(effect) => effect.life_beneficiary(),
-            Self::GainLifeOnVictoryPerRound { .. } => LifeBeneficiaryV1::Owner,
+            Self::GainLifeOnVictoryPerRound { .. }
+            | Self::GainLifeOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerOpponentStars { .. } => LifeBeneficiaryV1::Owner,
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
             | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerSupport { .. }
             | Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
             | Self::GainPillzOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentPillzOnVictoryPerRound { .. }
-            | Self::GainPillzOnVictoryPerRound { .. } => LifeBeneficiaryV1::Nobody,
+            | Self::GainPillzOnVictoryPerRound { .. }
+            | Self::GainPillzOnVictoryPerSupport { .. }
+            | Self::GainPillzOnVictoryPerOpponentStars { .. } => LifeBeneficiaryV1::Nobody,
         }
     }
 }
@@ -569,7 +601,12 @@ impl PostRoundSourceEffect {
             | Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
             | Self::GainPillzOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentPillzOnVictoryPerRound { .. }
-            | Self::GainPillzOnVictoryPerRound { .. } => false,
+            | Self::GainPillzOnVictoryPerRound { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerSupport { .. }
+            | Self::GainPillzOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerOpponentStars { .. }
+            | Self::GainPillzOnVictoryPerOpponentStars { .. } => false,
         }
     }
 }

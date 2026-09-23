@@ -1904,8 +1904,9 @@ fn strict_catalog_match_admits_only_two_printed_equalizer_opponent_life_sources(
         ));
     }
 
-    // Gail L1 shares the text but not Gail L2's reviewed id; O Riley and El Cazador are
-    // adjacent printed Equalizer Life forms. None may borrow the two canonical sources.
+    // Gail L1 shares the text but not Gail L2's reviewed id, and O Riley prints the adjacent
+    // form at levels without a registry definition. None may borrow the two canonical
+    // sources. (El Cazador's `5793`, Min 0, has been the grammar since revision 58.)
     for (key, catalog_id, description) in [
         (CardKey::new(841, 1), 5536, "Equalizer: - 1 Opp. Life Min 2"),
         (
@@ -1917,11 +1918,6 @@ fn strict_catalog_match_admits_only_two_printed_equalizer_opponent_life_sources(
             CardKey::new(2519, 3),
             4125,
             "Equalizer: - 1 Opp. Life Min 2",
-        ),
-        (
-            CardKey::new(2260, 3),
-            5793,
-            "Equalizer: - 1 Opp. Life Min 0",
         ),
     ] {
         assert!(

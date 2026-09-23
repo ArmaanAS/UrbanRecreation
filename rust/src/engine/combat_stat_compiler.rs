@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 57;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 58;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -441,13 +441,15 @@ pub(crate) fn conditional_stop_predicate_admitted(predicate: CombatStatPredicate
     )
 }
 
-/// Recognize only the literal, immediate end-of-round Victory Life grammar and the two
+/// Recognize only the literal, immediate end-of-round Victory Life grammar and the three
 /// reviewed forms that put an already-resolved predicate on it.  Unlike the
 /// identity-locked Pillz slices below, this is deliberately generic: any registry
 /// definition with the complete reviewed structured shape may supply its positive fixed
 /// magnitude, whether it came from an Ability or a Bonus.  The prefixed forms are card
 /// abilities only - no clan bonus prints them - and each carries its condition in the one
-/// field the plain grammar requires neutral, so the two can never be confused.
+/// field the plain grammar requires neutral, so the two can never be confused. `Courage:`
+/// is the first move, which Anita's conversion and the Courage opponent-Life identities
+/// already carry on a post-round plan.
 /// Returns `(life, predicate)`.
 pub(crate) fn classify_victory_life(
     definition: &EffectDefinitionV1,
@@ -457,18 +459,38 @@ pub(crate) fn classify_victory_life(
         return None;
     }
     let input = definition.structured_input();
-    let (predicate, text) = match (input.previous_round_requirement, input.index_requirement) {
-        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any) => (
-            CombatStatPredicateV1::Always,
-            format!("+{} Life", input.value),
-        ),
-        (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any) => (
-            CombatStatPredicateV1::OwnerWonPreviousRound,
-            format!("Confidence : +{} Life", input.value),
-        ),
-        (PreviousRoundRequirementV1::Any, IndexRequirementV1::Asymmetry) => (
+    let (predicate, text) = match (
+        input.position_requirement,
+        input.previous_round_requirement,
+        input.index_requirement,
+    ) {
+        (PositionRequirementV1::Both, PreviousRoundRequirementV1::Any, IndexRequirementV1::Any) => {
+            (
+                CombatStatPredicateV1::Always,
+                format!("+{} Life", input.value),
+            )
+        }
+        (PositionRequirementV1::Both, PreviousRoundRequirementV1::Win, IndexRequirementV1::Any) => {
+            (
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+                format!("Confidence : +{} Life", input.value),
+            )
+        }
+        (
+            PositionRequirementV1::Both,
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Asymmetry,
+        ) => (
             CombatStatPredicateV1::SelectedHandSlotsDiffer,
             format!("Asymmetry: +{} Life", input.value),
+        ),
+        (
+            PositionRequirementV1::Attacker,
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Any,
+        ) => (
+            CombatStatPredicateV1::OwnerMovesFirst,
+            format!("Courage: +{} Life", input.value),
         ),
         _ => return None,
     };
@@ -487,15 +509,15 @@ pub(crate) fn has_victory_life_shape(definition: &EffectDefinitionV1) -> bool {
     input.value > 0 && victory_life_shape_matches(input)
 }
 
-/// Recognize the plain `+N Pillz` Victory grammar and its `Confidence:` form: the winner's
-/// own Pillz rise by the printed amount at the end of the round, unconditionally or only
-/// after a round its own side won. Like Victory Life it is admitted by exact text and
-/// complete structured shape over every same-text registry record, but card abilities only
-/// - no clan bonus prints either, so a Bonus slot carrying the text is a hazard, not a
-/// generic source. The prefixed form carries its condition in the one field the plain
-/// grammar requires neutral, so the two can never be confused; it prints `Confidence:`
-/// tight, unlike Victory Life's spaced `Confidence :`, and the exact-text check is what
-/// keeps those two apart. Returns `(pillz, predicate)`.
+/// Recognize the plain `+N Pillz` Victory grammar and its `Confidence:` and `Courage:`
+/// forms: the winner's own Pillz rise by the printed amount at the end of the round,
+/// unconditionally, only after a round its own side won, or only when its card moved first.
+/// Like Victory Life it is admitted by exact text and complete structured shape over every
+/// same-text registry record, but card abilities only - no clan bonus prints any of them, so
+/// a Bonus slot carrying the text is a hazard, not a generic source. Each prefixed form
+/// carries its condition in one field the plain grammar requires neutral, so they can never
+/// be confused; `Confidence:` prints tight, unlike Victory Life's spaced `Confidence :`, and
+/// the exact-text check is what keeps those two apart. Returns `(pillz, predicate)`.
 pub(crate) fn classify_victory_pillz(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -504,16 +526,20 @@ pub(crate) fn classify_victory_pillz(
         return None;
     }
     let input = definition.structured_input();
-    let (predicate, text) = match input.previous_round_requirement {
-        PreviousRoundRequirementV1::Any => (
+    let (predicate, text) = match (input.position_requirement, input.previous_round_requirement) {
+        (PositionRequirementV1::Both, PreviousRoundRequirementV1::Any) => (
             CombatStatPredicateV1::Always,
             format!("+{} Pillz", input.value),
         ),
-        PreviousRoundRequirementV1::Win => (
+        (PositionRequirementV1::Both, PreviousRoundRequirementV1::Win) => (
             CombatStatPredicateV1::OwnerWonPreviousRound,
             format!("Confidence: +{} Pillz", input.value),
         ),
-        PreviousRoundRequirementV1::Lose => return None,
+        (PositionRequirementV1::Attacker, PreviousRoundRequirementV1::Any) => (
+            CombatStatPredicateV1::OwnerMovesFirst,
+            format!("Courage: +{} Pillz", input.value),
+        ),
+        _ => return None,
     };
     (definition.description() == text).then_some((input.value, predicate))
 }
@@ -1334,15 +1360,34 @@ fn both_players_life_reduction_shape_matches(input: &StructuredEffectV1) -> bool
     )
 }
 
+/// `Equalizer: - N Opp. Life Min M`: a won round reduces the opposing player's Life by N
+/// per star of the opposing selected card, never below M. The two reviewed identities keep
+/// their exact record and either source slot, because a captured Copy materialises them as
+/// a Bonus (924669/2). Every other record is the grammar the two of them pinned: exact text
+/// rebuilt from the record's own numbers over the complete stars-linked shape, card abilities
+/// only - which is what admits El Cazador's Min 0 `5793`.
 pub(crate) fn classify_equalizer_opponent_life_on_victory(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(u16, u16)> {
     let input = definition.structured_input();
-    (equalizer_opponent_life_on_victory_identity_matches(source_kind, definition.id())
-        && definition.description() == "Equalizer: - 1 Opp. Life Min 2"
-        && equalizer_opponent_life_on_victory_shape_matches(input))
-    .then_some((input.value, input.value_min))
+    if equalizer_opponent_life_id_is_identity_locked(definition.id()) {
+        return (equalizer_opponent_life_on_victory_identity_matches(source_kind, definition.id())
+            && definition.description() == "Equalizer: - 1 Opp. Life Min 2"
+            && equalizer_opponent_life_on_victory_shape_matches(input))
+        .then_some((input.value, input.value_min));
+    }
+    let (per_star, minimum) = (input.value, input.value_min);
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && per_star > 0
+        && definition.description() == format!("Equalizer: - {per_star} Opp. Life Min {minimum}")
+        && equalizer_opponent_life_grammar_shape_matches(input))
+    .then_some((per_star, minimum))
+}
+
+/// The two reviewed ids that never reach the grammar, so neither can be relabelled.
+pub(crate) const fn equalizer_opponent_life_id_is_identity_locked(definition_id: u32) -> bool {
+    matches!(definition_id, 1415 | 4458)
 }
 
 /// Shared identity gate for compiler output and direct compact-plan validation. Captured
@@ -1354,7 +1399,7 @@ pub(crate) fn equalizer_opponent_life_on_victory_identity_matches(
     matches!(
         source_kind,
         CombatStatEffectSourceV1::Ability | CombatStatEffectSourceV1::Bonus
-    ) && matches!(definition_id, 1415 | 4458)
+    ) && equalizer_opponent_life_id_is_identity_locked(definition_id)
 }
 
 /// What a `Growth:`/`Degrowth:` post-round grammar pays, before resolution binds the round.
@@ -1761,6 +1806,224 @@ pub(crate) fn has_brawl_post_round_shape(definition: &EffectDefinitionV1) -> boo
             || brawl_own_pillz_shape_matches(input))
 }
 
+/// What a post-round `Support:` grammar pays, before resolution binds the count.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SupportPostRoundEffectV1 {
+    ReduceOpponentLife { per_count: u16, minimum: u16 },
+    GainLife { per_count: u16 },
+    GainPillz { per_count: u16 },
+}
+
+impl SupportPostRoundEffectV1 {
+    /// The public and compact representations, which catalog and replay preparation must
+    /// build identically.
+    pub(crate) fn effects(self) -> (CombatStatPostRoundEffectV1, CombatStatEffectV1) {
+        match self {
+            Self::ReduceOpponentLife { per_count, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerSupport {
+                    per_count,
+                    minimum,
+                },
+                CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerSupport { per_count, minimum },
+            ),
+            Self::GainLife { per_count } => (
+                CombatStatPostRoundEffectV1::GainLifeOnVictoryPerSupport { per_count },
+                CombatStatEffectV1::GainLifeOnVictoryPerSupport { per_count },
+            ),
+            Self::GainPillz { per_count } => (
+                CombatStatPostRoundEffectV1::GainPillzOnVictoryPerSupport { per_count },
+                CombatStatEffectV1::GainPillzOnVictoryPerSupport { per_count },
+            ),
+        }
+    }
+}
+
+/// Recognize the post-round `Support:` grammars: a won round pays the printed amount once
+/// per distinct character in the owner's hand sharing the owner's selected card's effective
+/// clan - the Support count the combat-stat Support abilities already read - onto the
+/// opposing Life or the owner's own Life or Pillz. Each is the plain Victory grammar of that
+/// resource with `isSupport` set, which every other post-round shape requires false, so the
+/// count is bound at resolution the way Brawl's is and the bound effect is paid by the arm
+/// that already pays the plain grammar. Exact printed text rebuilt from the record's own
+/// numbers - note the space in `+ 1 Pillz` - complete structured shape, card abilities only:
+/// no clan bonus prints one. `Support: Dope 1, Max. 4` is a Pillz permanent and not this
+/// family.
+pub(crate) fn classify_support_post_round(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<SupportPostRoundEffectV1> {
+    let input = definition.structured_input();
+    if source_kind != CombatStatEffectSourceV1::Ability || input.value == 0 {
+        return None;
+    }
+    let (effect, text) = if support_opponent_life_shape_matches(input) {
+        (
+            SupportPostRoundEffectV1::ReduceOpponentLife {
+                per_count: input.value,
+                minimum: input.value_min,
+            },
+            format!(
+                "Support: -{} Opp. Life, Min {}",
+                input.value, input.value_min
+            ),
+        )
+    } else if support_own_life_shape_matches(input) {
+        (
+            SupportPostRoundEffectV1::GainLife {
+                per_count: input.value,
+            },
+            format!("Support: +{} Life", input.value),
+        )
+    } else if support_own_pillz_shape_matches(input) {
+        (
+            SupportPostRoundEffectV1::GainPillz {
+                per_count: input.value,
+            },
+            format!("Support: + {} Pillz", input.value),
+        )
+    } else {
+        return None;
+    };
+    (definition.description() == text).then_some(effect)
+}
+
+/// Structural half of the post-round Support boundary, so replay preparation can reject a
+/// complete shape under malformed text instead of silently disabling it.
+pub(crate) fn has_support_post_round_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && (support_opponent_life_shape_matches(input)
+            || support_own_life_shape_matches(input)
+            || support_own_pillz_shape_matches(input))
+}
+
+fn support_opponent_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            side: AffectedSideV1::Opponent,
+            action: AttributeActionV1::Decrease,
+            support: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+fn support_own_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            support: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+fn support_own_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            attribute: AttributeAffectedV1::Pillz,
+            support: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+/// What a post-round `Equalizer:` own gain pays, before resolution binds the stars.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EqualizerPostRoundGainV1 {
+    Life { per_star: u16 },
+    Pillz { per_star: u16 },
+}
+
+impl EqualizerPostRoundGainV1 {
+    pub(crate) fn effects(self) -> (CombatStatPostRoundEffectV1, CombatStatEffectV1) {
+        match self {
+            Self::Life { per_star } => (
+                CombatStatPostRoundEffectV1::GainLifeOnVictoryPerOpponentStars { per_star },
+                CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star },
+            ),
+            Self::Pillz { per_star } => (
+                CombatStatPostRoundEffectV1::GainPillzOnVictoryPerOpponentStars { per_star },
+                CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star },
+            ),
+        }
+    }
+}
+
+/// Recognize `Equalizer: +N Life` and `Equalizer: +N Pillz`: a won round gives the owner N
+/// Life or Pillz per star of the opposing selected card - the magnitude the Equalizer
+/// opponent-Life reduction and the combat-stat Equalizers already bind - paid by the arm
+/// that pays the plain Victory gain. Exact text, complete stars-linked shape, card abilities
+/// only; the capped, compound, clan-gated and Victory-or-Defeat forms differ in a structured
+/// field and stay closed.
+pub(crate) fn classify_equalizer_post_round_gain(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<EqualizerPostRoundGainV1> {
+    let input = definition.structured_input();
+    if source_kind != CombatStatEffectSourceV1::Ability || input.value == 0 {
+        return None;
+    }
+    let (gain, text) = if equalizer_own_gain_shape_matches(input, AttributeAffectedV1::Life) {
+        (
+            EqualizerPostRoundGainV1::Life {
+                per_star: input.value,
+            },
+            format!("Equalizer: +{} Life", input.value),
+        )
+    } else if equalizer_own_gain_shape_matches(input, AttributeAffectedV1::Pillz) {
+        (
+            EqualizerPostRoundGainV1::Pillz {
+                per_star: input.value,
+            },
+            format!("Equalizer: +{} Pillz", input.value),
+        )
+    } else {
+        return None;
+    };
+    (definition.description() == text).then_some(gain)
+}
+
+/// Structural half of the post-round Equalizer boundary: the opponent-Life reduction at any
+/// numbers and the two own gains.
+pub(crate) fn has_equalizer_post_round_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && (equalizer_opponent_life_grammar_shape_matches(input)
+            || equalizer_own_gain_shape_matches(input, AttributeAffectedV1::Life)
+            || equalizer_own_gain_shape_matches(input, AttributeAffectedV1::Pillz))
+}
+
+fn equalizer_opponent_life_grammar_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            side: AffectedSideV1::Opponent,
+            action: AttributeActionV1::Decrease,
+            opponent_stars_linked: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
+fn equalizer_own_gain_shape_matches(
+    input: &StructuredEffectV1,
+    attribute: AttributeAffectedV1,
+) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            attribute,
+            opponent_stars_linked: true,
+            ..POST_ROUND_SHAPE
+        },
+    )
+}
+
 /// Strictly recognize Argos' printed Defeat Pillz effect. Its cap is applied after a
 /// live clan bonus in the shared END phase, so it requires a distinct typed path.
 pub(crate) fn classify_argos_defeat_capped_pillz(
@@ -2015,6 +2278,8 @@ pub(crate) fn classify_combat_stat_effect(
     if classify_brawl_post_round(definition, source_kind).is_some()
         || classify_round_scaled_post_round(definition, source_kind).is_some()
         || classify_bet_gated_post_round(definition, source_kind).is_some()
+        || classify_support_post_round(definition, source_kind).is_some()
+        || classify_equalizer_post_round_gain(definition, source_kind).is_some()
     {
         return None;
     }
@@ -3348,6 +3613,9 @@ pub(crate) struct PostRoundShapeV1 {
     /// requires false, so a grammar that does not name it can never admit an anti-support
     /// record.
     pub(crate) anti_support: bool,
+    /// The Support magnitude, the owner's own effective-clan character count. The same kind
+    /// of per-X flag: only the post-round `Support:` grammars set it.
+    pub(crate) support: bool,
     /// The `Growth:`/`Degrowth:` round scaling, carried as `isOverdrive`/`isDivide`. `None`
     /// for every other grammar, which then requires both flags false as before.
     pub(crate) round_scale: Option<RoundScaleV1>,
@@ -3376,14 +3644,15 @@ const POST_ROUND_SHAPE: PostRoundShapeV1 = PostRoundShapeV1 {
     special: SpecialActionV1::None,
     opponent_stars_linked: false,
     anti_support: false,
+    support: false,
     round_scale: None,
     bet_gated: false,
 };
 
 /// True when `input` is exactly the record `shape` describes. The fields the shape does not
 /// name must all be neutral: a clan gate, a bet link, a `valueCondition`, a Support or
-/// per-X magnitude or a permanence flag takes a record out of every admitted post-round
-/// grammar, whatever its text says.
+/// per-X magnitude the shape does not name, or a permanence flag takes a record out of every
+/// admitted post-round grammar, whatever its text says.
 fn shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
     shape.value.accepts(input.value)
         && shape.value_min.accepts(input.value_min)
@@ -3407,7 +3676,7 @@ fn shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
         && !input.is_inverted
-        && !input.is_support
+        && input.is_support == shape.support
         && input.is_anti_support == shape.anti_support
         && input.is_overdrive == (shape.round_scale == Some(RoundScaleV1::Growth))
         && input.is_divide == (shape.round_scale == Some(RoundScaleV1::Degrowth))
@@ -3422,9 +3691,9 @@ fn shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
 }
 
 fn victory_life_shape_matches(input: &StructuredEffectV1) -> bool {
-    // The three condition slots fixed Victory Life prints: none, `Confidence :`'s won
-    // previous round, `Asymmetry:`'s differing hand slots. A `Revenge:` Life, a Courage
-    // position or a clan gate keeps its visible-but-disabled record instead.
+    // The four condition slots fixed Victory Life prints: none, `Confidence :`'s won
+    // previous round, `Asymmetry:`'s differing hand slots, and `Courage:`'s first move. A
+    // `Revenge:` Life or a clan gate keeps its visible-but-disabled record instead.
     const CONDITIONS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[
         (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any),
         (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any),
@@ -3439,12 +3708,13 @@ fn victory_life_shape_matches(input: &StructuredEffectV1) -> bool {
             conditions: CONDITIONS,
             ..POST_ROUND_SHAPE
         },
-    )
+    ) || courage_shape_matches(input, AttributeAffectedV1::Life)
 }
 
 fn victory_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
-    // No condition at all, or the won previous round `Confidence:` names. A `Revenge:`
-    // Pillz keeps its visible-but-disabled record rather than becoming a near-miss hazard.
+    // No condition at all, the won previous round `Confidence:` names, or the first move
+    // `Courage:` names. A `Revenge:` Pillz keeps its visible-but-disabled record rather than
+    // becoming a near-miss hazard.
     const CONDITIONS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[
         (PreviousRoundRequirementV1::Any, IndexRequirementV1::Any),
         (PreviousRoundRequirementV1::Win, IndexRequirementV1::Any),
@@ -3454,6 +3724,21 @@ fn victory_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
         PostRoundShapeV1 {
             conditions: CONDITIONS,
             attribute: AttributeAffectedV1::Pillz,
+            ..POST_ROUND_SHAPE
+        },
+    ) || courage_shape_matches(input, AttributeAffectedV1::Pillz)
+}
+
+/// `Courage:` over a fixed own gain: the condition lives in the position field and is never
+/// printed beside a previous-round or hand-slot one, so the position is the only field that
+/// differs from the plain grammar - the same slot Anita's conversion and the Courage
+/// opponent-Life identities carry it in.
+fn courage_shape_matches(input: &StructuredEffectV1, attribute: AttributeAffectedV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            position: PositionRequirementV1::Attacker,
+            attribute,
             ..POST_ROUND_SHAPE
         },
     )
@@ -5261,6 +5546,211 @@ mod tests {
             None
         );
         assert!(has_brawl_post_round_shape(definition));
+    }
+
+    #[test]
+    fn post_round_support_equalizer_and_courage_are_admitted_by_exact_text_and_shape() {
+        use CombatStatEffectSourceV1::{Ability, Bonus};
+        let registry = registry();
+
+        // Support: every printed level of each grammar, each read from its own numbers.
+        for (id, expected) in [
+            (
+                827,
+                SupportPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 1,
+                },
+            ),
+            (
+                4844,
+                SupportPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 1,
+                },
+            ),
+            (
+                1789,
+                SupportPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 0,
+                },
+            ),
+            (
+                4937,
+                SupportPostRoundEffectV1::ReduceOpponentLife {
+                    per_count: 1,
+                    minimum: 0,
+                },
+            ),
+            (1221, SupportPostRoundEffectV1::GainLife { per_count: 1 }),
+            (1666, SupportPostRoundEffectV1::GainLife { per_count: 1 }),
+            (384, SupportPostRoundEffectV1::GainPillz { per_count: 1 }),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_support_post_round(definition, Ability),
+                Some(expected),
+                "definition {id}",
+            );
+            assert!(has_support_post_round_shape(definition), "{id} shape");
+            // No clan bonus prints one, so the Bonus slot is a hazard, not a source.
+            assert_eq!(classify_support_post_round(definition, Bonus), None, "{id}");
+            assert_eq!(
+                classify_combat_stat_effect(definition, Ability),
+                None,
+                "{id}"
+            );
+            // The plain grammars never admit a Support record: `isSupport` is part of every
+            // post-round shape, not a field they ignore.
+            assert!(!has_victory_life_shape(definition), "{id}");
+            assert!(!has_victory_pillz_shape(definition), "{id}");
+            assert!(!has_victory_opponent_life_shape(definition), "{id}");
+            assert!(!has_brawl_post_round_shape(definition), "{id}");
+        }
+        // Dope is a Pillz permanent with a family of its own; combat-stat Support is not
+        // post-round work at all.
+        for id in [2000, 266, 2535] {
+            let definition = registry.get(id).unwrap();
+            assert!(!has_support_post_round_shape(definition), "{id}");
+            assert_eq!(
+                classify_support_post_round(definition, Ability),
+                None,
+                "{id}"
+            );
+        }
+
+        // Equalizer: the opponent-Life grammar beyond its two identities, which keep both
+        // source slots, and the two own gains.
+        let el_cazador = registry.get(5793).unwrap();
+        assert_eq!(
+            classify_equalizer_opponent_life_on_victory(el_cazador, Ability),
+            Some((1, 0))
+        );
+        assert_eq!(
+            classify_equalizer_opponent_life_on_victory(el_cazador, Bonus),
+            None
+        );
+        assert!(has_equalizer_post_round_shape(el_cazador));
+        for id in [1415, 4458] {
+            let definition = registry.get(id).unwrap();
+            for source_kind in [Ability, Bonus] {
+                assert_eq!(
+                    classify_equalizer_opponent_life_on_victory(definition, source_kind),
+                    Some((1, 2)),
+                    "{id} {source_kind:?}",
+                );
+            }
+        }
+        for (id, expected) in [
+            (5199, EqualizerPostRoundGainV1::Life { per_star: 1 }),
+            (5582, EqualizerPostRoundGainV1::Pillz { per_star: 1 }),
+        ] {
+            let definition = registry.get(id).unwrap();
+            assert_eq!(
+                classify_equalizer_post_round_gain(definition, Ability),
+                Some(expected),
+                "{id}",
+            );
+            assert_eq!(classify_equalizer_post_round_gain(definition, Bonus), None);
+            assert!(has_equalizer_post_round_shape(definition), "{id} shape");
+            assert_eq!(
+                classify_combat_stat_effect(definition, Ability),
+                None,
+                "{id}"
+            );
+            assert!(!has_victory_life_shape(definition), "{id}");
+            assert!(!has_victory_pillz_shape(definition), "{id}");
+        }
+        // The clan-gated and Victory-or-Defeat Equalizer gains differ in a structured field.
+        for id in [5165, 5616, 1679] {
+            let definition = registry.get(id).unwrap();
+            assert_eq!(
+                classify_equalizer_post_round_gain(definition, Ability),
+                None
+            );
+            assert!(!has_equalizer_post_round_shape(definition), "{id}");
+        }
+
+        // Courage: the plain Victory gains under the first-move predicate, abilities only.
+        let fhtagn = registry.get(5592).unwrap();
+        assert_eq!(
+            classify_victory_life(fhtagn, Ability),
+            Some((5, CombatStatPredicateV1::OwnerMovesFirst))
+        );
+        assert_eq!(classify_victory_life(fhtagn, Bonus), None);
+        let ysmereth = registry.get(5474).unwrap();
+        assert_eq!(
+            classify_victory_pillz(ysmereth, Ability),
+            Some((1, CombatStatPredicateV1::OwnerMovesFirst))
+        );
+        assert_eq!(classify_victory_pillz(ysmereth, Bonus), None);
+        for definition in [fhtagn, ysmereth] {
+            assert_eq!(classify_combat_stat_effect(definition, Ability), None);
+        }
+        // Anita's conversion and the Courage opponent-Life identities keep their own records.
+        for id in [274, 843, 3314, 4531] {
+            let definition = registry.get(id).unwrap();
+            assert!(!has_victory_life_shape(definition), "{id}");
+            assert!(!has_victory_pillz_shape(definition), "{id}");
+        }
+
+        // Text and structure must corroborate: a record whose printed numbers disagree with
+        // its own, or which differs in any structured field, is admitted by no grammar.
+        let admitted = |definition: &EffectDefinitionV1| {
+            classify_support_post_round(definition, Ability).is_some()
+                || classify_equalizer_opponent_life_on_victory(definition, Ability).is_some()
+                || classify_equalizer_post_round_gain(definition, Ability).is_some()
+                || classify_victory_life(definition, Ability).is_some()
+                || classify_victory_pillz(definition, Ability).is_some()
+                || classify_victory_opponent_life(definition, Ability).is_some()
+        };
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("1789", "valueMin", serde_json::json!(1)),
+            ("1789", "isSupport", serde_json::json!(false)),
+            ("827", "currentRoundRequirement", serde_json::json!("lose")),
+            ("1221", "value", serde_json::json!(2)),
+            ("1221", "positionRequirement", serde_json::json!("attacker")),
+            ("384", "valueMax", serde_json::json!(7)),
+            ("384", "isPermanent", serde_json::json!(true)),
+            ("384", "isOppStarsLinked", serde_json::json!(true)),
+            ("5793", "valueMin", serde_json::json!(2)),
+            ("5793", "isOppStarsLinked", serde_json::json!(false)),
+            ("5199", "valueMin", serde_json::json!(1)),
+            ("5199", "previousRoundRequirement", serde_json::json!("win")),
+            ("5582", "sideAffected", serde_json::json!("opponent")),
+            ("5592", "positionRequirement", serde_json::json!("both")),
+            ("5592", "previousRoundRequirement", serde_json::json!("win")),
+            ("5474", "positionRequirement", serde_json::json!("defender")),
+            ("5474", "indexRequirement", serde_json::json!("symmetry")),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert!(!admitted(definition), "malformed {id} {field} = {value}");
+        }
+        // The complete shape under other text is a hazard for replay, not a source.
+        for (id, text) in [
+            ("1789", "Support: -1 Opp. Life Min 0"),
+            ("384", "Support: +1 Pillz"),
+            ("5582", "Equalizer: + 1 Pillz"),
+        ] {
+            let mut retexted = source.clone();
+            retexted[id]["description"] = serde_json::json!(text);
+            let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+            let definition = retexted.get(id.parse().unwrap()).unwrap();
+            assert!(!admitted(definition), "retexted {id}");
+            assert!(
+                has_support_post_round_shape(definition)
+                    || has_equalizer_post_round_shape(definition),
+                "retexted {id} shape",
+            );
+        }
     }
 
     #[test]

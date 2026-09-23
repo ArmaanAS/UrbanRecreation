@@ -11,10 +11,11 @@ use super::combat_stat_compiler::{
     classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
     classify_defeat_opponent_pillz, classify_defeat_pillz, classify_defeat_pillz_and_life,
     classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_heal_life_on_victory, classify_killshot_opponent_life,
-    classify_killshot_pillz_and_life, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_regen_life_on_victory, classify_round_scaled_post_round,
+    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
+    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
@@ -22,12 +23,13 @@ use super::combat_stat_compiler::{
     classify_victory_pillz_per_damage, compact_effect, is_copy_opponent_source_description,
     VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
+use super::effect_reads_support_count;
 use super::CopiedSourceKindV1;
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
-    CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatPlanErrorV1, CombatStatPostRoundEffectV1,
-    CombatStatPredicateV1, CombatStatSourcePlanV1, HandSlot, PlayerId, HAND_SIZE,
+    CombatStatEffectV1, CombatStatPlanErrorV1, CombatStatPostRoundEffectV1, CombatStatPredicateV1,
+    CombatStatSourcePlanV1, HandSlot, PlayerId, HAND_SIZE,
 };
 use crate::catalog::{
     CanonicalCard, CardCatalog, CardKey, EffectiveCardCatalog,
@@ -844,18 +846,13 @@ fn executable_ability_support_count(
 ) -> u16 {
     // A Copy ability may adopt an opposing Support effect, and Support is then counted in
     // this card's own effective clan, so it always carries that context.
-    matches!(
-        plan,
-        CombatStatSourcePlanV1::Execute {
-            effect: CombatStatEffectV1::ModifyCombatStat {
-                multiplier: CombatStatMagnitudeV1::SourceBonusSupport,
-                ..
-            },
-            ..
-        } | CombatStatSourcePlanV1::CopyOpponentSource { .. }
-    )
-    .then_some(effective_clan_character_count)
-    .unwrap_or(0)
+    match plan {
+        CombatStatSourcePlanV1::Execute { effect, .. } if effect_reads_support_count(effect) => {
+            effective_clan_character_count
+        }
+        CombatStatSourcePlanV1::CopyOpponentSource { .. } => effective_clan_character_count,
+        _ => 0,
+    }
 }
 
 fn validate_solver_hand(
@@ -1310,8 +1307,10 @@ fn prepare_catalog_source(
                 .into_boxed_slice(),
         });
     }
-    // Equalizer opponent-Life has only two reviewed canonical printed abilities. Dynamic
-    // Copy is admitted by replay preparation, never by this immutable catalog constructor.
+    // The `Min 2` Equalizer opponent-Life text keeps its two reviewed canonical printed
+    // abilities, by card key. Dynamic Copy is admitted by replay preparation, never by this
+    // immutable catalog constructor. Every other printed Equalizer reduction is the grammar
+    // below, under the ordinary catalog-alias rule.
     if description == EQUALIZER_REDUCE_OPPONENT_LIFE_DESCRIPTION {
         if let Some(registry_definition_id) =
             equalizer_opponent_life_registry_definition_id(card_key, source_kind, catalog_id)
@@ -1637,6 +1636,80 @@ fn prepare_catalog_source(
                 definition,
             )?;
             return prepare_brawl_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+            );
+        }
+        // So are the post-round Support grammars, with the owner's own Support count, and the
+        // Equalizer own gains, with the opposing card's stars.
+        if classify_support_post_round(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let (effect, compact_effect) =
+                        classify_support_post_round(definition, source_kind)?.effects();
+                    Some((effect, compact_effect, CombatStatPredicateV1::Always))
+                },
+            );
+        }
+        if classify_equalizer_post_round_gain(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let (effect, compact_effect) =
+                        classify_equalizer_post_round_gain(definition, source_kind)?.effects();
+                    Some((effect, compact_effect, CombatStatPredicateV1::Always))
+                },
+            );
+        }
+        // The Equalizer opponent-Life grammar beyond its two reviewed card sources, whose
+        // `Min 2` text is intercepted by card key above and never reaches this point.
+        if classify_equalizer_opponent_life_on_victory(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_equalizer_opponent_life_source(
                 registry,
                 player,
                 hand_slot,

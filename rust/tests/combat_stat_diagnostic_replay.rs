@@ -193,7 +193,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Equalizer.
     (1090531, 4),
     (1091585, 3),
-    (1091904, 2),
+    // Four rounds since revision 58: Miss Xingshu's `Support: +1 Life` pays 4 in round 2.
+    (1091904, 4),
     (1092369, 4),
     (1092294, 4),
     // Revision 29 plain `+N Pillz`. The winner's own Pillz rise after the bet is paid:
@@ -342,7 +343,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // in 1078669/1, its only selection, so the opposing Pillz form has no paying round and
     // rests on the revision-30 reduction arm it binds to.
     (1093451, 3),
-    (1058545, 2),
+    // Four rounds since revision 58: Hewa Cr's `Support: -1 Opp. Life, Min 0` takes 7 - 2
+    // Damage - 4 to 1 in round 2.
+    (1058545, 4),
     (964213, 4),
     // Four rounds since revision 54, clan-gated past round 0.
     (1066739, 4),
@@ -546,6 +549,17 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (925781, 2),
     (926071, 1),
     (964150, 2),
+    // Revision 58 admits the post-round `Support:`, `Equalizer:` and `Courage:` Victory
+    // grammars. Hewa Cr's Support reduction reads a count of 3 in 866431/0 (12 - 2 - 3 = 7,
+    // where 4 would leave 6) and Ysmereth's `Courage: +1 Pillz` pays moving first in
+    // 866431/1; Moses' Support counts an infiltrating Oculus in 1011016/0 (12 - 2 - 4 = 6);
+    // Scavros' `Equalizer: +1 Pillz` reads Aurora's level 5 after a tie won on level in
+    // 1066481/0 (12 - 8 + 5 = 9); El Cazador's Min 0 reduction is stopped by Mavi in
+    // 876939/1.
+    (866431, 4),
+    (1011016, 3),
+    (1066481, 4),
+    (876939, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

@@ -241,6 +241,30 @@ pub enum CombatStatPostRoundEffectV1 {
         per_count: u16,
         maximum: u16,
     },
+    /// `Support: -N Opp. Life, Min M`: the winner reduces the opposing player's Life by N per
+    /// distinct character in its own hand sharing its selected card's effective clan, never
+    /// below `minimum`.
+    ReduceOpponentLifeOnVictoryPerSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    /// `Support: +N Life`: the winner's own Life rises by N per Support count.
+    GainLifeOnVictoryPerSupport {
+        per_count: u16,
+    },
+    /// `Support: + N Pillz`: the winner's own Pillz rise by N per Support count.
+    GainPillzOnVictoryPerSupport {
+        per_count: u16,
+    },
+    /// `Equalizer: +N Life`: the winner's own Life rises by N per star of the opposing
+    /// selected card.
+    GainLifeOnVictoryPerOpponentStars {
+        per_star: u16,
+    },
+    /// `Equalizer: +N Pillz`: the same gain on the winner's own Pillz.
+    GainPillzOnVictoryPerOpponentStars {
+        per_star: u16,
+    },
     /// `Killshot: +N Pillz And Life`: an attack at least double the opposing one gives a
     /// living owner N Pillz and N Life.
     GainPillzAndLifeOnKillshot {
@@ -468,6 +492,27 @@ pub enum CombatStatEffectV1 {
     GainPillzOnVictoryPerAntiSupport {
         per_count: u16,
         maximum: u16,
+    },
+    /// The post-round `Support:` grammars: the printed amount times the owner's own
+    /// effective-clan character count, bound at resolution from the source's Support
+    /// context. Ability slot only, unconditional.
+    ReduceOpponentLifeOnVictoryPerSupport {
+        per_count: u16,
+        minimum: u16,
+    },
+    GainLifeOnVictoryPerSupport {
+        per_count: u16,
+    },
+    GainPillzOnVictoryPerSupport {
+        per_count: u16,
+    },
+    /// The post-round `Equalizer:` own gains: the printed amount times the opposing selected
+    /// card's stars. Ability slot only, unconditional.
+    GainLifeOnVictoryPerOpponentStars {
+        per_star: u16,
+    },
+    GainPillzOnVictoryPerOpponentStars {
+        per_star: u16,
     },
     /// The Killshot compound own gain, Ability slot only.
     GainPillzAndLifeOnKillshot {
@@ -708,6 +753,14 @@ pub enum InvalidCombatStatPlanReasonV1 {
     BrawlPostRoundSource,
     BrawlPostRoundMagnitude,
     BrawlPostRoundPredicate,
+    SupportPostRoundSource,
+    SupportPostRoundMagnitude,
+    SupportPostRoundPredicate,
+    /// The Equalizer opponent-Life grammar beyond its two reviewed identities, and the
+    /// Equalizer own gains.
+    EqualizerPostRoundSource,
+    EqualizerPostRoundMagnitude,
+    EqualizerPostRoundPredicate,
     /// A `Stop:` source faces a hand that could stop its owner's ability, the one case the
     /// projection does not model.
     StopTriggeredAgainstStopAbility,
@@ -1052,6 +1105,23 @@ impl CombatStatDiagnosticV1 {
     }
 }
 
+/// True for every effect whose magnitude is its owner's Support count - the distinct
+/// characters in the owner's hand sharing the owner's selected card's effective clan - so
+/// that an ability carrying it must carry that count as its Support context. The combat-stat
+/// Support abilities and the post-round `Support:` grammars; catalog and replay preparation
+/// ask this same question, so the three can never disagree about which plans need a count.
+pub(crate) const fn effect_reads_support_count(effect: CombatStatEffectV1) -> bool {
+    matches!(
+        effect,
+        CombatStatEffectV1::ModifyCombatStat {
+            multiplier: CombatStatMagnitudeV1::SourceBonusSupport,
+            ..
+        } | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerSupport { .. }
+            | CombatStatEffectV1::GainLifeOnVictoryPerSupport { .. }
+            | CombatStatEffectV1::GainPillzOnVictoryPerSupport { .. }
+    )
+}
+
 fn validate_ability_support_context(
     player: PlayerId,
     hand_slot: HandSlot,
@@ -1061,13 +1131,7 @@ fn validate_ability_support_context(
     let source_id = source_plan_id(plan);
     let expected = matches!(
         plan,
-        CombatStatSourcePlanV1::Execute {
-            effect: CombatStatEffectV1::ModifyCombatStat {
-                multiplier: CombatStatMagnitudeV1::SourceBonusSupport,
-                ..
-            },
-            ..
-        }
+        CombatStatSourcePlanV1::Execute { effect, .. } if effect_reads_support_count(effect)
     )
     .then(|| effective_clan_character_count(hand_slot, cards))
     .unwrap_or(0);
@@ -1907,17 +1971,29 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
-    if matches!(
-        effect,
-        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
-    ) {
-        return Err(invalid_combat_stat_execute(
-            player,
-            hand_slot,
-            source,
-            source_id,
-            InvalidCombatStatPlanReasonV1::EqualizerOpponentLifeIdentity,
-        ));
+    // Every other Equalizer post-round effect is a grammar: the opponent-Life reduction at
+    // any printed numbers and the two own gains. Card abilities only - a captured Copy's
+    // Bonus provenance is the reviewed identities' alone - with a positive amount per star
+    // and no condition beyond the outcome the engine resolves.
+    if let CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star, .. }
+    | CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star }
+    | CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star } = effect
+    {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundSource)
+        } else if per_star == 0 {
+            Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundPredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
     }
     // The Victory-or-Defeat opposing reduction is the same plain grammar on the channel that
     // pays whatever the outcome; the own-Life gains stay a closed reviewed set.
@@ -2153,8 +2229,8 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryLifeMagnitude,
             ));
         }
-        // The plain grammar is unconditional; the two reviewed prefixed forms carry one
-        // already-resolved predicate each, and both are card abilities only.
+        // The plain grammar is unconditional; the three reviewed prefixed forms carry one
+        // already-resolved predicate each, and all are card abilities only.
         // `Bet > N Pillz:` is the one gate a clan bonus prints on it (the Zenith bonus).
         let bet_gate = matches!(predicate, CombatStatPredicateV1::OwnerPillzUsedAbove(_));
         if !(bet_gate
@@ -2163,6 +2239,7 @@ fn validate_combat_stat_source_plan(
                 CombatStatPredicateV1::Always
                     | CombatStatPredicateV1::OwnerWonPreviousRound
                     | CombatStatPredicateV1::SelectedHandSlotsDiffer
+                    | CombatStatPredicateV1::OwnerMovesFirst
             ))
             || (predicate != CombatStatPredicateV1::Always
                 && !bet_gate
@@ -2197,11 +2274,14 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryPillzMagnitude,
             ));
         }
-        // The plain grammar is unconditional; the one reviewed prefixed form carries the
-        // previous-round predicate `Confidence:` names, and both are card abilities only.
+        // The plain grammar is unconditional; the two reviewed prefixed forms carry the
+        // previous-round predicate `Confidence:` names or the first move `Courage:` names,
+        // and all are card abilities only.
         if !matches!(
             predicate,
-            CombatStatPredicateV1::Always | CombatStatPredicateV1::OwnerWonPreviousRound
+            CombatStatPredicateV1::Always
+                | CombatStatPredicateV1::OwnerWonPreviousRound
+                | CombatStatPredicateV1::OwnerMovesFirst
         ) {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -2368,6 +2448,29 @@ fn validate_combat_stat_source_plan(
             ));
         }
         return Ok(());
+    }
+    // The post-round `Support:` grammars follow the same rule. Their count is the source's
+    // own Support context, which `validate_ability_support_context` checks beside the
+    // combat-stat Support abilities, so a plan cannot carry a count its hand does not have.
+    if let CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerSupport { per_count, .. }
+    | CombatStatEffectV1::GainLifeOnVictoryPerSupport { per_count }
+    | CombatStatEffectV1::GainPillzOnVictoryPerSupport { per_count } = effect
+    {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::SupportPostRoundSource)
+        } else if per_count == 0 {
+            Some(InvalidCombatStatPlanReasonV1::SupportPostRoundMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::SupportPostRoundPredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
     }
     if let CombatStatEffectV1::ReduceOpponentPillzOnDefeat { pillz, .. } = effect {
         if source != CombatStatEffectSourceV1::Ability {
@@ -3196,6 +3299,11 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
         | CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
         | CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { .. }
+        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerSupport { .. }
+        | CombatStatEffectV1::GainLifeOnVictoryPerSupport { .. }
+        | CombatStatEffectV1::GainPillzOnVictoryPerSupport { .. }
+        | CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { .. }
+        | CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { .. }
         | CombatStatEffectV1::GainPillzAndLifeOnKillshot { .. }
         | CombatStatEffectV1::GainPillzOnDefeat { .. }
         | CombatStatEffectV1::GainPillzAndLifeOnDefeat { .. }
@@ -3351,6 +3459,21 @@ pub(crate) fn shared_post_round_effect(
         }
         CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { per_count, maximum } => {
             Some(PostRoundSourceEffect::GainPillzOnVictoryPerAntiSupport { per_count, maximum })
+        }
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerSupport { per_count, minimum } => Some(
+            PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerSupport { per_count, minimum },
+        ),
+        CombatStatEffectV1::GainLifeOnVictoryPerSupport { per_count } => {
+            Some(PostRoundSourceEffect::GainLifeOnVictoryPerSupport { per_count })
+        }
+        CombatStatEffectV1::GainPillzOnVictoryPerSupport { per_count } => {
+            Some(PostRoundSourceEffect::GainPillzOnVictoryPerSupport { per_count })
+        }
+        CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star } => {
+            Some(PostRoundSourceEffect::GainLifeOnVictoryPerOpponentStars { per_star })
+        }
+        CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star } => {
+            Some(PostRoundSourceEffect::GainPillzOnVictoryPerOpponentStars { per_star })
         }
         CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzAndLifeOnKillshot { amount }),

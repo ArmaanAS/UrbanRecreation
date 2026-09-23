@@ -2236,6 +2236,41 @@ from 632 to 658 rounds with 1079078, 874795, 924146, 964404, 1011430, 1089974, 9
 out: Paw Paw's unadmitted `Killshot: +3 Life` sits beside its Tune Out, the exact pairing
 construction refuses, and it only matches the server because it never fires.
 
+Semantic revision 58 admits three gates and magnitudes over the plain Victory Life and Pillz
+grammars that the projection already resolved on combat stats. `Support:` multiplies the
+printed amount by the owner's Support count - `Support: -1 Opp. Life, Min M` (`827`,
+`4844`, `1789`, `4937`), `Support: +1 Life` (`1221`, `1666`) and `Support: + 1 Pillz`
+(`384`); `Equalizer:` by the opposing selected card's stars - `Equalizer: +1 Life`
+(`5199`), `Equalizer: +1 Pillz` (`5582`) and the Min 0 opponent-Life reduction `5793`,
+which the identity lock on `1415`/`4458` had kept closed; and `Courage:` pays only a winner
+that moved first - `Courage: +5 Life` (`5592`) and `Courage: +1 Pillz` (`5474`). It
+measured 7 and unlocked 8 - `866431`, `876939`, `1011016`, `1058545`, `1066481`,
+`1091904`, `1092578` and `1092729` - taking eligibility from 188 to 196: `1066481` also
+needed revision 55's clan-gated Growth, so the family line, measured before that landed,
+could not see it.
+
+The price was revision 42's Brawl route again. `bind_post_round_effect` gains the Support
+count, which was already on the source's resolution plan, and each new source effect binds
+to the fixed arm that pays the plain grammar, clamped once after multiplying; there is no
+new engine arithmetic. `PostRoundShapeV1` gains a `support` flag that only these grammars
+set. The Equalizer reduction is now the grammar its two reviewed identities pinned, card
+abilities only, while those two keep their exact records and both slots. Courage reuses
+`OwnerMovesFirst`, which Anita's conversion already pins on this channel in both
+directions. `Disunion` stays closed: no round separates its predicate from the plain one.
+
+The server pins the counts and levels. Hewa Cr's reduction reads a count of 3 in 866431/0
+(12 - 2 - 3 = 7, where a count of 4 would leave 6) and 4 in 1058545/2 (7 - 2 - 4 = 1);
+Moses' counts an infiltrating Oculus in 1011016/0 (12 - 2 - 4 = 6); Miss Xingshu's `+1 Life`
+pays 7 + 4 in 1091904/2; Scubb's `+ 1 Pillz` 12 - 9 + 4 in 1145959/0, a capture that is not
+replay-ready. Scavros' `Equalizer: +1 Pillz` reads Aurora's level 5 in 1066481/0 after a
+tie won on level (12 - 8 + 5 = 9, where his own level would give 6), and Elias Renko's
+`+1 Life` a level 2 in 1092729/1. Ysmereth's `Courage: +1 Pillz` pays moving first in
+866431/1 (6 - 6 + 1, beside the Komboka bonus). `5793` has only a stopped round (876939/1)
+and `5592` only a loss, so those two rest on the composition basis: the per-star reduction
+is pinned by `1415`/`4458` and the first-move predicate by Anita. The copier reading its own
+count, and counts of 1 and 2, are pinned by engine tests. The gate grows from 658 to 677
+rounds with 866431, 1011016, 1066481 and 876939 added and 1058545 and 1091904 extended.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

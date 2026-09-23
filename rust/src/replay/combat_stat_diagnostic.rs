@@ -19,31 +19,32 @@ use crate::engine::combat_stat_compiler::{
     classify_combat_stat_effect, classify_defeat_life, classify_defeat_opponent_life,
     classify_defeat_opponent_pillz, classify_defeat_pillz, classify_defeat_pillz_and_life,
     classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_heal_life_on_victory, classify_killshot_opponent_life,
-    classify_killshot_pillz_and_life, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_regen_life_on_victory, classify_round_scaled_post_round,
+    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
+    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
     classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
     classify_victory_pillz_per_damage, compact_effect, has_bet_gated_post_round_shape,
     has_both_players_life_reduction_shape, has_brawl_post_round_shape, has_defeat_life_shape,
-    has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_heal_life_on_victory_shape,
-    has_killshot_opponent_life_shape, has_poison_opponent_life_on_defeat_shape,
-    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
-    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
-    has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
+    has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_equalizer_post_round_shape,
+    has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
+    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
     has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
     has_victory_pillz_shape, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
-    derive_effective_catalog_hand, unmodelled_source_context, BaseRulesPosition,
-    BaseRulesRoundInput, BaseRulesRoundReport, ByPlayer, CombatStatCardPlanV1,
+    derive_effective_catalog_hand, effect_reads_support_count, unmodelled_source_context,
+    BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport, ByPlayer, CombatStatCardPlanV1,
     CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1,
-    CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatPlanErrorV1,
+    CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatPlanErrorV1,
     CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, PlayerId,
     HAND_SIZE,
 };
@@ -968,6 +969,28 @@ fn prepare_combat_stat_source(
             CombatStatPredicateV1::Always,
         ));
     }
+    // The post-round Support grammars read the owner's Support count, which this card's
+    // plan carries as its ability Support context; the Equalizer own gains read the stars.
+    if let Some(support) = classify_support_post_round(definition, source_kind) {
+        let (post_round_effect, compact_effect) = support.effects();
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            CombatStatPredicateV1::Always,
+        ));
+    }
+    if let Some(gain) = classify_equalizer_post_round_gain(definition, source_kind) {
+        let (post_round_effect, compact_effect) = gain.effects();
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            CombatStatPredicateV1::Always,
+        ));
+    }
     if let Some((pillz, minimum)) = classify_defeat_opponent_pillz(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -1203,31 +1226,42 @@ fn prepare_combat_stat_source(
                     || definition.structured_input().attribute_affected
                         == AttributeAffectedV1::Life))
             || has_victory_or_defeat_opponent_life_shape(definition);
-    // Equalizer opponent-Life is an equally closed identity-and-shape family. Captured
-    // Copy can put either reviewed id in either source slot, but every malformed record
-    // and adjacent Equalizer Life form must reject when selected.
+    // Equalizer post-round work is a closed grammar plus two identities. Captured Copy can
+    // put either reviewed id in either source slot, but every malformed record and adjacent
+    // Equalizer Life or Pillz form - a wrong slot, a cap, a compound, the complete shape under
+    // other text - must reject when selected.
     let unadmitted_equalizer_opponent_life = matches!(source.id, 1415 | 4458)
         || (source.description.contains("Equalizer")
             && (source.description.contains("Life")
-                || definition.structured_input().attribute_affected == AttributeAffectedV1::Life));
+                || source.description.contains("Pillz")
+                || matches!(
+                    definition.structured_input().attribute_affected,
+                    AttributeAffectedV1::Life
+                        | AttributeAffectedV1::Pillz
+                        | AttributeAffectedV1::LifeAndPillz
+                )))
+        || has_equalizer_post_round_shape(definition);
     // A near-miss of the admitted family is a selected hazard: either the literal grammar
     // names Victory Life but its structure is wrong, or the complete reviewed structure
-    // is present under malformed text. Other Life families keep the diagnostic's existing
-    // visible-but-disabled behavior until their own slices are implemented.
-    let unadmitted_victory_life = (source.description.starts_with('+')
+    // is present under malformed text. Its `Courage:` form takes the boundary with it. Other
+    // Life families keep the diagnostic's existing visible-but-disabled behavior until their
+    // own slices are implemented.
+    let unadmitted_victory_life = ((source.description.starts_with('+')
+        || source.description.starts_with("Courage: +"))
         && source.description.ends_with(" Life")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Life)
         || has_victory_life_shape(definition);
     // Plain Victory Pillz is the same kind of near-miss boundary: the literal `+N Pillz`
     // text over a wrong structure or slot, or the complete reviewed structure under other
     // text, rejects when selected. Its `Confidence:` form joined the grammar in revision 36
-    // and takes the boundary with it, so `Confidence: +N Pillz` over a wrong structure is a
-    // hazard too. The other prefixed forms (`Stop:`, `Growth:`, `Courage:`, `Killshot:`,
-    // `Perfect:`, `Equalizer:`, `Defeat:`, `Revenge:`), the capped `+3 Pillz Max. 9` and
-    // `Support: + 1 Pillz` differ structurally and keep their visible-but-disabled records;
-    // `Brawl:` has its own post-round grammar and boundary below.
+    // and its `Courage:` form in revision 55, and each takes the boundary with it, so either
+    // text over a wrong structure is a hazard too. The other prefixed forms (`Stop:`,
+    // `Growth:`, `Killshot:`, `Perfect:`, `Defeat:`, `Revenge:`) and the capped
+    // `+3 Pillz Max. 9` differ structurally and keep their visible-but-disabled records;
+    // `Brawl:`, `Support:` and `Equalizer:` have their own post-round boundaries.
     let unadmitted_victory_pillz = ((source.description.starts_with('+')
-        || source.description.starts_with("Confidence: +"))
+        || source.description.starts_with("Confidence: +")
+        || source.description.starts_with("Courage: +"))
         && source.description.ends_with(" Pillz")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_victory_pillz_shape(definition);
@@ -1327,6 +1361,21 @@ fn prepare_combat_stat_source(
                 | AttributeAffectedV1::LifeAndPillz
         ))
         || has_brawl_post_round_shape(definition);
+    // The post-round Support grammars have the same boundary: a `Support:` text over a Life
+    // or Pillz record that is not a permanent - a wrong slot, a wrong structure, numbers the
+    // text disagrees with - or the complete Support shape under other text rejects when
+    // selected; before revision 55 these were inert disabled sources in replay. `Support:
+    // Dope` is a Pillz permanent with a family of its own and keeps its record, and the
+    // combat-stat Support forms name Power, Damage or Attack and are not reached.
+    let unadmitted_support_post_round = (source.description.starts_with("Support: ")
+        && !input.is_permanent
+        && matches!(
+            input.attribute_affected,
+            AttributeAffectedV1::Life
+                | AttributeAffectedV1::Pillz
+                | AttributeAffectedV1::LifeAndPillz
+        ))
+        || has_support_post_round_shape(definition);
     // `Stop:` fires on the owner's own ability being stopped, which the projection admits
     // only over a numeric body and only where nothing opposite can stop it. Any other
     // `Stop:` record - the Pillz forms, a malformed body, the inverted flag under other
@@ -1420,6 +1469,7 @@ fn prepare_combat_stat_source(
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
         || unadmitted_brawl_post_round
+        || unadmitted_support_post_round
         || unadmitted_stop_triggered
         || unadmitted_defeat_pillz
         || unadmitted_round_scaled_post_round
@@ -1462,6 +1512,7 @@ fn prepare_combat_stat_source(
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
         || unadmitted_brawl_post_round
+        || unadmitted_support_post_round
         || unadmitted_stop_triggered
         || unadmitted_defeat_pillz
         || unadmitted_round_scaled_post_round
@@ -1488,13 +1539,7 @@ fn executable_ability_support_count(
 ) -> u16 {
     matches!(
         plan,
-        CombatStatSourcePlanV1::Execute {
-            effect: CombatStatEffectV1::ModifyCombatStat {
-                multiplier: CombatStatMagnitudeV1::SourceBonusSupport,
-                ..
-            },
-            ..
-        }
+        CombatStatSourcePlanV1::Execute { effect, .. } if effect_reads_support_count(effect)
     )
     .then_some(effective_clan_character_count)
     .unwrap_or(0)
