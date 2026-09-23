@@ -530,7 +530,8 @@ impl CatalogCombatStatMatchV1 {
         // Some sources are admitted only where their context is one the corpus has pinned:
         // a `Stop:` source where nothing opposite can stop its owner's ability, a resource
         // canceller where nothing opposite has an effect whose cancellation is unpinned, a
-        // `/ Life Lost` magnitude where nothing can raise its owner's Life.
+        // `/ Life Lost` magnitude where nothing can raise its owner's Life, `Tune Out` where
+        // no Killshot and no opposing Power/Attack cancel can meet it.
         // The engine refuses such a plan too; refusing it here, as the unsupported source it
         // is, keeps the coverage report counting it as a blocker.
         for player in PlayerId::ALL {

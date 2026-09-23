@@ -45,6 +45,10 @@ pub enum CombatStatAttributeV1 {
 pub enum CombatStatAffectedSideV1 {
     Opponent,
     Player,
+    /// `Cards`: the change lands on both selected cards, each clamped on its own. The
+    /// owner's card takes it with the owner's own modifiers and the opposing card with the
+    /// owner's opposing ones. Fixed magnitude, card abilities only.
+    Both,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -366,6 +370,11 @@ pub enum CombatStatEffectV1 {
     CancelOpponentResourceModifiers {
         resources: crate::effect_registry::ResourceCancellationV1,
     },
+    /// `Tune Out`, while live on either selected card: both Powers become 1 after every
+    /// Power modifier, so each Attack is its owner's bet plus one, and no Attack modifier of
+    /// either card applies. Damage, Fury and end-of-round effects are untouched. Bonus slot
+    /// only - it has only been observed as the Cosmohnuts clan bonus.
+    SimplifyAttackToPillz,
     /// Fixed non-stat post-round work. Identity and source are checked at plan
     /// construction; its values are intentionally not caller-configurable.
     RecoverPaidPillzOnDefeat,
@@ -702,6 +711,18 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// A `Stop:` source faces a hand that could stop its owner's ability, the one case the
     /// projection does not model.
     StopTriggeredAgainstStopAbility,
+    /// A `Cards` plan outside the one admitted shape: a fixed Damage or Attack change from a
+    /// card ability, with no condition, no cap, and a Min exactly when it is a decrease.
+    BothCardsModifierShape,
+    /// `Tune Out` from any slot but the clan Bonus.
+    AttackSimplificationSource,
+    /// `Tune Out` in a match that also holds a Killshot, which reads the Attacks it replaces,
+    /// an opposing `Cancel Opp. Power/Attack Modif.`, whose effect on it no round has shown,
+    /// a Power reduction that could reach 0 before Power is set to 1, or an opposing Copy.
+    AttackSimplificationAgainstUnpinnedEffect,
+    /// A `Cards` modifier facing an opposing cancel of its stat or an opposing Copy, neither
+    /// of which any round has shown meeting one.
+    BothCardsModifierAgainstUnpinnedEffect,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
     DefeatPillzMagnitude,
@@ -1116,10 +1137,10 @@ fn validate_stop_triggered_context(
 
 /// The sources admitted only where their context is one the corpus has pinned, and why a
 /// given match is not: a `Stop:` source facing anything that could stop its owner's
-/// ability, a resource canceller facing an effect whose cancellation is unpinned, and a
-/// `/ Life Lost` magnitude whose owner's Life could rise. Construction refuses them
-/// (catalog as an unsupported source, replay as a selected hazard, the engine as an invalid
-/// plan).
+/// ability, a resource canceller facing an effect whose cancellation is unpinned, a
+/// `/ Life Lost` magnitude whose owner's Life could rise, and `Tune Out` meeting a
+/// Killshot or an opposing Power/Attack cancel. Construction refuses them (catalog as an
+/// unsupported source, replay as a selected hazard, the engine as an invalid plan).
 pub(crate) fn unmodelled_source_context(
     plan: CombatStatSourcePlanV1,
     own: &[CombatStatCardPlanV1; HAND_SIZE],
@@ -1147,6 +1168,45 @@ pub(crate) fn unmodelled_source_context(
             ..
         } if opponent_defeats_resource_cancellation(resources, opponent) => {
             Some(InvalidCombatStatPlanReasonV1::ResourceCancellationAgainstUnpinnedEffect)
+        }
+        // Under `Tune Out` the server reports each Attack as its bet, but no round shows a
+        // Killshot judged on those Attacks, an opposing cancel of Power or Attack modifiers
+        // meeting it, a Power reduction reaching 0 before Power is set to 1 (the reference
+        // applies the two in another order), or a Copy adopting it. Both sides of each pair
+        // are checked, so whichever source the caller visits first is refused.
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::SimplifyAttackToPillz,
+            ..
+        } if source_plans(opponent).any(reads_simplified_attack)
+            || source_plans(own)
+                .chain(source_plans(opponent))
+                .any(reduces_power_to_zero)
+            || hand_has_copy(opponent) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect)
+        }
+        // A `Cards` modifier has been seen on both cards in nine rounds, but never facing an
+        // opposing cancel of its stat or an opposing Copy.
+        CombatStatSourcePlanV1::Execute {
+            effect:
+                CombatStatEffectV1::ModifyCombatStat {
+                    side: CombatStatAffectedSideV1::Both,
+                    stat,
+                    ..
+                },
+            ..
+        } if hand_has_copy(opponent)
+            || source_plans(opponent).any(|plan| cancels_modifiers_of(plan, stat)) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::BothCardsModifierAgainstUnpinnedEffect)
+        }
+        CombatStatSourcePlanV1::Execute { effect, .. }
+            if is_killshot(effect)
+                && source_plans(own)
+                    .chain(source_plans(opponent))
+                    .any(simplifies_attack) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect)
         }
         _ => None,
     }
@@ -1191,6 +1251,73 @@ fn source_plans(
 
 fn hand_has_copy(hand: &[CombatStatCardPlanV1; HAND_SIZE]) -> bool {
     source_plans(hand).any(|plan| matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }))
+}
+
+/// A Killshot reads both final Attacks. `PostRoundEffect::reads_final_attacks` is
+/// exhaustive, so a later Killshot grammar cannot slip past the `Tune Out` refusal.
+fn is_killshot(effect: CombatStatEffectV1) -> bool {
+    shared_post_round_effect(effect).is_some_and(PostRoundSourceEffect::reads_final_attacks)
+}
+
+fn simplifies_attack(plan: CombatStatSourcePlanV1) -> bool {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::SimplifyAttackToPillz,
+            ..
+        }
+    )
+}
+
+/// A Power reduction whose floor is 0, from either side's opposing phase.
+fn reduces_power_to_zero(plan: CombatStatSourcePlanV1) -> bool {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Opponent | CombatStatAffectedSideV1::Both,
+                stat: CombatStatAttributeV1::Power | CombatStatAttributeV1::PowerAndDamage,
+                operation: CombatStatOperationV1::Decrease,
+                minimum: Some(0),
+                ..
+            },
+            ..
+        }
+    )
+}
+
+/// Whether an opposing source cancels the owner's modifiers of `stat`.
+fn cancels_modifiers_of(plan: CombatStatSourcePlanV1, stat: CombatStatAttributeV1) -> bool {
+    let CombatStatSourcePlanV1::Execute {
+        effect: CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat: cancelled },
+        ..
+    } = plan
+    else {
+        return false;
+    };
+    cancelled == stat
+        || (cancelled == CombatStatAttributeV1::PowerAndDamage
+            && matches!(
+                stat,
+                CombatStatAttributeV1::Power | CombatStatAttributeV1::Damage
+            ))
+}
+
+/// Whether an opposing source reads, or could undo, the Attacks `Tune Out` replaces: a
+/// Killshot, or a cancel of Power or Attack modifiers.
+fn reads_simplified_attack(plan: CombatStatSourcePlanV1) -> bool {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
+        return false;
+    };
+    is_killshot(effect)
+        || matches!(
+            effect,
+            CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::Attack
+                    | CombatStatAttributeV1::Power
+                    | CombatStatAttributeV1::PowerAndDamage,
+            }
+        )
 }
 
 fn opponent_defeats_resource_cancellation(
@@ -2414,6 +2541,19 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    // `Tune Out` has only been observed as the Cosmohnuts clan bonus; like every other
+    // control it carries no predicate, which the rule below enforces.
+    if effect == CombatStatEffectV1::SimplifyAttackToPillz
+        && source != CombatStatEffectSourceV1::Bonus
+    {
+        return Err(invalid_combat_stat_execute(
+            player,
+            hand_slot,
+            source,
+            source_id,
+            InvalidCombatStatPlanReasonV1::AttackSimplificationSource,
+        ));
+    }
     // A Stop under one of the conditions the compiler admits by grammar is the one control
     // effect that may carry a predicate; the Reprisal Stop is checked by identity above.
     let conditional_stop = matches!(
@@ -2462,6 +2602,31 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
+    // `Cards` is the one both-sides grammar: a fixed change to Damage or Attack from a card
+    // ability, unconditional, never capped, and bounded below exactly when it is a decrease.
+    if side == CombatStatAffectedSideV1::Both {
+        let admitted = source == CombatStatEffectSourceV1::Ability
+            && predicate == CombatStatPredicateV1::Always
+            && multiplier == CombatStatMagnitudeV1::Fixed
+            && matches!(
+                stat,
+                CombatStatAttributeV1::Damage | CombatStatAttributeV1::Attack
+            )
+            && value > 0
+            && maximum.is_none()
+            && minimum.is_some() == (operation == CombatStatOperationV1::Decrease);
+        return if admitted {
+            Ok(())
+        } else {
+            Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::BothCardsModifierShape,
+            ))
+        };
+    }
     if source == CombatStatEffectSourceV1::Ability
         && multiplier == CombatStatMagnitudeV1::SourceBonusSupport
         && (predicate != CombatStatPredicateV1::Always
@@ -2929,6 +3094,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
             side: match side {
                 CombatStatAffectedSideV1::Opponent => DiagnosticAffectedSideV1::Opponent,
                 CombatStatAffectedSideV1::Player => DiagnosticAffectedSideV1::Player,
+                CombatStatAffectedSideV1::Both => DiagnosticAffectedSideV1::Both,
             },
             stat: match stat {
                 CombatStatAttributeV1::Attack => DiagnosticCombatStatV1::Attack,
@@ -2975,6 +3141,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         CombatStatEffectV1::ProtectOwnBonus => DiagnosticCombatEffectV1::ProtectOwnBonus,
         CombatStatEffectV1::CancelOpponentResourceModifiers { resources } => {
             DiagnosticCombatEffectV1::CancelOpponentResourceModifiers { resources }
+        }
+        CombatStatEffectV1::SimplifyAttackToPillz => {
+            DiagnosticCombatEffectV1::SimplifyAttackToPillz
         }
         CombatStatEffectV1::ExchangePrintedCombatStat { stat } => {
             DiagnosticCombatEffectV1::ExchangePrintedCombatStat {
@@ -3227,7 +3396,8 @@ pub(crate) fn shared_post_round_effect(
         | CombatStatEffectV1::ProtectOwnBonus
         | CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. }
         | CombatStatEffectV1::ExchangePrintedCombatStat { .. }
-        | CombatStatEffectV1::CancelOpponentResourceModifiers { .. } => None,
+        | CombatStatEffectV1::CancelOpponentResourceModifiers { .. }
+        | CombatStatEffectV1::SimplifyAttackToPillz => None,
     }
 }
 
@@ -4547,5 +4717,374 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    fn execute(effect: CombatStatEffectV1, id: u32) -> CombatStatSourcePlanV1 {
+        CombatStatSourcePlanV1::Execute {
+            source_id: id,
+            predicate: CombatStatPredicateV1::Always,
+            effect,
+        }
+    }
+
+    fn cards_damage(operation: CombatStatOperationV1, minimum: Option<u16>) -> CombatStatEffectV1 {
+        CombatStatEffectV1::ModifyCombatStat {
+            side: CombatStatAffectedSideV1::Both,
+            stat: CombatStatAttributeV1::Damage,
+            operation,
+            value: 2,
+            minimum,
+            maximum: None,
+            multiplier: CombatStatMagnitudeV1::Fixed,
+        }
+    }
+
+    #[test]
+    fn cards_lands_on_both_cards_with_the_own_half_before_opposing_reductions() {
+        // 1079078/3: Rajesh (5/6) prints `-2 Cards Damage, Min 4` against Sue (6/3), whose
+        // `-1 Opp Power And Damage, Min 3` takes his Power to 4. His own Damage is at 4 before
+        // Sue's reduction takes it to the reported 3 - the other order leaves 4 - and Sue's
+        // 3, already under Min 4, is left alone rather than pulled up to it.
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            3570,
+            cards_damage(CombatStatOperationV1::Decrease, Some(4)),
+            0,
+        );
+        spec.base_rules.players[PlayerId::P1].hand[0].power = 5;
+        spec.base_rules.players[PlayerId::P1].hand[0].damage = 6;
+        spec.base_rules.players[PlayerId::P2].hand[0].power = 6;
+        spec.cards[PlayerId::P2][0].ability = execute(
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Opponent,
+                stat: CombatStatAttributeV1::PowerAndDamage,
+                operation: CombatStatOperationV1::Decrease,
+                value: 1,
+                minimum: Some(3),
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+            916,
+        );
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let before = game.position().clone();
+        let (report, undo) = game.make(input(0, false)).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].power, 4);
+        assert_eq!(report.cards[PlayerId::P1].damage, 3);
+        assert_eq!(report.cards[PlayerId::P2].damage, 3);
+        assert!(report.cards[PlayerId::P2].won);
+        assert_eq!(report.players[PlayerId::P1].life, 17);
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+    }
+
+    #[test]
+    fn cards_increase_passes_protection_and_an_opposing_cancel_or_copy_is_refused() {
+        // 874795/0: `Cards Damage +2` takes El Resbaladizo 6 to 8 and Aurora 5 to 7. The
+        // opposing half is an increase, which Protection - a refusal of reductions by the
+        // opposing character, in the site's own words - does not touch.
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            3295,
+            cards_damage(CombatStatOperationV1::Increase, None),
+            4,
+        );
+        spec.cards[PlayerId::P2][0].bonus = execute(
+            CombatStatEffectV1::ProtectOwnCombatStat {
+                stat: CombatStatAttributeV1::PowerAndDamage,
+            },
+            1355,
+        );
+        spec.cards[PlayerId::P2][0].source_bonus_support_count = 1;
+        let mut game = CombatStatDiagnosticV1::new(spec.clone()).unwrap();
+        let (report, _) = game.make(input(0, false)).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].damage, 5);
+        assert_eq!(report.cards[PlayerId::P2].damage, 5);
+
+        // The decrease's opposing half is a reduction by the opposing character, so the same
+        // Protection refuses it while the owner's own half still lands.
+        spec.cards[PlayerId::P1][0].ability =
+            execute(cards_damage(CombatStatOperationV1::Decrease, Some(1)), 2018);
+        let mut game = CombatStatDiagnosticV1::new(spec.clone()).unwrap();
+        let (report, _) = game.make(input(0, false)).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].damage, 1);
+        assert_eq!(report.cards[PlayerId::P2].damage, 3);
+
+        // No round shows a `Cards` modifier meeting an opposing cancel of its stat or an
+        // opposing Copy, so either refuses the match; an opposing cancel of another stat does
+        // not meet it.
+        let refused = |spec: CombatStatDiagnosticMatchSpecV1| {
+            matches!(
+                CombatStatDiagnosticV1::new(spec),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::BothCardsModifierAgainstUnpinnedEffect,
+                    ..
+                })
+            )
+        };
+        spec.cards[PlayerId::P1][0].ability =
+            execute(cards_damage(CombatStatOperationV1::Increase, None), 3295);
+        for (stat, refuses) in [
+            (CombatStatAttributeV1::Damage, true),
+            (CombatStatAttributeV1::PowerAndDamage, true),
+            (CombatStatAttributeV1::Power, false),
+            (CombatStatAttributeV1::Attack, false),
+        ] {
+            let mut cancelled = spec.clone();
+            cancelled.cards[PlayerId::P2][0].bonus = execute(
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat },
+                4414,
+            );
+            assert_eq!(refused(cancelled), refuses, "{stat:?}");
+        }
+        let mut copied = spec;
+        copied.cards[PlayerId::P2][2].ability = CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 2918,
+            copied: CopiedSourceKindV1::Ability,
+            predicate: CombatStatPredicateV1::Always,
+        };
+        copied.cards[PlayerId::P2][2].source_ability_support_count = 1;
+        assert!(refused(copied));
+    }
+
+    #[test]
+    fn cards_attack_reduces_both_attacks_each_to_its_own_floor() {
+        // 1078555/1: Miss Denna's `-7 Cards Attack, Min 0` takes her own 7 to 0 and Callie's
+        // 36 + 12 Support to 41.
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Ability,
+            4616,
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Both,
+                stat: CombatStatAttributeV1::Attack,
+                operation: CombatStatOperationV1::Decrease,
+                value: 7,
+                minimum: Some(0),
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+            0,
+        );
+        spec.base_rules.players[PlayerId::P1].hand[0].power = 7;
+        spec.base_rules.players[PlayerId::P2].hand[0].power = 48;
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let (report, _) = game.make(input(0, false)).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].attack, 0);
+        assert_eq!(report.cards[PlayerId::P2].attack, 41);
+    }
+
+    #[test]
+    fn a_cards_plan_outside_its_one_shape_is_refused() {
+        let decrease = cards_damage(CombatStatOperationV1::Decrease, Some(1));
+        let refused = |spec: CombatStatDiagnosticMatchSpecV1| {
+            matches!(
+                CombatStatDiagnosticV1::new(spec),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::BothCardsModifierShape,
+                    ..
+                })
+            )
+        };
+        assert!(refused(spec_with_p1(
+            CombatStatEffectSourceV1::Bonus,
+            2018,
+            decrease,
+            0
+        )));
+        let mut conditional = spec_with_p1(CombatStatEffectSourceV1::Ability, 2018, decrease, 0);
+        conditional.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 2018,
+            predicate: CombatStatPredicateV1::OwnerWonPreviousRound,
+            effect: decrease,
+        };
+        assert!(refused(conditional));
+        for effect in [
+            cards_damage(CombatStatOperationV1::Decrease, None),
+            cards_damage(CombatStatOperationV1::Increase, Some(1)),
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Both,
+                stat: CombatStatAttributeV1::Power,
+                operation: CombatStatOperationV1::Decrease,
+                value: 2,
+                minimum: Some(2),
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Both,
+                stat: CombatStatAttributeV1::Damage,
+                operation: CombatStatOperationV1::Increase,
+                value: 2,
+                minimum: None,
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Growth,
+            },
+        ] {
+            assert!(
+                refused(spec_with_p1(
+                    CombatStatEffectSourceV1::Ability,
+                    2018,
+                    effect,
+                    0
+                )),
+                "{effect:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tune_out_makes_each_attack_its_bet_and_ignores_every_attack_modifier() {
+        // P2 prints 31 Power and an own `Attack +30`; under P1's Tune Out both Powers are 1,
+        // P1's bet of 4 is an Attack of 5 against P2's 1, and Fury adds Damage only.
+        let mut spec = spec_with_p1(
+            CombatStatEffectSourceV1::Bonus,
+            3496,
+            CombatStatEffectV1::SimplifyAttackToPillz,
+            7,
+        );
+        spec.cards[PlayerId::P2][0].ability = execute(
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Player,
+                stat: CombatStatAttributeV1::Attack,
+                operation: CombatStatOperationV1::Increase,
+                value: 30,
+                minimum: None,
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+            5,
+        );
+        let mut game = CombatStatDiagnosticV1::new(spec.clone()).unwrap();
+        let before = game.position().clone();
+        let (report, undo) = game.make(input(4, true)).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].power, 1);
+        assert_eq!(report.cards[PlayerId::P2].power, 1);
+        assert_eq!(report.cards[PlayerId::P1].attack, 5);
+        assert_eq!(report.cards[PlayerId::P2].attack, 1);
+        assert_eq!(report.cards[PlayerId::P1].damage, 5);
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(report.players[PlayerId::P2].life, 15);
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+
+        // Equal bets fall to the ordinary tie-break (925781/0).
+        let mut game = CombatStatDiagnosticV1::new(spec.clone()).unwrap();
+        let (report, _) = game.make(input(0, false)).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].attack, 1);
+        assert_eq!(report.cards[PlayerId::P2].attack, 1);
+        assert!(report.cards[PlayerId::P1].won);
+
+        // A stopped Tune Out leaves an ordinary round (924146/3).
+        spec.cards[PlayerId::P2][0].ability = execute(CombatStatEffectV1::StopOpponentBonus, 1359);
+        let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+        let (report, _) = game.make(input(4, false)).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].attack, 30);
+        assert_eq!(report.cards[PlayerId::P2].attack, 31);
+    }
+
+    #[test]
+    fn tune_out_is_bonus_only_and_refused_beside_a_killshot_or_an_opposing_power_cancel() {
+        let refused = |spec: CombatStatDiagnosticMatchSpecV1,
+                       expected: InvalidCombatStatPlanReasonV1| {
+            matches!(
+                CombatStatDiagnosticV1::new(spec),
+                Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) if reason == expected
+            )
+        };
+        assert!(refused(
+            spec_with_p1(
+                CombatStatEffectSourceV1::Ability,
+                3496,
+                CombatStatEffectV1::SimplifyAttackToPillz,
+                0
+            ),
+            InvalidCombatStatPlanReasonV1::AttackSimplificationSource,
+        ));
+        let tune_out = || {
+            spec_with_p1(
+                CombatStatEffectSourceV1::Bonus,
+                3496,
+                CombatStatEffectV1::SimplifyAttackToPillz,
+                0,
+            )
+        };
+        let killshot = CombatStatEffectV1::ReduceOpponentLifeOnKillshot {
+            life: 3,
+            minimum: 0,
+        };
+        // An opposing Killshot anywhere in the other hand, an opposing Power cancel, and a
+        // Killshot printed beside the Tune Out bonus on its own card.
+        let mut opposing_killshot = tune_out();
+        opposing_killshot.cards[PlayerId::P2][3].ability = execute(killshot, 4459);
+        assert!(refused(
+            opposing_killshot,
+            InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect,
+        ));
+        let mut opposing_cancel = tune_out();
+        opposing_cancel.cards[PlayerId::P2][2].ability = execute(
+            CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::Power,
+            },
+            1164,
+        );
+        assert!(refused(
+            opposing_cancel,
+            InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect,
+        ));
+        let mut own_killshot = tune_out();
+        own_killshot.cards[PlayerId::P1][0].ability = execute(killshot, 4459);
+        assert!(refused(
+            own_killshot,
+            InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect,
+        ));
+        // An opposing Copy, and a Power reduction to Min 0 on either side - no round shows
+        // whether it lands before or after Power is set to 1.
+        let mut opposing_copy = tune_out();
+        opposing_copy.cards[PlayerId::P2][2].ability = CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 2918,
+            copied: CopiedSourceKindV1::Bonus,
+            predicate: CombatStatPredicateV1::Always,
+        };
+        opposing_copy.cards[PlayerId::P2][2].source_ability_support_count = 1;
+        assert!(refused(
+            opposing_copy,
+            InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect,
+        ));
+        for (owner, minimum, refuses) in [
+            (PlayerId::P2, 0, true),
+            (PlayerId::P1, 0, true),
+            (PlayerId::P2, 1, false),
+        ] {
+            let mut reduced = tune_out();
+            reduced.cards[owner][3].ability = execute(
+                CombatStatEffectV1::ModifyCombatStat {
+                    side: CombatStatAffectedSideV1::Opponent,
+                    stat: CombatStatAttributeV1::Power,
+                    operation: CombatStatOperationV1::Decrease,
+                    value: 3,
+                    minimum: Some(minimum),
+                    maximum: None,
+                    multiplier: CombatStatMagnitudeV1::Fixed,
+                },
+                1815,
+            );
+            assert_eq!(
+                refused(
+                    reduced,
+                    InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect,
+                ),
+                refuses,
+                "{owner:?} Min {minimum}"
+            );
+        }
+        // An opposing Damage cancel does not meet it: Tune Out leaves Damage alone.
+        let mut damage_cancel = tune_out();
+        damage_cancel.cards[PlayerId::P2][2].ability = execute(
+            CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::Damage,
+            },
+            4414,
+        );
+        assert!(CombatStatDiagnosticV1::new(damage_cancel).is_ok());
     }
 }

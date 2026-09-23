@@ -301,6 +301,10 @@ pub enum SupportedEffectV1 {
     ProtectOwnAbility,
     /// The owner's own Bonus cannot be stopped by the opposing character.
     ProtectOwnBonus,
+    /// `Tune Out`: the round's Attack calculation is replaced for both selected characters.
+    /// Both Powers become 1, so each Attack is its owner's bet plus one and no Attack
+    /// modifier applies.
+    SimplifyAttackToPillz,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -1211,6 +1215,28 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
                 None
             }
         }
+        // `Tune Out` is the one `simplify` record: it names both selected characters and
+        // Power-and-Attack, carries no magnitude, and replaces the Attack calculation rather
+        // than modifying it. Any other side or a non-zero control value is another shape.
+        (AttributeActionV1::Simplify, SpecialActionV1::None, None)
+            if input.attribute_affected == AttributeAffectedV1::PowerAndAttack =>
+        {
+            if input.side_affected != AffectedSideV1::Both {
+                reasons.insert(UnsupportedReasonV1::UnsupportedSide {
+                    side: input.side_affected,
+                });
+                None
+            } else if input.value == 0
+                && input.value_min == 0
+                && input.value_max == 0
+                && input.value_condition == 0
+            {
+                Some(SupportedEffectV1::SimplifyAttackToPillz)
+            } else {
+                reasons.insert(UnsupportedReasonV1::NonZeroControlValues);
+                None
+            }
+        }
         _ => {
             if input.attribute_action != AttributeActionV1::None {
                 reasons.insert(UnsupportedReasonV1::AttributeAction {
@@ -1340,6 +1366,7 @@ fn unreviewed_description_context(
             CombatStatV1::PowerAndDamage => description == "Power And Damage Exchange",
             CombatStatV1::Attack => false,
         },
+        SupportedEffectV1::SimplifyAttackToPillz => description == "Tune Out",
     };
     (!reviewed).then_some(DescriptionContextV1::OtherUnreviewedGrammar)
 }
@@ -1964,6 +1991,58 @@ mod tests {
         let unison = registry.get(3953).unwrap();
         assert!(unison.structured_input().is_clanmates_count_linked);
         assert_eq!(unison.compiled().supported(), None);
+    }
+
+    #[test]
+    fn tune_out_compiles_only_as_the_exact_both_sides_simplify_record() {
+        let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
+        let compiled = registry
+            .iter()
+            .filter(|(_, definition)| {
+                definition.compiled().supported() == Some(SupportedEffectV1::SimplifyAttackToPillz)
+            })
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        assert_eq!(compiled, [3496]);
+
+        // The same record under another side, with a magnitude, or under other text is
+        // another shape and stays unsupported.
+        for (field, value) in [
+            ("sideAffected", json!("player")),
+            ("value", json!(1)),
+            ("valueCondition", json!(1)),
+        ] {
+            let mut entry = base_entry(3496);
+            entry["description"] = json!("Tune Out");
+            entry["abilityData"]["value"] = json!(0);
+            entry["abilityData"]["sideAffected"] = json!("both");
+            entry["abilityData"]["attributeAffected"] = json!("pwr&atk");
+            entry["abilityData"]["attributeAction"] = json!("simplify");
+            let mut malformed = entry.clone();
+            malformed["abilityData"][field] = value.clone();
+            let registry =
+                EffectRegistryV1::from_reader(single_entry_json(entry).as_slice()).unwrap();
+            assert_eq!(
+                registry.get(3496).unwrap().compiled().supported(),
+                Some(SupportedEffectV1::SimplifyAttackToPillz)
+            );
+            let registry =
+                EffectRegistryV1::from_reader(single_entry_json(malformed).as_slice()).unwrap();
+            assert_eq!(
+                registry.get(3496).unwrap().compiled().supported(),
+                None,
+                "{field} = {value}"
+            );
+        }
+        let mut retexted = base_entry(3496);
+        retexted["description"] = json!("Tune In");
+        retexted["abilityData"]["value"] = json!(0);
+        retexted["abilityData"]["sideAffected"] = json!("both");
+        retexted["abilityData"]["attributeAffected"] = json!("pwr&atk");
+        retexted["abilityData"]["attributeAction"] = json!("simplify");
+        let registry =
+            EffectRegistryV1::from_reader(single_entry_json(retexted).as_slice()).unwrap();
+        assert_eq!(registry.get(3496).unwrap().compiled().supported(), None);
     }
 
     #[test]

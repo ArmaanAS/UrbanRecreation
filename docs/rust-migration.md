@@ -2192,6 +2192,50 @@ Min 1 in 926292/0 (6 to 4 to 2). The Copy rounds are catalog evidence only, as f
 Copy: the replay reads an adopted source from the capture and cannot execute a Copy. The
 gate grows from 600 to 632 rounds with twelve battles added and 1131144 extended to two rounds.
 
+Semantic revision 57 admits two combat grammars the registry refuses outright. `Cards`
+(`Cards Damage +2` - `3295`, `4011`, `5411` - `-2 Cards Damage, Min M` - `2018`, `4957`,
+`3570` - and `-7 Cards Attack, Min 0`, `4616`) is one fixed change to *both* selected
+cards, each clamped on its own. `Tune Out` (`3496`, the Cosmohnuts clan bonus) replaces the
+round's Attack calculation while it is live: both Powers become 1, each Attack is its
+owner's bet plus one, and no Attack modifier of either card applies. Together they measured
+8 and unlocked exactly 8 - `874795`, `901613`, `924146`, `925628`, `925781`, `964150`,
+`964404` and `1079078` - taking eligibility from 180 to 188; four of those draws need both,
+and `874795` needed revision 56's `Bet >` Stop as well.
+
+`Cards` gets a third affected side, `Both`, admitted compiler-side by exact text over the
+neutral unconditional shape, Damage and Attack only, card abilities only. The owner's half
+runs with the owner's own modifiers and the opposing half with the owner's opposing ones,
+which is what 1079078/3 pins: Rajesh's own printed 6 Damage is at 4 under his `-2 Cards
+Damage, Min 4` before Sue's `-1 Opp Power And Damage, Min 3` takes it to the reported 3 -
+the other order leaves 4 - and Sue's 3, already under Min 4, is left alone. All nine
+selected Cards rounds pay on both cards: 874795/0 (6 to 8 and 5 to 7), 901613/2 (Giovanni
+6 to 4 then 2 under Dobbs' Reprisal, Dobbs 5 to 3), 963847/3 (Uuber 2 to 1, Min 1
+binding), 1078555/1 (Miss Denna's own 7 to 0 and Callie's 48 to 41) and five beside a
+stopped or live Tune Out. Protection now refuses only reductions, so the opposing half of a
+`Cards` increase lands on a protected card; that is the site's own wording, and no earlier
+grammar had an opposing increase for the difference to show.
+
+`Tune Out` is a new supported effect, the one `simplify` record, admitted from the Bonus
+slot only - Noon Steevens prints the text as an ability, whose levels own no registry
+definition and whose liveness no round has shown. All twenty live rounds agree: an opposing
+Support reduction (1011430/1), an own Support and an own Revenge Power (1089974/0 and /3),
+the Hive Equalizer (924146/1, 925868/0) and a Protection: Power And Damage (925868/3) change
+nothing, a Fury adds Damage and no Attack (925628/1), equal bets fall to the ordinary
+tie-break (925781/0), Damage and end-of-round effects are untouched, and a stopped Tune Out
+leaves an ordinary round (924146/3, 964404/3).
+
+Several contexts meet neither grammar in any round, and construction refuses each rather
+than guess, at no cost in draws: `Tune Out` facing a Killshot on either side (the
+Killshot trigger reads the very Attacks it replaces, through an exhaustive
+`reads_final_attacks`, so a later Killshot grammar cannot slip past), an opposing cancel of
+Power or Attack modifiers, a Power reduction to Min 0 on either side (the reference sets
+Power to 1 at another point, so the two orders differ at 0), or an opposing Copy; and a
+`Cards` modifier facing an opposing cancel of its stat or an opposing Copy. The gate grows
+from 632 to 658 rounds with 1079078, 874795, 924146, 964404, 1011430, 1089974, 925628,
+925781, 926071 and 964150 added and 901613 extended. 925868 replays four rounds but is left
+out: Paw Paw's unadmitted `Killshot: +3 Life` sits beside its Tune Out, the exact pairing
+construction refuses, and it only matches the server because it never fires.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

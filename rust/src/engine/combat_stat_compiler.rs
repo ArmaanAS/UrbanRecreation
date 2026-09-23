@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 56;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 57;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -2072,6 +2072,9 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_bet_gated(definition, source_kind) {
         return Some(classified);
     }
+    if let Some(classified) = classify_cards_numeric(definition, source_kind) {
+        return Some(classified);
+    }
     let input = definition.structured_input();
     if input.position_requirement == PositionRequirementV1::Both && neutral_except_position(input) {
         if let CompiledEffectV1::Supported(effect) = definition.compiled() {
@@ -2103,6 +2106,10 @@ fn admitted_supported_effect(
         | SupportedEffectV1::CancelOpponentResourceModifiers { .. } => {
             source_kind == CombatStatEffectSourceV1::Ability
         }
+        // `Tune Out` has only ever been observed as the Cosmohnuts clan bonus. Noon Steevens
+        // prints the same text as an ability, whose catalog levels own no registry definition
+        // and whose Stop Opp. Ability liveness no round has shown, so that slot stays closed.
+        SupportedEffectV1::SimplifyAttackToPillz => source_kind == CombatStatEffectSourceV1::Bonus,
         SupportedEffectV1::ModifyCombatStat {
             side,
             stat,
@@ -2286,6 +2293,85 @@ fn classify_day_night_numeric(
     let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
         .then_some((effect, predicate))
+}
+
+/// Recognize the `Cards` grammar: one fixed change to a combat stat of *both* selected
+/// cards, `Cards <stat> +N` or `-N Cards <stat>, Min M`. The registry marks it
+/// `sideAffected: both` and refuses it as a description context, so it is admitted here by
+/// exact text over the neutral unconditional shape, the Night/Day route. Each card is
+/// clamped on its own, and a card already at or below Min is left alone (1079078/3: Sue's 3
+/// Damage under Rajesh's Min 4). Damage and Attack only - the two stats the server has shown
+/// (Cards Damage in eight rounds, Cards Attack in 1078555/1) - and card abilities only, since
+/// no clan bonus prints it.
+fn classify_cards_numeric(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    if input.side_affected != AffectedSideV1::Both
+        || input.position_requirement != PositionRequirementV1::Both
+        || input.special_action != SpecialActionV1::None
+        || input.is_support
+        || input.value == 0
+        || !neutral_except_position(input)
+    {
+        return None;
+    }
+    let operation = match input.attribute_action {
+        AttributeActionV1::Increase if input.value_min == 0 && input.value_max == 0 => {
+            StatOperationV1::Increase
+        }
+        AttributeActionV1::Decrease if input.value_max == 0 => StatOperationV1::Decrease,
+        _ => return None,
+    };
+    let stat = match input.attribute_affected {
+        AttributeAffectedV1::Attack => CombatStatV1::Attack,
+        AttributeAffectedV1::Damage => CombatStatV1::Damage,
+        _ => return None,
+    };
+    let effect = SupportedEffectV1::ModifyCombatStat {
+        side: AffectedSideV1::Both,
+        stat,
+        operation,
+        value: input.value,
+        minimum: (operation == StatOperationV1::Decrease).then_some(input.value_min),
+        maximum: None,
+        multiplier: MagnitudeMultiplierV1::Fixed,
+    };
+    cards_description_matches(definition.description(), effect)
+        .then_some((effect, CombatStatPredicateV1::Always))
+}
+
+/// The printed `Cards` texts, rebuilt from the record's own numbers: `Cards Damage +2`,
+/// `-2 Cards Damage, Min 1`, `-7 Cards Attack, Min 0`.
+fn cards_description_matches(description: &str, effect: SupportedEffectV1) -> bool {
+    let SupportedEffectV1::ModifyCombatStat {
+        side: AffectedSideV1::Both,
+        stat,
+        operation,
+        value,
+        minimum,
+        maximum: None,
+        multiplier: MagnitudeMultiplierV1::Fixed,
+    } = effect
+    else {
+        return false;
+    };
+    let stat = match stat {
+        CombatStatV1::Attack => "Attack",
+        CombatStatV1::Damage => "Damage",
+        CombatStatV1::Power | CombatStatV1::PowerAndDamage => return false,
+    };
+    match (operation, minimum) {
+        (StatOperationV1::Increase, None) => description == format!("Cards {stat} +{value}"),
+        (StatOperationV1::Decrease, Some(min)) => {
+            description == format!("-{value} Cards {stat}, Min {min}")
+        }
+        _ => false,
+    }
 }
 
 /// Recognize the stat Copies and Exchanges under a condition prefix whose predicate the
@@ -3791,7 +3877,8 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | SupportedEffectV1::ProtectOwnBonus
         | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
         | SupportedEffectV1::ExchangePrintedCombatStat { .. }
-        | SupportedEffectV1::CancelOpponentResourceModifiers { .. } => return false,
+        | SupportedEffectV1::CancelOpponentResourceModifiers { .. }
+        | SupportedEffectV1::SimplifyAttackToPillz => return false,
     };
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Growth => "Growth: ",
@@ -3919,7 +4006,8 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
             side: match side {
                 AffectedSideV1::Opponent => CombatStatAffectedSideV1::Opponent,
                 AffectedSideV1::Player => CombatStatAffectedSideV1::Player,
-                AffectedSideV1::Both => return None,
+                // Only `classify_cards_numeric` builds this side; the registry never emits it.
+                AffectedSideV1::Both => CombatStatAffectedSideV1::Both,
             },
             stat: compact_stat(stat),
             operation: match operation {
@@ -3970,6 +4058,7 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
         SupportedEffectV1::CancelOpponentResourceModifiers { resources } => {
             Some(CombatStatEffectV1::CancelOpponentResourceModifiers { resources })
         }
+        SupportedEffectV1::SimplifyAttackToPillz => Some(CombatStatEffectV1::SimplifyAttackToPillz),
     }
 }
 
@@ -4792,6 +4881,158 @@ mod tests {
             ),
             None,
             "an ordinary capped increase is not a Per Life Left grammar",
+        );
+    }
+
+    #[test]
+    fn cards_numeric_is_admitted_on_both_selected_cards_by_exact_text() {
+        use crate::effect_registry::{DescriptionContextV1, UnsupportedReasonV1};
+        let registry = registry();
+        for (id, stat, operation, value, minimum) in [
+            (
+                3295,
+                CombatStatV1::Damage,
+                StatOperationV1::Increase,
+                2,
+                None,
+            ),
+            (
+                4011,
+                CombatStatV1::Damage,
+                StatOperationV1::Increase,
+                2,
+                None,
+            ),
+            (
+                5411,
+                CombatStatV1::Damage,
+                StatOperationV1::Increase,
+                2,
+                None,
+            ),
+            (
+                2018,
+                CombatStatV1::Damage,
+                StatOperationV1::Decrease,
+                2,
+                Some(1),
+            ),
+            (
+                4957,
+                CombatStatV1::Damage,
+                StatOperationV1::Decrease,
+                2,
+                Some(1),
+            ),
+            (
+                3570,
+                CombatStatV1::Damage,
+                StatOperationV1::Decrease,
+                2,
+                Some(4),
+            ),
+            (
+                4616,
+                CombatStatV1::Attack,
+                StatOperationV1::Decrease,
+                7,
+                Some(0),
+            ),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            // The registry keeps refusing the text as a description context; admission is
+            // this projection's, by exact grammar.
+            assert!(definition.compiled().unsupported_reasons().contains(
+                &UnsupportedReasonV1::DescriptionContext {
+                    context: DescriptionContextV1::Cards,
+                }
+            ));
+            let effect = SupportedEffectV1::ModifyCombatStat {
+                side: AffectedSideV1::Both,
+                stat,
+                operation,
+                value,
+                minimum,
+                maximum: None,
+                multiplier: MagnitudeMultiplierV1::Fixed,
+            };
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                Some((effect, CombatStatPredicateV1::Always)),
+                "definition {id}",
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} from a Bonus",
+            );
+            assert!(matches!(
+                compact_effect(effect),
+                Some(CombatStatEffectV1::ModifyCombatStat {
+                    side: CombatStatAffectedSideV1::Both,
+                    ..
+                })
+            ));
+        }
+        // The shape must be the neutral unconditional both-sides record and the text the one
+        // its own numbers print.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("2018", "sideAffected", serde_json::json!("opponent")),
+            ("2018", "valueMin", serde_json::json!(2)),
+            ("2018", "valueMax", serde_json::json!(3)),
+            ("2018", "attributeAffected", serde_json::json!("pwr")),
+            ("2018", "positionRequirement", serde_json::json!("attacker")),
+            ("2018", "previousRoundRequirement", serde_json::json!("win")),
+            ("2018", "isSupport", serde_json::json!(true)),
+            ("3295", "valueMax", serde_json::json!(8)),
+            ("3295", "value", serde_json::json!(3)),
+            ("3295", "isOverdrive", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_cards_numeric(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "malformed {id} {field} = {value}",
+            );
+        }
+        let mut retexted = source.clone();
+        retexted["2018"]["description"] = serde_json::json!("-2 Cards Damage, Min 2");
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_cards_numeric(
+                retexted.get(2018).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn tune_out_is_admitted_from_the_clan_bonus_slot_only() {
+        let registry = registry();
+        let tune_out = registry.get(3496).expect("registry definition");
+        assert_eq!(
+            classify_combat_stat_effect(tune_out, CombatStatEffectSourceV1::Bonus),
+            Some((
+                SupportedEffectV1::SimplifyAttackToPillz,
+                CombatStatPredicateV1::Always
+            ))
+        );
+        // Noon Steevens prints it as an ability, which no round has shown.
+        assert_eq!(
+            classify_combat_stat_effect(tune_out, CombatStatEffectSourceV1::Ability),
+            None
+        );
+        assert_eq!(
+            compact_effect(SupportedEffectV1::SimplifyAttackToPillz),
+            Some(CombatStatEffectV1::SimplifyAttackToPillz)
         );
     }
 

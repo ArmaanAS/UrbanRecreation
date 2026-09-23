@@ -378,6 +378,18 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         u16::from(validated[PlayerId::P1].card.key.level),
     );
     let live = source_liveness(selected_plans);
+    // `Tune Out` replaces the round's Attack calculation rather than modifying it, while it
+    // is live on either selected card: both Powers become 1, so each Attack is its owner's
+    // bet plus one, and no Attack modifier of either card applies. Every one of the twenty
+    // live rounds in the corpus reports exactly that - through an opposing Protection:
+    // Power And Damage (925868/3, 964404/2), an own Revenge Power +2 (1089974/3), Support
+    // and Equalizer Attack changes both ways (1089974/0, 924146/1, 925868/0, 1011430/1) and
+    // a Fury, which adds Damage and no Attack (925628/1) - while Damage and end-of-round
+    // effects are untouched and a stopped Tune Out leaves an ordinary round (924146/3).
+    let attack_simplified = PlayerId::ALL.into_iter().any(|player| {
+        (live[player].bonus && simplifies_attack(selected_plans[player].bonus))
+            || (live[player].ability && simplifies_attack(selected_plans[player].ability))
+    });
 
     let mut cancellations = ByPlayer::new(StatMask::default(), StatMask::default());
     // Protection only ever refuses an opposing reduction. It removes nothing already
@@ -513,6 +525,9 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         }
     }
 
+    if attack_simplified {
+        power = ByPlayer::new(1, 1);
+    }
     let mut attack = ByPlayer::new(0_u32, 0_u32);
     for player in PlayerId::ALL {
         attack[player] = u32::from(power[player])
@@ -523,9 +538,15 @@ pub(super) fn prepare_combat_resolution_with_post_round(
             })?;
     }
 
-    // Own Attack increases retain Bonus then Ability source order.
+    // Own Attack increases retain Bonus then Ability source order. Under `Tune Out` no
+    // source changes an Attack, whatever its liveness.
+    let attack_live = if attack_simplified {
+        ByPlayer::new(SourceLiveness::default(), SourceLiveness::default())
+    } else {
+        live
+    };
     for origin in PlayerId::ALL {
-        if live[origin].bonus {
+        if attack_live[origin].bonus {
             apply_attack_effect(
                 origin,
                 DiagnosticAffectedSideV1::Player,
@@ -539,7 +560,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 &mut attack,
             )?;
         }
-        if live[origin].ability {
+        if attack_live[origin].ability {
             apply_attack_effect(
                 origin,
                 DiagnosticAffectedSideV1::Player,
@@ -557,7 +578,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
 
     // Opponent Attack reductions use the same stable descending-Min ordering.
     for origin in PlayerId::ALL {
-        let bonus = if live[origin].bonus {
+        let bonus = if attack_live[origin].bonus {
             selected_plans[origin].bonus
         } else {
             ResolutionSourcePlan::default()
@@ -565,7 +586,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         apply_ordered_attack_reductions(
             origin,
             bonus,
-            live[origin]
+            attack_live[origin]
                 .ability
                 .then_some(selected_plans[origin].ability)
                 .unwrap_or_default(),
@@ -682,6 +703,13 @@ pub(super) fn prepare_combat_resolution_with_post_round(
 
 fn source_is_live(source: ResolutionSourcePlan) -> bool {
     source.effect.is_some() || source.post_round.is_some()
+}
+
+fn simplifies_attack(source: ResolutionSourcePlan) -> bool {
+    matches!(
+        source.effect,
+        Some(DiagnosticCombatEffectV1::SimplifyAttackToPillz)
+    )
 }
 
 fn bind_post_round_effect(
@@ -930,10 +958,13 @@ fn apply_ordered_attack_reductions(
     }
 }
 
+/// The Min an owner's opposing Power/Damage reduction sorts by. The opposing half of a
+/// `Cards` decrease is one such reduction; the opposing half of a `Cards` increase has no
+/// Min and sorts after them, as an unbounded modifier does in the reference.
 fn power_damage_reduction_min(effect: Option<DiagnosticCombatEffectV1>) -> Option<u16> {
     match effect {
         Some(DiagnosticCombatEffectV1::ModifyCombatStat {
-            side: DiagnosticAffectedSideV1::Opponent,
+            side: DiagnosticAffectedSideV1::Opponent | DiagnosticAffectedSideV1::Both,
             stat:
                 DiagnosticCombatStatV1::Power
                 | DiagnosticCombatStatV1::Damage
@@ -949,13 +980,39 @@ fn power_damage_reduction_min(effect: Option<DiagnosticCombatEffectV1>) -> Optio
 fn attack_reduction_min(effect: Option<DiagnosticCombatEffectV1>) -> Option<u16> {
     match effect {
         Some(DiagnosticCombatEffectV1::ModifyCombatStat {
-            side: DiagnosticAffectedSideV1::Opponent,
+            side: DiagnosticAffectedSideV1::Opponent | DiagnosticAffectedSideV1::Both,
             stat: DiagnosticCombatStatV1::Attack,
             operation: DiagnosticStatOperationV1::Decrease,
             minimum,
             ..
         }) => Some(minimum.unwrap_or(0)),
         _ => None,
+    }
+}
+
+/// The card a modifier lands on in the phase that asked for `(expected_side,
+/// expected_operation)`, or `None` when it belongs to another phase. A one-sided modifier
+/// runs only in its own phase. A `Cards` modifier runs in both: its owner's card takes it with
+/// the owner's own modifiers whatever its sign, and the opposing card with the owner's
+/// opposing ones. That is the reference's PRE2/PRE1 split and what 1079078/3 pins: Rajesh's
+/// own printed 6 Damage is at 4 under his `-2 Cards Damage, Min 4` before Sue's `-1 Opp Power
+/// And Damage, Min 3` takes it to the reported 3, where the other order leaves 4.
+fn modifier_target(
+    origin: PlayerId,
+    side: DiagnosticAffectedSideV1,
+    operation: DiagnosticStatOperationV1,
+    expected_side: DiagnosticAffectedSideV1,
+    expected_operation: DiagnosticStatOperationV1,
+) -> Option<PlayerId> {
+    match (side, expected_side) {
+        (DiagnosticAffectedSideV1::Both, DiagnosticAffectedSideV1::Player) => Some(origin),
+        (DiagnosticAffectedSideV1::Both, DiagnosticAffectedSideV1::Opponent) => {
+            Some(origin.other())
+        }
+        (DiagnosticAffectedSideV1::Both, DiagnosticAffectedSideV1::Both) => None,
+        _ if side != expected_side || operation != expected_operation => None,
+        (DiagnosticAffectedSideV1::Player, _) => Some(origin),
+        (DiagnosticAffectedSideV1::Opponent, _) => Some(origin.other()),
     }
 }
 
@@ -986,9 +1043,10 @@ fn apply_power_damage_effect(
     else {
         return Ok(());
     };
-    if side != expected_side || operation != expected_operation {
+    let Some(target) = modifier_target(origin, side, operation, expected_side, expected_operation)
+    else {
         return Ok(());
-    }
+    };
     let affects_power = matches!(
         stat,
         DiagnosticCombatStatV1::Power | DiagnosticCombatStatV1::PowerAndDamage
@@ -1000,11 +1058,6 @@ fn apply_power_damage_effect(
     if !affects_power && !affects_damage {
         return Ok(());
     }
-    let target = if side == DiagnosticAffectedSideV1::Player {
-        origin
-    } else {
-        origin.other()
-    };
     let amount = effect_amount(
         origin,
         value,
@@ -1019,8 +1072,12 @@ fn apply_power_damage_effect(
         opponent_stars,
         0,
     )?;
+    // Protection refuses a reduction by the opposing character and nothing else, so the
+    // opposing half of a `Cards` increase still lands on a protected card.
     let protected = |stat| {
-        expected_side == DiagnosticAffectedSideV1::Opponent && target_protection.contains(stat)
+        expected_side == DiagnosticAffectedSideV1::Opponent
+            && operation == DiagnosticStatOperationV1::Decrease
+            && target_protection.contains(stat)
     };
     if affects_power
         && !opponent_cancellation.contains(DiagnosticCombatStatV1::Power)
@@ -1079,19 +1136,17 @@ fn apply_attack_effect(
     else {
         return Ok(());
     };
-    if side != expected_side
-        || operation != expected_operation
-        || opponent_cancellation.contains(DiagnosticCombatStatV1::Attack)
+    let Some(target) = modifier_target(origin, side, operation, expected_side, expected_operation)
+    else {
+        return Ok(());
+    };
+    if opponent_cancellation.contains(DiagnosticCombatStatV1::Attack)
         || (expected_side == DiagnosticAffectedSideV1::Opponent
+            && operation == DiagnosticStatOperationV1::Decrease
             && target_protection.contains(DiagnosticCombatStatV1::Attack))
     {
         return Ok(());
     }
-    let target = if side == DiagnosticAffectedSideV1::Player {
-        origin
-    } else {
-        origin.other()
-    };
     let amount = effect_amount(
         origin,
         value,

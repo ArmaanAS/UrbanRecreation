@@ -37,6 +37,9 @@ pub enum DiagnosticCombatStatV1 {
 pub enum DiagnosticAffectedSideV1 {
     Opponent,
     Player,
+    /// `Cards`: both selected cards, each clamped on its own. This projection's plan
+    /// validator refuses it as an invalid direction; only the combat-stat one admits it.
+    Both,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -108,6 +111,9 @@ pub enum DiagnosticCombatEffectV1 {
     CancelOpponentResourceModifiers {
         resources: crate::effect_registry::ResourceCancellationV1,
     },
+    /// `Tune Out`: both Powers become 1 and no Attack modifier applies, so each Attack is its
+    /// owner's bet plus one.
+    SimplifyAttackToPillz,
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and

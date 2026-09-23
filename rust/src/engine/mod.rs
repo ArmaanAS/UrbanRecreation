@@ -557,6 +557,57 @@ impl PostRoundSourceEffect {
     }
 }
 
+impl PostRoundSourceEffect {
+    /// Whether the effect's trigger reads both final Attacks, which only Killshot does.
+    pub(super) const fn reads_final_attacks(self) -> bool {
+        match self {
+            Self::Fixed(effect) => effect.reads_final_attacks(),
+            Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
+            | Self::GainLifeOnVictoryPerRound { .. }
+            | Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
+            | Self::GainPillzOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentPillzOnVictoryPerRound { .. }
+            | Self::GainPillzOnVictoryPerRound { .. } => false,
+        }
+    }
+}
+
+impl PostRoundEffect {
+    pub(super) const fn reads_final_attacks(self) -> bool {
+        match self {
+            Self::ReduceOpponentLifeOnKillshot { .. } | Self::GainPillzAndLifeOnKillshot { .. } => {
+                true
+            }
+            Self::RecoverPaidPillzOnDefeat
+            | Self::GainOnePillzOnVictoryOrDefeat
+            | Self::GainOnePillzAndLifeOnVictory
+            | Self::GainTwoPillzOnDefeatMaxEleven
+            | Self::GainLifeEqualToFinalDamageOnCourageVictory
+            | Self::GainLifeOnVictory(_)
+            | Self::GainPillzOnVictory(_)
+            | Self::GainPillzOnVictoryMax { .. }
+            | Self::ReduceOpponentPillzOnVictory { .. }
+            | Self::ReduceOpponentPillzOnDefeat { .. }
+            | Self::GainPillzEqualToFinalDamageOnVictory
+            | Self::GainLifePerFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifeOnDefeat(_)
+            | Self::ReanimateLife(_)
+            | Self::GainLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentLifeOnVictory { .. }
+            | Self::ReduceOpponentLifeOnDefeat { .. }
+            | Self::ReduceBothPlayersLife { .. }
+            | Self::LatchOnVictory(_)
+            | Self::LatchOnDefeat(_)
+            | Self::GainPillzOnDefeat(_)
+            | Self::GainPillzAndLifeOnDefeat(_) => false,
+        }
+    }
+}
+
 /// Whose Life a post-round effect can raise. `/ Life Lost` is pinned only for an owner
 /// whose Life has never risen during the match, so construction refuses one wherever
 /// anything could raise it; the match is exhaustive so that a new effect has to say.

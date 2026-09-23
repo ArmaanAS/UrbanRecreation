@@ -362,8 +362,9 @@ struct PreparedCombatStatCardV1 {
 
 /// Some sources are admitted only where their context is one the corpus has pinned - a
 /// `Stop:` source nothing opposite can stop, a resource canceller facing nothing whose
-/// cancellation is unpinned, a `/ Life Lost` magnitude whose owner's Life cannot rise - and
-/// the engine refuses a plan that puts them elsewhere. A
+/// cancellation is unpinned, a `/ Life Lost` magnitude whose owner's Life cannot rise,
+/// `Tune Out` where no Killshot or opposing Power/Attack cancel can meet it - and the
+/// engine refuses a plan that puts them elsewhere. A
 /// capture is concrete, though, so rather than refusing the whole replay such a source
 /// becomes a selected hazard: a round that selects it is refused, and every other round is
 /// still checked against the server.

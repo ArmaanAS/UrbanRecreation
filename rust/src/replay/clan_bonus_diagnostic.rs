@@ -517,6 +517,7 @@ fn prepare_diagnostic_source(
                     | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
                     | SupportedEffectV1::ExchangePrintedCombatStat { .. }
                     | SupportedEffectV1::CancelOpponentResourceModifiers { .. }
+                    | SupportedEffectV1::SimplifyAttackToPillz
             ) {
                 let reason = if source_kind == DiagnosticEffectSourceV1::Ability {
                     DiagnosticDisabledReasonV1::OrdinaryAbility {
@@ -666,7 +667,8 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<DiagnosticCombatEffectV1>
         | SupportedEffectV1::ProtectOwnBonus
         | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
         | SupportedEffectV1::ExchangePrintedCombatStat { .. }
-        | SupportedEffectV1::CancelOpponentResourceModifiers { .. } => None,
+        | SupportedEffectV1::CancelOpponentResourceModifiers { .. }
+        | SupportedEffectV1::SimplifyAttackToPillz => None,
         SupportedEffectV1::CancelOpponentCombatStatModifiers { stat } => Some(
             DiagnosticCombatEffectV1::CancelOpponentCombatStatModifiers {
                 stat: compact_stat(stat),

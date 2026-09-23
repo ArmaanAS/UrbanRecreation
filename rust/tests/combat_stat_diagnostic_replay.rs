@@ -453,7 +453,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // 901613/1 reaches 6 under Sol Hona's Min 6; an all-Berzerk hand swaps 2 and 5 by
     // Unison in 1130977/0.
     (1009386, 2),
-    (901613, 2),
+    // Four rounds since revision 57, whose round 2 has Giovanni's `-2 Cards Damage, Min 1`
+    // take his own 6 to 4 before Dobbs' Reprisal takes it to 2, and Dobbs' 5 to 3.
+    (901613, 4),
     (1130977, 3),
     // Revision 51 admits the `Per Pillz Left` and `Per Pillz Lost` Attack magnitudes and
     // `+N Life Per Opp. Damage`. Pillz Left reads the owner's Pillz before the round's bet:
@@ -526,6 +528,24 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1093129, 1),
     (1130791, 4),
     (1145886, 1),
+    // Revision 57 admits the `Cards` grammar - one fixed change to both selected cards, the
+    // owner's half with its own modifiers and the opposing half with its opposing ones - and
+    // the Cosmohnuts bonus `Tune Out`, under which both Powers are 1, each Attack is its bet
+    // plus one and no Attack modifier applies. 1079078/3 pins the Cards order (Rajesh's 6 to
+    // 4 under Min 4, then Sue's -1 to 3, while Sue's 3 stays under Min 4), 874795/0 the
+    // increase (6 to 8 and 5 to 7), 924146/3 and 964404/3 Cards beside a stopped Tune Out.
+    // Tune Out ignores Nantosuelte's Support reduction in 1011430/1, Lothar's own Support in
+    // 1089974/0 and the Hive Equalizer in 924146/1, and a Fury adds Damage only in 925628/1.
+    (1079078, 4),
+    (874795, 2),
+    (924146, 4),
+    (964404, 4),
+    (1011430, 2),
+    (1089974, 1),
+    (925628, 2),
+    (925781, 2),
+    (926071, 1),
+    (964150, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
