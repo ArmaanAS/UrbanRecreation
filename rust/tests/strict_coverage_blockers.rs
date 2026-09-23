@@ -358,6 +358,16 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         "Growth/Degrowth post-round",
         &[1116, 1332, 1419, 1603, 1730, 2169, 2590, 4551, 5144],
     ),
+    // The three clan gates over the plain numeric body and `Stop Opp. Bonus`, measured
+    // 2026-09-23: `[clan:..]` on the owner's effective clan, `After [clan:..]` on the
+    // canonical clan of the owner's previous card, `Versus [clan:..]` on the opposing hand.
+    (
+        "clan gates over numeric and Stop Opp. Bonus",
+        &[
+            2461, 2931, 3737, 3739, 4667, 5353, 5585, 5681, 5738, 5750, 5779, 5780, 5814, 5820,
+            5847, 5853, 5854, 5855, 5909, 5911, 5912,
+        ],
+    ),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

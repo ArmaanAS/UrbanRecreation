@@ -577,6 +577,56 @@ impl CatalogCombatStatMatchV1 {
             cards: compact_cards
                 .map(|hand| hand.map(|card| card.expect("all eight compact cards were prepared"))),
         };
+        // `After` and `Versus` read canonical clans; where an infiltrating Oculus would make
+        // the canonical and effective readings disagree the gate is unpinned, and it is
+        // refused as the unsupported source it is so the coverage report still counts it.
+        for player in PlayerId::ALL {
+            for slot in HandSlot::ALL {
+                let compact = match_spec.cards[player][slot.index()];
+                let card = metadata[player][slot.index()]
+                    .as_ref()
+                    .expect("all eight metadata cards were prepared");
+                for (source_kind, plan, disposition) in [
+                    (
+                        CombatStatEffectSourceV1::Ability,
+                        compact.ability,
+                        &card.ability,
+                    ),
+                    (CombatStatEffectSourceV1::Bonus, compact.bonus, &card.bonus),
+                ] {
+                    let CombatStatSourcePlanV1::Execute {
+                        predicate:
+                            CombatStatPredicateV1::OwnerPreviousCardClanIn(set)
+                            | CombatStatPredicateV1::OpponentHandHasClan(set),
+                        ..
+                    } = plan
+                    else {
+                        continue;
+                    };
+                    if !super::combat_stat_diagnostic::clan_gate_is_ambiguous(
+                        set,
+                        &match_spec.base_rules,
+                        &match_spec.cards,
+                    ) {
+                        continue;
+                    }
+                    let CatalogCombatStatSourceDispositionV1::Execute { identity, .. } =
+                        disposition
+                    else {
+                        continue;
+                    };
+                    return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                        player,
+                        hand_slot: slot,
+                        source_kind,
+                        catalog_id: identity.catalog_id,
+                        description: identity.description.clone(),
+                        registry_definition_id: identity.registry_definition_id,
+                        registry_reasons: Box::new([]),
+                    });
+                }
+            }
+        }
         CombatStatDiagnosticV1::new(match_spec.clone())
             .map_err(CatalogCombatStatMatchErrorV1::EnginePlan)?;
         Ok(Self {

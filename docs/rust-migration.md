@@ -2068,6 +2068,48 @@ and arms. These sources had been inert disabled sources in replay - no clause re
 `isOverdrive` - and an unadmitted one is now a selected hazard. The gate grows from 527 to
 533 rounds, with 876796, 1087712 and 1092141 extended and 1093173 added.
 
+Semantic revision 54 takes the clan gate, which this section had measured and deliberately
+not taken at revision 41, by the narrow route it recommended: three gate predicates over the
+plain fixed numeric body and `Stop Opp. Bonus`, composed in one new classifier that touches
+none of the 45 `clan_requirement.is_empty()` conjuncts in the existing gates. They are
+`[clan:A][clan:B] X` (`clanRequirement`, the owner's selected card's effective clan -
+`2931`, `4667`, `5353`, `5814`, `5909`, `5911`, `5912`), `After [clan:..] : X`
+(`previousClanRequirement`, the canonical clan of the card the owner played in the previous
+round, never in round 0 - `5585`, the Tolvack bonus, `5681`, `5738`, `5750`, `5779`, `5780`,
+`5820`, `5847`, `5853`-`5855`) and `Versus [clan:..] : X` (`oppClanRequirement`, any canonical
+clan in the opposing hand - `2461`, `3737`, `3739`). It measured 14 (12 at its pricing at
+revision 48) and unlocked exactly 14, taking eligibility from 150 to 164 - the largest slice
+the project has taken.
+
+Each prefix maps to exactly one structured list, the printed tags are rebuilt from that list
+and must match exactly, and exactly one list may be set; Ability slot only except `After`,
+which the Tolvack bonus prints. The predicates carry a 64-bit clan set and are evaluated at
+resolution: the owner's effective clan from its plan, so a copier is judged on its own card as
+the reference does, the opposing hand's canonical clans from the match spec, and the previous
+card from a new `previous_round_slots` field on the position, which `commit` sets and the
+whole-position undo restores. The site's text says `After` and `Versus` read canonical
+clans ("the Oculus, even when infiltrated ..., do not activate this condition"), and no round
+separates that from the effective clan, so a match where an infiltrating Oculus would make
+the two readings disagree is refused - by the validator, as an unsupported source in the
+catalog and as a selected hazard in replay. It costs no draw today; it fires on 925999.
+
+The server pins every gate. The Tolvack `After` bonus pays in about thirty rounds and never in
+round 0; 1089626/1 and 1089262/1 pay one `After` gate while another in the same round does
+not; the prefix gate pays in 1090179/0 (8 x 3 + 8 = 32) and refuses in 1022847/2, where
+Alekperov infiltrates Tolvack and Jairin stays at 8; 874642/1 and 874962/1 prove it reads the
+selected card rather than the hand; and `After`'s Stop Opp. Bonus decides 1090338/3 and
+1090691/2. `Versus` pays only in a post-round Ashara round (924669/3), so its numeric draws
+rest on the gate being false throughout their matchups, which the same matchups pin. A
+corpus-wide replay with the gate found no power, damage or attack mismatch anywhere, and the
+gate grows from 533 to 568 rounds across eleven battles.
+
+The predicate grows the plan types - a 64-bit clan set inside the predicate takes
+`CombatStatSourcePlanV1` from 20 to 40 bytes - so the release worker was timed before and
+after on `deno task time-rust`'s round-2 exact decision: 116, 119 and 122 ms before, 122,
+124, 127 and then 122, 119, 119 ms after, which is inside the run-to-run spread. If a later
+profile disagrees, the gates resolve to per-match constants and a slot mask at construction,
+at the price of refusing a Copy that could adopt a gated source.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

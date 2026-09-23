@@ -248,6 +248,9 @@ pub struct BaseRulesPosition {
     /// This is part of the structural position so temporal predicates and future
     /// transposition keys cannot conflate otherwise identical states.
     pub previous_round_winner: Option<PlayerId>,
+    /// The hand slot each player played in the completed round immediately before this
+    /// position, if any. `After [clan:...]` reads its canonical clan.
+    pub previous_round_slots: ByPlayer<Option<HandSlot>>,
     /// Permanents latched by completed rounds, per owner. They are mutable match state
     /// like Life: two positions that agree on everything else but differ here play out
     /// differently, so they belong to the structural position and its undo snapshot.
@@ -663,6 +666,7 @@ impl BaseRulesGame {
                 played: ByPlayer::new([false; HAND_SIZE], [false; HAND_SIZE]),
                 rounds_played: 0,
                 previous_round_winner: None,
+                previous_round_slots: ByPlayer::new(None, None),
                 latched: ByPlayer::new(LatchedEffectsV1::EMPTY, LatchedEffectsV1::EMPTY),
                 status,
             },
@@ -1146,6 +1150,10 @@ impl BaseRulesGame {
         }
         position.rounds_played += 1;
         position.previous_round_winner = Some(winner);
+        position.previous_round_slots = ByPlayer::new(
+            Some(prepared[PlayerId::P1].slot),
+            Some(prepared[PlayerId::P2].slot),
+        );
         position.status = status_after_round(&position);
         let undo = BaseRulesUndo {
             before: std::mem::replace(&mut self.position, position),

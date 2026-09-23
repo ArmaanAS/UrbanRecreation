@@ -98,6 +98,45 @@ pub enum CombatStatPredicateV1 {
     /// pinned: construction refuses any match in which an opposing source could stop the
     /// owner's ability, and within every match it admits the condition cannot hold.
     OwnerAbilityStopped,
+    /// `[clan:A][clan:B] X`: the owner's selected card's effective clan is listed.
+    OwnerClanIn(ClanSetV1),
+    /// `After [clan:A] : X`: the card the owner played in the previous round has a listed
+    /// canonical clan. Never holds in round 0.
+    OwnerPreviousCardClanIn(ClanSetV1),
+    /// `Versus [clan:A] : X`: some card in the opposing hand has a listed canonical clan.
+    OpponentHandHasClan(ClanSetV1),
+}
+
+/// A set of clan ids below 64, as a bit mask so the predicate stays `Copy`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ClanSetV1(u64);
+
+impl ClanSetV1 {
+    pub fn from_ids(ids: &[u32]) -> Option<Self> {
+        if ids.is_empty() {
+            return None;
+        }
+        let mut mask = 0_u64;
+        for id in ids {
+            if *id >= 64 {
+                return None;
+            }
+            mask |= 1 << id;
+        }
+        Some(Self(mask))
+    }
+
+    pub const fn contains(self, clan_id: u32) -> bool {
+        clan_id < 64 && self.0 & (1 << clan_id) != 0
+    }
+}
+
+/// Per-owner clan context for the clan-gated predicates.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ClanContext {
+    owner_effective_clan: u32,
+    owner_previous_clan: Option<u32>,
+    opponent_hand_clans: u64,
 }
 
 /// Public provenance metadata for an admitted post-round effect. The hot path converts this
@@ -586,6 +625,7 @@ impl Error for CombatStatPlanMismatchV1 {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InvalidCombatStatPlanReasonV1 {
+    AmbiguousOculusClanGate,
     CappedIncrease,
     CompoundPredicateAndMagnitude,
     ConditionalBonus,
@@ -878,6 +918,7 @@ impl CombatStatDiagnosticV1 {
                     &spec.cards[player],
                     &spec.cards[player.other()],
                 )?;
+                validate_clan_gate_context(player, slot, &spec)?;
             }
         }
         let base_rules = BaseRulesGame::new(spec.base_rules.clone());
@@ -948,6 +989,11 @@ impl CombatStatDiagnosticV1 {
             life,
             pillz,
             pillz_lost,
+            self.spec
+                .base_rules
+                .players
+                .map(|player| player.hand.map(|card| card.clan_id)),
+            self.base_rules.position().previous_round_slots,
         )?;
         let (report, base_rules) =
             self.base_rules
@@ -1093,6 +1139,61 @@ fn opponent_defeats_resource_cancellation(
                 | CombatStatSourcePlanV1::Disabled { .. }
                 | CombatStatSourcePlanV1::RejectIfSelected { .. } => false,
             })
+    })
+}
+
+/// `After` and `Versus` read canonical clans, as the printed rules text says ("the Oculus,
+/// even when infiltrated ..., do not activate this condition"). No captured round separates
+/// that from the effective clan, so a match where the two readings would disagree - an
+/// infiltrating Oculus in either hand whose effective clan and Oculus itself fall on
+/// opposite sides of the list - is refused rather than executed on an unpinned rule.
+fn validate_clan_gate_context(
+    player: PlayerId,
+    hand_slot: HandSlot,
+    spec: &CombatStatDiagnosticMatchSpecV1,
+) -> Result<(), CombatStatPlanErrorV1> {
+    let card = spec.cards[player][hand_slot.index()];
+    for (source, plan) in [
+        (CombatStatEffectSourceV1::Ability, card.ability),
+        (CombatStatEffectSourceV1::Bonus, card.bonus),
+    ] {
+        let CombatStatSourcePlanV1::Execute {
+            source_id,
+            predicate:
+                CombatStatPredicateV1::OwnerPreviousCardClanIn(set)
+                | CombatStatPredicateV1::OpponentHandHasClan(set),
+            ..
+        } = plan
+        else {
+            continue;
+        };
+        if clan_gate_is_ambiguous(set, &spec.base_rules, &spec.cards) {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::AmbiguousOculusClanGate,
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn clan_gate_is_ambiguous(
+    set: ClanSetV1,
+    base_rules: &BaseRulesMatchSpec,
+    cards: &ByPlayer<[CombatStatCardPlanV1; HAND_SIZE]>,
+) -> bool {
+    const OCULUS: u32 = 56;
+    PlayerId::ALL.into_iter().any(|side| {
+        (0..HAND_SIZE).any(|index| {
+            let canonical = base_rules.players[side].hand[index].clan_id;
+            let effective = cards[side][index].effective_clan_id;
+            canonical == OCULUS
+                && effective != OCULUS
+                && set.contains(OCULUS) != set.contains(effective)
+        })
     })
 }
 
@@ -2314,6 +2415,8 @@ fn validate_combat_stat_source_plan(
                 | CombatStatPredicateV1::OwnerMovesSecond
                 | CombatStatPredicateV1::OwnerHandUnison
                 | CombatStatPredicateV1::OwnerAbilityStopped
+                | CombatStatPredicateV1::OwnerClanIn(_)
+                | CombatStatPredicateV1::OpponentHandHasClan(_)
         ) || (matches!(
             predicate,
             CombatStatPredicateV1::SelectedHandSlotsMatch
@@ -2447,6 +2550,7 @@ fn active_effect(
     previous_round_winner: Option<PlayerId>,
     night: bool,
     owner_unison: bool,
+    clan: ClanContext,
 ) -> Option<CombatStatEffectV1> {
     match plan {
         CombatStatSourcePlanV1::Execute {
@@ -2460,6 +2564,7 @@ fn active_effect(
             previous_round_winner,
             night,
             owner_unison,
+            clan,
         ) =>
         {
             Some(effect)
@@ -2483,8 +2588,14 @@ fn predicate_matches(
     previous_round_winner: Option<PlayerId>,
     night: bool,
     owner_unison: bool,
+    clan: ClanContext,
 ) -> bool {
     match predicate {
+        CombatStatPredicateV1::OwnerClanIn(set) => set.contains(clan.owner_effective_clan),
+        CombatStatPredicateV1::OwnerPreviousCardClanIn(set) => {
+            clan.owner_previous_clan.is_some_and(|id| set.contains(id))
+        }
+        CombatStatPredicateV1::OpponentHandHasClan(set) => set.0 & clan.opponent_hand_clans != 0,
         CombatStatPredicateV1::OwnerHandUnison => owner_unison,
         CombatStatPredicateV1::Always => true,
         CombatStatPredicateV1::OwnerMovesFirst => owner == first_mover,
@@ -2512,6 +2623,8 @@ fn prepare_combat_stat_diagnostic(
     life: ByPlayer<u16>,
     pillz: ByPlayer<u16>,
     pillz_lost: ByPlayer<u16>,
+    canonical_clans: ByPlayer<[u32; HAND_SIZE]>,
+    previous_round_slots: ByPlayer<Option<HandSlot>>,
 ) -> Result<PreparedCombatResolution, CombatStatDiagnosticErrorV1> {
     let selected = ByPlayer::new(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
@@ -2533,6 +2646,15 @@ fn prepare_combat_stat_diagnostic(
             .iter()
             .all(|card| card.effective_clan_id == clan)
     };
+    let clan = |player: PlayerId| ClanContext {
+        owner_effective_clan: cards[player][validated[player].slot.index()].effective_clan_id,
+        owner_previous_clan: previous_round_slots[player]
+            .map(|slot| canonical_clans[player][slot.index()]),
+        opponent_hand_clans: canonical_clans[player.other()]
+            .iter()
+            .filter(|id| **id < 64)
+            .fold(0_u64, |mask, id| mask | (1 << id)),
+    };
     let plans = ByPlayer::new(
         resolution_card_plan(
             selected[PlayerId::P1],
@@ -2548,6 +2670,7 @@ fn prepare_combat_stat_diagnostic(
             pillz[PlayerId::P1],
             pillz_lost[PlayerId::P1],
             unison(PlayerId::P1),
+            clan(PlayerId::P1),
         ),
         resolution_card_plan(
             selected[PlayerId::P2],
@@ -2563,6 +2686,7 @@ fn prepare_combat_stat_diagnostic(
             pillz[PlayerId::P2],
             pillz_lost[PlayerId::P2],
             unison(PlayerId::P2),
+            clan(PlayerId::P2),
         ),
     );
     prepare_combat_resolution_with_post_round(validated, plans, rounds_played)
@@ -2587,6 +2711,7 @@ fn resolved_source_plan(
     previous_round_winner: Option<PlayerId>,
     night: bool,
     owner_unison: bool,
+    clan: ClanContext,
 ) -> CombatStatSourcePlanV1 {
     match plan {
         CombatStatSourcePlanV1::CopyOpponentSource {
@@ -2601,6 +2726,7 @@ fn resolved_source_plan(
                 previous_round_winner,
                 night,
                 owner_unison,
+                clan,
             ) {
                 return CombatStatSourcePlanV1::Absent;
             }
@@ -2630,6 +2756,7 @@ fn resolution_card_plan(
     owner_pillz: u16,
     owner_pillz_lost: u16,
     owner_unison: bool,
+    clan: ClanContext,
 ) -> ResolutionCardPlan {
     // Resolve each source once. Copy substitution and the predicate are the same work for
     // the combat effect and the post-round effect, and a source only ever supplies one of
@@ -2646,6 +2773,7 @@ fn resolution_card_plan(
                 previous_round_winner,
                 night,
                 owner_unison,
+                clan,
             ),
             owner,
             first_mover,
@@ -2654,6 +2782,7 @@ fn resolution_card_plan(
             previous_round_winner,
             night,
             owner_unison,
+            clan,
         );
         ResolutionSourcePlan {
             effect: effect.and_then(shared_effect),

@@ -400,6 +400,53 @@ fn downgrade_unmodelled_stop_triggered_sources(prepared: &mut PreparedCombatStat
     }
 }
 
+fn downgrade_ambiguous_clan_gates(
+    prepared: &mut PreparedCombatStatCardsV1,
+    base_rules: &crate::engine::BaseRulesMatchSpec,
+) {
+    let plans = prepared.compact_plans;
+    for player in PlayerId::ALL {
+        for slot in 0..HAND_SIZE {
+            for bonus in [false, true] {
+                let plan = if bonus {
+                    plans[player][slot].bonus
+                } else {
+                    plans[player][slot].ability
+                };
+                let CombatStatSourcePlanV1::Execute {
+                    source_id,
+                    predicate:
+                        CombatStatPredicateV1::OwnerPreviousCardClanIn(set)
+                        | CombatStatPredicateV1::OpponentHandHasClan(set),
+                    ..
+                } = plan
+                else {
+                    continue;
+                };
+                if !crate::engine::clan_gate_is_ambiguous(set, base_rules, &plans) {
+                    continue;
+                }
+                let reject = CombatStatSourcePlanV1::RejectIfSelected { source_id };
+                let metadata = if bonus {
+                    prepared.compact_plans[player][slot].bonus = reject;
+                    &mut prepared.metadata[player][slot].bonus
+                } else {
+                    prepared.compact_plans[player][slot].ability = reject;
+                    &mut prepared.metadata[player][slot].ability
+                };
+                if let CombatStatProjectionDispositionV1::Execute { identity, .. } = metadata {
+                    *metadata = CombatStatProjectionDispositionV1::Disabled {
+                        identity: identity.clone(),
+                        reason: CombatStatDisabledReasonV1::UnsupportedSelectedHazard {
+                            registry_reasons: Box::new([]),
+                        },
+                    };
+                }
+            }
+        }
+    }
+}
+
 struct PreparedCombatStatCardsV1 {
     metadata: ByPlayer<[CombatStatCardPreparationV1; HAND_SIZE]>,
     compact_plans: ByPlayer<[CombatStatCardPlanV1; HAND_SIZE]>,
@@ -417,6 +464,7 @@ impl CombatStatDiagnosticReplayV1 {
         let battle_id = base.battle_id();
         let mut prepared = prepare_combat_stat_cards(base.replay(), catalog, registry, battle_id)?;
         downgrade_unmodelled_stop_triggered_sources(&mut prepared);
+        downgrade_ambiguous_clan_gates(&mut prepared, base.match_spec());
         let match_spec = CombatStatDiagnosticMatchSpecV1 {
             base_rules: base.match_spec().clone(),
             cards: prepared.compact_plans,

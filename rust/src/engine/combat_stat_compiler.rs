@@ -5,7 +5,7 @@
 
 use super::CopiedSourceKindV1;
 use super::{
-    CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatCardPlanV1,
+    ClanSetV1, CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatCardPlanV1,
     CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1,
     CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, RoundScaleV1,
     HAND_SIZE,
@@ -85,7 +85,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 53;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 54;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -145,7 +145,10 @@ fn copy_opponent_source_shape_matches(
         | CombatStatPredicateV1::SelectedHandSlotsMatch
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
-        | CombatStatPredicateV1::OwnerAbilityStopped => return false,
+        | CombatStatPredicateV1::OwnerAbilityStopped
+        | CombatStatPredicateV1::OwnerClanIn(_)
+        | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
+        | CombatStatPredicateV1::OpponentHandHasClan(_) => return false,
     };
     let unison = predicate == CombatStatPredicateV1::OwnerHandUnison;
     input.value == 0
@@ -396,6 +399,8 @@ pub(crate) fn conditional_stop_predicate_admitted(predicate: CombatStatPredicate
             | CombatStatPredicateV1::SelectedHandSlotsMatch
             | CombatStatPredicateV1::SelectedHandSlotsDiffer
             | CombatStatPredicateV1::MatchIsNight
+            | CombatStatPredicateV1::OwnerClanIn(_)
+            | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
     )
 }
 
@@ -1098,7 +1103,10 @@ fn victory_opponent_life_shape_matches(
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
         | CombatStatPredicateV1::OwnerHandUnison
-        | CombatStatPredicateV1::OwnerAbilityStopped => return false,
+        | CombatStatPredicateV1::OwnerAbilityStopped
+        | CombatStatPredicateV1::OwnerClanIn(_)
+        | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
+        | CombatStatPredicateV1::OpponentHandHasClan(_) => return false,
     };
     input.value == life
         && input.value_min == minimum
@@ -1906,6 +1914,9 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_stop_triggered_numeric(definition, source_kind) {
         return Some(classified);
     }
+    if let Some(classified) = classify_clan_gated(definition, source_kind) {
+        return Some(classified);
+    }
     let input = definition.structured_input();
     if input.position_requirement == PositionRequirementV1::Both && neutral_except_position(input) {
         if let CompiledEffectV1::Supported(effect) = definition.compiled() {
@@ -2315,6 +2326,97 @@ fn classify_stop_triggered_numeric(
     let body = definition.description().strip_prefix("Stop: ")?;
     numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
         .then_some((effect, CombatStatPredicateV1::OwnerAbilityStopped))
+}
+
+/// The three clan gates over the plain fixed numeric body and over `Stop Opp. Bonus`:
+/// `[clan:A][clan:B] X` (`clanRequirement`, the owner's selected card's effective clan),
+/// `After [clan:A] : X` (`previousClanRequirement`, the canonical clan of the card the
+/// owner played in the previous round) and `Versus [clan:A] : X` (`oppClanRequirement`,
+/// any canonical clan in the opposing hand). Exactly one list may be set, every other field
+/// must be the neutral unconditional shape, and the printed prefix must be rebuilt exactly
+/// from that list, so no existing `neutral_except_*` gate is touched.
+fn classify_clan_gated(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    let own = input.clan_requirement.as_slice();
+    let opposing = input.opponent_clan_requirement.as_slice();
+    let previous = input.previous_clan_requirement.as_slice();
+    enum Gate {
+        OwnerCard,
+        OpposingHand,
+        PreviousCard,
+    }
+    let (ids, gate) = match (own.is_empty(), opposing.is_empty(), previous.is_empty()) {
+        (false, true, true) => (own, Gate::OwnerCard),
+        (true, false, true) => (opposing, Gate::OpposingHand),
+        (true, true, false) => (previous, Gate::PreviousCard),
+        _ => return None,
+    };
+    // Only After is printed on a clan bonus (the Tolvack bonus `5585`).
+    if !matches!(gate, Gate::PreviousCard) && source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let set = ClanSetV1::from_ids(ids)?;
+    let tags: String = ids.iter().map(|id| format!("[clan:{id}]")).collect();
+    let description = definition.description();
+    let (predicate, body) = match gate {
+        Gate::OwnerCard => (
+            CombatStatPredicateV1::OwnerClanIn(set),
+            description.strip_prefix(&format!("{tags} "))?,
+        ),
+        Gate::OpposingHand => (
+            CombatStatPredicateV1::OpponentHandHasClan(set),
+            description.strip_prefix(&format!("Versus {tags} : "))?,
+        ),
+        Gate::PreviousCard => (
+            CombatStatPredicateV1::OwnerPreviousCardClanIn(set),
+            description
+                .strip_prefix(&format!("After {tags} : "))
+                .or_else(|| description.strip_prefix(&format!("After {tags}: ")))?,
+        ),
+    };
+    if !neutral_except_clan_gate(input) || input.position_requirement != PositionRequirementV1::Both
+    {
+        return None;
+    }
+    if input.special_action == SpecialActionV1::StopBonus {
+        return (!matches!(gate, Gate::OpposingHand)
+            && input.value == 0
+            && input.value_min == 0
+            && input.value_max == 0
+            && input.side_affected == AffectedSideV1::Player
+            && input.attribute_affected == AttributeAffectedV1::None
+            && input.attribute_action == AttributeActionV1::None
+            && body == "Stop Opp. Bonus")
+            .then_some((SupportedEffectV1::StopOpponentBonus, predicate));
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
+    numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
+        .then_some((effect, predicate))
+}
+
+fn neutral_except_clan_gate(input: &StructuredEffectV1) -> bool {
+    input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
 }
 
 fn neutral_except_inverted(input: &StructuredEffectV1) -> bool {
@@ -3280,7 +3382,10 @@ fn position_description_matches(
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
         | CombatStatPredicateV1::OwnerHandUnison
-        | CombatStatPredicateV1::OwnerAbilityStopped => return false,
+        | CombatStatPredicateV1::OwnerAbilityStopped
+        | CombatStatPredicateV1::OwnerClanIn(_)
+        | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
+        | CombatStatPredicateV1::OpponentHandHasClan(_) => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -3305,7 +3410,10 @@ fn index_description_matches(
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
         | CombatStatPredicateV1::OwnerHandUnison
-        | CombatStatPredicateV1::OwnerAbilityStopped => return false,
+        | CombatStatPredicateV1::OwnerAbilityStopped
+        | CombatStatPredicateV1::OwnerClanIn(_)
+        | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
+        | CombatStatPredicateV1::OpponentHandHasClan(_) => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -3332,7 +3440,10 @@ fn previous_round_description_matches(
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
         | CombatStatPredicateV1::OwnerHandUnison
-        | CombatStatPredicateV1::OwnerAbilityStopped => None,
+        | CombatStatPredicateV1::OwnerAbilityStopped
+        | CombatStatPredicateV1::OwnerClanIn(_)
+        | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
+        | CombatStatPredicateV1::OpponentHandHasClan(_) => None,
     };
     body.is_some_and(|body| {
         numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
@@ -3454,6 +3565,8 @@ fn numeric_description_body_matches(
                 || body == format!("-{value} Opp Pow. & Dam., Min {min}")
                 || body == format!("-{value} Opp Pow. And Dam., Min {min}")
                 || body == format!("-{value} Opp Pow. & Dmg,min {min}")
+                // Pistache `5681`: `After [clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`.
+                || body == format!("-{value} Opp. Pow. & Dam., Min {min}")
         }
         _ => false,
     }
@@ -3650,6 +3763,90 @@ mod tests {
                 ),
                 None,
                 "malformed {field}",
+            );
+        }
+    }
+
+    #[test]
+    fn clan_gates_are_admitted_by_the_exact_prefix_rebuilt_from_their_list() {
+        let registry = registry();
+        for id in [4667, 5353, 5909, 5814, 5911, 5912, 2931] {
+            let classified = classify_combat_stat_effect(
+                registry.get(id).expect("registry definition"),
+                CombatStatEffectSourceV1::Ability,
+            );
+            assert!(
+                matches!(classified, Some((_, CombatStatPredicateV1::OwnerClanIn(_)))),
+                "{id}: {classified:?}"
+            );
+        }
+        for id in [
+            5585, 5681, 5750, 5779, 5780, 5820, 5847, 5853, 5854, 5855, 5738,
+        ] {
+            let classified = classify_combat_stat_effect(
+                registry.get(id).expect("registry definition"),
+                CombatStatEffectSourceV1::Ability,
+            );
+            assert!(
+                matches!(
+                    classified,
+                    Some((_, CombatStatPredicateV1::OwnerPreviousCardClanIn(_)))
+                ),
+                "{id}: {classified:?}"
+            );
+        }
+        for id in [2461, 3737, 3739] {
+            let classified = classify_combat_stat_effect(
+                registry.get(id).expect("registry definition"),
+                CombatStatEffectSourceV1::Ability,
+            );
+            assert!(
+                matches!(
+                    classified,
+                    Some((_, CombatStatPredicateV1::OpponentHandHasClan(_)))
+                ),
+                "{id}: {classified:?}"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(
+                    registry.get(id).unwrap(),
+                    CombatStatEffectSourceV1::Bonus
+                ),
+                None
+            );
+        }
+        // The Tolvack bonus is the one clan-gated clan bonus.
+        assert!(classify_combat_stat_effect(
+            registry.get(5585).unwrap(),
+            CombatStatEffectSourceV1::Bonus
+        )
+        .is_some());
+        // A prefix whose tags disagree with the record's list is refused, and so is a record
+        // carrying two lists.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        let mut retagged = source.clone();
+        let text = retagged["4667"]["description"].as_str().unwrap().to_owned();
+        retagged["4667"]["description"] =
+            serde_json::json!(text.replacen("[clan:25]", "[clan:26]", 1));
+        let retagged = EffectRegistryV1::from_reader(retagged.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_combat_stat_effect(
+                retagged.get(4667).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None
+        );
+        let mut two_lists = source.clone();
+        two_lists["4667"]["abilityData"]["oppClanRequirement"] = serde_json::json!("11");
+        if let Ok(two_lists) = EffectRegistryV1::from_reader(two_lists.to_string().as_bytes()) {
+            assert_eq!(
+                classify_combat_stat_effect(
+                    two_lists.get(4667).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None
             );
         }
     }

@@ -5,7 +5,7 @@ use urban_recreation_rust::catalog::CardKey;
 use urban_recreation_rust::effect_registry::ResourceCancellationV1;
 use urban_recreation_rust::engine::{
     BaseRulesError, BaseRulesMatchSpec, BaseRulesPlayerSpec, BaseRulesPosition,
-    BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CombatStatAffectedSideV1,
+    BaseRulesRoundInput, BaseRulesSelection, ByPlayer, ClanSetV1, CombatStatAffectedSideV1,
     CombatStatAttributeV1, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1,
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
     CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPlanErrorV1,
@@ -6515,4 +6515,135 @@ fn round_scaled_victory_effects_scale_by_the_round_and_clamp_once() {
         .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
         .unwrap();
     assert_eq!(report.players[PlayerId::P2].life, 20);
+}
+
+/// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
+/// them; effective clans start equal to the canonical ones.
+fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {
+    let mut base = base_spec(6, 3);
+    for slot in 0..4 {
+        base.players[PlayerId::P1].hand[slot].clan_id = 1 + slot as u32;
+        base.players[PlayerId::P2].hand[slot].clan_id = 11 + slot as u32;
+    }
+    let cards = plans(&base);
+    (base, cards)
+}
+
+fn power_up_under(predicate: CombatStatPredicateV1) -> CombatStatSourcePlanV1 {
+    execute(
+        4667,
+        predicate,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            3,
+            None,
+            None,
+            CombatStatMagnitudeV1::Fixed,
+        ),
+    )
+}
+
+/// The three clan gates: `[clan:..]` reads the owner's selected card's effective clan,
+/// `Versus [clan:..]` any canonical clan in the opposing hand, and `After [clan:..]` the
+/// canonical clan of the card the owner played in the previous round, which never holds in
+/// round 0. The corpus pins all three paying and refusing; these pin the edges.
+#[test]
+fn clan_gates_read_the_owner_card_the_opposing_hand_and_the_previous_card() {
+    let set = |ids: &[u32]| ClanSetV1::from_ids(ids).unwrap();
+    for (predicate, fires) in [
+        (CombatStatPredicateV1::OwnerClanIn(set(&[1])), true),
+        (CombatStatPredicateV1::OwnerClanIn(set(&[2])), false),
+        // Any card in the opposing hand, not only the one it faces.
+        (CombatStatPredicateV1::OpponentHandHasClan(set(&[13])), true),
+        (CombatStatPredicateV1::OpponentHandHasClan(set(&[5])), false),
+        // No previous card in round 0.
+        (
+            CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[1, 2, 3, 4])),
+            false,
+        ),
+    ] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].ability = power_up_under(predicate);
+        let mut diag = game(base, cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].power,
+            if fires { 9 } else { 6 },
+            "{predicate:?}"
+        );
+    }
+
+    // `After`: round 0 plays the clan-2 card, round 1 the gated one.
+    for (listed, fires) in [(2, true), (3, false)] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][2].ability =
+            power_up_under(CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[
+                listed,
+            ])));
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let (_, first) = diag
+            .make(input(PlayerId::P1, (1, 0, false), (1, 0, false)))
+            .unwrap();
+        let (report, second) = diag
+            .make(input(PlayerId::P2, (2, 0, false), (2, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].power,
+            if fires { 9 } else { 6 },
+            "after {listed}"
+        );
+        diag.unmake(second);
+        diag.unmake(first);
+        assert_eq!(diag.position(), &start);
+    }
+
+    // Only `After` is printed on a clan bonus; the other two are refused from the Bonus slot.
+    for (predicate, allowed) in [
+        (
+            CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[2])),
+            true,
+        ),
+        (CombatStatPredicateV1::OwnerClanIn(set(&[1])), false),
+        (
+            CombatStatPredicateV1::OpponentHandHasClan(set(&[11])),
+            false,
+        ),
+    ] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].bonus = power_up_under(predicate);
+        cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        assert_eq!(
+            CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            })
+            .is_ok(),
+            allowed,
+            "{predicate:?}",
+        );
+    }
+
+    // `After` and `Versus` read canonical clans. An infiltrating Oculus whose effective clan
+    // and Oculus itself fall on opposite sides of the list is the case no round separates,
+    // so the match is refused.
+    let (mut base, mut cards) = clan_gate_spec();
+    base.players[PlayerId::P2].hand[3].clan_id = 56;
+    cards[PlayerId::P2][3].effective_clan_id = 11;
+    cards[PlayerId::P1][0].ability =
+        power_up_under(CombatStatPredicateV1::OpponentHandHasClan(set(&[11])));
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::AmbiguousOculusClanGate,
+            ..
+        })
+    ));
 }

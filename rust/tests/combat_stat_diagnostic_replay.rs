@@ -131,11 +131,13 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // 1130833/2. 1066077/1 is the negative case: Spidee's Reprisal Stop Opp. Ability
     // leaves Adytia Ld at a plain 8 x 4. 925899/0 has the conversion and an opposing
     // Equalizer in the same round, 40 + 4 - 12 = 32.
-    (925899, 2),
+    // Four rounds since revision 54: Pistache's `After [clan:27][clan:29]` reduction.
+    (925899, 4),
     (1066077, 2),
     (1079482, 3),
     (1090418, 2),
-    (1090691, 2),
+    // Four rounds since revision 54, whose `After` Stop Opp. Bonus decides round 2.
+    (1090691, 4),
     (1092066, 3),
     (1130833, 4),
     (949750, 4),
@@ -209,7 +211,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Four rounds since revision 51: Nolegs' `+2 Attack Per Pillz Lost` pays 2 x 12 in
     // round 3.
     (1060510, 4),
-    (1089626, 1),
+    // Four rounds since revision 54: two `After` gates, one paying and one not, in round 1.
+    (1089626, 4),
     (1090887, 3),
     // Four rounds since revision 51, whose `-1 Opp Att. Per Pillz Left, Min 15` meets Argos
     // already below its Min in round 1 and leaves him alone.
@@ -333,7 +336,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1093451, 3),
     (1058545, 2),
     (964213, 4),
-    (1066739, 1),
+    // Four rounds since revision 54, clan-gated past round 0.
+    (1066739, 4),
     // Four rounds since revision 43, whose Power Exchange opens its last round.
     (1091848, 4),
     (1092020, 4),
@@ -462,6 +466,19 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Revision 53 admits the `Growth:`/`Degrowth:` forms of the plain Victory grammars.
     // `Degrowth: +1 Pillz` pays its factor of four in 1093173/0: 12 - 8 + 4 = 8.
     (1093173, 1),
+    // Revision 54 admits the three clan gates over the plain numeric body and `Stop Opp.
+    // Bonus`: `[clan:..]` on the owner's effective clan, `After [clan:..]` on the canonical
+    // clan of the owner's previous card, `Versus [clan:..]` on the opposing hand. The Tolvack
+    // `After` bonus pays in about thirty rounds; 1022847 pins both the prefix gate refusing
+    // (Alekperov infiltrates Tolvack, Jairin stays at 8) and `After` paying beside a
+    // non-paying one; Versus stays false throughout 964008, as its matchup requires.
+    (924779, 4),
+    (1022847, 4),
+    (1011856, 3),
+    (1090179, 4),
+    (1090338, 4),
+    (964008, 4),
+    (876464, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
