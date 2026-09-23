@@ -337,6 +337,14 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             1172, 1202, 1336, 1497, 1502, 1704, 1768, 3106, 3318, 3321, 3518, 4778,
         ],
     ),
+    // Stat Copies and Exchanges under the predicates the projection resolves, and Unison
+    // source Copy, measured 2026-09-23.
+    (
+        "conditional Exchange",
+        &[1713, 1769, 2995, 3622, 3953, 4467, 5782],
+    ),
+    ("conditional stat Copy by grammar", &[1409, 4126]),
+    ("Unison source Copy", &[3994, 4141, 4767, 5108]),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

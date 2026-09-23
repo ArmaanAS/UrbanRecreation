@@ -6128,3 +6128,66 @@ fn killshot_pillz_and_life_pays_a_living_owner_at_double_the_opposing_attack() {
         })
     ));
 }
+
+/// A conditional Exchange or stat Copy is the unconditional overwrite gated by its
+/// predicate: when the predicate fails, nothing is swapped or copied. Every one of the eight
+/// selected conditional Exchange rounds in the corpus is a paying round, so the false branch
+/// is pinned here, together with a Unison source Copy on a mixed hand.
+#[test]
+fn a_conditional_exchange_or_copy_does_nothing_when_its_predicate_fails() {
+    for (first, swaps) in [(PlayerId::P1, true), (PlayerId::P2, false)] {
+        let mut spec = exchange_spec(CombatStatAttributeV1::Power);
+        spec.cards[PlayerId::P1][0].ability = execute(
+            3622,
+            CombatStatPredicateV1::OwnerMovesFirst,
+            CombatStatEffectV1::ExchangePrintedCombatStat {
+                stat: CombatStatAttributeV1::Power,
+            },
+        );
+        let expected = if swaps {
+            ((7, 2), (5, 6))
+        } else {
+            ((5, 2), (7, 6))
+        };
+        assert_eq!(
+            exchange_round(spec, first),
+            expected,
+            "{first:?} moves first"
+        );
+    }
+
+    // `Unison : Copy: Opp. Ability` on a mixed hand adopts nothing; on a mono hand it adopts
+    // the opposing ability.
+    let power_up = execute(
+        1844,
+        CombatStatPredicateV1::Always,
+        modifier(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Power,
+            CombatStatOperationV1::Increase,
+            3,
+            None,
+            None,
+            CombatStatMagnitudeV1::Fixed,
+        ),
+    );
+    for (mono, expected) in [(false, 7), (true, 10)] {
+        let mut spec = copy_spec(CopiedSourceKindV1::Ability, power_up);
+        spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 3994,
+            copied: CopiedSourceKindV1::Ability,
+            predicate: CombatStatPredicateV1::OwnerHandUnison,
+        };
+        if mono {
+            for slot in 0..4 {
+                spec.cards[PlayerId::P1][slot].effective_clan_id = 900;
+            }
+            spec.cards[PlayerId::P1][0].source_ability_support_count = 4;
+        }
+        let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(report.cards[PlayerId::P1].power, expected, "mono {mono}");
+    }
+}

@@ -7,13 +7,14 @@
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_both_players_life_reduction, classify_brawl_post_round, classify_combat_stat_effect,
-    classify_conditional_stop, classify_copy_opponent_source, classify_defeat_life,
-    classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_conditional_stat_copy, classify_conditional_stop, classify_copy_opponent_source,
+    classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_heal_life_on_victory, classify_killshot_opponent_life,
+    classify_killshot_pillz_and_life, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory,
+    classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_opponent_life,
     classify_victory_opponent_pillz, classify_victory_or_defeat_life,
     classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
@@ -1372,7 +1373,10 @@ fn prepare_catalog_source(
         // structural alias of the definition its text resolves to rather than borrowing it.
         // A night variant has no catalog id at all; its text is the only identity it has,
         // as for the Night numerics.
-        if catalog_id.is_some() && classify_conditional_stop(definition, source_kind).is_some() {
+        if catalog_id.is_some()
+            && (classify_conditional_stop(definition, source_kind).is_some()
+                || classify_conditional_stat_copy(definition, source_kind).is_some())
+        {
             require_catalog_alias(
                 match_.alias_ids(),
                 player,

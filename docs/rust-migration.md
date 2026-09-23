@@ -1956,6 +1956,38 @@ rounds: Sylvia Ld's `Backlash: - 3 Life Min 3` (`2853`) and a `Defeat: +1 Opp. L
 (`1783`); both are cancelled in those rounds anyway, which is why the server and the
 projection agree there.
 
+Semantic revision 50 admits the stat Copies and Exchanges under every condition prefix the
+projection resolves - `Confidence: Power Exchange` (`1713`), `Reprisal: Power Exchange`
+(`2995`) and `Damage Exchange` (`1769`), `Courage: Power Exchange` (`3622`), `Symmetry:` and
+`Asymmetry: Damage Exchange` (`4467`, `5782`), `Unison : Damage Exchange` (`3953`), and the
+conditional stat Copies `Confidence: Copy: Opp. Power` (`1409`) and `Reprisal: Copy: Opp.
+Damage` (`4126`) - and `Unison : Copy: Opp. Ability/Bonus` (`3994`, `4767`, `4141`, `5108`).
+It measured 6 and unlocked exactly 6 - `867116`, `875375`, `946400`, `946701`, `947488` and
+`1091473` - taking eligibility from 130 to 136.
+
+The engine did not change. Each record is the unconditional Copy or Exchange with exactly
+one condition field set, or the clan-mates link for Unison, and `active_effect` already
+gates any executed effect by its predicate, so a Copy-phase overwrite whose predicate fails
+simply does not happen. One classifier builds the effect and names the predicate from the
+field its prefix names; the plan validator exempts Copies and Exchanges under those
+predicates from `ConditionalControl`, Ability slot only; and the catalog requires a printed
+level to be a structural alias of its text's definition, which keeps the unregistered
+printed levels (`3623`/`3624`, `2993`/`2994`, `5544`, `5781` and the stat-Copy levels)
+closed at no cost in draws. The Unison source Copy is two rows in the Copy grammar table and
+the clan-mates flag in its shape.
+
+Every one of the eight selected conditional Exchange rounds in the corpus pays - Courage in
+1009386/0, Confidence in 1087712/3 and 947488/2, Reprisal in 901613/1 and 1093079/2,
+Asymmetry in 1093500/2 and 875375/2, Unison in 1130977/0 - and none has its condition
+false, so that branch rests on the already-pinned predicates and an engine test. Symmetry
+has no selected round of its own. The Copy rounds are catalog-only evidence, and weaker than
+they look: the server rewrites a Copy card's static block while a round resolves and can
+revert it afterwards (878093's raw battle has `5304` become `3526` and back), so adoption
+has to be read from the battle file's `static` lines, not the game file. Read that way,
+Unison Copy adopts in 1069193/0, 875230/0, 946400/0 and 876574/0 - the last with an Oculus
+completing the hand - and is stopped in 1130425/1 and 947121/2. The gate grows from 485 to
+497 rounds with 1009386, 901613 and 1130977 added and 875375, 947488 and 1093500 extended.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

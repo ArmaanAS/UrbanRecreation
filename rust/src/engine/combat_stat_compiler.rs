@@ -17,7 +17,17 @@ use super::{
 /// `Bet > N` and the clan-gated `Asy.` variant keep their own deferred grammars. Note the
 /// site's own inconsistent punctuation: a copied Bonus loses the second colon under
 /// `Reprisal`/`Revenge` but keeps it under `Asymmetry`.
-const COPY_OPPONENT_SOURCE_GRAMMARS: [(&str, CopiedSourceKindV1, CombatStatPredicateV1); 8] = [
+const COPY_OPPONENT_SOURCE_GRAMMARS: [(&str, CopiedSourceKindV1, CombatStatPredicateV1); 10] = [
+    (
+        "Unison : Copy: Opp. Ability",
+        CopiedSourceKindV1::Ability,
+        CombatStatPredicateV1::OwnerHandUnison,
+    ),
+    (
+        "Unison : Copy: Opp. Bonus",
+        CopiedSourceKindV1::Bonus,
+        CombatStatPredicateV1::OwnerHandUnison,
+    ),
     (
         "Copy: Opp. Ability",
         CopiedSourceKindV1::Ability,
@@ -74,7 +84,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 49;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 50;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -124,14 +134,19 @@ fn copy_opponent_source_shape_matches(
             PreviousRoundRequirementV1::Any,
             IndexRequirementV1::Asymmetry,
         ),
+        CombatStatPredicateV1::OwnerHandUnison => (
+            PositionRequirementV1::Both,
+            PreviousRoundRequirementV1::Any,
+            IndexRequirementV1::Any,
+        ),
         CombatStatPredicateV1::OwnerMovesFirst
         | CombatStatPredicateV1::OwnerWonPreviousRound
         | CombatStatPredicateV1::SelectedHandSlotsMatch
         | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
-        | CombatStatPredicateV1::OwnerHandUnison
         | CombatStatPredicateV1::OwnerAbilityStopped => return false,
     };
+    let unison = predicate == CombatStatPredicateV1::OwnerHandUnison;
     input.value == 0
         && input.value_min == 0
         && input.value_max == 0
@@ -158,7 +173,7 @@ fn copy_opponent_source_shape_matches(
         && !input.is_lost_life_linked
         && !input.is_lost_pillz_linked
         && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
+        && input.is_clanmates_count_linked == unison
         && !input.is_anti_clanmates_count_linked
         && !input.is_permanent
         && !input.is_immediate_permanent
@@ -1591,6 +1606,9 @@ pub(crate) fn classify_combat_stat_effect(
     // Model-specific conditions take precedence over the registry's model-neutral output.
     // Keep the unconditional guard below as well, so a future registry compiler expansion
     // cannot silently erase a condition by returning Supported first.
+    if let Some(classified) = classify_conditional_stat_copy(definition, source_kind) {
+        return Some(classified);
+    }
     if let Some(classified) = classify_equalizer_numeric(definition) {
         return Some(classified);
     }
@@ -1835,6 +1853,156 @@ fn classify_day_night_numeric(
     let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
         .then_some((effect, predicate))
+}
+
+/// Recognize the stat Copies and Exchanges under a condition prefix whose predicate the
+/// projection already resolves: `Courage:`, `Reprisal:`, `Confidence:`, `Revenge:`,
+/// `Asymmetry:`, `Symmetry:` and `Unison :`. The record is the unconditional Copy or
+/// Exchange with exactly one condition field set - or, for Unison, the clan-mates link - so
+/// the overwrite in the Copy phase simply does not happen when the predicate fails. The
+/// printed body must be one of the unconditional grammars' exact texts. Card abilities only.
+pub(crate) fn classify_conditional_stat_copy(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    const WON_PREVIOUS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] =
+        &[(PreviousRoundRequirementV1::Win, IndexRequirementV1::Any)];
+    const LOST_PREVIOUS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] =
+        &[(PreviousRoundRequirementV1::Lose, IndexRequirementV1::Any)];
+    const SLOTS_DIFFER: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[(
+        PreviousRoundRequirementV1::Any,
+        IndexRequirementV1::Asymmetry,
+    )];
+    const SLOTS_MATCH: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[(
+        PreviousRoundRequirementV1::Any,
+        IndexRequirementV1::Symmetry,
+    )];
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    if input.attribute_action != AttributeActionV1::Copy
+        || input.special_action != SpecialActionV1::None
+    {
+        return None;
+    }
+    let (stat, exchange_body, copy_body) = match input.attribute_affected {
+        AttributeAffectedV1::Power => (CombatStatV1::Power, "Power Exchange", "Copy: Opp. Power"),
+        AttributeAffectedV1::Damage => {
+            (CombatStatV1::Damage, "Damage Exchange", "Copy: Opp. Damage")
+        }
+        AttributeAffectedV1::PowerAndDamage => (
+            CombatStatV1::PowerAndDamage,
+            "Power And Damage Exchange",
+            "Copy: Power And Damage Opp.",
+        ),
+        _ => return None,
+    };
+    let (effect, body) = match input.side_affected {
+        AffectedSideV1::Both => (
+            SupportedEffectV1::ExchangePrintedCombatStat { stat },
+            exchange_body,
+        ),
+        AffectedSideV1::Player => (
+            SupportedEffectV1::CopyOpponentPrintedCombatStat { stat },
+            copy_body,
+        ),
+        _ => return None,
+    };
+    let (predicate, prefix) = if input.is_clanmates_count_linked {
+        if !neutral_except_clanmates_count(input)
+            || input.value != 0
+            || input.value_min != 0
+            || input.value_max != 0
+        {
+            return None;
+        }
+        (CombatStatPredicateV1::OwnerHandUnison, "Unison : ")
+    } else {
+        let (predicate, prefix, position, conditions) = match (
+            input.position_requirement,
+            input.previous_round_requirement,
+            input.index_requirement,
+        ) {
+            (
+                PositionRequirementV1::Attacker,
+                PreviousRoundRequirementV1::Any,
+                IndexRequirementV1::Any,
+            ) => (
+                CombatStatPredicateV1::OwnerMovesFirst,
+                "Courage: ",
+                PositionRequirementV1::Attacker,
+                UNCONDITIONAL,
+            ),
+            (
+                PositionRequirementV1::Defender,
+                PreviousRoundRequirementV1::Any,
+                IndexRequirementV1::Any,
+            ) => (
+                CombatStatPredicateV1::OwnerMovesSecond,
+                "Reprisal: ",
+                PositionRequirementV1::Defender,
+                UNCONDITIONAL,
+            ),
+            (
+                PositionRequirementV1::Both,
+                PreviousRoundRequirementV1::Win,
+                IndexRequirementV1::Any,
+            ) => (
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+                "Confidence: ",
+                PositionRequirementV1::Both,
+                WON_PREVIOUS,
+            ),
+            (
+                PositionRequirementV1::Both,
+                PreviousRoundRequirementV1::Lose,
+                IndexRequirementV1::Any,
+            ) => (
+                CombatStatPredicateV1::OwnerLostPreviousRound,
+                "Revenge: ",
+                PositionRequirementV1::Both,
+                LOST_PREVIOUS,
+            ),
+            (
+                PositionRequirementV1::Both,
+                PreviousRoundRequirementV1::Any,
+                IndexRequirementV1::Asymmetry,
+            ) => (
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+                "Asymmetry: ",
+                PositionRequirementV1::Both,
+                SLOTS_DIFFER,
+            ),
+            (
+                PositionRequirementV1::Both,
+                PreviousRoundRequirementV1::Any,
+                IndexRequirementV1::Symmetry,
+            ) => (
+                CombatStatPredicateV1::SelectedHandSlotsMatch,
+                "Symmetry: ",
+                PositionRequirementV1::Both,
+                SLOTS_MATCH,
+            ),
+            _ => return None,
+        };
+        let shape = PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(0),
+            position,
+            conditions,
+            current_round: CurrentRoundRequirementV1::Any,
+            side: input.side_affected,
+            attribute: input.attribute_affected,
+            action: AttributeActionV1::Copy,
+            special: SpecialActionV1::None,
+            ..POST_ROUND_SHAPE
+        };
+        if !shape_matches(input, shape) {
+            return None;
+        }
+        (predicate, prefix)
+    };
+    (definition.description().strip_prefix(prefix) == Some(body)).then_some((effect, predicate))
 }
 
 /// True when any opposing source could stop an ability: an executable `Stop Opp. Ability`
@@ -3149,7 +3317,9 @@ mod tests {
             ),
             None
         );
-        for id in [3839, 3953, 3973, 4015, 4033, 4119, 4695] {
+        // `3953`, the Unison Damage Exchange, is the conditional stat-Copy grammar's since
+        // revision 50.
+        for id in [3839, 3973, 4015, 4033, 4119, 4695] {
             assert_eq!(
                 classify_combat_stat_effect(
                     registry.get(id).unwrap(),
@@ -3718,12 +3888,23 @@ mod tests {
                 "grammar {id}",
             );
         }
+        // Since revision 50 the Unison source Copy is a grammar of its own.
+        assert_eq!(
+            classify_copy_opponent_source(
+                registry
+                    .lookup_capture(3994, "Unison : Copy: Opp. Ability")
+                    .unwrap()
+            ),
+            Some((
+                CopiedSourceKindV1::Ability,
+                CombatStatPredicateV1::OwnerHandUnison
+            )),
+        );
         // Every other conditional keeps its own deferred grammar, and a stat-copying
         // variant is never a source copy: since revision 24 the unconditional ones are
         // admitted as their own effect, and `4126` matters in particular because it is a
         // Reprisal Copy, but of a stat.
         for (id, description) in [
-            (3994, "Unison : Copy: Opp. Ability"),
             (1409, "Confidence: Copy: Opp. Power"),
             (5304, "Bet > 3 Pillz: Copy: Opp. Ability"),
             (
@@ -4183,10 +4364,12 @@ mod tests {
         ]);
         // Since revision 47 the `Confidence:` and `Revenge:` Stops are admitted by the
         // conditional-Stop grammar, card abilities only.
-        let admitted_stops = BTreeSet::from([490, 589, 1680]);
+        // And since revision 50 the `Confidence:` stat Copy and Exchange, by the conditional
+        // stat-Copy grammar.
+        let admitted_stops = BTreeSet::from([490, 589, 1409, 1680, 1713]);
         let deferred = BTreeSet::from([
-            814, 1409, 1643, 1652, 1661, 1702, 1713, 1719, 1751, 1810, 2113, 2582, 3016, 3301,
-            3546, 4301, 4449, 4972,
+            814, 1643, 1652, 1661, 1702, 1719, 1751, 1810, 2113, 2582, 3016, 3301, 3546, 4301,
+            4449, 4972,
         ]);
         let observed: BTreeSet<_> = registry
             .iter()

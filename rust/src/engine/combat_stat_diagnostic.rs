@@ -2078,9 +2078,25 @@ fn validate_combat_stat_source_plan(
         CombatStatEffectV1::StopOpponentAbility | CombatStatEffectV1::StopOpponentBonus
     ) && source == CombatStatEffectSourceV1::Ability
         && conditional_stop_predicate_admitted(predicate);
+    let conditional_stat_copy = matches!(
+        effect,
+        CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. }
+            | CombatStatEffectV1::ExchangePrintedCombatStat { .. }
+    ) && source == CombatStatEffectSourceV1::Ability
+        && matches!(
+            predicate,
+            CombatStatPredicateV1::OwnerMovesFirst
+                | CombatStatPredicateV1::OwnerMovesSecond
+                | CombatStatPredicateV1::OwnerWonPreviousRound
+                | CombatStatPredicateV1::OwnerLostPreviousRound
+                | CombatStatPredicateV1::SelectedHandSlotsMatch
+                | CombatStatPredicateV1::SelectedHandSlotsDiffer
+                | CombatStatPredicateV1::OwnerHandUnison
+        );
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
         && !conditional_stop
+        && !conditional_stat_copy
     {
         return Err(invalid_combat_stat_execute(
             player,

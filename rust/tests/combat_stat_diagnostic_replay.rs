@@ -57,7 +57,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1061897, 4),
     (946288, 3),
     (1092660, 1),
-    (1093500, 2),
+    // Three rounds since revision 50: an Asymmetry Damage Exchange lands before Lindsey's
+    // Revenge reduction in round 2.
+    (1093500, 3),
     (1092909, 2),
     (925719, 3),
     (877636, 4),
@@ -166,7 +168,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1080877, 4),
     (1059895, 4),
     (924669, 1),
-    (875375, 1),
+    // Four rounds since revision 50, whose Asymmetry Damage Exchange pays in round 2.
+    (875375, 4),
     (1025525, 2),
     // Revision 28 Toxin and Poison on the same latch. Toxin pays in its latching round:
     // Zis takes AI-Lycs' owner from 12 to 8 with 3 Damage and 1 Toxin in 963039/0, Galactea
@@ -378,7 +381,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // - 2 = 2 in 1088323/3 shows the whole-hand condition holds after cards are spent.
     // 867173 stops at two rounds, where Prince Candle's unadmitted Combust latches.
     (1069608, 3),
-    (947488, 2),
+    // Three rounds since revision 50: Blackie's Confidence Power Exchange in round 2.
+    (947488, 3),
     (1131144, 1),
     (867173, 2),
     // Revision 47 admits `Stop Opp. Ability`/`Stop Opp. Bonus` under the Courage,
@@ -419,6 +423,14 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1131208, 1),
     (956805, 1),
     (877357, 3),
+    // Revision 50 admits the stat Copies and Exchanges under the predicates the projection
+    // resolves, and Unison source Copy. Suplicius Cr's Courage Power Exchange pays moving
+    // first in 1009386/0 (attack 44 = 48 - 4); Casagrande Cr's Reprisal Power Exchange in
+    // 901613/1 reaches 6 under Sol Hona's Min 6; an all-Berzerk hand swaps 2 and 5 by
+    // Unison in 1130977/0.
+    (1009386, 2),
+    (901613, 2),
+    (1130977, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

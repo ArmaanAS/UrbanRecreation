@@ -2634,13 +2634,43 @@ fn strict_catalog_match_admits_unconditional_copy_and_rejects_conditional_varian
         );
     }
 
-    // Every Copy grammar outside the reviewed set stays fail-closed, including a Reprisal
-    // whose payload is a stat rather than a source. Nexus and XU91 print an admitted text
-    // but under a catalog id that is not a registry definition of it, so they stay closed
-    // for the same reason Lorna's `752` does: description alone never admits.
+    // Since revision 50 the conditional stat Copies are the conditional stat-Copy grammar's:
+    // they prepare as a stat Copy under the predicate their prefix names.
+    for (key, predicate) in [
+        (
+            CardKey::new(1596, 2),
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+        ),
+        (
+            CardKey::new(2520, 1),
+            CombatStatPredicateV1::OwnerMovesSecond,
+        ),
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(with(key), p2, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
+        assert!(
+            matches!(
+                prepared.match_spec().cards[PlayerId::P1][0].ability,
+                CombatStatSourcePlanV1::Execute {
+                    predicate: actual,
+                    effect: CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. },
+                    ..
+                } if actual == predicate
+            ),
+            "{key:?}",
+        );
+    }
+
+    // Every other Copy grammar outside the reviewed set stays fail-closed. Nexus and XU91
+    // print an admitted text but under a catalog id that is not a registry definition of it,
+    // so they stay closed for the same reason Lorna's `752` does: description alone never
+    // admits.
     for (key, description) in [
-        (CardKey::new(1596, 2), "Confidence: Copy: Opp. Power"),
-        (CardKey::new(2520, 1), "Reprisal: Copy: Opp. Damage"),
         (CardKey::new(1531, 3), "Revenge: Copy Opp. Bonus"),
         (CardKey::new(1965, 4), "Revenge: Copy Opp. Bonus"),
     ] {
@@ -3976,26 +4006,56 @@ fn strict_catalog_match_prepares_the_unconditional_exchanges_and_refuses_the_pre
         );
     }
 
-    // Every prefixed Exchange carries a condition the unconditional grammar does not model,
-    // and stays fail-closed whether or not its structure records the condition.
-    for (key, description) in [
-        (CardKey::new(1864, 3), "Confidence: Power Exchange"),
-        (CardKey::new(2410, 3), "Courage: Power Exchange"),
-        (CardKey::new(2262, 5), "Reprisal: Power Exchange"),
-        (CardKey::new(1917, 2), "Reprisal: Damage Exchange"),
-        (CardKey::new(2485, 3), "Unison : Damage Exchange"),
-        (CardKey::new(2546, 5), "Symmetry: Damage Exchange"),
-        (CardKey::new(868, 4), "Asymmetry: Damage Exchange"),
+    // Since revision 50 every prefixed Exchange whose printed level owns a registry
+    // definition prepares under the predicate its prefix names; the swap simply does not
+    // happen when the predicate fails.
+    for (key, predicate) in [
+        (
+            CardKey::new(1864, 3),
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+        ),
+        (
+            CardKey::new(2410, 3),
+            CombatStatPredicateV1::OwnerMovesFirst,
+        ),
+        (
+            CardKey::new(2262, 5),
+            CombatStatPredicateV1::OwnerMovesSecond,
+        ),
+        (
+            CardKey::new(1917, 2),
+            CombatStatPredicateV1::OwnerMovesSecond,
+        ),
+        (
+            CardKey::new(2485, 3),
+            CombatStatPredicateV1::OwnerHandUnison,
+        ),
+        (
+            CardKey::new(2546, 5),
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+        ),
+        (
+            CardKey::new(868, 4),
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        ),
     ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(hand(key), opponent, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
         assert!(
-            CatalogCombatStatMatchV1::new(
-                input(hand(key), opponent, false),
-                &catalog,
-                &registry,
-                PROJECTION,
-            )
-            .is_err(),
-            "{key:?} {description} must stay fail-closed",
+            matches!(
+                prepared.match_spec().cards[PlayerId::P1][0].ability,
+                CombatStatSourcePlanV1::Execute {
+                    predicate: actual,
+                    effect: CombatStatEffectV1::ExchangePrintedCombatStat { .. },
+                    ..
+                } if actual == predicate
+            ),
+            "{key:?}",
         );
     }
 }
