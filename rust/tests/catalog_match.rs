@@ -3796,14 +3796,12 @@ fn strict_catalog_match_admits_the_reviewed_conditional_victory_opponent_life_ca
 
     // A printed level whose catalog ability has no registry definition stays fail-closed
     // without any special handling, which is what keeps Doela Noel level one and Dragomer
-    // Cr's upper two levels out. Bekum's Growth `1730` does have a definition and shares
-    // the structure, but its magnitude is round-scaled rather than a predicate, which a
-    // post-round plan cannot carry.
+    // Cr's upper two levels out. (Bekum's Growth `1730` was listed here until revision 53
+    // gave the round-scaled form its own grammar.)
     for key in [
         CardKey::new(2058, 1), // Doela Noel L1, catalog ability 4843.
         CardKey::new(2114, 4), // Dragomer Cr L4, catalog ability 3001.
         CardKey::new(2114, 5), // Dragomer Cr L5, catalog ability 2302.
-        CardKey::new(1882, 2), // Bekum, Growth: - 1 Opp. Life Min 4.
     ] {
         assert!(
             CatalogCombatStatMatchV1::new(

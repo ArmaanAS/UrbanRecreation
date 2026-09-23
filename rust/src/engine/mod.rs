@@ -458,6 +458,26 @@ pub(super) enum PostRoundSourceEffect {
         per_count: u16,
         maximum: u16,
     },
+    /// The `Growth:`/`Degrowth:` Victory grammars: the printed amount scaled by the round,
+    /// bound to the fixed arm that pays the plain grammar.
+    ReduceOpponentLifeOnVictoryPerRound {
+        per_round: u16,
+        minimum: u16,
+        scale: RoundScaleV1,
+    },
+    ReduceOpponentPillzOnVictoryPerRound {
+        per_round: u16,
+        minimum: u16,
+        scale: RoundScaleV1,
+    },
+    GainLifeOnVictoryPerRound {
+        per_round: u16,
+        scale: RoundScaleV1,
+    },
+    GainPillzOnVictoryPerRound {
+        per_round: u16,
+        scale: RoundScaleV1,
+    },
 }
 
 /// Which end-of-round resource a post-round effect writes, for `Cancel Opp. ... Modif.`.
@@ -509,9 +529,13 @@ impl PostRoundSourceEffect {
         match self {
             Self::Fixed(effect) => effect.resource(),
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
-            | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. } => PostRoundResourceV1::Life,
+            | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
+            | Self::GainLifeOnVictoryPerRound { .. } => PostRoundResourceV1::Life,
             Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
-            | Self::GainPillzOnVictoryPerAntiSupport { .. } => PostRoundResourceV1::Pillz,
+            | Self::GainPillzOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentPillzOnVictoryPerRound { .. }
+            | Self::GainPillzOnVictoryPerRound { .. } => PostRoundResourceV1::Pillz,
         }
     }
 }

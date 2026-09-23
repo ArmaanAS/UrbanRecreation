@@ -2039,6 +2039,35 @@ knocked-out owner of the plain Pillz form rests on Kubra's two rounds and an eng
 The gate grows from 512 to 527 rounds; `2222` moves from its disabled set to the executed
 one, and a Versus-gated `-2 Opp. Life` (`5505`) joins the disabled set, selected on a loss.
 
+Semantic revision 53 admits the `Growth:` and `Degrowth:` forms of the plain Victory
+grammars: `Growth: - 1 Opp. Life Min 4` (`1730`), `Growth: +1 Life` (`1332`, `1419`,
+`4551`, `5144`), `Growth: +1 Pillz` (`1116`), `Growth: -1 Opp Pillz. Min 0` (`2590`),
+`Degrowth: +1 Life` (`1603`) and `Degrowth: +1 Pillz` (`2169`). The printed amount is
+multiplied by the zero-based round plus one, or four less it, then paid and clamped by the
+arm that pays the plain grammar. It measured 6 - more than the 4 its pricing read at
+revision 48, because it now combines with slices landed since - and unlocked exactly 6:
+`876635`, `876752`, `877023`, `945585`, `1087712` and `1093451`, taking eligibility from
+144 to 150.
+
+The price was the Brawl route again. `bind_post_round_effect` gains `rounds_played` and the
+factor the combat-stat Growth and Degrowth magnitudes already use, and each of four new
+source effects binds to an existing fixed arm - the Victory opponent-Life and opponent-Pillz
+reductions and the Victory Life and Pillz gains - so there is no new engine arithmetic.
+`PostRoundShapeV1` gains a `round_scale` field, and `shape_matches` compares
+`isOverdrive`/`isDivide` against it where it had required both false: every existing shape
+leaves it `None`, so none of them can admit a round-scaled record. `1730` stays refused as
+the plain fixed reduction by the validator, because it is not one; it executes only on its
+own variant. The permanent Growth Poison is a different structure and stays closed.
+
+The server pins the factor from both ends: Bekum's `1730` takes 14 - 2 Damage - 3 to 9 in
+876796/2 and 14 - 1 - 4 to 9 in 877167/3 (server quantity 4), `Growth: +1 Life` pays 7 + 3
+in 1087712/2, 10 + 3 in 1092141/2 and 11 + 4 in 945871/3, and `Degrowth: +1 Pillz` pays its
+factor of four in 1093173/0 (12 - 8 + 4). `Growth: +1 Pillz` is never selected, and the
+Degrowth Life and Growth opposing-Pillz forms only lose, so those rest on the pinned factor
+and arms. These sources had been inert disabled sources in replay - no clause reached
+`isOverdrive` - and an unadmitted one is now a selected hazard. The gate grows from 527 to
+533 rounds, with 876796, 1087712 and 1092141 extended and 1093173 added.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

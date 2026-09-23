@@ -22,7 +22,8 @@ use crate::engine::combat_stat_compiler::{
     classify_killshot_opponent_life, classify_killshot_pillz_and_life,
     classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
     classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_regen_life_on_victory, classify_round_scaled_post_round,
+    classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
     classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
@@ -30,7 +31,7 @@ use crate::engine::combat_stat_compiler::{
     has_brawl_post_round_shape, has_defeat_life_shape, has_defeat_opponent_pillz_shape,
     has_defeat_pillz_shape, has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
     has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
-    has_reanimate_life_shape, has_regen_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
     has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
@@ -761,6 +762,16 @@ fn prepare_combat_stat_source(
             CombatStatPredicateV1::Always,
         ));
     }
+    if let Some((scale, effect)) = classify_round_scaled_post_round(definition, source_kind) {
+        let (post_round_effect, compact_effect) = effect.effects(scale);
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            CombatStatPredicateV1::Always,
+        ));
+    }
     if let Some(amount) = classify_killshot_pillz_and_life(definition, source_kind) {
         return Ok(executes_post_round(
             identity,
@@ -1265,6 +1276,19 @@ fn prepare_combat_stat_source(
     let unadmitted_defeat_pillz = (source.description.starts_with("Defeat: +")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_defeat_pillz_shape(definition);
+    // A `Growth:`/`Degrowth:` text over a Life or Pillz record that is not a permanent, or
+    // the complete round-scaled shape under other text, rejects when selected. Before
+    // revision 53 these were inert disabled sources in replay.
+    let unadmitted_round_scaled_post_round = ((source.description.starts_with("Growth: ")
+        || source.description.starts_with("Degrowth: "))
+        && !definition.structured_input().is_permanent
+        && matches!(
+            definition.structured_input().attribute_affected,
+            AttributeAffectedV1::Life
+                | AttributeAffectedV1::Pillz
+                | AttributeAffectedV1::LifeAndPillz
+        ))
+        || has_round_scaled_post_round_shape(definition);
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
@@ -1324,6 +1348,7 @@ fn prepare_combat_stat_source(
         || unadmitted_brawl_post_round
         || unadmitted_stop_triggered
         || unadmitted_defeat_pillz
+        || unadmitted_round_scaled_post_round
         || unadmitted_heal_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
@@ -1364,6 +1389,7 @@ fn prepare_combat_stat_source(
         || unadmitted_brawl_post_round
         || unadmitted_stop_triggered
         || unadmitted_defeat_pillz
+        || unadmitted_round_scaled_post_round
         || unadmitted_heal_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {

@@ -353,6 +353,11 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     // The Defeat own Pillz gain and its compound, measured 2026-09-23.
     ("Defeat: +N Pillz", &[2221, 2222, 3313]),
     ("Defeat: +N Pillz And Life", &[1716]),
+    // The `Growth:`/`Degrowth:` forms of the plain Victory grammars, measured 2026-09-23.
+    (
+        "Growth/Degrowth post-round",
+        &[1116, 1332, 1419, 1603, 1730, 2169, 2590, 4551, 5144],
+    ),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

@@ -202,7 +202,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // the engine test instead.
     (1092454, 2),
     (1092992, 4),
-    (1092141, 2),
+    // Four rounds since revision 53: `Growth: +1 Life` pays 10 + 3 in round 2.
+    (1092141, 4),
     (1092201, 3),
     (1060341, 1),
     // Four rounds since revision 51: Nolegs' `+2 Attack Per Pillz Lost` pays 2 x 12 in
@@ -229,7 +230,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1131294, 3),
     (924413, 4),
     (956608, 4),
-    (1087712, 2),
+    // Four rounds since revision 53: `Growth: +1 Life` pays 7 + 3 in round 2.
+    (1087712, 4),
     // Revision 31 `+1 Pillz Per Damage`. The unconditional form pays the winner its final
     // Damage, Fury included: Spade's `1090` takes 12 - 10 + 5 to 7 in 1024592/0 and 12 - 11
     // + 5 to 6 in 1024732/0. Ramak's `Symmetry:` form pays only when both selected cards sit
@@ -454,7 +456,12 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877239, 4),
     (877023, 2),
     (876516, 4),
-    (876796, 2),
+    // Three rounds since revision 53: Bekum's `Growth: - 1 Opp. Life Min 4` takes
+    // 14 - 2 - 3 to 9 in round 2.
+    (876796, 3),
+    // Revision 53 admits the `Growth:`/`Degrowth:` forms of the plain Victory grammars.
+    // `Degrowth: +1 Pillz` pays its factor of four in 1093173/0: 12 - 8 + 4 = 8.
+    (1093173, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -2655,8 +2662,8 @@ fn victory_opponent_pillz_compiler_admits_the_complete_ability_shape_and_near_mi
         CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
     ));
 
-    // The round-scaled `Growth:` sibling differs structurally and keeps its ordinary
-    // disabled record.
+    // The round-scaled `Growth:` sibling is its own grammar since revision 53 and executes
+    // on the round-scaled channel, never as the plain reduction.
     const GROWTH: &str = "Growth: -1 Opp Pillz. Min 0";
     let mut growth = victory_opponent_pillz_entry(2590, 1, 0);
     growth["description"] = serde_json::json!(GROWTH);
@@ -2670,14 +2677,14 @@ fn victory_opponent_pillz_compiler_admits_the_complete_ability_shape_and_near_mi
     .unwrap();
     assert!(matches!(
         prepared.preparation()[PlayerId::P1][slot].ability,
-        CombatStatProjectionDispositionV1::Disabled {
-            reason: CombatStatDisabledReasonV1::OrdinaryAbility { .. },
+        CombatStatProjectionDispositionV1::ExecutePostRound {
+            effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictoryPerRound {
+                per_round: 1,
+                minimum: 0,
+                ..
+            },
             ..
         }
-    ));
-    assert!(matches!(
-        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
-        CombatStatSourcePlanV1::Disabled { source_id: 2590 }
     ));
 }
 

@@ -102,6 +102,14 @@ pub enum CombatStatPredicateV1 {
 
 /// Public provenance metadata for an admitted post-round effect. The hot path converts this
 /// fixed effect into its private typed commit plan; its numeric rule is not configurable.
+/// The round scaling a `Growth:` or `Degrowth:` post-round effect carries: the printed
+/// amount times the zero-based round plus one, or times four less the zero-based round.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RoundScaleV1 {
+    Growth,
+    Degrowth,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CombatStatPostRoundEffectV1 {
     RecoverPaidPillzOnDefeat,
@@ -192,6 +200,26 @@ pub enum CombatStatPostRoundEffectV1 {
     /// `Defeat: +N Pillz And Life`: a living loser gains N Pillz and N Life.
     GainPillzAndLifeOnDefeat {
         amount: u16,
+    },
+    /// The `Growth:`/`Degrowth:` forms of the plain Victory grammars: the printed amount is
+    /// scaled by the round, then paid and clamped as the plain grammar is.
+    ReduceOpponentLifeOnVictoryPerRound {
+        per_round: u16,
+        minimum: u16,
+        scale: RoundScaleV1,
+    },
+    ReduceOpponentPillzOnVictoryPerRound {
+        per_round: u16,
+        minimum: u16,
+        scale: RoundScaleV1,
+    },
+    GainLifeOnVictoryPerRound {
+        per_round: u16,
+        scale: RoundScaleV1,
+    },
+    GainPillzOnVictoryPerRound {
+        per_round: u16,
+        scale: RoundScaleV1,
     },
     /// The two reviewed unconditional Victory opponent-Life reductions.
     ReduceOpponentLifeOnVictory {
@@ -393,6 +421,25 @@ pub enum CombatStatEffectV1 {
     },
     GainPillzAndLifeOnDefeat {
         amount: u16,
+    },
+    /// The round-scaled Victory grammars, Ability slot only.
+    ReduceOpponentLifeOnVictoryPerRound {
+        per_round: u16,
+        minimum: u16,
+        scale: RoundScaleV1,
+    },
+    ReduceOpponentPillzOnVictoryPerRound {
+        per_round: u16,
+        minimum: u16,
+        scale: RoundScaleV1,
+    },
+    GainLifeOnVictoryPerRound {
+        per_round: u16,
+        scale: RoundScaleV1,
+    },
+    GainPillzOnVictoryPerRound {
+        per_round: u16,
+        scale: RoundScaleV1,
     },
     /// Unconditional Victory-only opponent-Life reduction with a fixed magnitude and
     /// lower bound, admitted solely for the two reviewed identities.
@@ -609,6 +656,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     DefeatPillzSource,
     DefeatPillzMagnitude,
     DefeatPillzPredicate,
+    RoundScaledPostRoundSource,
+    RoundScaledPostRoundMagnitude,
+    RoundScaledPostRoundPredicate,
     KillshotPillzAndLifeMagnitude,
     KillshotPillzAndLifePredicate,
     ResourceCancellationSource,
@@ -1164,9 +1214,9 @@ fn victory_opponent_life_id_is_reserved(source_id: u32) -> bool {
     )
 }
 
-/// The conditional sibling this slice deliberately leaves out. `1730` is a round-scaled
-/// magnitude rather than a predicate, so it may not ride the plain grammar however a caller
-/// labels it. Its two paying rounds are good evidence for a later slice, not for this one.
+/// `1730` is `Growth: - 1 Opp. Life Min 4`, a round-scaled magnitude rather than a
+/// predicate, so it may not ride the plain fixed grammar however a caller labels it. Since
+/// revision 53 it executes on its own round-scaled variant instead.
 fn victory_opponent_life_id_is_deferred(source_id: u32) -> bool {
     matches!(source_id, 1730)
 }
@@ -1878,6 +1928,28 @@ fn validate_combat_stat_source_plan(
             ));
         }
         return Ok(());
+    }
+    // The round-scaled Victory grammars are card abilities only, positive and unconditional.
+    if let CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerRound { per_round, .. }
+    | CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerRound { per_round, .. }
+    | CombatStatEffectV1::GainLifeOnVictoryPerRound { per_round, .. }
+    | CombatStatEffectV1::GainPillzOnVictoryPerRound { per_round, .. } = effect
+    {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::RoundScaledPostRoundSource)
+        } else if per_round == 0 {
+            Some(InvalidCombatStatPlanReasonV1::RoundScaledPostRoundMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::RoundScaledPostRoundPredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
     }
     // The Defeat own Pillz gain and its compound are card abilities only, positive and
     // unconditional.
@@ -2713,6 +2785,10 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainPillzAndLifeOnKillshot { .. }
         | CombatStatEffectV1::GainPillzOnDefeat { .. }
         | CombatStatEffectV1::GainPillzAndLifeOnDefeat { .. }
+        | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerRound { .. }
+        | CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerRound { .. }
+        | CombatStatEffectV1::GainLifeOnVictoryPerRound { .. }
+        | CombatStatEffectV1::GainPillzOnVictoryPerRound { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnKillshot { .. }
         | CombatStatEffectV1::ReduceBothPlayersLife { .. }
@@ -2868,6 +2944,32 @@ pub(crate) fn shared_post_round_effect(
         CombatStatEffectV1::GainPillzOnDefeat { pillz } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainPillzOnDefeat(pillz),
         )),
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerRound {
+            per_round,
+            minimum,
+            scale,
+        } => Some(PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerRound {
+            per_round,
+            minimum,
+            scale,
+        }),
+        CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerRound {
+            per_round,
+            minimum,
+            scale,
+        } => Some(
+            PostRoundSourceEffect::ReduceOpponentPillzOnVictoryPerRound {
+                per_round,
+                minimum,
+                scale,
+            },
+        ),
+        CombatStatEffectV1::GainLifeOnVictoryPerRound { per_round, scale } => {
+            Some(PostRoundSourceEffect::GainLifeOnVictoryPerRound { per_round, scale })
+        }
+        CombatStatEffectV1::GainPillzOnVictoryPerRound { per_round, scale } => {
+            Some(PostRoundSourceEffect::GainPillzOnVictoryPerRound { per_round, scale })
+        }
         CombatStatEffectV1::GainPillzAndLifeOnDefeat { amount } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzAndLifeOnDefeat(amount)),
         ),

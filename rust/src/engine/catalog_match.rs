@@ -14,7 +14,8 @@ use super::combat_stat_compiler::{
     classify_killshot_opponent_life, classify_killshot_pillz_and_life,
     classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
     classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_regen_life_on_victory, classify_round_scaled_post_round,
+    classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
     classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
@@ -1535,6 +1536,33 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
                 definition.id(),
+            );
+        }
+        // The round-scaled Victory grammars follow the same rule.
+        if classify_round_scaled_post_round(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let (scale, effect) =
+                        classify_round_scaled_post_round(definition, source_kind)?;
+                    let (effect, compact_effect) = effect.effects(scale);
+                    Some((effect, compact_effect, CombatStatPredicateV1::Always))
+                },
             );
         }
         // The Killshot compound gain follows the same rule.

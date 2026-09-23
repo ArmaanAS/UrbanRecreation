@@ -7,7 +7,8 @@ use super::CopiedSourceKindV1;
 use super::{
     CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatCardPlanV1,
     CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1,
-    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, HAND_SIZE,
+    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, RoundScaleV1,
+    HAND_SIZE,
 };
 
 /// Every source-copying Copy grammar this projection admits, as the exact printed text it
@@ -84,7 +85,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 52;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 53;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1309,6 +1310,181 @@ pub(crate) fn equalizer_opponent_life_on_victory_identity_matches(
     ) && matches!(definition_id, 1415 | 4458)
 }
 
+/// What a `Growth:`/`Degrowth:` post-round grammar pays, before resolution binds the round.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RoundScaledPostRoundEffectV1 {
+    ReduceOpponentLife { per_round: u16, minimum: u16 },
+    ReduceOpponentPillz { per_round: u16, minimum: u16 },
+    GainLife { per_round: u16 },
+    GainPillz { per_round: u16 },
+}
+
+impl RoundScaledPostRoundEffectV1 {
+    pub(crate) fn effects(
+        self,
+        scale: RoundScaleV1,
+    ) -> (CombatStatPostRoundEffectV1, CombatStatEffectV1) {
+        match self {
+            Self::ReduceOpponentLife { per_round, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerRound {
+                    per_round,
+                    minimum,
+                    scale,
+                },
+                CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerRound {
+                    per_round,
+                    minimum,
+                    scale,
+                },
+            ),
+            Self::ReduceOpponentPillz { per_round, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictoryPerRound {
+                    per_round,
+                    minimum,
+                    scale,
+                },
+                CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerRound {
+                    per_round,
+                    minimum,
+                    scale,
+                },
+            ),
+            Self::GainLife { per_round } => (
+                CombatStatPostRoundEffectV1::GainLifeOnVictoryPerRound { per_round, scale },
+                CombatStatEffectV1::GainLifeOnVictoryPerRound { per_round, scale },
+            ),
+            Self::GainPillz { per_round } => (
+                CombatStatPostRoundEffectV1::GainPillzOnVictoryPerRound { per_round, scale },
+                CombatStatEffectV1::GainPillzOnVictoryPerRound { per_round, scale },
+            ),
+        }
+    }
+}
+
+/// Recognize the `Growth:` and `Degrowth:` forms of the plain Victory grammars - the
+/// opposing Life reduction, the opposing Pillz reduction, and the own Life and Pillz gains:
+/// the printed amount is multiplied by the zero-based round plus one (Growth) or four less
+/// it (Degrowth), then paid and clamped by the arm that pays the plain grammar. The registry
+/// carries the scaling as `isOverdrive`/`isDivide` and nothing else differs. Exact text
+/// rebuilt from the record's own numbers, card abilities only; the permanent Growth Poison
+/// has its own structure and is not this family.
+pub(crate) fn classify_round_scaled_post_round(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(RoundScaleV1, RoundScaledPostRoundEffectV1)> {
+    let input = definition.structured_input();
+    if source_kind != CombatStatEffectSourceV1::Ability || input.value == 0 {
+        return None;
+    }
+    let (scale, prefix) = match (input.is_overdrive, input.is_divide) {
+        (true, false) => (RoundScaleV1::Growth, "Growth: "),
+        (false, true) => (RoundScaleV1::Degrowth, "Degrowth: "),
+        _ => return None,
+    };
+    let shape = |fields: PostRoundShapeV1| {
+        shape_matches(
+            input,
+            PostRoundShapeV1 {
+                round_scale: Some(scale),
+                ..fields
+            },
+        )
+    };
+    let (effect, body) = if shape(PostRoundShapeV1 {
+        value_min: ShapeFieldV1::Read,
+        side: AffectedSideV1::Opponent,
+        action: AttributeActionV1::Decrease,
+        ..POST_ROUND_SHAPE
+    }) {
+        (
+            RoundScaledPostRoundEffectV1::ReduceOpponentLife {
+                per_round: input.value,
+                minimum: input.value_min,
+            },
+            format!("- {} Opp. Life Min {}", input.value, input.value_min),
+        )
+    } else if shape(PostRoundShapeV1 {
+        value_min: ShapeFieldV1::Read,
+        side: AffectedSideV1::Opponent,
+        attribute: AttributeAffectedV1::Pillz,
+        action: AttributeActionV1::Decrease,
+        ..POST_ROUND_SHAPE
+    }) {
+        (
+            RoundScaledPostRoundEffectV1::ReduceOpponentPillz {
+                per_round: input.value,
+                minimum: input.value_min,
+            },
+            format!("-{} Opp Pillz. Min {}", input.value, input.value_min),
+        )
+    } else if shape(POST_ROUND_SHAPE) {
+        (
+            RoundScaledPostRoundEffectV1::GainLife {
+                per_round: input.value,
+            },
+            format!("+{} Life", input.value),
+        )
+    } else if shape(PostRoundShapeV1 {
+        attribute: AttributeAffectedV1::Pillz,
+        ..POST_ROUND_SHAPE
+    }) {
+        (
+            RoundScaledPostRoundEffectV1::GainPillz {
+                per_round: input.value,
+            },
+            format!("+{} Pillz", input.value),
+        )
+    } else {
+        return None;
+    };
+    (definition.description() == format!("{prefix}{body}")).then_some((scale, effect))
+}
+
+/// Structural half of the round-scaled post-round boundary.
+pub(crate) fn has_round_scaled_post_round_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    if input.value == 0 {
+        return false;
+    }
+    let Some(scale) = (match (input.is_overdrive, input.is_divide) {
+        (true, false) => Some(RoundScaleV1::Growth),
+        (false, true) => Some(RoundScaleV1::Degrowth),
+        _ => None,
+    }) else {
+        return false;
+    };
+    [
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            side: AffectedSideV1::Opponent,
+            action: AttributeActionV1::Decrease,
+            ..POST_ROUND_SHAPE
+        },
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            side: AffectedSideV1::Opponent,
+            attribute: AttributeAffectedV1::Pillz,
+            action: AttributeActionV1::Decrease,
+            ..POST_ROUND_SHAPE
+        },
+        POST_ROUND_SHAPE,
+        PostRoundShapeV1 {
+            attribute: AttributeAffectedV1::Pillz,
+            ..POST_ROUND_SHAPE
+        },
+    ]
+    .into_iter()
+    .any(|fields| {
+        shape_matches(
+            input,
+            PostRoundShapeV1 {
+                round_scale: Some(scale),
+                ..fields
+            },
+        )
+    })
+}
+
 /// What a post-round `Brawl:` grammar pays, before resolution binds the count.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BrawlPostRoundEffectV1 {
@@ -1677,7 +1853,9 @@ pub(crate) fn classify_combat_stat_effect(
     // The post-round Brawl grammars bind their count on the same channel as Equalizer's.
     // `classify_brawl_numeric` already refuses a Life or Pillz record, so this is the
     // convention every post-round grammar keeps rather than a live guard.
-    if classify_brawl_post_round(definition, source_kind).is_some() {
+    if classify_brawl_post_round(definition, source_kind).is_some()
+        || classify_round_scaled_post_round(definition, source_kind).is_some()
+    {
         return None;
     }
     if classify_reprisal_stop_opponent_ability(definition, source_kind) {
@@ -2665,6 +2843,9 @@ pub(crate) struct PostRoundShapeV1 {
     /// requires false, so a grammar that does not name it can never admit an anti-support
     /// record.
     pub(crate) anti_support: bool,
+    /// The `Growth:`/`Degrowth:` round scaling, carried as `isOverdrive`/`isDivide`. `None`
+    /// for every other grammar, which then requires both flags false as before.
+    pub(crate) round_scale: Option<RoundScaleV1>,
 }
 
 /// The one unconditional slot: no previous-round requirement and no hand-slot requirement.
@@ -2687,6 +2868,7 @@ const POST_ROUND_SHAPE: PostRoundShapeV1 = PostRoundShapeV1 {
     special: SpecialActionV1::None,
     opponent_stars_linked: false,
     anti_support: false,
+    round_scale: None,
 };
 
 /// True when `input` is exactly the record `shape` describes. The fields the shape does not
@@ -2715,8 +2897,8 @@ fn shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
         && !input.is_inverted
         && !input.is_support
         && input.is_anti_support == shape.anti_support
-        && !input.is_overdrive
-        && !input.is_divide
+        && input.is_overdrive == (shape.round_scale == Some(RoundScaleV1::Growth))
+        && input.is_divide == (shape.round_scale == Some(RoundScaleV1::Degrowth))
         && !input.is_life_linked
         && !input.is_pillz_linked
         && !input.is_lost_life_linked
@@ -3470,6 +3652,75 @@ mod tests {
                 "malformed {field}",
             );
         }
+    }
+
+    #[test]
+    fn round_scaled_post_round_grammars_are_admitted_by_exact_text_and_shape() {
+        let registry = registry();
+        for (id, scale) in [
+            (1730, RoundScaleV1::Growth),
+            (1332, RoundScaleV1::Growth),
+            (1419, RoundScaleV1::Growth),
+            (4551, RoundScaleV1::Growth),
+            (5144, RoundScaleV1::Growth),
+            (1116, RoundScaleV1::Growth),
+            (2590, RoundScaleV1::Growth),
+            (1603, RoundScaleV1::Degrowth),
+            (2169, RoundScaleV1::Degrowth),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(
+                matches!(
+                    classify_round_scaled_post_round(definition, CombatStatEffectSourceV1::Ability),
+                    Some((actual, _)) if actual == scale
+                ),
+                "definition {id}",
+            );
+            assert!(has_round_scaled_post_round_shape(definition), "{id}");
+            assert_eq!(
+                classify_round_scaled_post_round(definition, CombatStatEffectSourceV1::Bonus),
+                None
+            );
+        }
+        // The permanent Growth Poison and the combat-stat Growth forms are other grammars,
+        // and the plain Victory grammars still refuse the round-scaled flag.
+        for id in [1266, 1282, 1676] {
+            assert_eq!(
+                classify_round_scaled_post_round(
+                    registry.get(id).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id}"
+            );
+        }
+        assert!(!has_victory_opponent_life_shape(
+            registry.get(1730).unwrap()
+        ));
+        // Both flags at once, or the flag under the other prefix, is refused.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        let mut both = source.clone();
+        both["1332"]["abilityData"]["isDivide"] = serde_json::json!(true);
+        let both = EffectRegistryV1::from_reader(both.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_round_scaled_post_round(
+                both.get(1332).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None
+        );
+        let mut swapped = source.clone();
+        swapped["1332"]["description"] = serde_json::json!("Degrowth: +1 Life");
+        let swapped = EffectRegistryV1::from_reader(swapped.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_round_scaled_post_round(
+                swapped.get(1332).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None
+        );
     }
 
     #[test]

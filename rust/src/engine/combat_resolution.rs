@@ -9,7 +9,8 @@ use super::clan_bonus_diagnostic::{
 };
 use super::{
     BaseRulesCardResult, ByPlayer, PlayerId, PostRoundEffect, PostRoundPlan, PostRoundResourceV1,
-    PostRoundSourceEffect, PreparedSelection, ValidatedSelection, FURY_DAMAGE, MAX_ROUNDS,
+    PostRoundSourceEffect, PreparedSelection, RoundScaleV1, ValidatedSelection, FURY_DAMAGE,
+    MAX_ROUNDS,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -616,6 +617,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         effect,
                         opponent_stars[PlayerId::P1],
                         selected_plans[PlayerId::P1].ability.anti_support_count,
+                        rounds_played,
                     )
                 })
                 .transpose()?
@@ -630,6 +632,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         effect,
                         opponent_stars[PlayerId::P1],
                         selected_plans[PlayerId::P1].bonus.anti_support_count,
+                        rounds_played,
                     )
                 })
                 .transpose()?
@@ -646,6 +649,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         effect,
                         opponent_stars[PlayerId::P2],
                         selected_plans[PlayerId::P2].ability.anti_support_count,
+                        rounds_played,
                     )
                 })
                 .transpose()?
@@ -660,6 +664,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                         effect,
                         opponent_stars[PlayerId::P2],
                         selected_plans[PlayerId::P2].bonus.anti_support_count,
+                        rounds_played,
                     )
                 })
                 .transpose()?
@@ -681,7 +686,20 @@ fn bind_post_round_effect(
     effect: PostRoundSourceEffect,
     opponent_stars: u16,
     anti_support_count: u16,
+    rounds_played: u8,
 ) -> Result<PostRoundEffect, CombatResolutionError> {
+    // The same factors the combat-stat Growth and Degrowth magnitudes use: the zero-based
+    // round plus one, or four less it.
+    let per_round = |per_round: u16, scale: RoundScaleV1| {
+        let factor = match scale {
+            RoundScaleV1::Growth => u16::from(rounds_played) + 1,
+            RoundScaleV1::Degrowth => u16::from(MAX_ROUNDS.saturating_sub(rounds_played)),
+        };
+        per_round.checked_mul(factor).ok_or(CombatResolutionError {
+            player,
+            stage: CombatResolutionArithmeticStage::EffectMagnitude,
+        })
+    };
     let per_anti_support = |per_count: u16| {
         per_count
             .checked_mul(anti_support_count)
@@ -705,6 +723,34 @@ fn bind_post_round_effect(
             pillz: per_anti_support(per_count)?,
             minimum,
         }),
+        PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerRound {
+            per_round: amount,
+            minimum,
+            scale,
+        } => Ok(PostRoundEffect::ReduceOpponentLifeOnVictory {
+            life: per_round(amount, scale)?,
+            minimum,
+        }),
+        PostRoundSourceEffect::ReduceOpponentPillzOnVictoryPerRound {
+            per_round: amount,
+            minimum,
+            scale,
+        } => Ok(PostRoundEffect::ReduceOpponentPillzOnVictory {
+            pillz: per_round(amount, scale)?,
+            minimum,
+        }),
+        PostRoundSourceEffect::GainLifeOnVictoryPerRound {
+            per_round: amount,
+            scale,
+        } => Ok(PostRoundEffect::GainLifeOnVictory(per_round(
+            amount, scale,
+        )?)),
+        PostRoundSourceEffect::GainPillzOnVictoryPerRound {
+            per_round: amount,
+            scale,
+        } => Ok(PostRoundEffect::GainPillzOnVictory(per_round(
+            amount, scale,
+        )?)),
         PostRoundSourceEffect::GainPillzOnVictoryPerAntiSupport { per_count, maximum } => {
             let pillz = per_anti_support(per_count)?;
             Ok(if maximum == 0 {

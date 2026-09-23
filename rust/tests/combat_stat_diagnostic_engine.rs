@@ -10,7 +10,7 @@ use urban_recreation_rust::engine::{
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
     CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPlanErrorV1,
     CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1,
-    InvalidCombatStatPlanReasonV1, MatchStatus, PlayerId,
+    InvalidCombatStatPlanReasonV1, MatchStatus, PlayerId, RoundScaleV1,
 };
 
 fn card(id: u32, power: u16, damage: u16) -> urban_recreation_rust::engine::BaseRulesCardSpec {
@@ -6416,4 +6416,103 @@ fn defeat_pillz_gains_pay_only_a_living_loser() {
             })
         ));
     }
+}
+
+/// The `Growth:`/`Degrowth:` Victory grammars scale the printed amount by the zero-based
+/// round plus one, or four less it, then pay and clamp it as the plain grammar does. The
+/// corpus pins factors 3 and 4 on the opposing Life reduction (876796/2, 877167/3), 3 and 4
+/// on the Life gain, and a Degrowth factor of 4 on the Pillz gain (1093173/0); the rest,
+/// the floor and a loss are pinned here.
+#[test]
+fn round_scaled_victory_effects_scale_by_the_round_and_clamp_once() {
+    let life_reduction = CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerRound {
+        per_round: 1,
+        minimum: 4,
+        scale: RoundScaleV1::Growth,
+    };
+    let spec = |effect| {
+        let base = base_spec(6, 0);
+        let mut cards = plans(&base);
+        for slot in 0..4 {
+            cards[PlayerId::P1][slot].ability =
+                execute(1730, CombatStatPredicateV1::Always, effect);
+        }
+        game(base, cards)
+    };
+    // P1 wins every round with zero Damage, so only the effect moves the target's Life.
+    let mut diag = spec(life_reduction);
+    let mut life = 20;
+    for round in 0..4u8 {
+        let first = if round % 2 == 0 {
+            PlayerId::P1
+        } else {
+            PlayerId::P2
+        };
+        let (report, _) = diag
+            .make(input(first, (round, 2, false), (round, 0, false)))
+            .unwrap();
+        life -= u16::from(round) + 1;
+        assert_eq!(report.players[PlayerId::P2].life, life, "round {round}");
+    }
+    // 20 - 1 - 2 - 3 - 4 = 10; the Min 4 never binds here, so pin it separately.
+    let mut base = base_spec(6, 0);
+    base.players[PlayerId::P2].initial_life = 6;
+    let mut cards = plans(&base);
+    for slot in 0..4 {
+        cards[PlayerId::P1][slot].ability =
+            execute(1730, CombatStatPredicateV1::Always, life_reduction);
+    }
+    let mut diag = game(base, cards);
+    diag.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    // 6 - 1 = 5, then 5 - 2 stops at the Min of 4.
+    assert_eq!(report.players[PlayerId::P2].life, 4);
+
+    // Degrowth counts down, and the own gains and the opposing Pillz reduction bind to the
+    // plain arms the same way.
+    for (effect, round_one_check) in [
+        (
+            CombatStatEffectV1::GainPillzOnVictoryPerRound {
+                per_round: 1,
+                scale: RoundScaleV1::Degrowth,
+            },
+            (PlayerId::P1, 20 - 2 + 4),
+        ),
+        (
+            CombatStatEffectV1::GainLifeOnVictoryPerRound {
+                per_round: 1,
+                scale: RoundScaleV1::Growth,
+            },
+            (PlayerId::P1, 20 + 1),
+        ),
+        (
+            CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerRound {
+                per_round: 1,
+                minimum: 0,
+                scale: RoundScaleV1::Degrowth,
+            },
+            (PlayerId::P2, 20 - 4),
+        ),
+    ] {
+        let mut diag = spec(effect);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+            .unwrap();
+        let (player, expected) = round_one_check;
+        let actual = match effect {
+            CombatStatEffectV1::GainLifeOnVictoryPerRound { .. } => report.players[player].life,
+            _ => report.players[player].pillz,
+        };
+        assert_eq!(actual, expected, "{effect:?}");
+    }
+
+    // A loss pays nothing.
+    let mut diag = spec(life_reduction);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 20);
 }
