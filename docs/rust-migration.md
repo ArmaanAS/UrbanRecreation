@@ -1859,6 +1859,40 @@ was never affected. 926226, whose longest replayable prefix had reached four rou
 inert Unison permanent, now stops where it is selected; its gate fixture was only ever two
 rounds.
 
+Semantic revision 47 admits `Stop Opp. Ability` and `Stop Opp. Bonus` under every condition
+prefix whose predicate the projection already resolves - `Courage:` (`287`, `425`, `1084`,
+`2328`, `3939`, `5015`), `Confidence:` (`490`), `Revenge:` (`589`, `1680`), `Asymmetry:`
+(`2320`, `5540`, `5598`), `Symmetry:` (`4525`) and `Night:` (`5564`) - by grammar rather
+than identity. It measured 6 and unlocked exactly 6 - `877308`, `878120`, `946288`,
+`1069721`, `1089742` and `1091644` - taking eligibility from 117 to 123. The Courage and
+Revenge lines are super-additive: 1089742 needs one of each.
+
+The Reprisal Stop's identity lock turned out to be policy, not mechanism. Every one of these
+predicates is decided before the Stop graph, so a Stop whose condition fails is simply not
+live there - `active_effect` gives it no effect and `source_liveness` never sees it pending,
+which is the reference's `Events.executeCancels` order. So the price was one classifier and
+one validator exemption; the engine did not change. The classifier requires exactly the
+structured condition field its printed prefix names, value zero and the plain Stop shape;
+`Night:` carries no field at all, is read from the text as the Night numerics are, and gets
+the revision-44 predicate. `OwnerMovesSecond` is deliberately not in the exemption, so the
+Reprisal Stop stays locked to `1310`/`2073` and a caller cannot claim it for another id.
+The catalog path requires a printed card level to be a structural alias of the definition
+its text resolves to, so the roughly fifty printed Stop levels that own no registry
+definition stay closed; the rule cost no draws. Unison, `Bet > N`, `After [clan]` and the
+clan-gated `Asymm.:` Stops are other grammars.
+
+The server pins the positive composition on three prefixes and a mixed dependency. Kerry Cr
+moves first in 1069721/0 and stops Callie's Support, whose attack is then 48 rather than 60;
+Edd Cr and Liu Cr stop an Equalizer attack reduction in 926584/2 and 925999/2; 876882/0
+stops the Komboka gain. 1089742/1 is the mixed case - Barbacoatl's Courage Stop Bonus is
+itself stopped by Spidee's Reprisal Stop, so Spidee's Support survives - and 1089742/3 pays
+Fraggle's Revenge Stop. TTQ's Asymmetry Stop Bonus pays in 1091314/2 and Skeletrezar's
+Night Stop in 878120/0. Symmetry has only a predicate-false round (1090269/1), Courage Stop
+Opp. Ability is never selected, and Confidence's one selection stops a payload-free Stop, so
+those three rest on the composition basis and on engine tests. The gate grows from 433 to
+459 rounds: 877308, 878120 and 1089742 in full, and 1069721, 926584, 876882, 1091314,
+1080662 and 1091644 extended.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

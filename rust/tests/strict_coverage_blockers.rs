@@ -298,6 +298,26 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             3743, 3833, 3841, 3843, 3890, 3900, 4052, 4075, 4553, 5311, 5318,
         ],
     ),
+    // `Stop Opp. Ability`/`Stop Opp. Bonus` under the predicates the projection already
+    // resolves, measured 2026-09-23. Reprisal stays identity-locked; Unison forms are
+    // another grammar.
+    (
+        "conditional Stop: Courage",
+        &[287, 425, 1084, 2328, 3939, 5015],
+    ),
+    ("conditional Stop: Confidence", &[490]),
+    ("conditional Stop: Revenge", &[589, 1680]),
+    (
+        "conditional Stop: Symmetry/Asymmetry",
+        &[2320, 4525, 5540, 5598],
+    ),
+    ("conditional Stop: Night", &[5564]),
+    (
+        "every conditional Stop by grammar",
+        &[
+            287, 425, 490, 589, 1084, 1680, 2320, 2328, 3939, 4525, 5015, 5540, 5564, 5598,
+        ],
+    ),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

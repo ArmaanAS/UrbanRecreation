@@ -7,8 +7,8 @@
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_both_players_life_reduction, classify_brawl_post_round, classify_combat_stat_effect,
-    classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
-    classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
+    classify_conditional_stop, classify_copy_opponent_source, classify_defeat_life,
+    classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_recover_pillz,
     classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
     classify_killshot_opponent_life, classify_komboka_victory_pillz_and_life,
     classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
@@ -1323,6 +1323,21 @@ fn prepare_catalog_source(
     // the catalog. Description equality alone is never authority to execute a Life effect.
     if let Ok(match_) = registry.lookup_description(description) {
         let definition = match_.definition();
+        // A conditional Stop is admitted by grammar, so a printed card level must be a
+        // structural alias of the definition its text resolves to rather than borrowing it.
+        // A night variant has no catalog id at all; its text is the only identity it has,
+        // as for the Night numerics.
+        if catalog_id.is_some() && classify_conditional_stop(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+        }
         if classify_victory_life(definition, source_kind).is_some() {
             require_catalog_alias(
                 match_.alias_ids(),

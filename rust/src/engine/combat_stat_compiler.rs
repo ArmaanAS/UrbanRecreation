@@ -74,7 +74,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 46;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 47;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -248,6 +248,137 @@ fn reprisal_stop_opponent_ability_shape_matches(input: &StructuredEffectV1) -> b
             special: SpecialActionV1::StopAbility,
             ..POST_ROUND_SHAPE
         },
+    )
+}
+
+/// Recognize `Stop Opp. Ability` and `Stop Opp. Bonus` under the condition prefixes whose
+/// predicate the projection already resolves: `Courage:`, `Confidence:`, `Revenge:`,
+/// `Asymmetry:`, `Symmetry:` and `Night:`. Every one of those predicates is decided before
+/// the Stop graph, so a Stop whose condition fails is simply not live there - which is the
+/// reference's `Events.executeCancels` order and already how `active_effect` and
+/// `source_liveness` treat Reprisal. Reprisal keeps its identity lock and is not admitted
+/// here: nothing below maps the defender position.
+///
+/// The structured record carries exactly one condition field and the printed prefix must
+/// name it; `Night:` carries none and is read from the text, like the Night numerics. Card
+/// abilities only. Returns the Stop and its predicate.
+pub(crate) fn classify_conditional_stop(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    const WON_PREVIOUS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] =
+        &[(PreviousRoundRequirementV1::Win, IndexRequirementV1::Any)];
+    const LOST_PREVIOUS: &[(PreviousRoundRequirementV1, IndexRequirementV1)] =
+        &[(PreviousRoundRequirementV1::Lose, IndexRequirementV1::Any)];
+    const SLOTS_DIFFER: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[(
+        PreviousRoundRequirementV1::Any,
+        IndexRequirementV1::Asymmetry,
+    )];
+    const SLOTS_MATCH: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[(
+        PreviousRoundRequirementV1::Any,
+        IndexRequirementV1::Symmetry,
+    )];
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (effect, target) = match input.special_action {
+        SpecialActionV1::StopAbility => (SupportedEffectV1::StopOpponentAbility, "Ability"),
+        SpecialActionV1::StopBonus => (SupportedEffectV1::StopOpponentBonus, "Bonus"),
+        _ => return None,
+    };
+    let description = definition.description();
+    let (predicate, prefix, position, conditions) = if description.starts_with("Night: ") {
+        (
+            CombatStatPredicateV1::MatchIsNight,
+            "Night: ",
+            PositionRequirementV1::Both,
+            UNCONDITIONAL,
+        )
+    } else {
+        match (
+            input.position_requirement,
+            input.previous_round_requirement,
+            input.index_requirement,
+        ) {
+            (
+                PositionRequirementV1::Attacker,
+                PreviousRoundRequirementV1::Any,
+                IndexRequirementV1::Any,
+            ) => (
+                CombatStatPredicateV1::OwnerMovesFirst,
+                "Courage: ",
+                PositionRequirementV1::Attacker,
+                UNCONDITIONAL,
+            ),
+            (
+                PositionRequirementV1::Both,
+                PreviousRoundRequirementV1::Win,
+                IndexRequirementV1::Any,
+            ) => (
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+                "Confidence: ",
+                PositionRequirementV1::Both,
+                WON_PREVIOUS,
+            ),
+            (
+                PositionRequirementV1::Both,
+                PreviousRoundRequirementV1::Lose,
+                IndexRequirementV1::Any,
+            ) => (
+                CombatStatPredicateV1::OwnerLostPreviousRound,
+                "Revenge: ",
+                PositionRequirementV1::Both,
+                LOST_PREVIOUS,
+            ),
+            (
+                PositionRequirementV1::Both,
+                PreviousRoundRequirementV1::Any,
+                IndexRequirementV1::Asymmetry,
+            ) => (
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+                "Asymmetry: ",
+                PositionRequirementV1::Both,
+                SLOTS_DIFFER,
+            ),
+            (
+                PositionRequirementV1::Both,
+                PreviousRoundRequirementV1::Any,
+                IndexRequirementV1::Symmetry,
+            ) => (
+                CombatStatPredicateV1::SelectedHandSlotsMatch,
+                "Symmetry: ",
+                PositionRequirementV1::Both,
+                SLOTS_MATCH,
+            ),
+            _ => return None,
+        }
+    };
+    let shape = PostRoundShapeV1 {
+        value: ShapeFieldV1::Exact(0),
+        position,
+        conditions,
+        current_round: CurrentRoundRequirementV1::Any,
+        attribute: AttributeAffectedV1::None,
+        action: AttributeActionV1::None,
+        special: input.special_action,
+        ..POST_ROUND_SHAPE
+    };
+    (shape_matches(input, shape) && description == format!("{prefix}Stop Opp. {target}"))
+        .then_some((effect, predicate))
+}
+
+/// The predicates a conditional Stop plan may carry. `OwnerMovesSecond` is deliberately
+/// absent: the Reprisal Stop stays identity-locked to its two reviewed definitions.
+pub(crate) fn conditional_stop_predicate_admitted(predicate: CombatStatPredicateV1) -> bool {
+    matches!(
+        predicate,
+        CombatStatPredicateV1::OwnerMovesFirst
+            | CombatStatPredicateV1::OwnerWonPreviousRound
+            | CombatStatPredicateV1::OwnerLostPreviousRound
+            | CombatStatPredicateV1::SelectedHandSlotsMatch
+            | CombatStatPredicateV1::SelectedHandSlotsDiffer
+            | CombatStatPredicateV1::MatchIsNight
     )
 }
 
@@ -1420,6 +1551,9 @@ pub(crate) fn classify_combat_stat_effect(
             SupportedEffectV1::StopOpponentAbility,
             CombatStatPredicateV1::OwnerMovesSecond,
         ));
+    }
+    if let Some(classified) = classify_conditional_stop(definition, source_kind) {
+        return Some(classified);
     }
     // Model-specific conditions take precedence over the registry's model-neutral output.
     // Keep the unconditional guard below as well, so a future registry compiler expansion
@@ -3013,8 +3147,9 @@ mod tests {
         }
         // `5391` prints a Min but also carries a `valueMax` on a decrease, which no admitted
         // grammar reads, and the compound `Night: Confid.:` form carries a second condition.
-        // Neither is admitted, nor is a Night Stop or a Night post-round effect.
-        for id in [5391, 1643, 5564, 4747, 4750, 2369] {
+        // Neither is admitted, nor is a Night post-round effect. The Night Stop `5564` is the
+        // conditional-Stop grammar's, since revision 47.
+        for id in [5391, 1643, 4747, 4750, 2369] {
             let definition = registry.get(id).expect("registry definition");
             assert_eq!(
                 classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
@@ -3932,9 +4067,12 @@ mod tests {
             938, 965, 1053, 1091, 1107, 1278, 1286, 1303, 1395, 1417, 1839, 2628, 2657, 3827, 3829,
             4316, 4399, 4464, 4623, 4711, 4838, 5406, 5881,
         ]);
+        // Since revision 47 the `Confidence:` and `Revenge:` Stops are admitted by the
+        // conditional-Stop grammar, card abilities only.
+        let admitted_stops = BTreeSet::from([490, 589, 1680]);
         let deferred = BTreeSet::from([
-            490, 589, 814, 1409, 1643, 1652, 1661, 1680, 1702, 1713, 1719, 1751, 1810, 2113, 2582,
-            3016, 3301, 3546, 4301, 4449, 4972,
+            814, 1409, 1643, 1652, 1661, 1702, 1713, 1719, 1751, 1810, 2113, 2582, 3016, 3301,
+            3546, 4301, 4449, 4972,
         ]);
         let observed: BTreeSet<_> = registry
             .iter()
@@ -3944,7 +4082,15 @@ mod tests {
                     .then_some(id)
             })
             .collect();
-        assert_eq!(observed, admitted.union(&deferred).copied().collect());
+        assert_eq!(
+            observed,
+            admitted
+                .iter()
+                .chain(&admitted_stops)
+                .chain(&deferred)
+                .copied()
+                .collect()
+        );
 
         for source in [
             CombatStatEffectSourceV1::Ability,
@@ -3963,7 +4109,108 @@ mod tests {
                     })
                 })
                 .collect();
-            assert_eq!(classified, admitted, "{source:?}");
+            let expected: BTreeSet<_> = if source == CombatStatEffectSourceV1::Ability {
+                admitted.union(&admitted_stops).copied().collect()
+            } else {
+                admitted.clone()
+            };
+            assert_eq!(classified, expected, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn conditional_stop_is_admitted_by_grammar_over_the_resolved_predicates() {
+        let registry = registry();
+        for (id, effect, predicate) in [
+            (
+                287,
+                SupportedEffectV1::StopOpponentBonus,
+                CombatStatPredicateV1::OwnerMovesFirst,
+            ),
+            (
+                425,
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::OwnerMovesFirst,
+            ),
+            (
+                490,
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+            ),
+            (
+                589,
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::OwnerLostPreviousRound,
+            ),
+            (
+                2320,
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ),
+            (
+                5540,
+                SupportedEffectV1::StopOpponentBonus,
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ),
+            (
+                4525,
+                SupportedEffectV1::StopOpponentBonus,
+                CombatStatPredicateV1::SelectedHandSlotsMatch,
+            ),
+            (
+                5564,
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::MatchIsNight,
+            ),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                Some((effect, predicate)),
+                "definition {id}",
+            );
+            assert_eq!(
+                classify_conditional_stop(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "definition {id} as a bonus",
+            );
+        }
+        // Reprisal keeps its identity lock, and the Unison, `Bet >` and clan-gated forms are
+        // other grammars.
+        for id in [3839, 5752, 5753, 4860, 4949, 4999, 5738] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_conditional_stop(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id}",
+            );
+        }
+        // The text must name the structured condition and nothing else. `5564` shares the
+        // plain Stop's structure exactly, so the `Night:` text is its only mark - a classifier
+        // that ignored text would admit it as unconditional.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("287", "positionRequirement", serde_json::json!("defender")),
+            ("287", "previousRoundRequirement", serde_json::json!("win")),
+            ("490", "positionRequirement", serde_json::json!("attacker")),
+            ("589", "value", serde_json::json!(1)),
+            ("2320", "indexRequirement", serde_json::json!("symmetry")),
+            ("5564", "positionRequirement", serde_json::json!("attacker")),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_conditional_stop(
+                    malformed.get(id.parse().unwrap()).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "malformed {id} {field} = {value}",
+            );
         }
     }
 

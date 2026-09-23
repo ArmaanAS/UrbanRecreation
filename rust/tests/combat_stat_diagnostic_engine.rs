@@ -3183,10 +3183,12 @@ fn impossible_execute_plans_fail_at_construction() {
             ),
             InvalidCombatStatPlanReasonV1::CappedIncrease,
         ),
+        // Since revision 47 a Stop may carry the predicates the conditional-Stop grammar
+        // admits; these are the ones it still may not.
         (
             execute(
                 3,
-                CombatStatPredicateV1::OwnerMovesFirst,
+                CombatStatPredicateV1::OwnerMovesSecond,
                 CombatStatEffectV1::StopOpponentBonus,
             ),
             InvalidCombatStatPlanReasonV1::ConditionalControl,
@@ -3194,7 +3196,7 @@ fn impossible_execute_plans_fail_at_construction() {
         (
             execute(
                 42,
-                CombatStatPredicateV1::OwnerMovesFirst,
+                CombatStatPredicateV1::OwnerHandUnison,
                 CombatStatEffectV1::StopOpponentAbility,
             ),
             InvalidCombatStatPlanReasonV1::ConditionalControl,
@@ -3202,7 +3204,7 @@ fn impossible_execute_plans_fail_at_construction() {
         (
             execute(
                 4,
-                CombatStatPredicateV1::SelectedHandSlotsMatch,
+                CombatStatPredicateV1::MatchIsDay,
                 CombatStatEffectV1::StopOpponentBonus,
             ),
             InvalidCombatStatPlanReasonV1::ConditionalControl,
@@ -3210,8 +3212,8 @@ fn impossible_execute_plans_fail_at_construction() {
         (
             execute(
                 41,
-                CombatStatPredicateV1::OwnerWonPreviousRound,
-                CombatStatEffectV1::StopOpponentBonus,
+                CombatStatPredicateV1::OwnerMovesFirst,
+                CombatStatEffectV1::ProtectOwnAbility,
             ),
             InvalidCombatStatPlanReasonV1::ConditionalControl,
         ),
@@ -5744,6 +5746,81 @@ fn unison_needs_the_owners_whole_hand_in_one_effective_clan() {
         }),
         Err(CombatStatPlanErrorV1::InvalidExecute {
             reason: InvalidCombatStatPlanReasonV1::ConditionalBonus,
+            ..
+        })
+    ));
+}
+
+/// A conditional Stop is live only when its own condition holds, which is decided before the
+/// Stop graph. The corpus pins Courage, Revenge and Asymmetry paying; Courage Stop Opp.
+/// Ability is never selected and Confidence's one selection proves nothing, so both are
+/// pinned here, together with the Bonus-slot refusal.
+#[test]
+fn a_conditional_stop_is_live_only_when_its_condition_holds() {
+    let power_up = modifier(
+        CombatStatAffectedSideV1::Player,
+        CombatStatAttributeV1::Power,
+        CombatStatOperationV1::Increase,
+        3,
+        None,
+        None,
+        CombatStatMagnitudeV1::Fixed,
+    );
+    let spec = |predicate| {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability =
+            execute(425, predicate, CombatStatEffectV1::StopOpponentAbility);
+        cards[PlayerId::P1][1].ability =
+            execute(425, predicate, CombatStatEffectV1::StopOpponentAbility);
+        for slot in 0..4 {
+            cards[PlayerId::P2][slot].ability =
+                execute(1844, CombatStatPredicateV1::Always, power_up);
+        }
+        (base, cards)
+    };
+
+    // Courage: the Stop fires only when its owner moves first.
+    let (base, cards) = spec(CombatStatPredicateV1::OwnerMovesFirst);
+    let mut first = game(base.clone(), cards.clone());
+    let (report, _) = first
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 6);
+    let mut second = game(base, cards);
+    let (report, _) = second
+        .make(input(PlayerId::P2, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 9);
+
+    // Confidence: nothing in round one, then live after a round its owner won.
+    let (base, cards) = spec(CombatStatPredicateV1::OwnerWonPreviousRound);
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.cards[PlayerId::P2].power, 9);
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 6);
+
+    // No clan bonus prints a conditional Stop.
+    let (base, mut cards) = spec(CombatStatPredicateV1::OwnerMovesFirst);
+    cards[PlayerId::P1][2].bonus = execute(
+        287,
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatEffectV1::StopOpponentBonus,
+    );
+    cards[PlayerId::P1][2].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::ConditionalControl,
             ..
         })
     ));

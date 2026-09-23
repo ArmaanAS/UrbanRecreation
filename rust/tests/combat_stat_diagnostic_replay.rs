@@ -76,7 +76,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1091473, 2),
     // Four rounds since revision 45, whose Ametia `Per Life Left` Power opens round 1.
     (877093, 4),
-    (1080662, 2),
+    // Four rounds since revision 47, whose Asymmetry Stop is predicate-false in round 2.
+    (1080662, 4),
     (1025102, 3),
     // Revision 22 conditional Victory opponent-Life. Both players picked hand slot 1, so
     // Doela Noel's Symmetry reduction is live: Aneta's Courage leaves her at 6 power for
@@ -213,7 +214,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // A loss takes nothing: Yomi Ld in 924413/0, Gil Cr in 956608/0 (rule 2), Baldovino in
     // 1087712/0, Hawkins Cr in 1131294/1 and Andsom in 946288/2 while his target is
     // knocked out at 0 Pillz. Thorpah Cr's losing `854` in 1023396/0 is already above.
-    (1091644, 2),
+    // Three rounds since revision 47: the Confidence Stop in round 2 stops a payload-free
+    // opposing Stop, so it pins liveness only.
+    (1091644, 3),
     (1131294, 3),
     (924413, 4),
     (956608, 4),
@@ -376,6 +379,22 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (947488, 2),
     (1131144, 1),
     (867173, 2),
+    // Revision 47 admits `Stop Opp. Ability`/`Stop Opp. Bonus` under the Courage,
+    // Confidence, Revenge, Asymmetry, Symmetry and Night predicates. Kerry Cr moves first in
+    // 1069721/0 and stops Callie's `Support: Attack +3`, so her attack is 6 x 8 = 48, not
+    // 60; Edd Cr stops an Equalizer attack reduction the same way in 926584/2.
+    // 876882/0 stops the Komboka gain, so Keya ends on 12 and 12. In 1089742/1
+    // Barbacoatl's Courage Stop Bonus is itself stopped by Spidee's Reprisal, so Spidee's
+    // Support stays live (24 + 12 = 36), and in 1089742/3 Fraggle's Revenge stops Callie's
+    // reduction. TTQ's Asymmetry Stop Bonus pays in 1091314/2 (48, not 42), and
+    // Skeletrezar's Night Stop takes Buck's Power +2 away in 878120/0.
+    (1069721, 3),
+    (926584, 3),
+    (876882, 2),
+    (1089742, 4),
+    (1091314, 3),
+    (877308, 4),
+    (878120, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -1367,9 +1386,9 @@ fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
     );
 
     let stop_bonus = diagnostic(876882, &catalog, &registry);
-    // The exact bonus is visible on Keya, while the opponent's selected Courage Stop Bonus
-    // remains a rejected control hazard. This capture is source/liveness evidence only, not
-    // an executable prefix.
+    // The exact bonus is visible on Keya, and since revision 47 the opponent's selected
+    // Courage Stop Bonus executes: its owner moves first, so the Komboka gain is stopped
+    // and Keya ends on 12 and 12 rather than 13 and 13.
     assert!(matches!(
         stop_bonus.preparation()[PlayerId::P2][1].bonus,
         CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -1380,7 +1399,11 @@ fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
     ));
     assert!(matches!(
         stop_bonus.preparation()[PlayerId::P1][0].ability,
-        CombatStatProjectionDispositionV1::Disabled { ref identity, .. } if identity.id == 287
+        CombatStatProjectionDispositionV1::Execute {
+            ref identity,
+            predicate: CombatStatPredicateV1::OwnerMovesFirst,
+            ..
+        } if identity.id == 287
     ));
     assert!(
         stop_bonus.replay().rounds[0].expected_card_results[PlayerId::P2.index()]
@@ -1753,9 +1776,11 @@ fn selected_stop_ability_is_visible_and_rejected_fail_closed() {
             .unwrap()
             .hand_index,
     );
+    // Courage Stop Opp. Ability is admitted by grammar since revision 47; the Unison form
+    // is not, so it is the selected control that must still refuse the round.
     source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
-        id: 425,
-        description: "Courage: Stop Opp. Ability".to_owned(),
+        id: 3839,
+        description: "Unison : Stop Opp. Ability".to_owned(),
     });
     let prepared =
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
@@ -4397,14 +4422,15 @@ fn index_grammar_is_exact_and_nested_contexts_fail_closed() {
         Err(CombatStatDiagnosticReplayErrorV1::Engine { .. })
     ));
 
-    // The selected slots differ, so Symmetry is false. Conditional controls still reject
-    // before predicate evaluation rather than becoming a successful no-op.
+    // An unadmitted conditional control still rejects before predicate evaluation rather
+    // than becoming a successful no-op. Since revision 47 `Symmetry: Stop Opp. Bonus` is
+    // admitted, so the clan-gated `Asymm.:` Stop stands in for it.
     let registry = registry();
     let mut source = replay(875032, &catalog);
     clear_sources(&mut source);
     source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
-        id: 4525,
-        description: "Symmetry: Stop Opp. Bonus".to_owned(),
+        id: 4999,
+        description: "[clan:31][clan:46][clan:54][clan:49] Asymm.: Stop Opp. Ability".to_owned(),
     });
     let prepared =
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();

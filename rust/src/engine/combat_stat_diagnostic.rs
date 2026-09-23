@@ -9,7 +9,7 @@ use super::combat_resolution::{
 };
 use super::combat_stat_compiler::{
     anita_courage_damage_to_life_identity_matches, argos_defeat_capped_pillz_identity_matches,
-    equalizer_opponent_life_on_victory_identity_matches,
+    conditional_stop_predicate_admitted, equalizer_opponent_life_on_victory_identity_matches,
     komboka_victory_pillz_and_life_identity_matches, permanent_predicate_admitted,
     victory_opponent_life_identity_matches, victory_opponent_life_predicate,
     victory_or_defeat_pillz_identity_matches,
@@ -1903,8 +1903,16 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    // A Stop under one of the conditions the compiler admits by grammar is the one control
+    // effect that may carry a predicate; the Reprisal Stop is checked by identity above.
+    let conditional_stop = matches!(
+        effect,
+        CombatStatEffectV1::StopOpponentAbility | CombatStatEffectV1::StopOpponentBonus
+    ) && source == CombatStatEffectSourceV1::Ability
+        && conditional_stop_predicate_admitted(predicate);
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
+        && !conditional_stop
     {
         return Err(invalid_combat_stat_execute(
             player,
