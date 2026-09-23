@@ -29,8 +29,10 @@ use crate::engine::combat_stat_compiler::{
     classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
     classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
     classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
-    classify_victory_opponent_pillz, classify_victory_or_defeat_both_players_gain,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
+    classify_victory_opponent_pillz, classify_victory_opponent_pillz_and_life,
+    classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_life_per_damage, classify_victory_or_defeat_pillz,
+    classify_victory_or_defeat_pillz_amount, classify_victory_pillz,
     classify_victory_pillz_per_damage, compact_effect, has_bet_gated_post_round_shape,
     has_both_players_life_reduction_shape, has_brawl_post_round_shape,
     has_combust_opponent_life_and_pillz_on_victory_shape,
@@ -42,10 +44,11 @@ use crate::engine::combat_stat_compiler::{
     has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape,
     has_unison_pillz_and_life_shape, has_victory_life_shape, has_victory_opponent_life_shape,
-    has_victory_opponent_pillz_shape, has_victory_or_defeat_both_players_gain_shape,
-    has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
-    has_victory_pillz_shape, BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    has_victory_opponent_pillz_and_life_shape, has_victory_opponent_pillz_shape,
+    has_victory_or_defeat_both_players_gain_shape, has_victory_or_defeat_life_per_damage_shape,
+    has_victory_or_defeat_opponent_life_shape, has_victory_or_defeat_pillz_amount_shape,
+    has_victory_pillz_per_damage_shape, has_victory_pillz_shape, BothPlayersGainV1,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, effect_reads_support_count, unmodelled_source_context,
@@ -985,6 +988,39 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some((amount, minimum)) =
+        classify_victory_opponent_pillz_and_life(definition, source_kind)
+    {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::ReduceOpponentPillzAndLifeOnVictory { amount, minimum },
+            CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { amount, minimum },
+            CombatStatPredicateV1::Always,
+        ));
+    }
+    if let Some(pillz) = classify_victory_or_defeat_pillz_amount(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainPillzOnVictoryOrDefeat { pillz },
+            CombatStatEffectV1::GainPillzOnVictoryOrDefeat { pillz },
+            CombatStatPredicateV1::Always,
+        ));
+    }
+    if let Some(life_per_damage) =
+        classify_victory_or_defeat_life_per_damage(definition, source_kind)
+    {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat {
+                life_per_damage,
+            },
+            CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { life_per_damage },
+            CombatStatPredicateV1::Always,
+        ));
+    }
     if let Some((pillz, minimum)) = classify_victory_opponent_pillz(definition, source_kind) {
         return Ok(PreparedCombatStatSourceV1 {
             disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
@@ -1575,6 +1611,12 @@ fn prepare_combat_stat_source(
         || source.description.starts_with("Combust ")
         || has_consume_opponent_pillz_on_victory_shape(definition)
         || has_combust_opponent_life_and_pillz_on_victory_shape(definition)
+        // The opposing compound and the larger Victory Or Defeat gains, likewise.
+        || (source.description.contains("Opp. Pillz And Life")
+            && input.attribute_affected == AttributeAffectedV1::LifeAndPillz)
+        || has_victory_opponent_pillz_and_life_shape(definition)
+        || has_victory_or_defeat_pillz_amount_shape(definition)
+        || has_victory_or_defeat_life_per_damage_shape(definition)
         // The Unison compound under malformed text, or on the wrong slot.
         || (source.description.starts_with("Unison : +")
             && input.attribute_affected == AttributeAffectedV1::LifeAndPillz)

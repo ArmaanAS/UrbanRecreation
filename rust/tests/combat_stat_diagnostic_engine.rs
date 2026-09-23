@@ -7682,6 +7682,189 @@ fn damage_impose_is_refused_beside_an_opposing_damage_cancel_or_copy() {
     }
 }
 
+/// The opposing compound takes N from each opposing resource on a win, each floored at Min
+/// on its own (963847/2); a loss pays nothing. `Victory Or Defeat : +N Pillz` pays either
+/// way, and `Victory Or Defeat: +N Life Per Damage` pays the owner's own final Damage, Fury
+/// included, either way (1066589/0).
+#[test]
+fn victory_or_defeat_gains_and_the_opposing_compound_pay_as_the_server_does() {
+    let compound = execute(
+        2721,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory {
+            amount: 2,
+            minimum: 4,
+        },
+    );
+    let pillz = execute(
+        3012,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictoryOrDefeat { pillz: 2 },
+    );
+    let life_per_damage = execute(
+        5071,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { life_per_damage: 1 },
+    );
+    // (source, P1 wins, P1 Fury, P1 Pillz and Life, P2 Pillz and Life), P2 on 5 Pillz and
+    // betting 0; P1 prints 6/3 and bets 2.
+    for (source, win, fury, own, opposing) in [
+        (compound, true, false, (20 - 2, 20), (4, 20 - 3 - 2)),
+        (compound, false, false, (20 - 2, 20 - 3), (5, 20)),
+        (pillz, true, false, (20 - 2 + 2, 20), (5, 20 - 3)),
+        (pillz, false, false, (20 - 2 + 2, 20 - 3), (5, 20)),
+        (life_per_damage, true, false, (20 - 2, 20 + 3), (5, 20 - 3)),
+        (
+            life_per_damage,
+            false,
+            true,
+            (20 - 2 - 3, 20 - 3 + 5),
+            (5, 20),
+        ),
+    ] {
+        let mut base = base_spec(6, 3);
+        base.players[PlayerId::P2].initial_pillz = 5;
+        if !win {
+            base.players[PlayerId::P2].hand[0].power = 60;
+        }
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = source;
+        let mut diag = game(base, cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 2, fury), (0, 0, false)))
+            .unwrap();
+        assert_eq!(report.cards[PlayerId::P1].won, win);
+        let pair = |player| (report.players[player].pillz, report.players[player].life);
+        assert_eq!(
+            (pair(PlayerId::P1), pair(PlayerId::P2)),
+            (own, opposing),
+            "{source:?} win {win}"
+        );
+    }
+}
+
+/// The compound meets the target's own writes to its Pillz or Life only on the target's
+/// loss, or every round for a permanent, and is refused beside those - a Defeat Recover or a
+/// latched Heal - but not beside a gain that only pays on the target's win. The Victory Or
+/// Defeat gains pay either way, so any opposing floor on their resource, an own cap on it,
+/// or an opposing Copy refuses them.
+#[test]
+fn the_compound_and_the_victory_or_defeat_gains_are_refused_where_orders_meet() {
+    let compound = execute(
+        2721,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory {
+            amount: 2,
+            minimum: 4,
+        },
+    );
+    let pillz = execute(
+        3012,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictoryOrDefeat { pillz: 2 },
+    );
+    let life_per_damage = execute(
+        5071,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { life_per_damage: 1 },
+    );
+    let defeat_recover = execute(
+        1418,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+            numerator: 2,
+            denominator: 3,
+        },
+    );
+    let heal = execute(
+        3526,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 20,
+        },
+    );
+    let victory_life = execute(
+        377,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    let pillz_floor = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let life_floor = execute(
+        1399,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 5,
+            minimum: 5,
+        },
+    );
+    let dope = execute(
+        4931,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::DopePillzOnVictory {
+            pillz: 3,
+            maximum: 4,
+        },
+    );
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    for (source, own, opposing, refused) in [
+        (compound, None, Some(defeat_recover), Some(true)),
+        (compound, None, Some(heal), Some(true)),
+        (compound, None, Some(copy), Some(true)),
+        (compound, None, Some(victory_life), Some(false)),
+        (pillz, None, Some(pillz_floor), Some(true)),
+        (pillz, None, Some(life_floor), Some(false)),
+        (life_per_damage, None, Some(life_floor), Some(true)),
+        (life_per_damage, Some(heal), None, Some(true)),
+        (life_per_damage, None, Some(pillz_floor), Some(false)),
+        // Dope refuses the pair from its own side.
+        (pillz, Some(dope), None, None),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = source;
+        if let Some(plan) = own {
+            cards[PlayerId::P1][1].ability = plan;
+        }
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][2].ability = plan;
+            if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+                cards[PlayerId::P2][2].source_ability_support_count = 1;
+            }
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        match refused {
+            Some(true) => assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason: InvalidCombatStatPlanReasonV1::OpponentPillzAndLifeAgainstUnpinnedEffect
+                            | InvalidCombatStatPlanReasonV1::VictoryOrDefeatGainAgainstUnpinnedEffect,
+                        ..
+                    })
+                ),
+                "{source:?} / {own:?} / {opposing:?}"
+            ),
+            Some(false) => assert!(result.is_ok(), "{source:?} / {own:?} / {opposing:?}"),
+            None => assert!(result.is_err(), "{source:?} / {own:?} / {opposing:?}"),
+        }
+    }
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {

@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 66;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 67;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -565,6 +565,99 @@ pub(crate) fn classify_victory_opponent_pillz(
         && definition.description()
             == format!("-{} Opp Pillz. Min {}", input.value, input.value_min))
     .then_some((input.value, input.value_min))
+}
+
+/// Recognize the opposing compound `-N Opp. Pillz And Life, Min M`: the round winner takes
+/// N from the opposing player's Pillz and N from their Life, each read after both bets and
+/// the round's damage and each clamped at M on its own - a resource already at or below M
+/// is left alone (963847/2: Life 2 clamps to 1, Pillz 0 stays 0). Exact text and complete
+/// structured shape, card abilities only. Returns `(amount, minimum)`.
+pub(crate) fn classify_victory_opponent_pillz_and_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_victory_opponent_pillz_and_life_shape(definition)
+        && definition.description()
+            == format!(
+                "-{} Opp. Pillz And Life, Min {}",
+                input.value, input.value_min
+            ))
+    .then_some((input.value, input.value_min))
+}
+
+/// Structural half of the opposing compound boundary.
+pub(crate) fn has_victory_opponent_pillz_and_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_min: ShapeFieldV1::Read,
+                side: AffectedSideV1::Opponent,
+                attribute: AttributeAffectedV1::LifeAndPillz,
+                action: AttributeActionV1::Decrease,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
+/// Recognize `Victory Or Defeat : +N Pillz` for N of two or more: the owner gains N Pillz
+/// whatever the round's outcome. The one-Pillz text stays the reviewed identity set, because
+/// it recurs in unrelated rows; a larger amount has only its own records. Exact text and
+/// complete shape, card abilities only. Returns the Pillz.
+pub(crate) fn classify_victory_or_defeat_pillz_amount(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let pillz = definition.structured_input().value;
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_victory_or_defeat_pillz_amount_shape(definition)
+        && definition.description() == format!("Victory Or Defeat : +{pillz} Pillz"))
+    .then_some(pillz)
+}
+
+pub(crate) fn has_victory_or_defeat_pillz_amount_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value >= 2
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                current_round: CurrentRoundRequirementV1::Any,
+                attribute: AttributeAffectedV1::Pillz,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
+/// Recognize `Victory Or Defeat: +N Life Per Damage`: a living owner gains N Life per point
+/// of its own card's final Damage, Fury included, won or lost (1066589/0 pays a loss).
+/// It reads the `valueMin` 1 every Victory Or Defeat Life gain carries. Card abilities only.
+/// Returns N.
+pub(crate) fn classify_victory_or_defeat_life_per_damage(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let value = definition.structured_input().value;
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_victory_or_defeat_life_per_damage_shape(definition)
+        && definition.description() == format!("Victory Or Defeat: +{value} Life Per Damage"))
+    .then_some(value)
+}
+
+pub(crate) fn has_victory_or_defeat_life_per_damage_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_min: ShapeFieldV1::Exact(1),
+                current_round: CurrentRoundRequirementV1::Any,
+                special: SpecialActionV1::ConvertDamageToLife,
+                ..POST_ROUND_SHAPE
+            },
+        )
 }
 
 /// Structural half of the opposing Victory Pillz boundary.
@@ -5393,6 +5486,94 @@ mod tests {
                 ),
                 None,
                 "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn victory_or_defeat_gains_and_the_opposing_compound_are_admitted_by_text() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        for (id, amount, minimum) in [
+            (1721, 1, 0),
+            (5355, 1, 0),
+            (2720, 2, 5),
+            (2721, 2, 4),
+            (5893, 2, 4),
+            (2897, 2, 1),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_victory_opponent_pillz_and_life(definition, ability),
+                Some((amount, minimum)),
+                "{id}"
+            );
+            assert_eq!(
+                classify_victory_opponent_pillz_and_life(
+                    definition,
+                    CombatStatEffectSourceV1::Bonus
+                ),
+                None
+            );
+        }
+        let harston = registry.get(3012).expect("registry definition");
+        assert_eq!(
+            classify_victory_or_defeat_pillz_amount(harston, ability),
+            Some(2)
+        );
+        for id in [2007, 5071] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_victory_or_defeat_life_per_damage(definition, ability),
+                Some(1),
+                "{id}"
+            );
+        }
+        // The one-Pillz text stays the reviewed identity set, and the prefixed compounds
+        // (`Revenge:`, `Killshot:`) are other grammars.
+        for id in [1034, 1652, 5775, 5776] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_victory_or_defeat_pillz_amount(definition, ability),
+                None
+            );
+            assert_eq!(
+                classify_victory_opponent_pillz_and_life(definition, ability),
+                None,
+                "{id}"
+            );
+        }
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("2721", "value", serde_json::json!(3)),
+            ("2721", "valueMin", serde_json::json!(5)),
+            ("2721", "currentRoundRequirement", serde_json::json!("any")),
+            ("3012", "value", serde_json::json!(3)),
+            ("3012", "currentRoundRequirement", serde_json::json!("win")),
+            ("2007", "value", serde_json::json!(2)),
+            ("2007", "specialAction", serde_json::json!("none")),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_victory_opponent_pillz_and_life(definition, ability),
+                None,
+                "{id} {field} = {value}"
+            );
+            assert_eq!(
+                classify_victory_or_defeat_pillz_amount(definition, ability),
+                None,
+                "{id} {field} = {value}"
+            );
+            assert_eq!(
+                classify_victory_or_defeat_life_per_damage(definition, ability),
+                None,
+                "{id} {field} = {value}"
             );
         }
     }

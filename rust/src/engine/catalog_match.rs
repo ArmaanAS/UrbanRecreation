@@ -21,8 +21,10 @@ use super::combat_stat_compiler::{
     classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
     classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
     classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
-    classify_victory_opponent_pillz, classify_victory_or_defeat_both_players_gain,
-    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
+    classify_victory_opponent_pillz, classify_victory_opponent_pillz_and_life,
+    classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
+    classify_victory_or_defeat_life_per_damage, classify_victory_or_defeat_pillz,
+    classify_victory_or_defeat_pillz_amount, classify_victory_pillz,
     classify_victory_pillz_per_damage, compact_effect, is_copy_opponent_source_description,
     BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -1593,6 +1595,68 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
                 definition.id(),
+            );
+        }
+        // The opposing compound and the larger Victory Or Defeat own gains follow the same
+        // rule.
+        if classify_victory_opponent_pillz_and_life(definition, source_kind).is_some()
+            || classify_victory_or_defeat_pillz_amount(definition, source_kind).is_some()
+            || classify_victory_or_defeat_life_per_damage(definition, source_kind).is_some()
+        {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    if let Some((amount, minimum)) =
+                        classify_victory_opponent_pillz_and_life(definition, source_kind)
+                    {
+                        return Some((
+                            CombatStatPostRoundEffectV1::ReduceOpponentPillzAndLifeOnVictory {
+                                amount,
+                                minimum,
+                            },
+                            CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory {
+                                amount,
+                                minimum,
+                            },
+                            CombatStatPredicateV1::Always,
+                        ));
+                    }
+                    if let Some(pillz) =
+                        classify_victory_or_defeat_pillz_amount(definition, source_kind)
+                    {
+                        return Some((
+                            CombatStatPostRoundEffectV1::GainPillzOnVictoryOrDefeat { pillz },
+                            CombatStatEffectV1::GainPillzOnVictoryOrDefeat { pillz },
+                            CombatStatPredicateV1::Always,
+                        ));
+                    }
+                    let life_per_damage =
+                        classify_victory_or_defeat_life_per_damage(definition, source_kind)?;
+                    Some((
+                        CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat {
+                            life_per_damage,
+                        },
+                        CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat {
+                            life_per_damage,
+                        },
+                        CombatStatPredicateV1::Always,
+                    ))
+                },
             );
         }
         // The opposing Pillz reduction follows the same rule.

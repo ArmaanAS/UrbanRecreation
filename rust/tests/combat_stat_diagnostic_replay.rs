@@ -31,7 +31,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1024673, 2),
     (1060199, 3),
     (1081463, 4),
-    (1069193, 1),
+    // Four rounds since revision 67: Hilal's `-1 Opp. Pillz And Life, Min 0` takes Sue's
+    // owner to 5 Pillz and 7 Life in round 1.
+    (1069193, 4),
     (1089513, 2),
     // Three rounds since revision 49, whose round 2 selects Wilkinson's Pillz & Life cancel
     // against a hand with nothing for it to cancel.
@@ -554,7 +556,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1070298, 4),
     (926292, 4),
     (1093129, 1),
-    (1130791, 4),
+    // Two rounds since revision 67: round 2 selects Solykra's `-2 Opp. Pillz And Life, Min
+    // 4`, refused beside AI-Lycs' Defeat Recover, which can land on the same round.
+    (1130791, 2),
     // Four rounds since revision 63: in round 1 Morgane's `Defeat: Recover 1 Pillz Out Of 2`
     // recovers 1 on a bet of 0 and Miss Gunslinger's `Recover 1 Pillz Out Of 3` 1 of 4.
     (1145886, 4),
@@ -641,10 +645,22 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // compound pays 2 Pillz then 2 Life on a Unison win in 878178/0 (12 - 6 + 2 + 1 with the
     // Riots bonus, 12 + 2) and nothing on a loss in 877733/1; Pantherine's Defeat Life pays
     // 13 - 3 + 2 = 12 in 1066337/1 and nothing on her stopped-bonus win in 1131352/0.
-    (878178, 4),
+    // 878178 stops at three rounds since revision 67: round 3 selects Galileo's `Revenge: -2
+    // Opp. Pillz And Life, Min 0`, which stays closed and now rejects when selected.
+    (878178, 3),
     (877733, 4),
     (1066337, 3),
     (1131352, 2),
+    // Revision 67 admits the opposing compound `-N Opp. Pillz And Life, Min M`, `Victory Or
+    // Defeat : +N Pillz` for N of two or more and `Victory Or Defeat: +N Life Per Damage`.
+    // Hilal's compound takes one from each opposing resource on a win (1023608/2: Pillz 8 to
+    // 7 and Life 7 to 6 after the round's 3; 1080264/0: 6 to 5 and 11 to 10); Harston's
+    // `+2 Pillz` pays on a win in 1088123/2 (9 - 5 + 2); Senestra's Life conversion pays
+    // her own final 4 Damage on a loss in 1066589/0 (12 - 5 + 4).
+    (1023608, 4),
+    (1080264, 3),
+    (1088123, 4),
+    (1066589, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

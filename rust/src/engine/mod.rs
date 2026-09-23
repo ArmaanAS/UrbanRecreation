@@ -215,7 +215,7 @@ impl LatchedEffectV1 {
             Self::ConsumeOpponentPillz { .. } | Self::CombustOpponentLifeAndPillz { .. } => {
                 PillzWritesV1::OPPOSING_FLOOR
             }
-            Self::DopePillz { .. } => PillzWritesV1::OWN_GAIN,
+            Self::DopePillz { .. } => PillzWritesV1::OWN_CAPPED_GAIN,
             Self::HealLife { .. }
             | Self::RegenLife { .. }
             | Self::PoisonOpponentLife { .. }
@@ -284,6 +284,9 @@ pub(super) struct PillzWritesV1 {
     pub(super) opposing_gain: bool,
     /// Lowers the opposing player's Pillz towards a floor.
     pub(super) opposing_floor: bool,
+    /// Raises its owner's Pillz under a cap, which makes its order against another gain
+    /// observable.
+    pub(super) own_capped: bool,
 }
 
 impl PillzWritesV1 {
@@ -291,9 +294,15 @@ impl PillzWritesV1 {
         own_gain: false,
         opposing_gain: false,
         opposing_floor: false,
+        own_capped: false,
     };
     const OWN_GAIN: Self = Self {
         own_gain: true,
+        ..Self::NONE
+    };
+    const OWN_CAPPED_GAIN: Self = Self {
+        own_gain: true,
+        own_capped: true,
         ..Self::NONE
     };
     const OPPOSING_FLOOR: Self = Self {
@@ -303,7 +312,7 @@ impl PillzWritesV1 {
     const BOTH_GAIN: Self = Self {
         own_gain: true,
         opposing_gain: true,
-        opposing_floor: false,
+        ..Self::NONE
     };
 }
 
@@ -647,7 +656,8 @@ impl PostRoundEffect {
             | Self::ReduceOpponentPillzOnDefeat { .. }
             | Self::GainPillzEqualToFinalDamageOnVictory
             | Self::GainPillzOnKillshot(_)
-            | Self::GainPillzOnDefeat(_) => PostRoundResourceV1::Pillz,
+            | Self::GainPillzOnDefeat(_)
+            | Self::GainPillzOnVictoryOrDefeat(_) => PostRoundResourceV1::Pillz,
             Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictory { .. }
@@ -659,11 +669,13 @@ impl PostRoundEffect {
             | Self::ReduceOpponentLifeOnVictory { .. }
             | Self::ReduceOpponentLifeOnDefeat { .. }
             | Self::ReduceOpponentLifeOnKillshot { .. }
-            | Self::GainLifeOnKillshot { .. } => PostRoundResourceV1::Life,
+            | Self::GainLifeOnKillshot { .. }
+            | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. } => PostRoundResourceV1::Life,
             Self::GainOnePillzAndLifeOnVictory
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnDefeat(_)
-            | Self::GainPillzAndLifeOnVictory(_) => PostRoundResourceV1::PillzAndLife,
+            | Self::GainPillzAndLifeOnVictory(_)
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. } => PostRoundResourceV1::PillzAndLife,
             Self::ReduceBothPlayersLife { .. } | Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => {
                 PostRoundResourceV1::BothPlayersLife
             }
@@ -771,6 +783,9 @@ impl PostRoundEffect {
             | Self::GainPillzOnDefeat(_)
             | Self::GainPillzAndLifeOnDefeat(_)
             | Self::GainPillzAndLifeOnVictory(_)
+            | Self::GainPillzOnVictoryOrDefeat(_)
+            | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
             | Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => false,
         }
@@ -783,8 +798,8 @@ impl PostRoundSourceEffect {
             Self::Fixed(effect) => effect.pillz_writes(),
             Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentPillzOnVictoryPerRound { .. } => PillzWritesV1::OPPOSING_FLOOR,
-            Self::GainPillzOnVictoryPerAntiSupport { .. }
-            | Self::GainPillzOnVictoryPerRound { .. }
+            Self::GainPillzOnVictoryPerAntiSupport { .. } => PillzWritesV1::OWN_CAPPED_GAIN,
+            Self::GainPillzOnVictoryPerRound { .. }
             | Self::GainPillzOnVictoryPerSupport { .. }
             | Self::GainPillzOnVictoryPerOpponentStars { .. } => PillzWritesV1::OWN_GAIN,
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
@@ -802,7 +817,11 @@ impl PostRoundEffect {
     pub(super) const fn pillz_writes(self) -> PillzWritesV1 {
         match self {
             Self::ReduceOpponentPillzOnVictory { .. }
-            | Self::ReduceOpponentPillzOnDefeat { .. } => PillzWritesV1::OPPOSING_FLOOR,
+            | Self::ReduceOpponentPillzOnDefeat { .. }
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. } => PillzWritesV1::OPPOSING_FLOOR,
+            Self::GainTwoPillzOnDefeatMaxEleven | Self::GainPillzOnVictoryMax { .. } => {
+                PillzWritesV1::OWN_CAPPED_GAIN
+            }
             Self::LatchOnVictory(latched)
             | Self::LatchOnDefeat(latched)
             | Self::LatchOnKillshot(latched) => latched.pillz_writes(),
@@ -811,13 +830,12 @@ impl PostRoundEffect {
             | Self::RecoverPaidPillzOnVictory { .. }
             | Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainOnePillzAndLifeOnVictory
-            | Self::GainTwoPillzOnDefeatMaxEleven
             | Self::GainPillzOnVictory(_)
-            | Self::GainPillzOnVictoryMax { .. }
             | Self::GainPillzEqualToFinalDamageOnVictory
             | Self::GainPillzOnDefeat(_)
             | Self::GainPillzAndLifeOnDefeat(_)
             | Self::GainPillzAndLifeOnVictory(_)
+            | Self::GainPillzOnVictoryOrDefeat(_)
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzOnKillshot(_) => PillzWritesV1::OWN_GAIN,
             Self::GainLifeEqualToFinalDamageOnCourageVictory
@@ -833,6 +851,7 @@ impl PostRoundEffect {
             | Self::ReduceOpponentLifeOnKillshot { .. }
             | Self::ReduceBothPlayersLife { .. }
             | Self::GainLifeOnKillshot { .. }
+            | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => PillzWritesV1::NONE,
         }
     }
@@ -871,6 +890,7 @@ impl PostRoundEffect {
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnDefeat(_)
             | Self::GainPillzAndLifeOnVictory(_)
+            | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => LifeWritesV1::OWN_GAIN,
             Self::GainLifePerFinalDamageOnVictory { .. }
             | Self::GainLifeOnKillshot { .. }
@@ -878,7 +898,8 @@ impl PostRoundEffect {
             Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
             | Self::ReduceOpponentLifeOnVictory { .. }
             | Self::ReduceOpponentLifeOnDefeat { .. }
-            | Self::ReduceOpponentLifeOnKillshot { .. } => LifeWritesV1::OPPOSING_FLOOR,
+            | Self::ReduceOpponentLifeOnKillshot { .. }
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. } => LifeWritesV1::OPPOSING_FLOOR,
             Self::ReduceBothPlayersLife { .. } => LifeWritesV1 {
                 own_gain: false,
                 own_order_sensitive: true,
@@ -898,7 +919,97 @@ impl PostRoundEffect {
             | Self::GainPillzEqualToFinalDamageOnVictory
             | Self::GainPillzOnDefeat(_)
             | Self::GainPillzOnKillshot(_)
+            | Self::GainPillzOnVictoryOrDefeat(_)
             | Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => LifeWritesV1::NONE,
+        }
+    }
+}
+
+/// On which of its owner's outcomes an end-of-round effect can write. Two players' effects
+/// meet in a round only where one's win is the other's loss, and a permanent pays whatever
+/// the later round did. Exhaustive, so a new effect has to say.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct WriteOutcomesV1 {
+    pub(super) on_win: bool,
+    pub(super) on_loss: bool,
+}
+
+impl WriteOutcomesV1 {
+    const WIN: Self = Self {
+        on_win: true,
+        on_loss: false,
+    };
+    const LOSS: Self = Self {
+        on_win: false,
+        on_loss: true,
+    };
+    const EITHER: Self = Self {
+        on_win: true,
+        on_loss: true,
+    };
+}
+
+impl PostRoundSourceEffect {
+    pub(super) const fn write_outcomes(self) -> WriteOutcomesV1 {
+        match self {
+            Self::Fixed(effect) => effect.write_outcomes(),
+            Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
+            | Self::GainPillzOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerSupport { .. }
+            | Self::GainPillzOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerOpponentStars { .. }
+            | Self::GainPillzOnVictoryPerOpponentStars { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
+            | Self::ReduceOpponentPillzOnVictoryPerRound { .. }
+            | Self::GainLifeOnVictoryPerRound { .. }
+            | Self::GainPillzOnVictoryPerRound { .. } => WriteOutcomesV1::WIN,
+        }
+    }
+}
+
+impl PostRoundEffect {
+    pub(super) const fn write_outcomes(self) -> WriteOutcomesV1 {
+        match self {
+            Self::RecoverPaidPillzOnVictory { .. }
+            | Self::GainOnePillzAndLifeOnVictory
+            | Self::GainLifeEqualToFinalDamageOnCourageVictory
+            | Self::GainLifeOnVictory(_)
+            | Self::GainPillzOnVictory(_)
+            | Self::GainPillzOnVictoryMax { .. }
+            | Self::ReduceOpponentPillzOnVictory { .. }
+            | Self::GainPillzEqualToFinalDamageOnVictory
+            | Self::GainLifePerFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::ReduceOpponentLifeOnVictory { .. }
+            | Self::ReduceOpponentLifeOnKillshot { .. }
+            | Self::GainPillzAndLifeOnKillshot { .. }
+            | Self::GainPillzOnKillshot(_)
+            | Self::GainLifeOnKillshot { .. }
+            | Self::GainPillzAndLifeOnVictory(_)
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. } => WriteOutcomesV1::WIN,
+            Self::RecoverPaidPillzOnDefeat { .. }
+            | Self::GainTwoPillzOnDefeatMaxEleven
+            | Self::ReduceOpponentPillzOnDefeat { .. }
+            | Self::GainLifeOnDefeat(_)
+            | Self::ReanimateLife(_)
+            | Self::ReduceOpponentLifeOnDefeat { .. }
+            | Self::GainPillzOnDefeat(_)
+            | Self::GainPillzAndLifeOnDefeat(_) => WriteOutcomesV1::LOSS,
+            // A latched permanent pays after every later round, whatever it did.
+            Self::GainOnePillzOnVictoryOrDefeat
+            | Self::GainLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceBothPlayersLife { .. }
+            | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
+            | Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
+            | Self::GainPillzOnVictoryOrDefeat(_)
+            | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
+            | Self::LatchOnVictory(_)
+            | Self::LatchOnDefeat(_)
+            | Self::LatchOnKillshot(_) => WriteOutcomesV1::EITHER,
         }
     }
 }
@@ -928,6 +1039,7 @@ impl PostRoundEffect {
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnDefeat(_)
             | Self::GainPillzAndLifeOnVictory(_)
+            | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
             | Self::GainLifeOnKillshot { .. }
             | Self::LatchOnKillshot(
                 LatchedEffectV1::HealLife { .. } | LatchedEffectV1::RegenLife { .. },
@@ -940,6 +1052,8 @@ impl PostRoundEffect {
             ) => LifeBeneficiaryV1::Owner,
             Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => LifeBeneficiaryV1::Both,
             Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
+            | Self::GainPillzOnVictoryOrDefeat(_)
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
             | Self::GainPillzOnKillshot(_)
             | Self::LatchOnKillshot(
                 LatchedEffectV1::PoisonOpponentLife { .. }
@@ -1103,6 +1217,20 @@ pub(super) enum PostRoundEffect {
     GainPillzAndLifeOnDefeat(u16),
     /// `Unison : +N Pillz And Life`: a living winner gains N Pillz and then N Life.
     GainPillzAndLifeOnVictory(u16),
+    /// `Victory Or Defeat : +N Pillz`, N of two or more: the owner gains N Pillz whatever
+    /// the outcome, a knocked-out owner included, as the one-Pillz grammar pays.
+    GainPillzOnVictoryOrDefeat(u16),
+    /// `Victory Or Defeat: +N Life Per Damage`: a living owner gains N Life per point of its
+    /// own card's final Damage, won or lost.
+    GainLifePerFinalDamageOnVictoryOrDefeat {
+        life_per_damage: u16,
+    },
+    /// `-N Opp. Pillz And Life, Min M`: the winner takes N from each opposing resource, each
+    /// only while above M and never below it.
+    ReduceOpponentPillzAndLifeOnVictory {
+        amount: u16,
+        minimum: u16,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -1650,6 +1778,52 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainPillzAndLifeOnVictory(_) => {}
+                    // Victory Or Defeat Pillz beyond the reviewed one-Pillz identities pays
+                    // whatever the outcome and after a knockout, as the one-Pillz arm does.
+                    PostRoundEffect::GainPillzOnVictoryOrDefeat(pillz) => {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(pillz)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                    }
+                    // The Life conversion on the Victory Or Defeat channel reads the owner's
+                    // own final Damage, Fury included, won or lost (1066589/0 pays a loss), and
+                    // never revives a zero.
+                    PostRoundEffect::GainLifePerFinalDamageOnVictoryOrDefeat {
+                        life_per_damage,
+                    } if position.players[owner].life > 0 => {
+                        let gain = prepared[owner]
+                            .result
+                            .damage
+                            .checked_mul(life_per_damage)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(gain)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainLifePerFinalDamageOnVictoryOrDefeat { .. } => {}
+                    // The opposing compound is the plain Victory Pillz and Life reductions
+                    // paid together, each resource floored at Min on its own and one already at
+                    // or below Min left alone (963847/2: Life 2 to 1 while Pillz 0 stays).
+                    PostRoundEffect::ReduceOpponentPillzAndLifeOnVictory { amount, minimum }
+                        if owner == winner =>
+                    {
+                        let target = owner.other();
+                        if position.players[target].pillz > minimum {
+                            position.players[target].pillz = position.players[target]
+                                .pillz
+                                .saturating_sub(amount)
+                                .max(minimum);
+                        }
+                        if position.players[target].life > minimum {
+                            position.players[target].life = position.players[target]
+                                .life
+                                .saturating_sub(amount)
+                                .max(minimum);
+                        }
+                    }
+                    PostRoundEffect::ReduceOpponentPillzAndLifeOnVictory { .. } => {}
                     // Reanimate is the explicit Life exception: damage has already been
                     // saturated at zero, and revival happens before status is calculated.
                     PostRoundEffect::ReanimateLife(life) if owner == loser => {

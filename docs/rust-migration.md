@@ -2504,6 +2504,38 @@ construction refuses both (`UnmodelledImposeContext`). The single-stat Protectio
 revision 62 now names the Impose as a change to the Damage group. The gate grows from 761 to
 768 rounds.
 
+Semantic revision 67 admits three more end-of-round grammars, all by exact text over the
+complete shape and from card abilities only. The first is the opposing compound `-N Opp.
+Pillz And Life, Min M` (`1721`, `5355`, `2720`, `2721`, `5893`, `2897`): on a win it takes N
+from each opposing resource, each floored at M on its own. The second is `Victory Or Defeat :
++N Pillz` for N of two or more (`3012`); the one-Pillz text stays revision 9's identity set.
+The third is `Victory Or Defeat: +N Life Per Damage` (`2007`, `5071`): a living owner gains N
+per point of its own final Damage, won or lost. The family lines read 6 and the slice unlocked
+5 - `1023608`, `1066589`, `1069193`, `1088123` and `1091521` - taking eligibility from 229 to 234.
+
+The server pins each. Hilal's compound takes one from each opposing resource on a win: Pillz
+8 to 7 and Life 7 to 6 after the round's 3 Damage in 1023608/2, and 6 to 5 and 11 to 10 in
+1080264/0. It takes Sue's owner to 5 and 7 in 1069193/1, and floors each resource separately
+(963847/2: Life 2 to 1 while Pillz 0 stays). Solykra's pays nothing on a loss (1130791/2).
+Harston's `+2 Pillz` pays on a win (1088123/2: 9 - 5 + 2). Senestra's conversion pays her own
+final 4 Damage on a loss (1066589/0: 12 - 5 + 4).
+
+The compound is the grammar 1093173/1 caught the engine ordering wrongly: the target's own
+Victory-or-Defeat gain landed before the winner's floored reduction, where the engine's
+P1-then-P2 pass puts it after. So construction refuses the compound wherever the target can
+write its own Pillz or Life in the same round - on the target's loss, or every round for a
+permanent - and beside an opposing Copy (`OpponentPillzAndLifeAgainstUnpinnedEffect`). A new
+exhaustive `write_outcomes` says on which of its owner's outcomes each end-of-round effect can
+write. That lets 1069193 through, since Aurora's `+3 Life` only pays on her own win, which is
+the compound's loss. It costs 1130791, where AI-Lycs' Defeat Recover can land in Solykra's
+winning round. The two Victory Or Defeat gains pay either way, so any opposing floor on their
+resource, an own cap on it (`pillz_writes` now marks capped gains), or an opposing Copy refuses
+them (`VictoryOrDefeatGainAgainstUnpinnedEffect`). Malformed compounds, and the prefixed
+`Revenge:` and `Killshot:` compounds, now reject when selected rather than act inert.
+
+That shrinks two fixtures: 1130791 to two rounds and 878178 to three, where Galileo's closed
+`Revenge:` compound is selected. The gate grows from 768 to 783 rounds.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and
