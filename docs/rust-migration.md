@@ -1714,6 +1714,44 @@ selected. The Xantiax clause was found missing from the compact `RejectIfSelecte
 while doing this - a malformed both-sides record would have become an inert `Disabled`
 source rather than a hazard - and is added there too; no corpus source changed disposition.
 
+Semantic revision 43 admits the three unconditional Exchanges - `Power Exchange` (`1592`,
+`1648`, `1690`, `4504`, `4505`, `5632`), `Damage Exchange` (`1588`, `1594`, `1658`, `1907`)
+and `Power And Damage Exchange` (`1649`, `3279`): the two selected cards swap their printed
+values of the stat. With Brawl already in, it measured 3 and unlocked exactly 3 - `1088919`,
+`1092660` and `1091848`, the last being the draw that needed both, which is what the
+combined line's 7 against Brawl's 4 had predicted. Eligibility goes from 97 to 100. Power
+Exchange alone carries all three; the Damage forms change no count and land with it because
+they are the same grammar.
+
+This section had put the Exchanges among the sources wanting new work, and the price was
+lower again: the registry already compiled the Copy action and refused the Exchanges only by
+`sideAffected: both`. The whole change is one registry variant for that side, its exact
+printed texts, and one more arm in `apply_printed_stat_copy`, which already ran before every
+increase and reduction and read printed values; an Exchange is the same overwrite applied
+to both cards. Because both sides read printed values, two Exchanges, or an Exchange against
+a Copy, cannot depend on their order. An opposing Cancel of the stat skips the whole swap, as
+the reference does, and Protection does not refuse it, since Protection only refuses a
+reduction. The conditional forms (`1713`, `1769`, `2995`, `3622`, `3953`, `4467`, `5782`) are
+different descriptions or carry a condition field, and stay closed.
+
+The corpus pins it well. Every one of the 12 selected Exchange rounds fits the one model -
+swap printed values, then own increases, then opposing reductions - and the gate replays
+the reachable ones: clean swaps in 867116/0, 1088919/0, 1091703/3 and 1091848/3; 1087884/1
+pins the swap before an opposing reduction (Sue's `-1 Opp Power And Damage` takes her
+swapped 6 to 5, where reducing first gives 6 against 4); 1080007/2 an opposing increase
+landing on the swapped value; 1066210/0 a stopped Exchange; and 901004/0 a `Damage
+Exchange`, whose swap the life ledger shows although the capture's `damageAfter` does not.
+948108/3, outside the gate, is the one round showing an opposing Protection not refusing it.
+The gate grows from 349 to 371 rounds. The owner's own increase on top, an opposing Cancel,
+and two Exchanges at once have no round and are pinned by engine tests.
+
+The Rust engine now disagrees with the TypeScript one on purpose, and is right by the
+server. TypeScript runs the swap in PRE2 as an overwrite, so it wipes any PRE2 increase
+registered before it; 1059149/1 shows the server keeping it. That round is outside the Rust
+gate (Calamity's Night bonus is not admitted), so `--rust=compare` will report a difference
+in those positions. It is written up in `docs/replay-triage.md` as a one-round TypeScript
+bug rather than fixed there.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

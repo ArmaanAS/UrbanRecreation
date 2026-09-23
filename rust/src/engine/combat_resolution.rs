@@ -269,6 +269,15 @@ fn add_protection(mask: &mut StatMask, source: ResolutionSourcePlan) {
 /// both halves: Natasha copies Nantosuelte's printed 4 Damage - not the 7 its Asymmetry
 /// bonus had made of it - and her own `Damage +2` then produces the reported 6. Since both
 /// sides read printed values, two simultaneous copies cannot depend on their order.
+///
+/// `<stat> Exchange` is the same overwrite applied to both cards: each takes the other's
+/// printed value. Every selected Exchange round in the corpus fits that one model - a swap
+/// of printed values first, then own increases, then opposing reductions. 1087884/1 pins
+/// the order against a reduction (Sue's `-1 Opp Power And Damage` takes her swapped 6 to 5,
+/// where reducing first would leave 6 against 4), 1080007/2 an opposing increase landing on
+/// the swapped value, and 948108/3 that the opposing `Protection: Power And Damage` does
+/// not refuse the swap. As in the reference, an opposing Cancel of the stat skips the whole
+/// swap rather than half of it.
 fn apply_printed_stat_copy(
     origin: PlayerId,
     source: ResolutionSourcePlan,
@@ -277,10 +286,12 @@ fn apply_printed_stat_copy(
     power: &mut ByPlayer<u16>,
     damage: &mut ByPlayer<u16>,
 ) {
-    let Some(DiagnosticCombatEffectV1::CopyOpponentPrintedCombatStat { stat }) = source.effect
-    else {
-        return;
+    let (stat, exchange) = match source.effect {
+        Some(DiagnosticCombatEffectV1::CopyOpponentPrintedCombatStat { stat }) => (stat, false),
+        Some(DiagnosticCombatEffectV1::ExchangePrintedCombatStat { stat }) => (stat, true),
+        _ => return,
     };
+    let (own_power, own_damage) = printed[origin];
     let (opponent_power, opponent_damage) = printed[origin.other()];
     if matches!(
         stat,
@@ -288,6 +299,9 @@ fn apply_printed_stat_copy(
     ) && !opponent_cancellation.contains(DiagnosticCombatStatV1::Power)
     {
         power[origin] = opponent_power;
+        if exchange {
+            power[origin.other()] = own_power;
+        }
     }
     if matches!(
         stat,
@@ -295,6 +309,9 @@ fn apply_printed_stat_copy(
     ) && !opponent_cancellation.contains(DiagnosticCombatStatV1::Damage)
     {
         damage[origin] = opponent_damage;
+        if exchange {
+            damage[origin.other()] = own_damage;
+        }
     }
 }
 

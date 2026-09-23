@@ -269,6 +269,10 @@ pub enum SupportedEffectV1 {
     CopyOpponentPrintedCombatStat {
         stat: CombatStatV1,
     },
+    /// The two selected characters swap their printed values of the stat.
+    ExchangePrintedCombatStat {
+        stat: CombatStatV1,
+    },
     /// The owner's own Ability cannot be stopped by the opposing character.
     ProtectOwnAbility,
     /// The owner's own Bonus cannot be stopped by the opposing character.
@@ -1085,16 +1089,22 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
         }
         // A stat Copy names the side it writes to, always the owner's own, and carries no
         // magnitude. `Power Exchange` and `Damage Exchange` use the same action with
-        // `sideAffected: both` and swap the two values instead, so they are refused here
-        // by side rather than by grammar.
+        // `sideAffected: both` and swap the two printed values instead.
         (AttributeActionV1::Copy, SpecialActionV1::None, Some(stat)) => {
-            if input.side_affected != AffectedSideV1::Player {
+            if !matches!(
+                input.side_affected,
+                AffectedSideV1::Player | AffectedSideV1::Both
+            ) {
                 reasons.insert(UnsupportedReasonV1::UnsupportedSide {
                     side: input.side_affected,
                 });
                 None
             } else if input.value == 0 && input.value_min == 0 && input.value_max == 0 {
-                Some(SupportedEffectV1::CopyOpponentPrintedCombatStat { stat })
+                Some(if input.side_affected == AffectedSideV1::Both {
+                    SupportedEffectV1::ExchangePrintedCombatStat { stat }
+                } else {
+                    SupportedEffectV1::CopyOpponentPrintedCombatStat { stat }
+                })
             } else {
                 reasons.insert(UnsupportedReasonV1::NonZeroControlValues);
                 None
@@ -1267,6 +1277,15 @@ fn unreviewed_description_context(
             CombatStatV1::Power => description == "Copy: Opp. Power",
             CombatStatV1::Damage => description == "Copy: Opp. Damage",
             CombatStatV1::PowerAndDamage => description == "Copy: Power And Damage Opp.",
+            CombatStatV1::Attack => false,
+        },
+        // The unconditional Exchanges only. `Confidence:`, `Courage:`, `Reprisal:`,
+        // `Symmetry:`/`Asymmetry:` and `Unison :` are different descriptions and refused
+        // here, even where the registry carries no structured trace of the condition.
+        SupportedEffectV1::ExchangePrintedCombatStat { stat } => match stat {
+            CombatStatV1::Power => description == "Power Exchange",
+            CombatStatV1::Damage => description == "Damage Exchange",
+            CombatStatV1::PowerAndDamage => description == "Power And Damage Exchange",
             CombatStatV1::Attack => false,
         },
     };
@@ -1825,15 +1844,45 @@ mod tests {
             }
         }
 
-        // A conditional prefix is a different description, and Exchange is the same action
-        // with `sideAffected: both` - a swap of two cards' values, not a copy into one.
-        for id in [1409, 4126, 4956, 1588, 1592, 1713] {
+        // A conditional prefix is a different description, and is refused whether it
+        // prefixes a Copy or an Exchange.
+        for id in [1409, 4126, 4956, 1713, 1769, 2995, 3622, 3953, 4467, 5782] {
             assert_eq!(
                 registry.get(id).unwrap().compiled().supported(),
                 None,
                 "effect {id}",
             );
         }
+    }
+
+    #[test]
+    fn an_exchange_compiles_only_the_three_unconditional_printed_grammars() {
+        let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
+
+        // Exchange is the Copy action with `sideAffected: both`: a swap of the two cards'
+        // printed values rather than a copy into one of them.
+        for (ids, stat) in [
+            (
+                [1592, 1648, 1690, 4504, 4505, 5632].as_slice(),
+                CombatStatV1::Power,
+            ),
+            ([1588, 1594, 1658, 1907].as_slice(), CombatStatV1::Damage),
+            ([1649, 3279].as_slice(), CombatStatV1::PowerAndDamage),
+        ] {
+            for &id in ids {
+                assert_eq!(
+                    registry.get(id).unwrap().compiled().supported(),
+                    Some(SupportedEffectV1::ExchangePrintedCombatStat { stat }),
+                    "effect {id}",
+                );
+            }
+        }
+
+        // `Unison : Damage Exchange` differs from the plain record only in its clan-mates
+        // link, which the registry refuses as a linked magnitude before any text is read.
+        let unison = registry.get(3953).unwrap();
+        assert!(unison.structured_input().is_clanmates_count_linked);
+        assert_eq!(unison.compiled().supported(), None);
     }
 
     #[test]

@@ -74,7 +74,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 42;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 43;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1462,6 +1462,10 @@ fn admitted_supported_effect(
         | SupportedEffectV1::ProtectOwnAbility
         | SupportedEffectV1::ProtectOwnBonus
         | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. } => true,
+        // No clan bonus prints an Exchange.
+        SupportedEffectV1::ExchangePrintedCombatStat { .. } => {
+            source_kind == CombatStatEffectSourceV1::Ability
+        }
         SupportedEffectV1::ModifyCombatStat {
             side,
             stat,
@@ -2341,7 +2345,8 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | SupportedEffectV1::ProtectOwnCombatStat { .. }
         | SupportedEffectV1::ProtectOwnAbility
         | SupportedEffectV1::ProtectOwnBonus
-        | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. } => return false,
+        | SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
+        | SupportedEffectV1::ExchangePrintedCombatStat { .. } => return false,
     };
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Growth => "Growth: ",
@@ -2493,6 +2498,11 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
         SupportedEffectV1::ProtectOwnBonus => Some(CombatStatEffectV1::ProtectOwnBonus),
         SupportedEffectV1::CopyOpponentPrintedCombatStat { stat } => {
             Some(CombatStatEffectV1::CopyOpponentPrintedCombatStat {
+                stat: compact_stat(stat),
+            })
+        }
+        SupportedEffectV1::ExchangePrintedCombatStat { stat } => {
+            Some(CombatStatEffectV1::ExchangePrintedCombatStat {
                 stat: compact_stat(stat),
             })
         }

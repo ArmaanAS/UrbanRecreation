@@ -3902,3 +3902,80 @@ fn strict_catalog_match_prepares_post_round_brawl_from_the_printed_ability() {
         );
     }
 }
+
+#[test]
+fn strict_catalog_match_prepares_the_unconditional_exchanges_and_refuses_the_prefixed_ones() {
+    use urban_recreation_rust::engine::CombatStatAttributeV1;
+
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let hand = |key| {
+        [
+            key,
+            CardKey::new(123, 1),
+            CardKey::new(124, 1),
+            CardKey::new(138, 1),
+        ]
+    };
+
+    for (key, catalog_id, stat) in [
+        (CardKey::new(1758, 4), 1592, CombatStatAttributeV1::Power), // Lagertha Cr
+        (CardKey::new(1805, 4), 5632, CombatStatAttributeV1::Power), // Djet
+        (CardKey::new(2552, 2), 4504, CombatStatAttributeV1::Power), // Marlowe
+        (CardKey::new(1820, 5), 1658, CombatStatAttributeV1::Damage), // Waldegrin Cr
+        (
+            CardKey::new(1807, 5),
+            1649,
+            CombatStatAttributeV1::PowerAndDamage,
+        ), // Duchess
+    ] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(hand(key), opponent, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
+        let CatalogCombatStatSourceDispositionV1::Execute { identity, .. } =
+            &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as an Exchange")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id), "{key:?}");
+        assert!(
+            matches!(
+                prepared.match_spec().cards[PlayerId::P1][0].ability,
+                CombatStatSourcePlanV1::Execute {
+                    predicate: CombatStatPredicateV1::Always,
+                    effect: CombatStatEffectV1::ExchangePrintedCombatStat { stat: actual },
+                    ..
+                } if actual == stat
+            ),
+            "{key:?}",
+        );
+    }
+
+    // Every prefixed Exchange carries a condition the unconditional grammar does not model,
+    // and stays fail-closed whether or not its structure records the condition.
+    for (key, description) in [
+        (CardKey::new(1864, 3), "Confidence: Power Exchange"),
+        (CardKey::new(2410, 3), "Courage: Power Exchange"),
+        (CardKey::new(2262, 5), "Reprisal: Power Exchange"),
+        (CardKey::new(1917, 2), "Reprisal: Damage Exchange"),
+        (CardKey::new(2485, 3), "Unison : Damage Exchange"),
+        (CardKey::new(2546, 5), "Symmetry: Damage Exchange"),
+        (CardKey::new(868, 4), "Asymmetry: Damage Exchange"),
+    ] {
+        assert!(
+            CatalogCombatStatMatchV1::new(
+                input(hand(key), opponent, false),
+                &catalog,
+                &registry,
+                PROJECTION,
+            )
+            .is_err(),
+            "{key:?} {description} must stay fail-closed",
+        );
+    }
+}

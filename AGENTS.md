@@ -66,7 +66,7 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    captures without ever extracting them; `deno task extract` is byte-identical for every
    game already committed, so run it before trusting a count here.
    `docs/replay-triage.md` tracks what
-   was fixed and what is open (Damage Exchange, Revenge/Impose, plus one Hazard game that a
+   was fixed and what is open (Revenge/Impose, plus one Hazard game that a
    name-and-level testcase cannot express). It also says which open questions need more
    captured games and what to play to answer them.
    Work through that list, but check each entry against `captures/games/<id>.json` before

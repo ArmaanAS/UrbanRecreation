@@ -260,6 +260,20 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         "every post-round Brawl grammar",
         &[2893, 3551, 4380, 4381, 4583, 5172, 5457, 5650, 5822, 5844],
     ),
+    // The unconditional Exchanges, measured 2026-09-23. The registry keys each by its text's
+    // canonical definition, so one id per printed text reaches every level of it.
+    (
+        "plain Power Exchange",
+        &[1592, 1648, 1690, 4504, 4505, 5632],
+    ),
+    ("plain Damage Exchange", &[1588, 1594, 1658, 1907]),
+    ("plain Power And Damage Exchange", &[1649, 3279]),
+    (
+        "every unconditional Exchange",
+        &[
+            1588, 1592, 1594, 1648, 1649, 1658, 1690, 1907, 3279, 4504, 4505, 5632,
+        ],
+    ),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

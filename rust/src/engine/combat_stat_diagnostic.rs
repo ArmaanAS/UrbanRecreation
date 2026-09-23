@@ -242,6 +242,11 @@ pub enum CombatStatEffectV1 {
     CopyOpponentPrintedCombatStat {
         stat: CombatStatAttributeV1,
     },
+    /// The two selected cards swap their printed values of the stat, in the same phase as a
+    /// stat Copy: before any own increase and before any opposing reduction.
+    ExchangePrintedCombatStat {
+        stat: CombatStatAttributeV1,
+    },
     /// Fixed non-stat post-round work. Identity and source are checked at plan
     /// construction; its values are intentionally not caller-configurable.
     RecoverPaidPillzOnDefeat,
@@ -2298,6 +2303,16 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         }
         CombatStatEffectV1::ProtectOwnAbility => DiagnosticCombatEffectV1::ProtectOwnAbility,
         CombatStatEffectV1::ProtectOwnBonus => DiagnosticCombatEffectV1::ProtectOwnBonus,
+        CombatStatEffectV1::ExchangePrintedCombatStat { stat } => {
+            DiagnosticCombatEffectV1::ExchangePrintedCombatStat {
+                stat: match stat {
+                    CombatStatAttributeV1::Attack => DiagnosticCombatStatV1::Attack,
+                    CombatStatAttributeV1::Damage => DiagnosticCombatStatV1::Damage,
+                    CombatStatAttributeV1::Power => DiagnosticCombatStatV1::Power,
+                    CombatStatAttributeV1::PowerAndDamage => DiagnosticCombatStatV1::PowerAndDamage,
+                },
+            }
+        }
         CombatStatEffectV1::CopyOpponentPrintedCombatStat { stat } => {
             DiagnosticCombatEffectV1::CopyOpponentPrintedCombatStat {
                 stat: match stat {
@@ -2487,7 +2502,8 @@ fn shared_post_round_effect(effect: CombatStatEffectV1) -> Option<PostRoundSourc
         | CombatStatEffectV1::ProtectOwnCombatStat { .. }
         | CombatStatEffectV1::ProtectOwnAbility
         | CombatStatEffectV1::ProtectOwnBonus
-        | CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. } => None,
+        | CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. }
+        | CombatStatEffectV1::ExchangePrintedCombatStat { .. } => None,
     }
 }
 

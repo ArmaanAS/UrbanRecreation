@@ -308,12 +308,30 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1058545, 2),
     (964213, 4),
     (1066739, 1),
-    (1091848, 3),
+    // Four rounds since revision 43, whose Power Exchange opens its last round.
+    (1091848, 4),
     (1092020, 4),
     (1024524, 4),
     (1088716, 4),
     (1079263, 4),
     (1078669, 2),
+    // Revision 43 admits the unconditional Exchanges: the two selected cards swap their
+    // printed values of the stat before any own increase or opposing reduction. Clean swaps:
+    // Lagertha Cr 5 against Uuber's 7 in 867116/0, Djet 4 against Aurora's 7 in 1088919/0
+    // and against Mou's 6 in 1091703/3 (and in 1091848/3 behind Sirrena's Brawl round).
+    // 1087884/1 pins the order against a reduction - Sue's `-1 Opp Power And Damage, Min 3`
+    // takes her swapped 6 to 5 - and 1080007/2 an opposing increase landing on the swapped
+    // value (Tina's Revenge +2 on Marlowe's 5). 1066210/0 is the stopped case: Spidee's
+    // Reprisal `Stop Opp. Ability` leaves Joan Cena's 5 and Spidee's 6 where they were.
+    // 901004/0 is Waldegrin Cr's `Damage Exchange` taking Kubrat Cr's 1 and giving up his 8,
+    // which the life ledger shows although the capture's `damageAfter` reports the swap.
+    (867116, 2),
+    (1088919, 4),
+    (1091703, 4),
+    (1087884, 3),
+    (1080007, 4),
+    (1066210, 2),
+    (901004, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

@@ -91,6 +91,10 @@ pub enum DiagnosticCombatEffectV1 {
     CopyOpponentPrintedCombatStat {
         stat: DiagnosticCombatStatV1,
     },
+    /// The two selected cards swap their printed values of the stat.
+    ExchangePrintedCombatStat {
+        stat: DiagnosticCombatStatV1,
+    },
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and

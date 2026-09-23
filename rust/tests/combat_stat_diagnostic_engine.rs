@@ -5305,3 +5305,173 @@ fn brawl_post_round_plan_is_ability_only_positive_and_unconditional() {
         ));
     }
 }
+
+/// P1's slot 0 prints 5/2 and P2's slot 0 prints 7/6, so any swap is visible in both
+/// directions; every other source is absent until a test adds one.
+fn exchange_spec(stat: CombatStatAttributeV1) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(5, 2);
+    base.players[PlayerId::P2].hand[0].power = 7;
+    base.players[PlayerId::P2].hand[0].damage = 6;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1592,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ExchangePrintedCombatStat { stat },
+    );
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+fn exchange_round(
+    spec: CombatStatDiagnosticMatchSpecV1,
+    first: PlayerId,
+) -> ((u16, u16), (u16, u16)) {
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let start = diag.position().clone();
+    let (report, undo) = diag
+        .make(input(first, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    let stats = (
+        (
+            report.cards[PlayerId::P1].power,
+            report.cards[PlayerId::P1].damage,
+        ),
+        (
+            report.cards[PlayerId::P2].power,
+            report.cards[PlayerId::P2].damage,
+        ),
+    );
+    diag.unmake(undo);
+    assert_eq!(diag.position(), &start);
+    stats
+}
+
+/// Every selected Exchange round in the corpus is a clean swap of printed values, such as
+/// Lagertha Cr's 5 against Uuber's 7 in 867116/0, and `Damage Exchange` swaps the other
+/// stat (901004/0); the pair form writes both. Who moves first does not matter.
+#[test]
+fn an_exchange_swaps_the_two_printed_values() {
+    for first in PlayerId::ALL {
+        assert_eq!(
+            exchange_round(exchange_spec(CombatStatAttributeV1::Power), first),
+            ((7, 2), (5, 6)),
+        );
+        assert_eq!(
+            exchange_round(exchange_spec(CombatStatAttributeV1::Damage), first),
+            ((5, 6), (7, 2)),
+        );
+        assert_eq!(
+            exchange_round(exchange_spec(CombatStatAttributeV1::PowerAndDamage), first),
+            ((7, 6), (5, 2)),
+        );
+    }
+}
+
+/// 1087884/1: Sue's `-1 Opp Power And Damage, Min 3` takes the 6 Lagertha Cr swapped to
+/// her down to 5, so the swap lands before an opposing reduction. 1080007/2: Tina's own
+/// `Revenge: Power +2` lands on the 5 she received. The owner's own increase, which no
+/// corpus round shows, lands on the swapped value the same way, and in either orientation
+/// of the two owners, since both sides read printed values.
+#[test]
+fn an_exchange_lands_before_every_increase_and_reduction() {
+    let mut reduced = exchange_spec(CombatStatAttributeV1::Power);
+    reduced.cards[PlayerId::P2][0].ability = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::PowerAndDamage, 1, 3),
+    );
+    // Power 7 - 1; the printed 2 Damage is already under the Min 3 and is left alone.
+    assert_eq!(exchange_round(reduced, PlayerId::P1).0, (6, 2));
+
+    let mut opposing_increase = exchange_spec(CombatStatAttributeV1::Power);
+    opposing_increase.cards[PlayerId::P2][0].ability = execute(
+        1844,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    assert_eq!(exchange_round(opposing_increase, PlayerId::P1).1, (7, 6));
+
+    let mut own_increase = exchange_spec(CombatStatAttributeV1::Power);
+    own_increase.cards[PlayerId::P1][0].bonus = execute(
+        43,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    own_increase.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert_eq!(exchange_round(own_increase, PlayerId::P1).0, (9, 2));
+
+    // The same Exchange owned by P2 instead.
+    let mut base = base_spec(7, 6);
+    base.players[PlayerId::P2].hand[0].power = 5;
+    base.players[PlayerId::P2].hand[0].damage = 2;
+    let mut cards = plans(&base);
+    cards[PlayerId::P2][0].ability = execute(
+        1592,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ExchangePrintedCombatStat {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    cards[PlayerId::P1][0].ability = execute(
+        1844,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    let spec = CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    };
+    assert_eq!(exchange_round(spec, PlayerId::P2), ((7, 6), (7, 2)));
+}
+
+/// 1066210/0: Spidee's Reprisal `Stop Opp. Ability` leaves both printed values where they
+/// were. 948108/3: the opposing `Protection: Power And Damage` does not refuse the swap,
+/// since Protection only ever refuses a reduction. An opposing Cancel of the stat skips the
+/// whole swap, as in the reference, which no corpus round shows.
+#[test]
+fn an_exchange_is_stopped_or_cancelled_whole_and_never_refused_by_protection() {
+    let mut stopped = exchange_spec(CombatStatAttributeV1::Power);
+    stopped.cards[PlayerId::P2][0].ability = execute(
+        40,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    assert_eq!(exchange_round(stopped, PlayerId::P1), ((5, 2), (7, 6)));
+
+    let mut protected = exchange_spec(CombatStatAttributeV1::PowerAndDamage);
+    protected.cards[PlayerId::P2][0].ability = execute(
+        2434,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ProtectOwnCombatStat {
+            stat: CombatStatAttributeV1::PowerAndDamage,
+        },
+    );
+    assert_eq!(exchange_round(protected, PlayerId::P1), ((7, 6), (5, 2)));
+
+    let mut cancelled = exchange_spec(CombatStatAttributeV1::Power);
+    cancelled.cards[PlayerId::P2][0].ability = execute(
+        5859,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    assert_eq!(exchange_round(cancelled, PlayerId::P1), ((5, 2), (7, 6)));
+}
+
+/// Two Exchanges of the same stat each swap printed values, so together they are one swap
+/// rather than a swap and its undoing: both sides write the other's printed value.
+#[test]
+fn two_exchanges_of_one_stat_are_one_swap() {
+    let mut double = exchange_spec(CombatStatAttributeV1::Power);
+    double.cards[PlayerId::P2][0].ability = execute(
+        1592,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ExchangePrintedCombatStat {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    assert_eq!(exchange_round(double, PlayerId::P1), ((7, 2), (5, 6)));
+}

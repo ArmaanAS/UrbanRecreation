@@ -288,6 +288,18 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
 - 874712 r1 Tina "Revenge: Power And Damage +2" (lost previous round) vs Kochar "Damage
   Impose" + "Copy: Opp. Ability": engine damage 2, server 4.
 
+### Exchange overwrites the increases before it — 1059149 (TypeScript only)
+- 1059149 r1: Calamity's `Power Exchange` against Tina, both printing 5 Power. The server
+  gives Tina 6 Power and 36 Attack: the swapped 5, her own +2, then Calamity's -1. The
+  TypeScript engine gives 4 and 28, because `ExchangeModifier` runs in PRE2 and *sets*
+  `final` to the printed values, wiping any PRE2 increase registered before it - the
+  owner's own bonus always (bonus compiles before ability), and the opponent's own increase
+  whenever the opponent is internal P1. The Rust engine swaps printed values in the Copy
+  phase, before every increase, and reproduces every one of the 12 selected Exchange rounds
+  (semantic revision 43); the likely TypeScript fix is to run the swap before PRE2, beside
+  `Copy` at PRE3. One round, so recorded rather than coded. A second round where an
+  Exchange meets an own increase registered before it would settle it.
+
 ### Not reproducible from a testcase
 - 874590 is a **Hazard** game and cannot be replayed as it stands. Administrator (Leader,
   ability 4144) "replaces the abilities of the three cards present in the draw with random
