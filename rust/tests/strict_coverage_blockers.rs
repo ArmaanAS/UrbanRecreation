@@ -277,6 +277,18 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     // The `Night:`/`Day:` forms of the plain numeric grammar, measured 2026-09-23. `5391`
     // carries a `valueMax` on a decrease and measured 0 alone.
     ("Night/Day plain numeric", &[1442, 1553, 1622, 1623]),
+    // The `Per Life Left` magnitudes, measured 2026-09-23: the capped Power and Damage
+    // increases, the Attack increase and the opposing Attack reduction.
+    ("Per Life Left Power", &[1788, 3276, 4829, 5357, 5555]),
+    ("Per Life Left Attack", &[923, 4302, 4517, 4518, 4519]),
+    ("Per Life Left Damage", &[2710]),
+    ("Per Life Left opposing Attack", &[1717, 5848]),
+    (
+        "every Per Life Left grammar",
+        &[
+            923, 1717, 1788, 2710, 3276, 4302, 4517, 4518, 4519, 4829, 5357, 5555, 5848,
+        ],
+    ),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

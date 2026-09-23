@@ -46,8 +46,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877950, 1),
     (945585, 2),
     (1023396, 2),
-    (874962, 2),
-    (946400, 1),
+    // Four rounds since revision 45: Sir Taco's `Per Life Left` Power clamps at its Max.
+    (874962, 4),
+    // Four rounds since revision 45, whose Huracan `+1 Attack Per Life Left` opens round 2.
+    (946400, 4),
     (1058366, 3),
     (1061897, 4),
     (946288, 3),
@@ -71,7 +73,8 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // nothing at all.
     (926367, 3),
     (1091473, 2),
-    (877093, 1),
+    // Four rounds since revision 45, whose Ametia `Per Life Left` Power opens round 1.
+    (877093, 4),
     (1080662, 2),
     (1025102, 3),
     // Revision 22 conditional Victory opponent-Life. Both players picked hand slot 1, so
@@ -344,6 +347,22 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877575, 4),
     (1009264, 2),
     (1059149, 4),
+    // Revision 45 admits the `Per Life Left` magnitudes, scaled by the owner's Life at the
+    // start of the round. Ametia's `+1 Power Per Life Left Max. 13` reaches its Max at 12
+    // Life in 1065427/0 and falls short of it at 11 in 877533/1; Sir Taco's `Max. 8` clamps
+    // 1 + 12 to 8 in 1130454/0; KinGreow's clamps at 6 Life in 1025349/1. The Huracan bonus
+    // `+1 Attack Per Life Left` pays across 1145812 and in 1079173/2, a losing round whose
+    // 15 + 12 = 27 reads the round-start Life rather than what the round left,
+    // and Jagan's `-1 Opp Att. Per Life Left, Min 2` takes Sue's 12 + 12 down by its own
+    // owner's 9 Life, not the opponent's 7, in 1079650/3.
+    (1065427, 4),
+    (877533, 4),
+    (1130454, 2),
+    (1025349, 3),
+    (1145812, 4),
+    (1079173, 4),
+    (1079650, 4),
+    (876752, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

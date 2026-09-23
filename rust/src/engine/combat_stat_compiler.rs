@@ -74,7 +74,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 44;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 45;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -1428,6 +1428,9 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_brawl_numeric(definition) {
         return Some(classified);
     }
+    if let Some(classified) = classify_life_left_numeric(definition) {
+        return Some(classified);
+    }
     if let Some(classified) = classify_round_scaled_numeric(definition) {
         return Some(classified);
     }
@@ -1639,6 +1642,104 @@ fn classify_brawl_numeric(
     let effect = numeric_effect(input, MagnitudeMultiplierV1::AntiSupport)?;
     brawl_description_matches(definition.description(), effect)
         .then_some((effect, CombatStatPredicateV1::Always))
+}
+
+/// `+N Power|Damage Per Life Left Max. M`, `+N Attack Per Life Left` and
+/// `-N Opp Att. Per Life Left, Min M`: scaled by the owner's Life at round start.
+fn classify_life_left_numeric(
+    definition: &EffectDefinitionV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    if !input.is_life_linked || !neutral_except_life_linked(input) {
+        return None;
+    }
+    if input.special_action != SpecialActionV1::None || input.is_support || input.value == 0 {
+        return None;
+    }
+    let (side, operation) = match (input.side_affected, input.attribute_action) {
+        (AffectedSideV1::Player, AttributeActionV1::Increase) => {
+            (AffectedSideV1::Player, StatOperationV1::Increase)
+        }
+        (AffectedSideV1::Opponent, AttributeActionV1::Decrease) => {
+            (AffectedSideV1::Opponent, StatOperationV1::Decrease)
+        }
+        _ => return None,
+    };
+    let stat = match input.attribute_affected {
+        AttributeAffectedV1::Attack => CombatStatV1::Attack,
+        AttributeAffectedV1::Damage => CombatStatV1::Damage,
+        AttributeAffectedV1::Power => CombatStatV1::Power,
+        _ => return None,
+    };
+    let v = input.value;
+    let expected = match (side, stat) {
+        (AffectedSideV1::Player, CombatStatV1::Power | CombatStatV1::Damage) => {
+            if input.value_min != 0 || input.value_max == 0 {
+                return None;
+            }
+            let name = if stat == CombatStatV1::Power {
+                "Power"
+            } else {
+                "Damage"
+            };
+            format!("+{v} {name} Per Life Left Max. {}", input.value_max)
+        }
+        (AffectedSideV1::Player, CombatStatV1::Attack) => {
+            if input.value_min != 0 || input.value_max != 0 {
+                return None;
+            }
+            format!("+{v} Attack Per Life Left")
+        }
+        (AffectedSideV1::Opponent, CombatStatV1::Attack) => {
+            if input.value_max != 0 {
+                return None;
+            }
+            format!("-{v} Opp Att. Per Life Left, Min {}", input.value_min)
+        }
+        _ => return None,
+    };
+    if definition.description() != expected {
+        return None;
+    }
+    Some((
+        SupportedEffectV1::ModifyCombatStat {
+            side,
+            stat,
+            operation,
+            value: v,
+            minimum: (operation == StatOperationV1::Decrease).then_some(input.value_min),
+            maximum: (operation == StatOperationV1::Increase && input.value_max != 0)
+                .then_some(input.value_max),
+            multiplier: MagnitudeMultiplierV1::OwnerLife,
+        },
+        CombatStatPredicateV1::Always,
+    ))
+}
+
+fn neutral_except_life_linked(input: &StructuredEffectV1) -> bool {
+    input.position_requirement == PositionRequirementV1::Both
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && input.bet_pillz_link == BetPillzLinkV1::No
+        && input.value_condition == 0
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
 }
 
 fn numeric_effect(
@@ -2400,7 +2501,8 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | MagnitudeMultiplierV1::Support
         | MagnitudeMultiplierV1::AntiSupport
         | MagnitudeMultiplierV1::OpponentStars
-        | MagnitudeMultiplierV1::OpponentDamage => return false,
+        | MagnitudeMultiplierV1::OpponentDamage
+        | MagnitudeMultiplierV1::OwnerLife => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -2528,6 +2630,7 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 MagnitudeMultiplierV1::OpponentStars => CombatStatMagnitudeV1::OpponentStars,
                 MagnitudeMultiplierV1::AntiSupport => CombatStatMagnitudeV1::AntiSupport,
                 MagnitudeMultiplierV1::OpponentDamage => CombatStatMagnitudeV1::OpponentDamage,
+                MagnitudeMultiplierV1::OwnerLife => CombatStatMagnitudeV1::OwnerLife,
             },
         }),
         SupportedEffectV1::StopOpponentAbility => Some(CombatStatEffectV1::StopOpponentAbility),
@@ -2683,6 +2786,74 @@ mod tests {
                 "malformed {field}",
             );
         }
+    }
+
+    #[test]
+    fn per_life_left_is_admitted_by_exact_text_over_the_life_linked_shape() {
+        let registry = registry();
+        for id in [
+            923, 1717, 1788, 2710, 3276, 4302, 4517, 4518, 4519, 4829, 5357, 5555, 5848,
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            let classified =
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability);
+            assert!(
+                matches!(
+                    classified,
+                    Some((
+                        SupportedEffectV1::ModifyCombatStat {
+                            multiplier: MagnitudeMultiplierV1::OwnerLife,
+                            ..
+                        },
+                        CombatStatPredicateV1::Always,
+                    ))
+                ),
+                "definition {id}: {classified:?}",
+            );
+        }
+        // Huracan prints `923` as its clan bonus, so the Bonus slot is admitted too.
+        assert!(classify_combat_stat_effect(
+            registry.get(923).unwrap(),
+            CombatStatEffectSourceV1::Bonus
+        )
+        .is_some());
+
+        // Text and structure must corroborate, and the Max may ride only on this magnitude:
+        // the life link dropped, a Min on an increase, a missing Max, or a condition field
+        // all refuse, and the ordinary capped `Power +6, Max. 8` stays refused.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("isLifeLinked", serde_json::json!(false)),
+            ("value", serde_json::json!(2)),
+            ("valueMax", serde_json::json!(12)),
+            ("valueMax", serde_json::json!(0)),
+            ("valueMin", serde_json::json!(1)),
+            ("positionRequirement", serde_json::json!("attacker")),
+            ("isPillzLinked", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1788"]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_combat_stat_effect(
+                    malformed.get(1788).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "malformed {field} = {value}",
+            );
+        }
+        assert_eq!(
+            classify_combat_stat_effect(
+                registry.get(2969).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None,
+            "an ordinary capped increase is not a Per Life Left grammar",
+        );
     }
 
     #[test]

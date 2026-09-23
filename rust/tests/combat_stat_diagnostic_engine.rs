@@ -5529,3 +5529,145 @@ fn night_and_day_sources_fire_only_in_their_own_kind_of_match() {
         assert_eq!(report.cards[PlayerId::P2].power, 6);
     }
 }
+
+fn life_left_spec(
+    effect: CombatStatEffectV1,
+    power: u16,
+    p1_life: u16,
+    p2_life: u16,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(power, 2);
+    base.players[PlayerId::P1].initial_life = p1_life;
+    base.players[PlayerId::P2].initial_life = p2_life;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(1788, CombatStatPredicateV1::Always, effect);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+fn life_left_power(maximum: u16) -> CombatStatEffectV1 {
+    modifier(
+        CombatStatAffectedSideV1::Player,
+        CombatStatAttributeV1::Power,
+        CombatStatOperationV1::Increase,
+        1,
+        None,
+        Some(maximum),
+        CombatStatMagnitudeV1::OwnerLife,
+    )
+}
+
+/// `Per Life Left` reads the owner's Life at the start of the round - never the opponent's,
+/// never the base Life - and a Max clamps the final stat, once, before opposing reductions.
+/// The corpus pins the owner (1079650/3, where the two Lives differ), the round-start read
+/// (losing rounds such as 1079173/2) and the clamp (Sir Taco, Noeptus, KinGreow); a stat
+/// already above its Max, and the Copy that reads the copier's own Life, are pinned here.
+#[test]
+fn per_life_left_reads_the_owners_round_start_life_and_clamps_the_stat() {
+    for (power, p1_life, p2_life, maximum, expected) in [
+        // Below the Max: 1 + 5, whatever the opponent's Life.
+        (1, 5, 3, 13, 6),
+        (1, 5, 17, 13, 6),
+        // The Max binds on the final stat, not on the bonus: 1 + 12 stops at 8.
+        (1, 12, 12, 8, 8),
+        // A printed stat already above its Max is left alone rather than lowered.
+        (9, 12, 12, 8, 9),
+    ] {
+        let spec = life_left_spec(life_left_power(maximum), power, p1_life, p2_life);
+        let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].power,
+            expected,
+            "power {power}, life {p1_life} against {p2_life}, Max {maximum}",
+        );
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+    }
+
+    // The next round reads the Life the previous round left: P1 loses 2 in round one.
+    let spec = life_left_spec(life_left_power(13), 1, 10, 10);
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (1, 0, false), (1, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 8);
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 1 + 8);
+
+    // An opposing reduction lands after the clamp: 1 + 12 -> 8, then -1 -> 7.
+    let mut spec = life_left_spec(life_left_power(8), 1, 12, 12);
+    spec.cards[PlayerId::P2][0].ability = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Power, 1, 1),
+    );
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 7);
+
+    // The Attack form adds the Life itself, and the opposing Attack reduction takes the
+    // owner's Life from the opposing attack, never below its Min.
+    let attack = modifier(
+        CombatStatAffectedSideV1::Player,
+        CombatStatAttributeV1::Attack,
+        CombatStatOperationV1::Increase,
+        1,
+        None,
+        None,
+        CombatStatMagnitudeV1::OwnerLife,
+    );
+    let mut diag = CombatStatDiagnosticV1::new(life_left_spec(attack, 6, 9, 7)).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 1, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 6 * 2 + 9);
+    let opposing = modifier(
+        CombatStatAffectedSideV1::Opponent,
+        CombatStatAttributeV1::Attack,
+        CombatStatOperationV1::Decrease,
+        1,
+        Some(2),
+        None,
+        CombatStatMagnitudeV1::OwnerLife,
+    );
+    let mut diag = CombatStatDiagnosticV1::new(life_left_spec(opposing, 6, 9, 7)).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 1, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].attack, 6 * 2 - 9);
+    let mut diag = CombatStatDiagnosticV1::new(life_left_spec(opposing, 6, 11, 7)).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 1, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].attack, 2);
+}
+
+/// A Copy adopting a `Per Life Left` ability makes the copier its owner, so the copier's
+/// Life is the one read, as the reference does. No corpus round shows it.
+#[test]
+fn a_copied_per_life_left_reads_the_copiers_life() {
+    let mut spec = copy_spec(
+        CopiedSourceKindV1::Ability,
+        execute(1788, CombatStatPredicateV1::Always, life_left_power(13)),
+    );
+    spec.base_rules.players[PlayerId::P1].initial_life = 4;
+    spec.base_rules.players[PlayerId::P2].initial_life = 10;
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    // Both print 7 Power: the copier gains its own 4, the original owner its own 10, and
+    // the Max of 13 binds only on the latter.
+    assert_eq!(report.cards[PlayerId::P1].power, 11);
+    assert_eq!(report.cards[PlayerId::P2].power, 13);
+}

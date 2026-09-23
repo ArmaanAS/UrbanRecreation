@@ -241,6 +241,8 @@ pub enum MagnitudeMultiplierV1 {
     /// compiler: `is_anti_support` stays an unsupported link there, and the grammar is
     /// admitted compiler-side instead.
     AntiSupport,
+    /// `Per Life Left`. Scaled by the owner's own Life at the start of the round.
+    OwnerLife,
 }
 
 /// Compact, string-free building blocks safe to copy into later round plans.
@@ -1325,7 +1327,7 @@ fn reviewed_stat_description(
         MagnitudeMultiplierV1::Degrowth => "Degrowth: ",
         MagnitudeMultiplierV1::OpponentStars => "Equalizer: ",
         MagnitudeMultiplierV1::AntiSupport => "Brawl: ",
-        MagnitudeMultiplierV1::OpponentDamage => return false,
+        MagnitudeMultiplierV1::OpponentDamage | MagnitudeMultiplierV1::OwnerLife => return false,
     };
     let expected = match (side, operation) {
         (AffectedSideV1::Player, StatOperationV1::Increase) => {

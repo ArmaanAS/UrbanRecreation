@@ -1788,6 +1788,41 @@ Revenge adds 2 and the night bonus takes 1, for the server's 6 - the round the T
 engine gets wrong. The gate grows from 371 to 384 rounds with 877575, 1009264 and 1059149 in
 full and 868094 extended to four rounds.
 
+Semantic revision 45 admits the `Per Life Left` magnitudes: `+N Power Per Life Left Max. M`
+(`1788`, `3276`, `4829`, `5357`, `5555`), `+N Damage Per Life Left Max. M` (`2710`), `+N
+Attack Per Life Left` (`923`, the Huracan clan bonus, and `4302`, `4517`-`4519`) and `-N Opp
+Att. Per Life Left, Min M` (`1717`, `5848`). The effect is multiplied by its owner's Life at
+the start of the round. It measured 8 and unlocked exactly 8 - `877093`, `877533`, `947592`,
+`1009234`, `1065427`, `1079173`, `1079650` and `1130454` - taking eligibility from 104 to
+112, the largest single slice since Brawl.
+
+The price was one magnitude and one narrowed rule. The owner's Life is in the position
+`make` already holds, so it is read there and carried on `ResolutionSourcePlan` beside the
+Brawl count; `effect_amount` gains one `OwnerLife` arm. The registry keeps refusing the
+life link, and the grammar is admitted compiler-side by exact text, the Equalizer and Brawl
+route. The one rule that had to move is `CappedIncrease`: these are the first capped
+combat-stat increases the projection admits, and the exemption is tied to the `OwnerLife`
+magnitude on Power and Damage only, so an ordinary `Power +6, Max. 8` stays refused. The
+clamp is the existing `apply_u16_modifier` rule - a stat already at or above Max is left
+alone, otherwise the final stat is clamped once - which is also the TypeScript
+`BasicModifier.mod` rule.
+
+The server pins every part of it. Whose Life: Jagan's opposing reduction in 1079650/3 reads
+its owner's 9, not the opponent's 7 or the base 14 (Sue 12 + 12 - 9 = 15). When: losing
+rounds such as 1079173/2 read the round-start Life, not what the round left. The Max clamps
+the final stat, not the bonus: Sir Taco's `Max. 8` takes 1 + 12 to 8 in 1130454/0 and
+874962/2, where Callie's -1 then lands after the clamp. Ametia's `Max. 13` binds at 12 Life
+in 1065427/0 and falls short at 11 in 877533/1. The Huracan bonus pays in about twenty
+rounds at Lives from 3 to 15. The gate replays 1065427, 877533, 1145812, 1079173, 1079650,
+874962, 946400 and 877093 in full and 1130454, 1025349 and 876752 to their reachable ends,
+growing from 384 to 419 rounds.
+Bunny's `5555` is never played and the Damage form pays once, outside the gate (901092/0);
+both only compose the pinned pieces. A stat already above its Max and a copied `Per Life
+Left`, which reads the copier's own Life, are pinned by engine tests.
+
+The older clan-bonus projection learned the magnitude only to refuse it, so a caller there
+cannot hand it a `Per Life Left` plan that would silently pay nothing.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

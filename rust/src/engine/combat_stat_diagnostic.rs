@@ -68,6 +68,8 @@ pub enum CombatStatMagnitudeV1 {
     /// the opposing selected card's effective clan - the mirror of Support, which counts
     /// the owner's own hand.
     AntiSupport,
+    /// `Per Life Left`. Scaled by the owner's own Life at the start of the round.
+    OwnerLife,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -803,6 +805,8 @@ impl CombatStatDiagnosticV1 {
         }
         let rounds_played = self.base_rules.position().rounds_played;
         let previous_round_winner = self.base_rules.position().previous_round_winner;
+        let players = self.base_rules.position().players;
+        let life = ByPlayer::new(players[PlayerId::P1].life, players[PlayerId::P2].life);
         let prepared = prepare_combat_stat_diagnostic(
             validated,
             &self.spec.cards,
@@ -810,6 +814,7 @@ impl CombatStatDiagnosticV1 {
             rounds_played,
             previous_round_winner,
             self.spec.base_rules.night,
+            life,
         )?;
         let (report, base_rules) =
             self.base_rules
@@ -1938,6 +1943,7 @@ fn validate_combat_stat_source_plan(
             | CombatStatMagnitudeV1::Degrowth
             | CombatStatMagnitudeV1::OpponentStars
             | CombatStatMagnitudeV1::AntiSupport
+            | CombatStatMagnitudeV1::OwnerLife
     ) && predicate != CombatStatPredicateV1::Always
     {
         return Err(invalid_combat_stat_execute(
@@ -1968,7 +1974,14 @@ fn validate_combat_stat_source_plan(
             InvalidCombatStatPlanReasonV1::ConditionalBonus,
         ));
     }
-    if operation == CombatStatOperationV1::Increase && maximum.is_some() {
+    if operation == CombatStatOperationV1::Increase
+        && maximum.is_some()
+        && !(multiplier == CombatStatMagnitudeV1::OwnerLife
+            && matches!(
+                stat,
+                CombatStatAttributeV1::Power | CombatStatAttributeV1::Damage
+            ))
+    {
         return Err(invalid_combat_stat_execute(
             player,
             hand_slot,
@@ -2134,6 +2147,7 @@ fn prepare_combat_stat_diagnostic(
     rounds_played: u8,
     previous_round_winner: Option<PlayerId>,
     night: bool,
+    life: ByPlayer<u16>,
 ) -> Result<PreparedCombatResolution, CombatStatDiagnosticErrorV1> {
     let selected = ByPlayer::new(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
@@ -2160,6 +2174,7 @@ fn prepare_combat_stat_diagnostic(
             previous_round_winner,
             anti_support[PlayerId::P1],
             night,
+            life[PlayerId::P1],
         ),
         resolution_card_plan(
             selected[PlayerId::P2],
@@ -2171,6 +2186,7 @@ fn prepare_combat_stat_diagnostic(
             previous_round_winner,
             anti_support[PlayerId::P2],
             night,
+            life[PlayerId::P2],
         ),
     );
     prepare_combat_resolution_with_post_round(validated, plans, rounds_played)
@@ -2232,6 +2248,7 @@ fn resolution_card_plan(
     // is not `AntiSupport`, which simply ignores it.
     anti_support_count: u16,
     night: bool,
+    owner_life: u16,
 ) -> ResolutionCardPlan {
     // Resolve each source once. Copy substitution and the predicate are the same work for
     // the combat effect and the post-round effect, and a source only ever supplies one of
@@ -2260,6 +2277,7 @@ fn resolution_card_plan(
             post_round: effect.and_then(shared_post_round_effect),
             support_count,
             anti_support_count,
+            owner_life,
         }
     };
     ResolutionCardPlan {
@@ -2306,6 +2324,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 CombatStatMagnitudeV1::OpponentStars => DiagnosticMagnitudeV1::OpponentStars,
                 CombatStatMagnitudeV1::AntiSupport => DiagnosticMagnitudeV1::AntiSupport,
                 CombatStatMagnitudeV1::OpponentDamage => DiagnosticMagnitudeV1::OpponentDamage,
+                CombatStatMagnitudeV1::OwnerLife => DiagnosticMagnitudeV1::OwnerLife,
             },
         },
         CombatStatEffectV1::StopOpponentAbility => DiagnosticCombatEffectV1::StopOpponentAbility,

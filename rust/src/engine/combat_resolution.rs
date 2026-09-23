@@ -37,6 +37,8 @@ pub(super) struct ResolutionSourcePlan {
     /// this one is handed only the two selected cards. It is a property of the opposing
     /// slot, not of the owner's, which is why it cannot be a per-owner-slot value.
     pub anti_support_count: u16,
+    /// The owner's Life at the start of the round, for `Per Life Left` magnitudes.
+    pub owner_life: u16,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -904,6 +906,7 @@ fn apply_power_damage_effect(
         multiplier,
         source.support_count,
         source.anti_support_count,
+        source.owner_life,
         rounds_played,
         opponent_stars,
         0,
@@ -987,6 +990,7 @@ fn apply_attack_effect(
         multiplier,
         source.support_count,
         source.anti_support_count,
+        source.owner_life,
         rounds_played,
         opponent_stars,
         opponent_damage,
@@ -1008,6 +1012,7 @@ fn effect_amount(
     multiplier: DiagnosticMagnitudeV1,
     support_count: u16,
     anti_support_count: u16,
+    owner_life: u16,
     rounds_played: u8,
     opponent_stars: u16,
     // The opposing card's Damage as the Attack phase sees it: resolved, but before Fury.
@@ -1027,6 +1032,7 @@ fn effect_amount(
         )?),
         DiagnosticMagnitudeV1::OpponentStars => u32::from(opponent_stars),
         DiagnosticMagnitudeV1::OpponentDamage => u32::from(opponent_damage),
+        DiagnosticMagnitudeV1::OwnerLife => u32::from(owner_life),
     };
     u32::from(value)
         .checked_mul(multiplier)
