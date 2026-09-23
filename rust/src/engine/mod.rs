@@ -482,7 +482,8 @@ impl PostRoundEffect {
             | Self::GainPillzOnVictoryMax { .. }
             | Self::ReduceOpponentPillzOnVictory { .. }
             | Self::ReduceOpponentPillzOnDefeat { .. }
-            | Self::GainPillzEqualToFinalDamageOnVictory => PostRoundResourceV1::Pillz,
+            | Self::GainPillzEqualToFinalDamageOnVictory
+            | Self::GainPillzOnDefeat(_) => PostRoundResourceV1::Pillz,
             Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictory { .. }
@@ -494,9 +495,9 @@ impl PostRoundEffect {
             | Self::ReduceOpponentLifeOnVictory { .. }
             | Self::ReduceOpponentLifeOnDefeat { .. }
             | Self::ReduceOpponentLifeOnKillshot { .. } => PostRoundResourceV1::Life,
-            Self::GainOnePillzAndLifeOnVictory | Self::GainPillzAndLifeOnKillshot { .. } => {
-                PostRoundResourceV1::PillzAndLife
-            }
+            Self::GainOnePillzAndLifeOnVictory
+            | Self::GainPillzAndLifeOnKillshot { .. }
+            | Self::GainPillzAndLifeOnDefeat(_) => PostRoundResourceV1::PillzAndLife,
             Self::ReduceBothPlayersLife { .. } => PostRoundResourceV1::BothPlayersLife,
             Self::LatchOnVictory(_) | Self::LatchOnDefeat(_) => PostRoundResourceV1::Permanent,
         }
@@ -604,6 +605,10 @@ pub(super) enum PostRoundEffect {
     GainPillzAndLifeOnKillshot {
         amount: u16,
     },
+    /// `Defeat: +N Pillz`: a living loser's own Pillz rise by N.
+    GainPillzOnDefeat(u16),
+    /// `Defeat: +N Pillz And Life`: a living loser gains N Pillz and then N Life.
+    GainPillzAndLifeOnDefeat(u16),
 }
 
 #[derive(Clone, Copy)]
@@ -1024,6 +1029,31 @@ impl BaseRulesGame {
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
                     PostRoundEffect::GainLifeOnDefeat(_) => {}
+                    // The Defeat own gains follow Defeat Life: a loser this round has not
+                    // knocked out. Kubra's knockouts in 876712/1 and 877023/1 pay neither half
+                    // of the compound, and it pays Pillz then Life, as Komboka does.
+                    PostRoundEffect::GainPillzOnDefeat(pillz)
+                        if owner == loser && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(pillz)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainPillzOnDefeat(_) => {}
+                    PostRoundEffect::GainPillzAndLifeOnDefeat(amount)
+                        if owner == loser && position.players[owner].life > 0 =>
+                    {
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(amount)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?;
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .checked_add(amount)
+                            .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::GainPillzAndLifeOnDefeat(_) => {}
                     // Reanimate is the explicit Life exception: damage has already been
                     // saturated at zero, and revival happens before status is calculated.
                     PostRoundEffect::ReanimateLife(life) if owner == loser => {

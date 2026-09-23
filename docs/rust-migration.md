@@ -2017,6 +2017,28 @@ replaying 1065557, 1078736, 1060510 and 1092578 in full and 1088580 to three rou
 `Courage: +5 Life` (`5592`) joins its disabled set, selected in one of those rounds and
 losing it.
 
+Semantic revision 52 admits `Defeat: +N Pillz` (`2221`, `2222`, `3313`) and `Defeat: +N
+Pillz And Life` (`1716`): a loser the round has not knocked out gains the Pillz, or the
+Pillz and then the Life. It measured 3 and unlocked exactly 3 - `876516`, `876712` and
+`926525` - taking eligibility from 141 to 144.
+
+These are the Defeat Life grammar on the other resource and the Komboka compound on the
+Defeat channel: two engine arms guarded `owner == loser` and a living owner, two
+classifiers, and a replay clause for a malformed `Defeat: +N Pillz`, which had fallen
+through to an inert disabled source. The compound's shape reads Kubra's `valueMin` of 1
+exactly, as Defeat Life's does, so neither the Komboka Victory compound nor a zero-Min
+record can pass for it; `valueMin` 0 on the plain Pillz form keeps Argos' capped gain and
+the Recover records out.
+
+The server pins both. Kubra's compound pays a surviving loss in 877239/1 (Pillz 12 - 3 + 1 =
+10, beside Fridlia's immediate Toxin on the Life side) and 877167/0, pays neither half when
+he is knocked out in 876712/1 and 877023/1, and on his wins only the Komboka bonus pays
+(876516/3, 876796/1). Walker's `Defeat: +2 Pillz` takes 6 - 3 - 3 to 2 in 1024732/1 and
+Hemdall's 4 - 0 + 2 to 6 in 1145886/2; `2222`'s one selection is a win that pays nothing. A
+knocked-out owner of the plain Pillz form rests on Kubra's two rounds and an engine test.
+The gate grows from 512 to 527 rounds; `2222` moves from its disabled set to the executed
+one, and a Versus-gated `-2 Opp. Life` (`5505`) joins the disabled set, selected on a loss.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

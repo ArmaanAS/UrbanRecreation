@@ -241,7 +241,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1011183, 4),
     (1023274, 3),
     (1024592, 2),
-    (1024732, 1),
+    // Three rounds since revision 52: Walker's `Defeat: +2 Pillz` takes 6 - 3 - 3 to 2 in
+    // round 1.
+    (1024732, 3),
     (1058151, 1),
     (1089933, 2),
     // Revision 32 `+N Life Per Damage`. Nyema's `492` pays her final 3 Damage beside the
@@ -264,7 +266,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Ability silences Glenn's `512` in 876712/0 and only his 6 Damage lands.
     (962243, 3),
     (1131010, 4),
-    (876712, 1),
+    // Two rounds since revision 52: Kubra is knocked out in round 1 and neither half of
+    // `Defeat: +1 Pillz And Life` pays.
+    (876712, 2),
     // Revision 34 puts a cap on the Life conversion and a predicate on fixed Victory Life.
     // C Dusk's `1146` never carries its owner past 8: a Fury-inclusive 6 Damage takes 5 to
     // exactly 8 in 1130609/3, and a plain 4 takes 7 to 8 in 1131010/2, which is why that
@@ -443,6 +447,14 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1065557, 4),
     (1088580, 3),
     (1078736, 4),
+    // Revision 52 admits `Defeat: +N Pillz` and `Defeat: +N Pillz And Life`. Kubra's
+    // compound pays a surviving loss in 877239/1 (Pillz 12 - 3 + 1 = 10, beside Fridlia's
+    // immediate Toxin on the Life side) and nothing when he is knocked out in 877023/1; its
+    // winning rounds pay only his Komboka bonus (876516/3, 876796/1).
+    (877239, 4),
+    (877023, 2),
+    (876516, 4),
+    (876796, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -3276,8 +3288,9 @@ fn defeat_life_and_reanimate_are_post_round_abilities_and_near_misses_reject() {
         }
     ));
 
-    // Deferred variants remain hazards rather than becoming disabled no-ops: a Life cap,
-    // compound Life/Pillz gain, or nested Reanimate context is not admitted by this slice.
+    // Deferred variants remain hazards rather than becoming disabled no-ops: a Life cap, a
+    // capped compound Life/Pillz gain, or nested Reanimate context is not admitted. The plain
+    // compound is `Defeat: +N Pillz And Life`'s own grammar since revision 52.
     for (id, description, mut entry) in [
         (1217, "Defeat: +2 Life Max. 12", defeat_life_entry(1217, 2)),
         (
@@ -3295,7 +3308,10 @@ fn defeat_life_and_reanimate_are_post_round_abilities_and_near_misses_reject() {
         entry["longDescription"] = serde_json::json!(description);
         match id {
             1217 => entry["abilityData"]["valueMax"] = serde_json::json!(12),
-            1716 => entry["abilityData"]["attributeAffected"] = serde_json::json!("life&pillz"),
+            1716 => {
+                entry["abilityData"]["attributeAffected"] = serde_json::json!("life&pillz");
+                entry["abilityData"]["valueMax"] = serde_json::json!(12);
+            }
             900_115 => entry["abilityData"]["isSupport"] = serde_json::json!(true),
             _ => unreachable!(),
         }

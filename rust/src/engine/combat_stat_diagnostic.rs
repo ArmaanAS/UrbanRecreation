@@ -185,6 +185,14 @@ pub enum CombatStatPostRoundEffectV1 {
     GainPillzAndLifeOnKillshot {
         amount: u16,
     },
+    /// `Defeat: +N Pillz`: a living loser gains N Pillz.
+    GainPillzOnDefeat {
+        pillz: u16,
+    },
+    /// `Defeat: +N Pillz And Life`: a living loser gains N Pillz and N Life.
+    GainPillzAndLifeOnDefeat {
+        amount: u16,
+    },
     /// The two reviewed unconditional Victory opponent-Life reductions.
     ReduceOpponentLifeOnVictory {
         life: u16,
@@ -377,6 +385,13 @@ pub enum CombatStatEffectV1 {
     },
     /// The Killshot compound own gain, Ability slot only.
     GainPillzAndLifeOnKillshot {
+        amount: u16,
+    },
+    /// The Defeat own Pillz gain and its compound, Ability slot only.
+    GainPillzOnDefeat {
+        pillz: u16,
+    },
+    GainPillzAndLifeOnDefeat {
         amount: u16,
     },
     /// Unconditional Victory-only opponent-Life reduction with a fixed magnitude and
@@ -591,6 +606,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// projection does not model.
     StopTriggeredAgainstStopAbility,
     KillshotPillzAndLifeSource,
+    DefeatPillzSource,
+    DefeatPillzMagnitude,
+    DefeatPillzPredicate,
     KillshotPillzAndLifeMagnitude,
     KillshotPillzAndLifePredicate,
     ResourceCancellationSource,
@@ -1861,6 +1879,27 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
+    // The Defeat own Pillz gain and its compound are card abilities only, positive and
+    // unconditional.
+    if let CombatStatEffectV1::GainPillzOnDefeat { pillz: amount }
+    | CombatStatEffectV1::GainPillzAndLifeOnDefeat { amount } = effect
+    {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::DefeatPillzSource)
+        } else if amount == 0 {
+            Some(InvalidCombatStatPlanReasonV1::DefeatPillzMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::DefeatPillzPredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
+    }
     // The Killshot compound and the resource cancellers are card abilities only; the
     // compound needs a positive amount and no predicate of its own.
     if let CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount } = effect {
@@ -2672,6 +2711,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
         | CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { .. }
         | CombatStatEffectV1::GainPillzAndLifeOnKillshot { .. }
+        | CombatStatEffectV1::GainPillzOnDefeat { .. }
+        | CombatStatEffectV1::GainPillzAndLifeOnDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentLifeOnKillshot { .. }
         | CombatStatEffectV1::ReduceBothPlayersLife { .. }
@@ -2823,6 +2864,12 @@ pub(crate) fn shared_post_round_effect(
         }
         CombatStatEffectV1::GainPillzAndLifeOnKillshot { amount } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzAndLifeOnKillshot { amount }),
+        ),
+        CombatStatEffectV1::GainPillzOnDefeat { pillz } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::GainPillzOnDefeat(pillz),
+        )),
+        CombatStatEffectV1::GainPillzAndLifeOnDefeat { amount } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzAndLifeOnDefeat(amount)),
         ),
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentAbility

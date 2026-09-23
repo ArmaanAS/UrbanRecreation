@@ -84,7 +84,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 51;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 52;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -655,6 +655,62 @@ pub(crate) fn classify_defeat_life(
 pub(crate) fn has_defeat_life_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
     input.value > 0 && defeat_life_shape_matches(input, 1)
+}
+
+/// Recognize `Defeat: +N Pillz`: a loser the round has not knocked out gains N Pillz. The
+/// Defeat Life grammar on the other resource, by exact text and complete shape, card
+/// abilities only. `valueMin` must be zero, which keeps Argos' capped form and the Recover
+/// records out.
+pub(crate) fn classify_defeat_pillz(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let pillz = definition.structured_input().value;
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_defeat_pillz_shape(definition)
+        && definition.description() == format!("Defeat: +{pillz} Pillz"))
+    .then_some(pillz)
+}
+
+pub(crate) fn has_defeat_pillz_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                current_round: CurrentRoundRequirementV1::Lose,
+                attribute: AttributeAffectedV1::Pillz,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
+/// Recognize `Defeat: +N Pillz And Life`, the compound on the same channel: a living loser
+/// gains N Pillz and N Life. Kubra's record carries `valueMin` 1, like Defeat Life's, and
+/// the shape reads it exactly so the Komboka Victory compound can never be confused with it.
+pub(crate) fn classify_defeat_pillz_and_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let amount = definition.structured_input().value;
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_defeat_pillz_and_life_shape(definition)
+        && definition.description() == format!("Defeat: +{amount} Pillz And Life"))
+    .then_some(amount)
+}
+
+pub(crate) fn has_defeat_pillz_and_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_min: ShapeFieldV1::Exact(1),
+                current_round: CurrentRoundRequirementV1::Lose,
+                attribute: AttributeAffectedV1::LifeAndPillz,
+                ..POST_ROUND_SHAPE
+            },
+        )
 }
 
 /// Recognize the immediate Reanimate grammar. Reanimate is a card ability which revives
@@ -1601,6 +1657,8 @@ pub(crate) fn classify_combat_stat_effect(
     }
     if classify_defeat_life(definition, source_kind).is_some()
         || classify_reanimate_life(definition, source_kind).is_some()
+        || classify_defeat_pillz(definition, source_kind).is_some()
+        || classify_defeat_pillz_and_life(definition, source_kind).is_some()
     {
         return None;
     }
@@ -3410,6 +3468,60 @@ mod tests {
                 ),
                 None,
                 "malformed {field}",
+            );
+        }
+    }
+
+    #[test]
+    fn defeat_pillz_gains_are_admitted_by_exact_text_and_shape() {
+        let registry = registry();
+        for (id, pillz) in [(2221, 2), (2222, 3), (3313, 2)] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_defeat_pillz(definition, CombatStatEffectSourceV1::Ability),
+                Some(pillz),
+                "definition {id}"
+            );
+            assert_eq!(
+                classify_defeat_pillz(definition, CombatStatEffectSourceV1::Bonus),
+                None
+            );
+        }
+        let kubra = registry.get(1716).unwrap();
+        assert_eq!(
+            classify_defeat_pillz_and_life(kubra, CombatStatEffectSourceV1::Ability),
+            Some(1)
+        );
+        // Argos' capped form and the Recover records are other grammars.
+        for id in [1158, 729, 1418, 770] {
+            let definition = registry.get(id).unwrap();
+            assert_eq!(
+                classify_defeat_pillz(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id}"
+            );
+        }
+        // The Kubra shape reads its `valueMin` of 1 exactly, so a Victory compound or a
+        // zero-Min record cannot pass for it.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("valueMin", serde_json::json!(0)),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("valueMax", serde_json::json!(12)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1716"]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_defeat_pillz_and_life(
+                    malformed.get(1716).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "malformed {field} = {value}",
             );
         }
     }

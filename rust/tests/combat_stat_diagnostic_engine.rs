@@ -6348,3 +6348,72 @@ fn life_per_opposing_damage_pays_the_winner_the_losing_cards_final_damage() {
         .unwrap();
     assert_eq!(report.players[PlayerId::P1].life, 20 - 3);
 }
+
+/// `Defeat: +N Pillz` and `Defeat: +N Pillz And Life` pay a loser the round has not knocked
+/// out, Pillz first. Kubra's two knockouts pin that neither half pays at zero (876712/1,
+/// 877023/1); a knocked-out owner of the plain Pillz form and the Bonus refusal are pinned
+/// here.
+#[test]
+fn defeat_pillz_gains_pay_only_a_living_loser() {
+    for (effect, pillz_gain, life_gain) in [
+        (CombatStatEffectV1::GainPillzOnDefeat { pillz: 2 }, 2, 0),
+        (
+            CombatStatEffectV1::GainPillzAndLifeOnDefeat { amount: 1 },
+            1,
+            1,
+        ),
+    ] {
+        let spec = |initial_life| {
+            let mut base = base_spec(6, 3);
+            base.players[PlayerId::P1].initial_life = initial_life;
+            let mut cards = plans(&base);
+            cards[PlayerId::P1][0].ability = execute(2222, CombatStatPredicateV1::Always, effect);
+            game(base, cards)
+        };
+        // A surviving loss pays.
+        let mut diag = spec(20);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 2, false), (0, 5, false)))
+            .unwrap();
+        assert!(!report.cards[PlayerId::P1].won);
+        assert_eq!(
+            report.players[PlayerId::P1].pillz,
+            20 - 2 + pillz_gain,
+            "{effect:?}"
+        );
+        assert_eq!(
+            report.players[PlayerId::P1].life,
+            20 - 3 + life_gain,
+            "{effect:?}"
+        );
+        // A win pays nothing.
+        let mut diag = spec(20);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(report.players[PlayerId::P1].pillz, 15, "{effect:?}");
+        // A knockout pays nothing at all.
+        let mut diag = spec(3);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 2, false), (0, 5, false)))
+            .unwrap();
+        assert_eq!(report.players[PlayerId::P1].life, 0, "{effect:?}");
+        assert_eq!(report.players[PlayerId::P1].pillz, 18, "{effect:?}");
+
+        let mut base = base_spec(6, 3);
+        base.players[PlayerId::P1].initial_life = 20;
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].bonus = execute(2222, CombatStatPredicateV1::Always, effect);
+        cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::DefeatPillzSource,
+                ..
+            })
+        ));
+    }
+}

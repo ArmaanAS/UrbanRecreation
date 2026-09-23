@@ -350,6 +350,9 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ("Per Pillz Left", &[955, 1015, 1425, 4119]),
     ("Per Pillz Lost", &[5175, 5305]),
     ("Life per opposing Damage", &[3779]),
+    // The Defeat own Pillz gain and its compound, measured 2026-09-23.
+    ("Defeat: +N Pillz", &[2221, 2222, 3313]),
+    ("Defeat: +N Pillz And Life", &[1716]),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (
