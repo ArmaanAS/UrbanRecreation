@@ -854,6 +854,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// their order at a binding floor is unpinned (1093173/1 shows the server's is not the
     /// engine's for fresh effects).
     PillzPermanentAgainstOpposingResourceEffect,
+    /// A single-stat Protection facing an opposing effect whose meeting with it no captured
+    /// round has shown, or an opposing Copy.
+    SingleStatProtectionAgainstUnpinnedEffect,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
     BothPlayersGainSource,
@@ -1354,6 +1357,23 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect)
         }
+        // The single-stat Protections have seven selected rounds between them, and each shows
+        // one only leaving a reduction of another stat alone: an Attack cut on `Protection:
+        // Power` (948108/0, 964088/0, 925204/2) and on `Protection : Damage` (947121/1), and a
+        // Power And Damage cut on `Protection: Attack` (1131208/1). None shows one meeting a
+        // change to the stat it names, or `Protection: Power` and `Protection : Damage`
+        // meeting a change to either of the pair, so a match where the opposing hand could
+        // bring one is refused - as is an opposing Copy, which could take the owner's own
+        // sources, or the Protection itself, to the other side.
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ProtectOwnCombatStat { stat },
+            ..
+        } if stat != CombatStatAttributeV1::PowerAndDamage
+            && (hand_has_copy(opponent)
+                || source_plans(opponent).any(|plan| meets_unpinned_protection(plan, stat))) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::SingleStatProtectionAgainstUnpinnedEffect)
+        }
         // A `Cards` modifier has been seen on both cards in nine rounds, but never facing an
         // opposing cancel of its stat or an opposing Copy.
         CombatStatSourcePlanV1::Execute {
@@ -1527,6 +1547,33 @@ fn zeroes_both_attacks(plan: CombatStatSourcePlanV1) -> bool {
             ..
         }
     )
+}
+
+/// Whether `plan`, from the opposing hand, changes or reads a stat of the owner's card that no
+/// captured round has shown meeting a single-stat `protected` Protection: Attack for
+/// `Protection: Attack`, and Power or Damage for the other two. `Tune Out` changes both.
+fn meets_unpinned_protection(
+    plan: CombatStatSourcePlanV1,
+    protected: CombatStatAttributeV1,
+) -> bool {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
+        return false;
+    };
+    let unpinned = |stat| {
+        (stat == CombatStatAttributeV1::Attack) == (protected == CombatStatAttributeV1::Attack)
+    };
+    match effect {
+        CombatStatEffectV1::ModifyCombatStat {
+            side: CombatStatAffectedSideV1::Opponent | CombatStatAffectedSideV1::Both,
+            stat,
+            ..
+        }
+        | CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat }
+        | CombatStatEffectV1::CopyOpponentPrintedCombatStat { stat }
+        | CombatStatEffectV1::ExchangePrintedCombatStat { stat } => unpinned(stat),
+        CombatStatEffectV1::SimplifyAttackToPillz => true,
+        _ => false,
+    }
 }
 
 /// A Power reduction whose floor is 0, from either side's opposing phase.

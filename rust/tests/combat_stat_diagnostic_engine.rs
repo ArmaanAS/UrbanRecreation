@@ -4277,6 +4277,178 @@ fn a_stopped_protection_protects_nothing() {
     assert_eq!(report.cards[PlayerId::P1].power, 5);
 }
 
+/// A single-stat Protection leaves an opposing reduction of another stat alone, which is all
+/// the server has shown of one: Matriochka's `Protection: Attack` lets Sue's `-1 Opp Power
+/// And Damage, Min 3` take her 8/4 to 7/3 in 1131208/1 (7 x 3 = 21), and the Hive
+/// `Equalizer: -3 Opp Attack, Min 5` lands on Wander's `Protection: Power` in 948108/0 (54 -
+/// 12 = 42), on Lumber Jack's in 964088/0 (52 - 15 = 37) and on Jakson's `Protection :
+/// Damage` in 947121/1 (16 - 9 = 7).
+#[test]
+fn a_single_stat_protection_leaves_a_reduction_of_another_stat_alone() {
+    let protection = |id, stat| {
+        execute(
+            id,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ProtectOwnCombatStat { stat },
+        )
+    };
+    let power_and_damage_cut = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::PowerAndDamage, 1, 3),
+    );
+    let attack_cut = execute(
+        92,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Attack, 5, 2),
+    );
+    // P1 bets 5 on a 7/4 card.
+    for (source, cut, power, damage, attack) in [
+        (
+            protection(940, CombatStatAttributeV1::Power),
+            attack_cut,
+            7,
+            4,
+            42 - 5,
+        ),
+        (
+            protection(728, CombatStatAttributeV1::Damage),
+            attack_cut,
+            7,
+            4,
+            42 - 5,
+        ),
+        (
+            protection(1142, CombatStatAttributeV1::Attack),
+            power_and_damage_cut,
+            6,
+            3,
+            36,
+        ),
+    ] {
+        let base = base_spec(7, 4);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = source;
+        cards[PlayerId::P2][0].ability = cut;
+        let mut game = game(base, cards);
+        let (report, _) = game
+            .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+            .unwrap();
+        let card = report.cards[PlayerId::P1];
+        assert_eq!(
+            (card.power, card.damage, card.attack),
+            (power, damage, attack),
+            "{source:?}"
+        );
+    }
+}
+
+/// No round shows a single-stat Protection meeting a change to the stat it names, or
+/// `Protection: Power` and `Protection : Damage` meeting a change to either of the pair, so
+/// a match whose opposing hand could bring one is refused: a reduction, the opposing half of
+/// `Cards`, a Cancel, a printed-stat Copy or Exchange, or `Tune Out`, which changes Power and
+/// Attack together. So is an opposing source Copy, which could take the owner's own sources,
+/// or the Protection itself, to the other side. Changes to the other group are admitted.
+#[test]
+fn a_single_stat_protection_is_refused_where_an_unpinned_change_could_reach_it() {
+    use CombatStatAttributeV1::{Attack, Damage, Power, PowerAndDamage};
+    let plan = |effect| execute(92, CombatStatPredicateV1::Always, effect);
+    let cut = |side, stat| {
+        plan(modifier(
+            side,
+            stat,
+            CombatStatOperationV1::Decrease,
+            3,
+            Some(2),
+            None,
+            CombatStatMagnitudeV1::Fixed,
+        ))
+    };
+    let opposing = CombatStatAffectedSideV1::Opponent;
+    let both = CombatStatAffectedSideV1::Both;
+    let cards_damage_increase = plan(modifier(
+        both,
+        Damage,
+        CombatStatOperationV1::Increase,
+        2,
+        None,
+        None,
+        CombatStatMagnitudeV1::Fixed,
+    ));
+    let cancel = |stat| plan(CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat });
+    let exchange = plan(CombatStatEffectV1::ExchangePrintedCombatStat { stat: Power });
+    let printed_copy = plan(CombatStatEffectV1::CopyOpponentPrintedCombatStat { stat: Damage });
+    let tune_out = plan(CombatStatEffectV1::SimplifyAttackToPillz);
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    for (protected, source, refused) in [
+        (Power, cut(opposing, PowerAndDamage), true),
+        (Power, cut(opposing, Damage), true),
+        (Power, cards_damage_increase, true),
+        (Power, cancel(Damage), true),
+        (Power, exchange, true),
+        (Power, printed_copy, true),
+        (Power, tune_out, true),
+        (Power, copy, true),
+        (Power, cut(opposing, Attack), false),
+        (Power, cut(both, Attack), false),
+        (Damage, cut(opposing, Power), true),
+        (Damage, cut(opposing, Attack), false),
+        (Attack, cut(opposing, Attack), true),
+        (Attack, cut(both, Attack), true),
+        (Attack, cancel(Attack), true),
+        (Attack, tune_out, true),
+        (Attack, copy, true),
+        (Attack, cut(opposing, PowerAndDamage), false),
+        (Attack, exchange, false),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        let id = match protected {
+            Power => 940,
+            Damage => 728,
+            _ => 1142,
+        };
+        cards[PlayerId::P1][0].ability = execute(
+            id,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ProtectOwnCombatStat { stat: protected },
+        );
+        // `Tune Out` is admitted from the Bonus slot only.
+        if source == tune_out {
+            cards[PlayerId::P2][2].bonus = source;
+            cards[PlayerId::P2][2].source_bonus_support_count = 1;
+        } else {
+            cards[PlayerId::P2][2].ability = source;
+        }
+        if source == copy {
+            cards[PlayerId::P2][2].source_ability_support_count = 1;
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason:
+                            InvalidCombatStatPlanReasonV1::SingleStatProtectionAgainstUnpinnedEffect,
+                        ..
+                    })
+                ),
+                "{protected:?} against {source:?}"
+            );
+        } else {
+            assert!(result.is_ok(), "{protected:?} against {source:?}");
+        }
+    }
+}
+
 /// Battle 926525 r0: Lumia Cr stops Andy Ld's Ability, the Skeelz `Protection: Ability`
 /// bonus keeps it alive, and its "-20 Opp Attack, Min 5" still takes Lumia Cr's own 36
 /// Attack to the 16 the server reported.

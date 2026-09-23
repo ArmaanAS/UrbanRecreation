@@ -1334,11 +1334,21 @@ fn unreviewed_description_context(
             };
             description == format!("Cancel Opp. {stat} Modif.")
         }
-        // Only the Power And Damage pairing has observed rounds. `Protection: Power`,
-        // `Protection : Damage` and `Protection: Attack` keep their own grammars, and the
-        // site's spaced punctuation is not accepted for any of them.
+        // Each stat has exactly one printed text, including the site's spaced
+        // `Protection : Damage`; no other spelling is accepted for any of them. What the
+        // server has shown of the single-stat forms is a reduction of another stat landing:
+        // Sue's Power and Damage reduction on Matriochka's `Protection: Attack` in 1131208/1,
+        // the Equalizer Attack reduction on Lumber Jack's and Wander's `Protection: Power` in
+        // 925204/2, 964088/0 and 948108/0 and on Jakson's `Protection : Damage` in 947121/1.
+        // Construction refuses the rest (`unmodelled_source_context`).
         SupportedEffectV1::ProtectOwnCombatStat { stat } => {
-            stat == CombatStatV1::PowerAndDamage && description == "Protection: Power And Damage"
+            description
+                == match stat {
+                    CombatStatV1::PowerAndDamage => "Protection: Power And Damage",
+                    CombatStatV1::Power => "Protection: Power",
+                    CombatStatV1::Damage => "Protection : Damage",
+                    CombatStatV1::Attack => "Protection: Attack",
+                }
         }
         SupportedEffectV1::ProtectOwnAbility => description == "Protection: Ability",
         SupportedEffectV1::ProtectOwnBonus => description == "Protection: Bonus",
@@ -1837,7 +1847,7 @@ mod tests {
     }
 
     #[test]
-    fn protection_compiles_only_the_three_reviewed_printed_grammars() {
+    fn protection_compiles_only_its_reviewed_printed_grammars() {
         let registry = EffectRegistryV1::load(dictionary_path()).unwrap();
 
         // Like generic Victory Life, Protection is admitted by exact printed text and
@@ -1864,15 +1874,23 @@ mod tests {
             );
         }
 
-        // Every other Protection grammar has no reviewed round behind it and stays out,
-        // including the site's spaced `Protection : Damage` and the clan-conditional one.
-        for id in [728, 940, 956, 1142, 1311, 2294, 2376, 2981, 4660, 5708] {
-            assert_eq!(
-                registry.get(id).unwrap().compiled().supported(),
-                None,
-                "effect {id}"
-            );
+        // Since revision 62 each single stat has its one printed text, the site's spaced
+        // `Protection : Damage` among them.
+        for (ids, stat) in [
+            (&[940, 4660][..], CombatStatV1::Power),
+            (&[728, 956, 2294][..], CombatStatV1::Damage),
+            (&[1142, 1311, 2376, 2981][..], CombatStatV1::Attack),
+        ] {
+            for &id in ids {
+                assert_eq!(
+                    registry.get(id).unwrap().compiled().supported(),
+                    Some(SupportedEffectV1::ProtectOwnCombatStat { stat }),
+                    "effect {id}"
+                );
+            }
         }
+        // The clan-conditional form is another grammar and stays out.
+        assert_eq!(registry.get(5708).unwrap().compiled().supported(), None);
     }
 
     #[test]

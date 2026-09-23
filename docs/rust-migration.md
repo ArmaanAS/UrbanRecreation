@@ -2357,6 +2357,37 @@ because the rounds that select the refused permanents are now selected hazards r
 inert sources that happened to match: 867173 to one round and 1090096 to one round. The gate
 grows from 679 to 685 rounds with 1131085 and 1130889.
 
+Semantic revision 62 admits the three single-stat Protections by their one printed text
+each: `Protection: Power` (`940`, `4660`), the site's spaced `Protection : Damage` (`728`,
+`956`, `2294`) and `Protection: Attack` (`1142`, `1311`, `2376`, `2981`). The
+clan-conditional `After [clan:25]: Protection : Damage` (`5708`) stays closed. The engine
+needed nothing, since revision 23's mask already held each stat on its own; only the registry
+had kept the texts out. Their three family lines read 6 between them, and the slice unlocked
+3 - `947121`, `964088` and `1131208` - taking eligibility from 208 to 211.
+
+**Only the half the server has shown is admitted.** The seven selected single-stat rounds each
+show a Protection leaving a reduction of another stat alone, or facing nothing its stat could
+meet. Matriochka's `Protection: Attack` lets Sue's `-1 Opp Power And Damage, Min 3` take her
+8/4 to 7/3 in 1131208/1 (7 x 3 = 21). The Hive `Equalizer: -3 Opp Attack, Min 5` lands on
+Wander's `Protection: Power` in 948108/0 (54 - 12 = 42), on Lumber Jack's in 964088/0 (52 -
+15 = 37) and 925204/2, and on Jakson's `Protection : Damage` in 947121/1 (16 - 9 = 7). Pride
+in 1011297/1 and Carlito in 1089452/1 face nothing their stats could meet. No round shows one
+refusing a reduction of the stat it names, which is the half that would make it do anything.
+Nor does any show `Protection: Power` meeting a Damage change or `Protection : Damage` a Power
+change. Reading `Protection: Power` as the Power half of revision 23's pinned mask is the
+obvious composition, but it is still composition, and refusing it costs one draw. So
+construction refuses a single-stat Protection wherever the opposing hand could bring a change
+to its group - Power and Damage for the first two, Attack for the third - by a reduction, the
+opposing half of `Cards`, a Cancel, a printed-stat Copy or Exchange, or `Tune Out`, and
+wherever the opposing hand holds a source Copy, which could carry the owner's own sources or
+the Protection itself to the other side (`SingleStatProtectionAgainstUnpinnedEffect`). That
+refuses 1070016 (Davis' `Protection : Damage` against Lothar's and Wesley's Power cuts),
+1089452 (Carlito's against Lothar's), and 1009264 and 1011297 (Pride's `Protection: Attack`
+against Nantosuelte's `Support: -1 Opp Attack, Min 0`). In replay the refused Protection is a
+selected hazard, which keeps 1089452 at its round 0. The gate grows from 685 to 696 rounds:
+1131208 from one round to four, 947121 to three, 964088 to two, and 948108 to three, since its
+capture flags the final round's Life as stale.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

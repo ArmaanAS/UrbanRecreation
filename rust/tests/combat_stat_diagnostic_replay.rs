@@ -452,7 +452,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1337230, 3),
     (1337265, 2),
     (943231, 1),
-    (1131208, 1),
+    // Four rounds since revision 62: Matriochka's `Protection: Attack` leaves Sue's `-1 Opp
+    // Power And Damage, Min 3` to take her 8/4 to 7/3 in round 1 (7 x 3 = 21).
+    (1131208, 4),
     (956805, 1),
     (877357, 3),
     // Revision 50 admits the stat Copies and Exchanges under the predicates the projection
@@ -574,6 +576,15 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Min 2, and pays once more in round 3.
     (1131085, 4),
     (1130889, 4),
+    // Revision 62 admits `Protection: Power`, `Protection : Damage` and `Protection:
+    // Attack`, each refusing an opposing reduction of the stat it names and nothing else.
+    // The Hive `Equalizer: -3 Opp Attack, Min 5` lands on Wander's `Protection: Power` in
+    // 948108/0 (54 - 12 = 42), on Lumber Jack's in 964088/0 (52 - 15 = 37) and on Jakson's
+    // `Protection : Damage` in 947121/1 (16 - 9 = 7). 948108 stops at three rounds
+    // because its capture flags the final round's Life as stale.
+    (948108, 3),
+    (964088, 2),
+    (947121, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
