@@ -2801,7 +2801,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
 }
 
 #[test]
-fn strict_constructor_derives_oculus_and_rejects_dynamic_or_temporal_sources() {
+fn strict_constructor_derives_oculus_and_night_and_rejects_dynamic_sources() {
     let catalog = catalog();
     let registry = registry();
     let (_, p2) = fully_supported_hands();
@@ -2841,14 +2841,34 @@ fn strict_constructor_derives_oculus_and_rejects_dynamic_or_temporal_sources() {
         CardKey::new(1633, 1),
         CardKey::new(1637, 1),
     ];
+    // At night the GhosTown bonus is its night variant, which revision 44 admits under the
+    // match-constant `MatchIsNight` predicate. Night variants carry no catalog id, so the
+    // registry definition is found by text.
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(night, p2, true), &catalog, &registry, PROJECTION)
+            .unwrap();
+    let CatalogCombatStatSourceDispositionV1::Execute {
+        identity,
+        predicate,
+        ..
+    } = &prepared.preparation()[PlayerId::P1][0].bonus
+    else {
+        panic!("the GhosTown night bonus was not executable")
+    };
+    assert_eq!(identity.catalog_id, None);
+    assert_eq!(identity.registry_definition_id, 1442);
+    assert_eq!(identity.description, "Night: -1 Opp Pow. And Damage, Min 1");
+    assert_eq!(*predicate, CombatStatPredicateV1::MatchIsNight);
+    // By day the same hand shows its day bonus, whose text the registry has never captured,
+    // so the draw stays fail-closed rather than borrowing the night definition.
     assert!(matches!(
-        CatalogCombatStatMatchV1::new(input(night, p2, true), &catalog, &registry, PROJECTION),
-        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+        CatalogCombatStatMatchV1::new(input(night, p2, false), &catalog, &registry, PROJECTION),
+        Err(CatalogCombatStatMatchErrorV1::Lookup {
             player: PlayerId::P1,
             source_kind: CombatStatEffectSourceV1::Bonus,
             ref description,
             ..
-        }) if description == "Night: -1 Opp Pow. And Damage, Min 1"
+        }) if description == "Day: Power And Damage + 1"
     ));
 
     let oblivion = [

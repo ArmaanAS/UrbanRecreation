@@ -74,7 +74,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 43;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 44;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -126,7 +126,9 @@ fn copy_opponent_source_shape_matches(
         ),
         CombatStatPredicateV1::OwnerMovesFirst
         | CombatStatPredicateV1::OwnerWonPreviousRound
-        | CombatStatPredicateV1::SelectedHandSlotsMatch => return false,
+        | CombatStatPredicateV1::SelectedHandSlotsMatch
+        | CombatStatPredicateV1::MatchIsNight
+        | CombatStatPredicateV1::MatchIsDay => return false,
     };
     input.value == 0
         && input.value_min == 0
@@ -860,7 +862,9 @@ fn victory_opponent_life_shape_matches(
         ),
         CombatStatPredicateV1::OwnerMovesSecond
         | CombatStatPredicateV1::OwnerLostPreviousRound
-        | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
+        | CombatStatPredicateV1::SelectedHandSlotsDiffer
+        | CombatStatPredicateV1::MatchIsNight
+        | CombatStatPredicateV1::MatchIsDay => return false,
     };
     input.value == life
         && input.value_min == minimum
@@ -1436,6 +1440,9 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_index_numeric(definition) {
         return Some(classified);
     }
+    if let Some(classified) = classify_day_night_numeric(definition) {
+        return Some(classified);
+    }
     let input = definition.structured_input();
     if input.position_requirement == PositionRequirementV1::Both && neutral_except_position(input) {
         if let CompiledEffectV1::Supported(effect) = definition.compiled() {
@@ -1567,6 +1574,38 @@ fn classify_round_scaled_numeric(
     let effect = numeric_effect(input, multiplier)?;
     round_scaled_description_matches(definition.description(), effect)
         .then_some((effect, CombatStatPredicateV1::Always))
+}
+
+/// Recognize the `Night:` and `Day:` forms of the plain fixed numeric grammar. The prefix is
+/// a match constant - Clint City is at night or it is not - and the registry records no
+/// structured trace of it at all, so the record must be the neutral unconditional numeric
+/// shape and the text after the prefix one of that grammar's printed spellings. Both slots:
+/// the GhosTown clan bonus prints `Night: -1 Opp Pow. And Damage, Min 1`.
+///
+/// The catalog selects a card's night ability and its clan's night bonus exactly when the
+/// match is at night, and the server only ever sends the active variant, so in practice
+/// the predicate always holds. It is a predicate rather than an assumption so that a
+/// `Night:` source in a daylight match - a Copy, or a malformed capture - stays present and
+/// never fires instead of acting unconditionally.
+fn classify_day_night_numeric(
+    definition: &EffectDefinitionV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let description = definition.description();
+    let (predicate, body) = if let Some(body) = description.strip_prefix("Night: ") {
+        (CombatStatPredicateV1::MatchIsNight, body)
+    } else if let Some(body) = description.strip_prefix("Day: ") {
+        (CombatStatPredicateV1::MatchIsDay, body)
+    } else {
+        return None;
+    };
+    let input = definition.structured_input();
+    if input.position_requirement != PositionRequirementV1::Both || !neutral_except_position(input)
+    {
+        return None;
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
+    numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
+        .then_some((effect, predicate))
 }
 
 fn classify_equalizer_numeric(
@@ -2285,7 +2324,9 @@ fn position_description_matches(
         | CombatStatPredicateV1::OwnerWonPreviousRound
         | CombatStatPredicateV1::OwnerLostPreviousRound
         | CombatStatPredicateV1::SelectedHandSlotsMatch
-        | CombatStatPredicateV1::SelectedHandSlotsDiffer => return false,
+        | CombatStatPredicateV1::SelectedHandSlotsDiffer
+        | CombatStatPredicateV1::MatchIsNight
+        | CombatStatPredicateV1::MatchIsDay => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -2306,7 +2347,9 @@ fn index_description_matches(
         | CombatStatPredicateV1::OwnerMovesFirst
         | CombatStatPredicateV1::OwnerMovesSecond
         | CombatStatPredicateV1::OwnerWonPreviousRound
-        | CombatStatPredicateV1::OwnerLostPreviousRound => return false,
+        | CombatStatPredicateV1::OwnerLostPreviousRound
+        | CombatStatPredicateV1::MatchIsNight
+        | CombatStatPredicateV1::MatchIsDay => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -2329,7 +2372,9 @@ fn previous_round_description_matches(
         | CombatStatPredicateV1::OwnerMovesFirst
         | CombatStatPredicateV1::OwnerMovesSecond
         | CombatStatPredicateV1::SelectedHandSlotsMatch
-        | CombatStatPredicateV1::SelectedHandSlotsDiffer => None,
+        | CombatStatPredicateV1::SelectedHandSlotsDiffer
+        | CombatStatPredicateV1::MatchIsNight
+        | CombatStatPredicateV1::MatchIsDay => None,
     };
     body.is_some_and(|body| {
         numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
@@ -2440,6 +2485,9 @@ fn numeric_description_body_matches(
             Some(min),
         ) => {
             body == format!("-{value} Opp Power And Damage, Min {min}")
+                // The GhosTown bonus `1442` and Figaro's day ability `1622`.
+                || body == format!("-{value} Opp Pow. And Damage, Min {min}")
+                || body == format!("-{value} Opp Power & Damage, Min {min}")
                 || body == format!("-{value} Opp Pow. & Dam., Min {min}")
                 || body == format!("-{value} Opp Pow. And Dam., Min {min}")
                 || body == format!("-{value} Opp Pow. & Dmg,min {min}")
@@ -2635,6 +2683,78 @@ mod tests {
                 "malformed {field}",
             );
         }
+    }
+
+    #[test]
+    fn night_and_day_numeric_is_admitted_under_the_match_constant_predicate() {
+        let registry = registry();
+        for (id, predicate) in [
+            (1442, CombatStatPredicateV1::MatchIsNight),
+            (1553, CombatStatPredicateV1::MatchIsNight),
+            (1623, CombatStatPredicateV1::MatchIsNight),
+            (1622, CombatStatPredicateV1::MatchIsDay),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            for source in [
+                CombatStatEffectSourceV1::Ability,
+                CombatStatEffectSourceV1::Bonus,
+            ] {
+                let classified = classify_combat_stat_effect(definition, source);
+                assert!(
+                    matches!(
+                        classified,
+                        Some((
+                            SupportedEffectV1::ModifyCombatStat {
+                                multiplier: MagnitudeMultiplierV1::Fixed,
+                                ..
+                            },
+                            actual,
+                        )) if actual == predicate
+                    ),
+                    "definition {id} from {source:?}: {classified:?}",
+                );
+            }
+        }
+        // `5391` prints a Min but also carries a `valueMax` on a decrease, which no admitted
+        // grammar reads, and the compound `Night: Confid.:` form carries a second condition.
+        // Neither is admitted, nor is a Night Stop or a Night post-round effect.
+        for id in [5391, 1643, 5564, 4747, 4750, 2369] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "definition {id}",
+            );
+        }
+        // The prefix is read from the text alone, so the body must still be the complete
+        // neutral shape and an exact printed spelling.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("valueMin", serde_json::json!(2)),
+            ("positionRequirement", serde_json::json!("attacker")),
+            ("previousRoundRequirement", serde_json::json!("win")),
+            ("isAntiSupport", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1442"]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_day_night_numeric(malformed.get(1442).unwrap()),
+                None,
+                "malformed {field} = {value}",
+            );
+        }
+        let mut retexted = source.clone();
+        retexted["1442"]["description"] = serde_json::json!("Dusk: -1 Opp Pow. And Damage, Min 1");
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_day_night_numeric(retexted.get(1442).unwrap()),
+            None
+        );
     }
 
     #[test]

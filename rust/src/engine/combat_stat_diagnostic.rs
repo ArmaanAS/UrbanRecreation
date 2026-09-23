@@ -79,6 +79,11 @@ pub enum CombatStatPredicateV1 {
     OwnerLostPreviousRound,
     SelectedHandSlotsMatch,
     SelectedHandSlotsDiffer,
+    /// `Night:` - Clint City is at night for this match. A match constant, so the source is
+    /// present in every round and fires in all of them or in none.
+    MatchIsNight,
+    /// `Day:` - Clint City is in daylight for this match.
+    MatchIsDay,
 }
 
 /// Public provenance metadata for an admitted post-round effect. The hot path converts this
@@ -804,6 +809,7 @@ impl CombatStatDiagnosticV1 {
             input.first_mover,
             rounds_played,
             previous_round_winner,
+            self.spec.base_rules.night,
         )?;
         let (report, base_rules) =
             self.base_rules
@@ -2070,6 +2076,7 @@ fn active_effect(
     owner_slot: HandSlot,
     opponent_slot: HandSlot,
     previous_round_winner: Option<PlayerId>,
+    night: bool,
 ) -> Option<CombatStatEffectV1> {
     match plan {
         CombatStatSourcePlanV1::Execute {
@@ -2081,6 +2088,7 @@ fn active_effect(
             owner_slot,
             opponent_slot,
             previous_round_winner,
+            night,
         ) =>
         {
             Some(effect)
@@ -2102,6 +2110,7 @@ fn predicate_matches(
     owner_slot: HandSlot,
     opponent_slot: HandSlot,
     previous_round_winner: Option<PlayerId>,
+    night: bool,
 ) -> bool {
     match predicate {
         CombatStatPredicateV1::Always => true,
@@ -2113,6 +2122,8 @@ fn predicate_matches(
         }
         CombatStatPredicateV1::SelectedHandSlotsMatch => owner_slot == opponent_slot,
         CombatStatPredicateV1::SelectedHandSlotsDiffer => owner_slot != opponent_slot,
+        CombatStatPredicateV1::MatchIsNight => night,
+        CombatStatPredicateV1::MatchIsDay => !night,
     }
 }
 
@@ -2122,6 +2133,7 @@ fn prepare_combat_stat_diagnostic(
     first_mover: PlayerId,
     rounds_played: u8,
     previous_round_winner: Option<PlayerId>,
+    night: bool,
 ) -> Result<PreparedCombatResolution, CombatStatDiagnosticErrorV1> {
     let selected = ByPlayer::new(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
@@ -2147,6 +2159,7 @@ fn prepare_combat_stat_diagnostic(
             validated[PlayerId::P2].slot,
             previous_round_winner,
             anti_support[PlayerId::P1],
+            night,
         ),
         resolution_card_plan(
             selected[PlayerId::P2],
@@ -2157,6 +2170,7 @@ fn prepare_combat_stat_diagnostic(
             validated[PlayerId::P1].slot,
             previous_round_winner,
             anti_support[PlayerId::P2],
+            night,
         ),
     );
     prepare_combat_resolution_with_post_round(validated, plans, rounds_played)
@@ -2179,6 +2193,7 @@ fn resolved_source_plan(
     owner_slot: HandSlot,
     opponent_slot: HandSlot,
     previous_round_winner: Option<PlayerId>,
+    night: bool,
 ) -> CombatStatSourcePlanV1 {
     match plan {
         CombatStatSourcePlanV1::CopyOpponentSource {
@@ -2191,6 +2206,7 @@ fn resolved_source_plan(
                 owner_slot,
                 opponent_slot,
                 previous_round_winner,
+                night,
             ) {
                 return CombatStatSourcePlanV1::Absent;
             }
@@ -2215,6 +2231,7 @@ fn resolution_card_plan(
     // It is the same number for both of this card's sources and for every magnitude that
     // is not `AntiSupport`, which simply ignores it.
     anti_support_count: u16,
+    night: bool,
 ) -> ResolutionCardPlan {
     // Resolve each source once. Copy substitution and the predicate are the same work for
     // the combat effect and the post-round effect, and a source only ever supplies one of
@@ -2229,12 +2246,14 @@ fn resolution_card_plan(
                 owner_slot,
                 opponent_slot,
                 previous_round_winner,
+                night,
             ),
             owner,
             first_mover,
             owner_slot,
             opponent_slot,
             previous_round_winner,
+            night,
         );
         ResolutionSourcePlan {
             effect: effect.and_then(shared_effect),

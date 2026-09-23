@@ -5475,3 +5475,57 @@ fn two_exchanges_of_one_stat_are_one_swap() {
     );
     assert_eq!(exchange_round(double, PlayerId::P1), ((7, 2), (5, 6)));
 }
+
+/// `Night:` and `Day:` are a match constant. The corpus only ever shows each form in a
+/// match of its own kind - the server sends the active variant and the catalog selects it -
+/// so a source in the other kind of match, which only a Copy or a malformed capture could
+/// produce, is pinned here: it stays present and never fires.
+#[test]
+fn night_and_day_sources_fire_only_in_their_own_kind_of_match() {
+    let night_bonus = CombatStatEffectV1::ModifyCombatStat {
+        side: CombatStatAffectedSideV1::Opponent,
+        stat: CombatStatAttributeV1::PowerAndDamage,
+        operation: CombatStatOperationV1::Decrease,
+        value: 1,
+        minimum: Some(1),
+        maximum: None,
+        multiplier: CombatStatMagnitudeV1::Fixed,
+    };
+    for (predicate, night, fires) in [
+        (CombatStatPredicateV1::MatchIsNight, true, true),
+        (CombatStatPredicateV1::MatchIsNight, false, false),
+        (CombatStatPredicateV1::MatchIsDay, false, true),
+        (CombatStatPredicateV1::MatchIsDay, true, false),
+    ] {
+        let mut base = base_spec(6, 3);
+        base.night = night;
+        let mut cards = plans(&base);
+        // The GhosTown night bonus is a clan bonus, so the Bonus slot must admit it.
+        cards[PlayerId::P1][0].bonus = execute(1442, predicate, night_bonus);
+        cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        let expected = if fires { (5, 2) } else { (6, 3) };
+        assert_eq!(
+            (
+                report.cards[PlayerId::P2].power,
+                report.cards[PlayerId::P2].damage
+            ),
+            expected,
+            "{predicate:?} at night = {night}",
+        );
+        // It is the same match constant in every round.
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+        let (_, _) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        let (report, _) = diag
+            .make(input(PlayerId::P2, (1, 0, false), (1, 0, false)))
+            .unwrap();
+        assert_eq!(report.cards[PlayerId::P2].power, 6);
+    }
+}

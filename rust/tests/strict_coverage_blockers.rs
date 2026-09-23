@@ -274,6 +274,9 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             1588, 1592, 1594, 1648, 1649, 1658, 1690, 1907, 3279, 4504, 4505, 5632,
         ],
     ),
+    // The `Night:`/`Day:` forms of the plain numeric grammar, measured 2026-09-23. `5391`
+    // carries a `valueMax` on a decrease and measured 0 alone.
+    ("Night/Day plain numeric", &[1442, 1553, 1622, 1623]),
     // The Oculus infiltration clan gate, narrowed to the members whose body is already an
     // admitted grammar, so the line prices the gate itself rather than the bodies.
     (

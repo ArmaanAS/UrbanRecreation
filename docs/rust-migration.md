@@ -1747,10 +1747,46 @@ and two Exchanges at once have no round and are pinned by engine tests.
 
 The Rust engine now disagrees with the TypeScript one on purpose, and is right by the
 server. TypeScript runs the swap in PRE2 as an overwrite, so it wipes any PRE2 increase
-registered before it; 1059149/1 shows the server keeping it. That round is outside the Rust
-gate (Calamity's Night bonus is not admitted), so `--rust=compare` will report a difference
-in those positions. It is written up in `docs/replay-triage.md` as a one-round TypeScript
+registered before it; 1059149/1 shows the server keeping it. That round was outside the Rust
+gate until revision 44 admitted Calamity's Night bonus, and `--rust=compare` will report a
+difference in those positions. It is written up in `docs/replay-triage.md` as a one-round TypeScript
 bug rather than fixed there.
+
+Semantic revision 44 admits the `Night:` and `Day:` forms of the plain fixed numeric grammar
+- the GhosTown bonus `Night: -1 Opp Pow. And Damage, Min 1` (`1442`), `Night: Power And
+Damage + 1` (`1553`, `1623`) and `Day: -1 Opp Power & Damage, Min 1` (`1622`) - under two
+new match-constant predicates, `MatchIsNight` and `MatchIsDay`. It measured 4 and unlocked
+exactly 4 - `868094`, `877575`, `1024388` and `1059149` - taking eligibility from 100 to
+104.
+
+The registry keeps no structured trace of the prefix: the record is the plain numeric shape
+and `Night:`/`Day:` lives in the text alone, which is why the registry refused it as a
+description context. What makes the prefix cheap is that it is always satisfied where it is
+printed. Every catalog row that prints one has both a `Day:` day ability and a `Night:`
+night ability (55 rows, never crossed), the catalog selects the night variant exactly when
+the match is at night, and the server only ever sends the active variant - in the corpus
+every `Night:` source sits in a night battle and every `Day:` source in a day one. It is
+still modelled as a predicate rather than an assumption, evaluated from the match spec's
+`night` flag, so a source in the other kind of match - a Copy, a malformed capture - stays
+present and never fires instead of acting unconditionally. The classifier strips the prefix,
+requires the neutral unconditional shape and checks the body against
+`numeric_description_body_matches`, which gained the two spellings these cards print
+(`-1 Opp Pow. And Damage` and `-1 Opp Power & Damage`). Both slots are admitted, because the
+GhosTown clan bonus is one of them. `5391` (`Night: -4 Opp Power, Min 4`) carries a
+`valueMax` on a decrease, which no admitted grammar reads, and measured 0, so it stays
+closed; so do the compound `Night: Confid.:` form, the Night Stop and post-round forms, and
+`Day: Cancel Opp. Pillz & Life Modif.`. The day variant of the GhosTown bonus, `Day: Power
+And Damage + 1`, has no registry definition at all, so a GhosTown hand by day stays
+fail-closed.
+
+The server pins both forms. Figaro's night ability takes him from 7/4 to 8/5 in 877575/0 and
+his day ability takes Nantosuelte's Asymmetry-raised 8/7 to 7/6 in 1009264/0 and Aurora from
+7/5 to 6/4 in 868094/2. The GhosTown night bonus pays in every round of 1059149, including
+under the target's own floor (Sue 6/3 to 5/2), and 1059149/1 is the round revision 43's
+write-up said the Rust gate could not reach: Calamity's Exchange gives Tina his 5, her
+Revenge adds 2 and the night bonus takes 1, for the server's 6 - the round the TypeScript
+engine gets wrong. The gate grows from 371 to 384 rounds with 877575, 1009264 and 1059149 in
+full and 868094 extended to four rounds.
 
 #### The clan gate, measured but not taken
 

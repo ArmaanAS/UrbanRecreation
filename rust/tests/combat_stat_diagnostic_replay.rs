@@ -39,7 +39,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (874642, 1),
     (1059269, 1),
     (1091585, 1),
-    (868094, 1),
+    // Four rounds since revision 44: Figaro's `Day:` ability takes Aurora from 7/5 to 6/4 in
+    // round 2.
+    (868094, 4),
     (875230, 1),
     (877950, 1),
     (945585, 2),
@@ -332,6 +334,16 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1080007, 4),
     (1066210, 2),
     (901004, 2),
+    // Revision 44 admits the `Night:` and `Day:` forms of the plain numeric grammar under a
+    // match-constant predicate. Figaro's night ability takes itself from 7/4 to 8/5 in
+    // 877575/0 and his day ability takes Nantosuelte's Asymmetry-raised 8/7 to 7/6 in
+    // 1009264/0. The GhosTown night bonus `-1 Opp Pow. And Damage, Min 1` pays in every
+    // round of 1059149 - Callie 6/5 to 5/4, Sue 6/3 to 5/2 under her own floor - and in
+    // round 1 lands on the Power Calamity's Exchange gave Tina: 5 + 2 - 1 = 6, the round
+    // docs/replay-triage.md records the TypeScript engine getting wrong.
+    (877575, 4),
+    (1009264, 2),
+    (1059149, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
