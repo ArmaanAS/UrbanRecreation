@@ -203,6 +203,17 @@ impl LatchedEffectV1 {
             | Self::ConsumeOpponentPillz { .. } => true,
         }
     }
+
+    /// Whether the permanent lowers the opposing player's Pillz towards a floor.
+    pub(super) const fn floors_opposing_pillz(self) -> bool {
+        match self {
+            Self::ConsumeOpponentPillz { .. } | Self::CombustOpponentLifeAndPillz { .. } => true,
+            Self::HealLife { .. }
+            | Self::RegenLife { .. }
+            | Self::PoisonOpponentLife { .. }
+            | Self::ToxinOpponentLife { .. } => false,
+        }
+    }
 }
 
 /// The permanents one player has latched so far, in latch order, which is also the order
@@ -535,7 +546,8 @@ pub(super) enum PostRoundResourceV1 {
 impl PostRoundEffect {
     pub(super) const fn resource(self) -> PostRoundResourceV1 {
         match self {
-            Self::RecoverPaidPillzOnDefeat
+            Self::RecoverPaidPillzOnDefeat { .. }
+            | Self::RecoverPaidPillzOnVictory { .. }
             | Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainTwoPillzOnDefeatMaxEleven
             | Self::GainPillzOnVictory(_)
@@ -641,7 +653,8 @@ impl PostRoundEffect {
             | Self::GainPillzOnKillshot(_)
             | Self::GainLifeOnKillshot { .. }
             | Self::LatchOnKillshot(_) => true,
-            Self::RecoverPaidPillzOnDefeat
+            Self::RecoverPaidPillzOnDefeat { .. }
+            | Self::RecoverPaidPillzOnVictory { .. }
             | Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainOnePillzAndLifeOnVictory
             | Self::GainTwoPillzOnDefeatMaxEleven
@@ -665,6 +678,70 @@ impl PostRoundEffect {
             | Self::LatchOnDefeat(_)
             | Self::GainPillzOnDefeat(_)
             | Self::GainPillzAndLifeOnDefeat(_)
+            | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
+            | Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => false,
+        }
+    }
+}
+
+impl PostRoundSourceEffect {
+    /// Whether the effect lowers the opposing player's Pillz towards a floor. Where one meets
+    /// that player's own uncapped Pillz gain in a round, the two orders differ exactly when
+    /// the floor binds, and no round pins the server's (1093173/1 shows it is not the engine's
+    /// P1-then-P2 for Life). Exhaustive, so that a new effect has to say.
+    pub(super) const fn floors_opposing_pillz(self) -> bool {
+        match self {
+            Self::Fixed(effect) => effect.floors_opposing_pillz(),
+            Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentPillzOnVictoryPerRound { .. } => true,
+            Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
+            | Self::GainLifeOnVictoryPerRound { .. }
+            | Self::GainPillzOnVictoryPerAntiSupport { .. }
+            | Self::GainPillzOnVictoryPerRound { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerSupport { .. }
+            | Self::GainPillzOnVictoryPerSupport { .. }
+            | Self::GainLifeOnVictoryPerOpponentStars { .. }
+            | Self::GainPillzOnVictoryPerOpponentStars { .. } => false,
+        }
+    }
+}
+
+impl PostRoundEffect {
+    pub(super) const fn floors_opposing_pillz(self) -> bool {
+        match self {
+            Self::ReduceOpponentPillzOnVictory { .. }
+            | Self::ReduceOpponentPillzOnDefeat { .. } => true,
+            Self::LatchOnVictory(latched)
+            | Self::LatchOnDefeat(latched)
+            | Self::LatchOnKillshot(latched) => latched.floors_opposing_pillz(),
+            Self::RecoverPaidPillzOnDefeat { .. }
+            | Self::RecoverPaidPillzOnVictory { .. }
+            | Self::GainOnePillzOnVictoryOrDefeat
+            | Self::GainOnePillzAndLifeOnVictory
+            | Self::GainTwoPillzOnDefeatMaxEleven
+            | Self::GainLifeEqualToFinalDamageOnCourageVictory
+            | Self::GainLifeOnVictory(_)
+            | Self::GainPillzOnVictory(_)
+            | Self::GainPillzOnVictoryMax { .. }
+            | Self::GainPillzEqualToFinalDamageOnVictory
+            | Self::GainLifePerFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifeOnDefeat(_)
+            | Self::ReanimateLife(_)
+            | Self::GainLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentLifeOnVictory { .. }
+            | Self::ReduceOpponentLifeOnDefeat { .. }
+            | Self::ReduceOpponentLifeOnKillshot { .. }
+            | Self::ReduceBothPlayersLife { .. }
+            | Self::GainPillzOnDefeat(_)
+            | Self::GainPillzAndLifeOnDefeat(_)
+            | Self::GainPillzAndLifeOnKillshot { .. }
+            | Self::GainPillzOnKillshot(_)
+            | Self::GainLifeOnKillshot { .. }
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
             | Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => false,
         }
@@ -714,7 +791,8 @@ impl PostRoundEffect {
                 | LatchedEffectV1::ConsumeOpponentPillz { .. }
                 | LatchedEffectV1::CombustOpponentLifeAndPillz { .. },
             )
-            | Self::RecoverPaidPillzOnDefeat
+            | Self::RecoverPaidPillzOnDefeat { .. }
+            | Self::RecoverPaidPillzOnVictory { .. }
             | Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainTwoPillzOnDefeatMaxEleven
             | Self::GainPillzOnVictory(_)
@@ -746,7 +824,16 @@ impl PostRoundEffect {
 
 #[derive(Clone, Copy)]
 pub(super) enum PostRoundEffect {
-    RecoverPaidPillzOnDefeat,
+    /// `Defeat: Recover N Pillz Out Of M`, paid to the loser even when knocked out.
+    RecoverPaidPillzOnDefeat {
+        numerator: u16,
+        denominator: u16,
+    },
+    /// `Recover N Pillz Out Of M` (and `Unison :`), paid to the winner.
+    RecoverPaidPillzOnVictory {
+        numerator: u16,
+        denominator: u16,
+    },
     GainOnePillzOnVictoryOrDefeat,
     GainOnePillzAndLifeOnVictory,
     GainTwoPillzOnDefeatMaxEleven,
@@ -958,15 +1045,36 @@ impl BaseRulesGame {
                 .flatten()
             {
                 match effect {
-                    PostRoundEffect::RecoverPaidPillzOnDefeat if owner == loser => {
-                        let paid = u32::from(prepared[owner].cost);
-                        let recovered = ((paid * 2 + 2) / 3).max(1) as u16;
+                    // The Pillz placed on the card - the bet, the free pill and Fury's three -
+                    // times the printed ratio, rounded down, never less than one. For 2/3
+                    // this is revision 8's `ceil(2 * paid / 3)`; 947010/0 is where 1/3
+                    // tells the two roundings apart.
+                    PostRoundEffect::RecoverPaidPillzOnDefeat {
+                        numerator,
+                        denominator,
+                    } if owner == loser => {
+                        let placed = u32::from(prepared[owner].cost) + 1;
+                        let recovered =
+                            (placed * u32::from(numerator) / u32::from(denominator)).max(1) as u16;
                         position.players[owner].pillz = position.players[owner]
                             .pillz
                             .checked_add(recovered)
                             .ok_or(BaseRulesError::PillzRecoveryOverflow { player: owner })?;
                     }
-                    PostRoundEffect::RecoverPaidPillzOnDefeat => {}
+                    PostRoundEffect::RecoverPaidPillzOnDefeat { .. } => {}
+                    PostRoundEffect::RecoverPaidPillzOnVictory {
+                        numerator,
+                        denominator,
+                    } if owner == winner && position.players[owner].life > 0 => {
+                        let placed = u32::from(prepared[owner].cost) + 1;
+                        let recovered =
+                            (placed * u32::from(numerator) / u32::from(denominator)).max(1) as u16;
+                        position.players[owner].pillz = position.players[owner]
+                            .pillz
+                            .checked_add(recovered)
+                            .ok_or(BaseRulesError::PillzRecoveryOverflow { player: owner })?;
+                    }
+                    PostRoundEffect::RecoverPaidPillzOnVictory { .. } => {}
                     PostRoundEffect::GainOnePillzOnVictoryOrDefeat => {
                         position.players[owner].pillz = position.players[owner]
                             .pillz

@@ -19,13 +19,13 @@ use crate::engine::combat_stat_compiler::{
     classify_combat_stat_effect, classify_combust_opponent_life_and_pillz_on_victory,
     classify_consume_opponent_pillz_on_victory, classify_defeat_life,
     classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_pillz,
-    classify_defeat_pillz_and_life, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
-    classify_heal_life_on_victory, classify_killshot_opponent_life,
-    classify_killshot_pillz_and_life, classify_killshot_post_round,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
+    classify_defeat_pillz_and_life, classify_equalizer_opponent_life_on_victory,
+    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
+    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
+    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
+    classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
@@ -748,13 +748,14 @@ fn prepare_combat_stat_source(
             },
         );
     }
-    if classify_defeat_recover_pillz(definition, source_kind) {
+    if let Some(recover) = classify_recover_pillz(definition, source_kind) {
+        let (post_round, effect) = recover.effects();
         return Ok(executes_post_round(
             identity,
             source.id,
-            CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            CombatStatPredicateV1::Always,
+            post_round,
+            effect,
+            recover.predicate,
         ));
     }
     if classify_argos_defeat_capped_pillz(definition, source_kind) {

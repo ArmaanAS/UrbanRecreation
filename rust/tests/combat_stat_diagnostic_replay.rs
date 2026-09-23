@@ -60,8 +60,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (946288, 3),
     (1092660, 1),
     // Three rounds since revision 50: an Asymmetry Damage Exchange lands before Lindsey's
-    // Revenge reduction in round 2.
-    (1093500, 3),
+    // Revenge reduction in round 2. Four since revision 63, whose round 3 has Kyrioz Ld's
+    // `Recover 1 Pillz Out Of 3` recover 3 of the 10 placed.
+    (1093500, 4),
     (1092909, 2),
     (925719, 3),
     (877636, 4),
@@ -539,7 +540,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (926292, 4),
     (1093129, 1),
     (1130791, 4),
-    (1145886, 1),
+    // Four rounds since revision 63: in round 1 Morgane's `Defeat: Recover 1 Pillz Out Of 2`
+    // recovers 1 on a bet of 0 and Miss Gunslinger's `Recover 1 Pillz Out Of 3` 1 of 4.
+    (1145886, 4),
     // Revision 57 admits the `Cards` grammar - one fixed change to both selected cards, the
     // owner's half with its own modifiers and the opposing half with its opposing ones - and
     // the Cosmohnuts bonus `Tune Out`, under which both Powers are 1, each Attack is its bet
@@ -585,6 +588,27 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (948108, 3),
     (964088, 2),
     (947121, 3),
+    // Revision 63 admits Recover by grammar: `Defeat: Recover N Pillz Out Of M` pays the
+    // loser, `Recover N Pillz Out Of M` the winner and `Unison :` a winner whose hand is one
+    // clan, each `max(1, floor(placed x N / M))` of the Pillz placed, free pill included.
+    // Kyrioz Ld's 1/3 recovers 2 of 8 in 947010/0, where rounding the paid 7 up would give 3,
+    // 1 of 4 in 1025563/0 and 2 of 7 in 946570/0, and Costello's pays nothing on a loss in
+    // 946810/0. Morgane's 1/2 recovers 3 of 7 in 1131463/1, Bubbles' 3 of 6 in 1207064/0 and
+    // Eebiza's 1 of 1 in 877983/1; Morgane's wins pay nothing in 1131373/3 and 1131420/3, nor
+    // does her stopped loss in 1145745/3. Porcusite's Unison 1/2 recovers 5 of 11 in an
+    // all-Freaks hand in 1025181/0, and Cynosine's Unison 1/3 2 of 7 in 1093079/0.
+    (947010, 4),
+    (1025563, 2),
+    (946570, 2),
+    (946810, 1),
+    (1131463, 3),
+    (1207064, 1),
+    (877983, 3),
+    (1131373, 4),
+    (1131420, 4),
+    (1145745, 4),
+    (1025181, 3),
+    (1093079, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -2358,18 +2382,20 @@ fn previous_round_grammar_is_exact_for_fixed_numeric_abilities_and_bonuses() {
 }
 
 #[test]
-fn defeat_recover_grammar_is_exact_for_the_three_audited_source_id_pairs() {
+fn defeat_recover_grammar_admits_every_same_text_record_from_either_slot() {
     let catalog = catalog();
     const DESCRIPTION: &str = "Defeat: Recover 2 Pillz Out Of 3";
+    // Revision 63 admits Recover by grammar: the text and complete shape are the authority,
+    // and the Defeat form is printed on card abilities and on the Vortex bonus alike.
     let cases = [
         (577, false, true),
-        (577, true, false),
-        (729, false, false),
+        (577, true, true),
+        (729, false, true),
         (729, true, true),
-        (1418, false, false),
+        (1418, false, true),
         (1418, true, true),
-        (2475, false, false),
-        (2475, true, false),
+        (2475, false, true),
+        (2475, true, true),
     ];
 
     for (id, ability, admitted) in cases {
@@ -2408,13 +2434,6 @@ fn defeat_recover_grammar_is_exact_for_the_three_audited_source_id_pairs() {
             admitted,
             "id={id}, ability={ability}"
         );
-        if id == 2475 {
-            assert!(matches!(
-                disposition,
-                CombatStatProjectionDispositionV1::Disabled { identity, .. }
-                    if identity.id == 2475
-            ));
-        }
         if !admitted {
             assert!(matches!(
                 prepared.execute_combat_stat_diagnostic_v1_prefix(1),

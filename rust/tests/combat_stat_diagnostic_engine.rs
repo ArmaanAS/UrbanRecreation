@@ -7129,6 +7129,102 @@ fn consume_and_combust_latch_on_a_win_and_floor_each_resource_on_its_own() {
     }
 }
 
+/// A Recover is refused beside an opposing reduction of its owner's Pillz towards a floor -
+/// the order of an uncapped Pillz gain against one is unpinned, and 1093173/1 shows the
+/// server's is not the engine's P1-then-P2 - and beside an opposing Copy of the slot it sits
+/// in, which no round has shown taking one. A Copy of the other slot and an opposing gain
+/// are admitted, and so is revision 8's `Defeat: Recover 2 Pillz Out Of 3` in every context.
+#[test]
+fn recovery_is_refused_beside_an_opposing_pillz_floor_or_a_copy_of_its_slot() {
+    let recover = |numerator, denominator, victory| {
+        execute(
+            3459,
+            CombatStatPredicateV1::Always,
+            if victory {
+                CombatStatEffectV1::RecoverPaidPillzOnVictory {
+                    numerator,
+                    denominator,
+                }
+            } else {
+                CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+                    numerator,
+                    denominator,
+                }
+            },
+        )
+    };
+    let victory_floor = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let defeat_floor = execute(
+        912,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnDefeat {
+            pillz: 2,
+            minimum: 4,
+        },
+    );
+    let gain = execute(
+        1150,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+    );
+    let copy = |copied| CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    for (source, opposing, refused) in [
+        (recover(1, 3, true), victory_floor, true),
+        (recover(1, 3, true), defeat_floor, true),
+        (recover(1, 2, false), victory_floor, true),
+        (
+            recover(1, 2, false),
+            copy(CopiedSourceKindV1::Ability),
+            true,
+        ),
+        (recover(1, 2, false), copy(CopiedSourceKindV1::Bonus), false),
+        (recover(1, 2, false), gain, false),
+        (recover(2, 3, false), victory_floor, false),
+        (
+            recover(2, 3, false),
+            copy(CopiedSourceKindV1::Ability),
+            false,
+        ),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = source;
+        cards[PlayerId::P2][2].ability = opposing;
+        if matches!(opposing, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+            cards[PlayerId::P2][2].source_ability_support_count = 1;
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason: InvalidCombatStatPlanReasonV1::RecoveryAgainstUnpinnedEffect,
+                        ..
+                    })
+                ),
+                "{source:?} against {opposing:?}"
+            );
+        } else {
+            assert!(result.is_ok(), "{source:?} against {opposing:?}");
+        }
+    }
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {

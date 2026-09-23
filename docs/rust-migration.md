@@ -2388,6 +2388,45 @@ selected hazard, which keeps 1089452 at its round 0. The gate grows from 685 to 
 1131208 from one round to four, 947121 to three, 964088 to two, and 948108 to three, since its
 capture flags the final round's Life as stale.
 
+Semantic revision 63 admits Recover by grammar. `Defeat: Recover N Pillz Out Of M` pays the
+loser (`577`, `729`, `1418`, `2475` at 2/3; `770`, `902`, `1035`, `2108`, `2217` at 1/2),
+`Recover N Pillz Out Of M` the winner (`3459`, `4610`, `5651` at 1/3), and `Unison : Recover
+N Pillz Out Of M` a winner whose hand is one clan (`3752` at 1/3, `4050` at 1/2). Each is
+admitted by exact text rebuilt from the record's ratio over the complete shape, from card
+abilities only, except the Defeat form, which the Vortex bonus prints. That drops revision 8's
+identity lock, and with it the lock on Sasl Lovelace's same-text `2475`. The family line read
+8 and the slice unlocked all 8 - `877983`, `947010`, `1025181`, `1089933`, `1093079`,
+`1093500`, `1131373` and `1131420` - taking eligibility from 211 to 219.
+
+**The server pins the formula, and it is not revision 8's.** A Recover returns `max(1,
+floor(placed x N / M))` of the Pillz placed on the card: the bet, the free pill and Fury's
+three. For 2/3 and 1/2 that equals revision 8's `ceil(paid x N / M)`, but 1/3 tells the two
+apart. 947010/0 does: Kyrioz Ld bets 7 and wins, and the server recovers 2 of 8 where
+`ceil(7 / 3)` is 3. The other Victory rounds agree: 1 of 4 in 1025563/0, 2 of 7 in 946570/0,
+3 of 10 in 1093500/3, and 1 of 4 for Miss Gunslinger in 1145886/1. On the Defeat side,
+Morgane's 1/2 recovers 3 of 7 in 1131463/1, Bubbles' 3 of 6 in 1207064/0, and Eebiza's and
+Morgane's 1 of 1 in 877983/1 and 1145886/1. The plain form pays nothing on a loss (Costello in
+946810/0), and the Defeat form nothing on a win (Morgane in 1131373/3 and 1131420/3) or when
+stopped (1145745/3). Unison pays in an all-Freaks hand (Porcusite 5 of 11 in 1025181/0) and an
+all-Bangers one (Cynosine 2 of 7 in 1093079/0). Fury's three are pinned on the Defeat side by
+1024592/1 (Arnie, 4 + 3 placed on 8 recovers 5); no Victory round has a Fury.
+
+Two contexts are refused rather than guessed, at no cost among the unlocked draws
+(`RecoveryAgainstUnpinnedEffect`). The first is an opposing reduction of the owner's Pillz
+towards a floor. An uncapped gain commutes with every other gain, but not with such a
+reduction: the two orders differ exactly when the floor binds. 1093173/1 shows the server
+applying a Pillz gain before the opposing floored reduction where the engine's P1-then-P2 pass
+would not, and 1091644/1 is the one Recover round meeting one, where both orders agree. A new
+exhaustive `floors_opposing_pillz` on the post-round effects decides it, so a later Pillz
+reducer has to say. The second is an opposing Copy of the slot the Recover sits in, which no
+round has shown; a Copy of the other slot cannot take it and is admitted. Revision 8's
+`Defeat: Recover 2 Pillz Out Of 3` keeps the admission it had before either question was found.
+Closing it would refuse six eligible draws: 924413, 946288, 964150 and 1091644 against a Pillz
+floor, 925254 and 947228 against a Copy. It would also cost eleven gate rounds, among them
+revision 30's own evidence in 924413/0, 946288/2 and 1091644/1. That decision is left to the
+owner, as is the same order question under revision 30's `-N Opp Pillz. Min M` facing every
+admitted opposing Pillz gain. The gate grows from 696 to 735 rounds.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 62;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 63;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -802,20 +802,83 @@ pub(crate) fn has_reanimate_life_shape(definition: &EffectDefinitionV1) -> bool 
     input.value > 0 && defeat_life_shape_matches(input, 0)
 }
 
-/// Strictly recognize the three replay identities audited for the diagnostic's Defeat
-/// recovery effect. This intentionally does not broaden the registry compiler's generic
-/// `RecoverPillz` support.
-pub(crate) fn classify_defeat_recover_pillz(
+/// The Recover grammar's typed reading: which outcome pays, the printed ratio, and the
+/// predicate its prefix names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RecoverPillzV1 {
+    pub(crate) on_victory: bool,
+    pub(crate) numerator: u16,
+    pub(crate) denominator: u16,
+    pub(crate) predicate: CombatStatPredicateV1,
+}
+
+impl RecoverPillzV1 {
+    pub(crate) const fn effects(self) -> (CombatStatPostRoundEffectV1, CombatStatEffectV1) {
+        let (numerator, denominator) = (self.numerator, self.denominator);
+        if self.on_victory {
+            (
+                CombatStatPostRoundEffectV1::RecoverPaidPillzOnVictory {
+                    numerator,
+                    denominator,
+                },
+                CombatStatEffectV1::RecoverPaidPillzOnVictory {
+                    numerator,
+                    denominator,
+                },
+            )
+        } else {
+            (
+                CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat {
+                    numerator,
+                    denominator,
+                },
+                CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+                    numerator,
+                    denominator,
+                },
+            )
+        }
+    }
+}
+
+/// `Recover N Pillz Out Of M` under its three printed prefixes: `Defeat: ` pays the loser,
+/// no prefix pays the winner, and `Unison : ` pays the winner when the owner's hand is one
+/// effective clan. Admitted by exact text and complete structured shape (the registry's
+/// `value`/`valueMin` are the ratio), card abilities only except the Defeat form, which the
+/// Vortex clan prints as its bonus. The ratio must be a proper fraction; nothing printed is
+/// otherwise, and a zero denominator would be a division by zero in the engine arm.
+pub(crate) fn classify_recover_pillz(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
-) -> bool {
-    let identity_matches = match source_kind {
-        CombatStatEffectSourceV1::Ability => matches!(definition.id(), 729 | 1418),
-        CombatStatEffectSourceV1::Bonus => definition.id() == 577,
+) -> Option<RecoverPillzV1> {
+    let input = definition.structured_input();
+    let (numerator, denominator) = (input.value, input.value_min);
+    if numerator == 0 || numerator >= denominator {
+        return None;
+    }
+    let (prefix, on_victory, predicate) = match input.current_round_requirement {
+        CurrentRoundRequirementV1::Lose if !input.is_clanmates_count_linked => {
+            ("Defeat: ", false, CombatStatPredicateV1::Always)
+        }
+        CurrentRoundRequirementV1::Win if !input.is_clanmates_count_linked => {
+            ("", true, CombatStatPredicateV1::Always)
+        }
+        CurrentRoundRequirementV1::Win => {
+            ("Unison : ", true, CombatStatPredicateV1::OwnerHandUnison)
+        }
+        _ => return None,
     };
-    identity_matches
-        && definition.description() == "Defeat: Recover 2 Pillz Out Of 3"
-        && defeat_recover_shape_matches(definition.structured_input())
+    let source_admitted = source_kind == CombatStatEffectSourceV1::Ability || !on_victory;
+    (source_admitted
+        && has_recover_pillz_shape(definition)
+        && definition.description()
+            == format!("{prefix}Recover {numerator} Pillz Out Of {denominator}"))
+    .then_some(RecoverPillzV1 {
+        on_victory,
+        numerator,
+        denominator,
+        predicate,
+    })
 }
 
 /// Strictly recognize the audited Victory Or Defeat end-of-round Pillz sources. This is
@@ -2499,7 +2562,7 @@ pub(crate) fn classify_combat_stat_effect(
     }
     // Recovery has its own post-round execution channel. Keep it out of this combat-stat
     // return type so neither generic numeric admission nor cancellation can reinterpret it.
-    if classify_defeat_recover_pillz(definition, source_kind) {
+    if classify_recover_pillz(definition, source_kind).is_some() {
         return None;
     }
     if classify_argos_defeat_capped_pillz(definition, source_kind) {
@@ -3817,18 +3880,29 @@ fn neutral_except_previous_round(input: &StructuredEffectV1) -> bool {
         && !input.is_immediate_permanent
 }
 
-fn defeat_recover_shape_matches(input: &StructuredEffectV1) -> bool {
-    shape_matches(
-        input,
+/// Structural half of the Recover boundary: the outcome channel is Lose, or Win with or
+/// without the Unison clan-mates link, and `value`/`valueMin` are read as the ratio.
+pub(crate) fn has_recover_pillz_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    let shape = PostRoundShapeV1 {
+        value_min: ShapeFieldV1::Read,
+        attribute: AttributeAffectedV1::Pillz,
+        special: SpecialActionV1::RecoverPillz,
+        ..POST_ROUND_SHAPE
+    };
+    [
         PostRoundShapeV1 {
-            value: ShapeFieldV1::Exact(2),
-            value_min: ShapeFieldV1::Exact(3),
             current_round: CurrentRoundRequirementV1::Lose,
-            attribute: AttributeAffectedV1::Pillz,
-            special: SpecialActionV1::RecoverPillz,
-            ..POST_ROUND_SHAPE
+            ..shape
         },
-    )
+        shape,
+        PostRoundShapeV1 {
+            clanmates_count: true,
+            ..shape
+        },
+    ]
+    .into_iter()
+    .any(|shape| shape_matches(input, shape))
 }
 
 /// How a grammar constrains one numeric field of a structured record.
@@ -3889,8 +3963,8 @@ pub(crate) struct PostRoundShapeV1 {
     /// every other grammar, which then requires both neutral as before.
     pub(crate) bet_gated: bool,
     /// The `Unison:` gate, carried as `isClanmatesCountLinked`. Only `Unison: Killshot: +N
-    /// Life` names it; every other grammar requires the flag false, so none of them can
-    /// admit a Unison record.
+    /// Life` and `Unison : Recover N Pillz Out Of M` name it; every other grammar requires
+    /// the flag false, so none of them can admit a Unison record.
     pub(crate) clanmates_count: bool,
 }
 
@@ -7371,50 +7445,108 @@ mod tests {
     }
 
     #[test]
-    fn defeat_recover_admits_only_the_audited_identity_and_shape() {
+    fn recover_is_admitted_by_grammar_over_every_printed_prefix_and_ratio() {
         let registry = registry();
-        assert!(classify_defeat_recover_pillz(
-            registry
-                .lookup_capture(577, "Defeat: Recover 2 Pillz Out Of 3")
-                .unwrap(),
-            CombatStatEffectSourceV1::Bonus,
-        ));
-        assert!(classify_defeat_recover_pillz(
-            registry
-                .lookup_capture(1418, "Defeat: Recover 2 Pillz Out Of 3")
-                .unwrap(),
-            CombatStatEffectSourceV1::Ability,
-        ));
-        assert!(!classify_defeat_recover_pillz(
-            registry
-                .lookup_capture(577, "Defeat: Recover 2 Pillz Out Of 3")
-                .unwrap(),
-            CombatStatEffectSourceV1::Ability,
-        ));
-        assert!(!classify_defeat_recover_pillz(
-            registry
-                .lookup_capture(1418, "Defeat: Recover 2 Pillz Out Of 3")
-                .unwrap(),
-            CombatStatEffectSourceV1::Bonus,
-        ));
-        assert!(classify_defeat_recover_pillz(
-            registry
-                .lookup_capture(729, "Defeat: Recover 2 Pillz Out Of 3")
-                .unwrap(),
-            CombatStatEffectSourceV1::Ability,
-        ));
-        for id in [2475] {
-            let definition = registry
-                .lookup_capture(id, "Defeat: Recover 2 Pillz Out Of 3")
-                .unwrap();
-            assert!(!classify_defeat_recover_pillz(
-                definition,
-                CombatStatEffectSourceV1::Bonus,
-            ));
-            assert!(!classify_defeat_recover_pillz(
-                definition,
+        let read = |id, text| {
+            classify_recover_pillz(
+                registry.lookup_capture(id, text).unwrap(),
                 CombatStatEffectSourceV1::Ability,
-            ));
+            )
+        };
+        let defeat = |numerator, denominator| RecoverPillzV1 {
+            on_victory: false,
+            numerator,
+            denominator,
+            predicate: CombatStatPredicateV1::Always,
+        };
+        let victory = |numerator, denominator, predicate| RecoverPillzV1 {
+            on_victory: true,
+            numerator,
+            denominator,
+            predicate,
+        };
+        // Revision 8's identities, and the same-text Sasl Lovelace record it had locked out.
+        for id in [577, 729, 1418, 2475] {
+            assert_eq!(
+                read(id, "Defeat: Recover 2 Pillz Out Of 3"),
+                Some(defeat(2, 3))
+            );
+        }
+        for id in [770, 902, 1035, 2108, 2217] {
+            assert_eq!(
+                read(id, "Defeat: Recover 1 Pillz Out Of 2"),
+                Some(defeat(1, 2))
+            );
+        }
+        for id in [3459, 4610, 5651] {
+            assert_eq!(
+                read(id, "Recover 1 Pillz Out Of 3"),
+                Some(victory(1, 3, CombatStatPredicateV1::Always))
+            );
+        }
+        assert_eq!(
+            read(3752, "Unison : Recover 1 Pillz Out Of 3"),
+            Some(victory(1, 3, CombatStatPredicateV1::OwnerHandUnison))
+        );
+        assert_eq!(
+            read(4050, "Unison : Recover 1 Pillz Out Of 2"),
+            Some(victory(1, 2, CombatStatPredicateV1::OwnerHandUnison))
+        );
+        // The Vortex bonus prints the Defeat form; no clan prints the Victory forms.
+        assert_eq!(
+            classify_recover_pillz(
+                registry
+                    .lookup_capture(577, "Defeat: Recover 2 Pillz Out Of 3")
+                    .unwrap(),
+                CombatStatEffectSourceV1::Bonus,
+            ),
+            Some(defeat(2, 3))
+        );
+        for (id, text) in [
+            (5651, "Recover 1 Pillz Out Of 3"),
+            (4050, "Unison : Recover 1 Pillz Out Of 2"),
+        ] {
+            assert_eq!(
+                classify_recover_pillz(
+                    registry.lookup_capture(id, text).unwrap(),
+                    CombatStatEffectSourceV1::Bonus,
+                ),
+                None,
+                "{id}"
+            );
+        }
+        // Every structural near miss: another outcome, a lost clan-mates link, a swapped or
+        // degenerate ratio, and each neutral field disturbed.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for id in ["577", "1035", "3459", "3752"] {
+            for (field, value) in [
+                ("currentRoundRequirement", serde_json::json!("any")),
+                ("isClanmatesCountLinked", serde_json::json!(id != "3752")),
+                ("value", serde_json::json!(0)),
+                ("valueMin", serde_json::json!(1)),
+                ("valueMin", serde_json::json!(0)),
+                ("valueMax", serde_json::json!(4)),
+                ("previousRoundRequirement", serde_json::json!("win")),
+                ("positionRequirement", serde_json::json!("attacker")),
+                ("sideAffected", serde_json::json!("opponent")),
+                ("attributeAffected", serde_json::json!("life")),
+                ("specialAction", serde_json::json!("none")),
+                ("isPermanent", serde_json::json!(true)),
+                ("clanRequirement", serde_json::json!("45")),
+            ] {
+                let mut malformed = source.clone();
+                malformed[id]["abilityData"][field] = value.clone();
+                let malformed =
+                    EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+                let definition = malformed.get(id.parse().unwrap()).unwrap();
+                assert_eq!(
+                    classify_recover_pillz(definition, CombatStatEffectSourceV1::Ability),
+                    None,
+                    "malformed {id} {field} = {value}",
+                );
+            }
         }
     }
 

@@ -11,12 +11,12 @@ use super::combat_stat_compiler::{
     classify_conditional_stat_copy, classify_conditional_stop,
     classify_consume_opponent_pillz_on_victory, classify_copy_opponent_source,
     classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
-    classify_defeat_pillz, classify_defeat_pillz_and_life, classify_defeat_recover_pillz,
+    classify_defeat_pillz, classify_defeat_pillz_and_life,
     classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
     classify_heal_life_on_victory, classify_killshot_opponent_life,
     classify_killshot_pillz_and_life, classify_killshot_post_round,
     classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life, classify_recover_pillz,
     classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
@@ -1916,6 +1916,29 @@ fn prepare_catalog_source(
                 definition.id(),
             );
         }
+        // Recover is admitted by grammar under the same rule: every printed prefix and
+        // ratio, the catalog row a structural alias of the definition its text names. The
+        // alias itself stays the executed identity, as revision 8's audited ids always were.
+        if classify_recover_pillz(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_defeat_recover_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                catalog_id.unwrap_or(definition.id()),
+            );
+        }
         // The Defeat own Pillz gain and its compound follow the same rule.
         if classify_defeat_pillz(definition, source_kind).is_some()
             || classify_defeat_pillz_and_life(definition, source_kind).is_some()
@@ -2750,8 +2773,9 @@ fn defeat_recover_registry_definition_id(
     if description != DEFEAT_RECOVER_DESCRIPTION {
         return None;
     }
+    // Card abilities are admitted by grammar below, as a structural alias of the
+    // definition their text resolves to; only the clan bonus needs this bridge.
     match (source_kind, catalog_id) {
-        (CombatStatEffectSourceV1::Ability, Some(id @ (729 | 1418))) => Some(id),
         (CombatStatEffectSourceV1::Bonus, Some(VORTEX_CATALOG_BONUS_ID))
             if effective_clan_id == VORTEX_CLAN_ID =>
         {
@@ -2779,11 +2803,9 @@ fn prepare_defeat_recover_source(
         description,
         registry_definition_id,
         |definition, source_kind| {
-            classify_defeat_recover_pillz(definition, source_kind).then_some((
-                CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
-                CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-                CombatStatPredicateV1::Always,
-            ))
+            let recover = classify_recover_pillz(definition, source_kind)?;
+            let (post_round, effect) = recover.effects();
+            Some((post_round, effect, recover.predicate))
         },
     )
 }

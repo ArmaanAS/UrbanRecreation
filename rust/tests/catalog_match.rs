@@ -730,7 +730,11 @@ fn strict_catalog_match_executes_audited_ability_recovery_and_restores_undo() {
     .unwrap();
     let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
         identity,
-        effect: CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat,
+        effect:
+            CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat {
+                numerator: 2,
+                denominator: 3,
+            },
         ..
     } = &prepared.preparation()[PlayerId::P1][0].ability
     else {
@@ -745,7 +749,10 @@ fn strict_catalog_match_executes_audited_ability_recovery_and_restores_undo() {
         CombatStatSourcePlanV1::Execute {
             source_id: 1418,
             predicate: CombatStatPredicateV1::Always,
-            effect: urban_recreation_rust::engine::CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+                numerator: 2,
+                denominator: 3,
+            },
         }
     ));
 
@@ -847,7 +854,10 @@ fn strict_catalog_match_bridges_only_active_vortex_bonus_and_stop_bonus_disables
         CombatStatSourcePlanV1::Execute {
             source_id: 577,
             predicate: CombatStatPredicateV1::Always,
-            effect: urban_recreation_rust::engine::CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+                numerator: 2,
+                denominator: 3,
+            },
         }
     ));
 
@@ -2701,15 +2711,15 @@ fn strict_catalog_match_admits_unconditional_copy_and_rejects_conditional_varian
     ));
 }
 #[test]
-fn strict_catalog_match_defers_sasl_recovery_alias() {
+fn strict_catalog_match_admits_recover_by_grammar_through_real_aliases_only() {
     let catalog = catalog();
     let registry = registry();
     let (_, rescue) = fully_supported_hands();
-    assert!(matches!(
+    let prepare = |card: CardKey| {
         CatalogCombatStatMatchV1::new(
             input(
                 [
-                    CardKey::new(1178, 4), // Sasl Lovelace, catalog ability id 2475
+                    card,
                     CardKey::new(123, 1),
                     CardKey::new(124, 1),
                     CardKey::new(138, 1),
@@ -2720,16 +2730,75 @@ fn strict_catalog_match_defers_sasl_recovery_alias() {
             &catalog,
             &registry,
             PROJECTION,
+        )
+    };
+    // Sasl Lovelace's level-4 `2475`, locked out until revision 63, Octana's `1035` and
+    // Kyrioz Ld's `5651` each execute under their own alias.
+    for (card, catalog_id, expected) in [
+        (
+            CardKey::new(1178, 4),
+            2475,
+            CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat {
+                numerator: 2,
+                denominator: 3,
+            },
         ),
-        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player: PlayerId::P1,
-            hand_slot,
-            source_kind: CombatStatEffectSourceV1::Ability,
-            catalog_id: Some(2475),
-            ref description,
-            ..
-        }) if hand_slot.get() == 0 && description == "Defeat: Recover 2 Pillz Out Of 3"
-    ));
+        (
+            CardKey::new(1210, 2),
+            1035,
+            CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat {
+                numerator: 1,
+                denominator: 2,
+            },
+        ),
+        (
+            CardKey::new(2659, 2),
+            5651,
+            CombatStatPostRoundEffectV1::RecoverPaidPillzOnVictory {
+                numerator: 1,
+                denominator: 3,
+            },
+        ),
+    ] {
+        let prepared = prepare(card).unwrap();
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{card:?} recovery was not admitted as post-round work")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id));
+        assert_eq!(identity.registry_definition_id, catalog_id);
+        assert_eq!(*effect, expected);
+        assert_eq!(*predicate, CombatStatPredicateV1::Always);
+    }
+    // A printed level whose catalog id no registry definition owns has no alias to borrow:
+    // Sasl Lovelace's level 5 (`1005`) and Kyrioz Ld's level 1 (`5917`).
+    for (card, catalog_id, text) in [
+        (
+            CardKey::new(1178, 5),
+            1005,
+            "Defeat: Recover 2 Pillz Out Of 3",
+        ),
+        (CardKey::new(2659, 1), 5917, "Recover 1 Pillz Out Of 3"),
+    ] {
+        assert!(
+            matches!(
+                prepare(card),
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player: PlayerId::P1,
+                    hand_slot,
+                    source_kind: CombatStatEffectSourceV1::Ability,
+                    catalog_id: Some(id),
+                    ref description,
+                    ..
+                }) if hand_slot.get() == 0 && id == catalog_id && description == text
+            ),
+            "{card:?}"
+        );
+    }
 }
 
 #[test]

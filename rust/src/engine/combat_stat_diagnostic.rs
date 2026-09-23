@@ -165,7 +165,17 @@ pub enum RoundScaleV1 {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CombatStatPostRoundEffectV1 {
-    RecoverPaidPillzOnDefeat,
+    /// `Defeat: Recover N Pillz Out Of M`: the loser recovers `max(1, floor((paid + 1) * N
+    /// / M))`, where `paid` is the bet plus Fury's three - the Pillz placed on the card.
+    RecoverPaidPillzOnDefeat {
+        numerator: u16,
+        denominator: u16,
+    },
+    /// `Recover N Pillz Out Of M` and its `Unison :` form: the same recovery for the winner.
+    RecoverPaidPillzOnVictory {
+        numerator: u16,
+        denominator: u16,
+    },
     GainOnePillzOnVictoryOrDefeat,
     GainOnePillzAndLifeOnVictory,
     GainTwoPillzOnDefeatMaxEleven,
@@ -437,9 +447,17 @@ pub enum CombatStatEffectV1 {
     /// either card applies. Damage, Fury and end-of-round effects are untouched. Bonus slot
     /// only - it has only been observed as the Cosmohnuts clan bonus.
     SimplifyAttackToPillz,
-    /// Fixed non-stat post-round work. Identity and source are checked at plan
-    /// construction; its values are intentionally not caller-configurable.
-    RecoverPaidPillzOnDefeat,
+    /// Non-stat post-round recovery of the Pillz placed on the losing card. Construction
+    /// checks the ratio is a proper fraction and the predicate is unconditional.
+    RecoverPaidPillzOnDefeat {
+        numerator: u16,
+        denominator: u16,
+    },
+    /// The winning side's recovery, unconditional or under `Unison :`.
+    RecoverPaidPillzOnVictory {
+        numerator: u16,
+        denominator: u16,
+    },
     /// Fixed end-of-round resource work. It is neither a combat modifier nor configurable
     /// public data: a direct plan must use one exact audited source/id pair.
     GainOnePillzOnVictoryOrDefeat,
@@ -766,8 +784,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     ConditionalControl,
     IncompatibleBounds,
     InvalidModifierDirection,
-    DefeatRecoveryIdentity,
-    DefeatRecoveryPredicate,
+    RecoveryRatio,
+    RecoveryPredicate,
+    RecoverySource,
     VictoryOrDefeatIdentity,
     VictoryOrDefeatPredicate,
     KombokaVictoryPillzAndLifeClan,
@@ -857,6 +876,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// A single-stat Protection facing an opposing effect whose meeting with it no captured
     /// round has shown, or an opposing Copy.
     SingleStatProtectionAgainstUnpinnedEffect,
+    /// A Recover facing an opposing reduction of its owner's Pillz towards a floor, or an
+    /// opposing Copy.
+    RecoveryAgainstUnpinnedEffect,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
     BothPlayersGainSource,
@@ -1357,6 +1379,24 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect)
         }
+        // Recover raises its owner's Pillz with no cap, which commutes with every other gain
+        // but not with an opposing reduction towards a floor: the two orders differ exactly
+        // when the floor binds, and no round pins the server's (1093173/1 shows it is not the
+        // engine's P1-then-P2 for a Pillz gain against a floored reduction; 1091644/1 meets
+        // one where both orders agree). Nor has any round shown a Copy taking a Recover. So
+        // either in the opposing hand refuses it - except revision 8's `Defeat: Recover 2
+        // Pillz Out Of 3`, admitted before either question was found and left as it was.
+        CombatStatSourcePlanV1::Execute {
+            effect:
+                effect @ (CombatStatEffectV1::RecoverPaidPillzOnDefeat { .. }
+                | CombatStatEffectV1::RecoverPaidPillzOnVictory { .. }),
+            ..
+        } if effect != REVISION_8_RECOVERY
+            && (opposing_copy_can_take(plan, own, opponent)
+                || source_plans(opponent).any(floors_opposing_pillz)) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::RecoveryAgainstUnpinnedEffect)
+        }
         // The single-stat Protections have seven selected rounds between them, and each shows
         // one only leaving a reduction of another stat alone: an Attack cut on `Protection:
         // Power` (948108/0, 964088/0, 925204/2) and on `Protection : Damage` (947121/1), and a
@@ -1467,6 +1507,27 @@ fn source_plans(
     hand.iter().flat_map(|card| [card.ability, card.bonus])
 }
 
+/// Whether an opposing Copy could take `plan`: one copying the slot, Ability or Bonus, an
+/// owner card carries it in.
+fn opposing_copy_can_take(
+    plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let copies = |kind| {
+        source_plans(opponent).any(|opposing| {
+            matches!(
+                opposing,
+                CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } if copied == kind
+            )
+        })
+    };
+    own.iter().any(|card| {
+        (card.ability == plan && copies(CopiedSourceKindV1::Ability))
+            || (card.bonus == plan && copies(CopiedSourceKindV1::Bonus))
+    })
+}
+
 fn hand_has_copy(hand: &[CombatStatCardPlanV1; HAND_SIZE]) -> bool {
     source_plans(hand).any(|plan| matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }))
 }
@@ -1547,6 +1608,22 @@ fn zeroes_both_attacks(plan: CombatStatSourcePlanV1) -> bool {
             ..
         }
     )
+}
+
+/// The one Recover revision 8 admitted, whose contexts stay as they were.
+const REVISION_8_RECOVERY: CombatStatEffectV1 = CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+    numerator: 2,
+    denominator: 3,
+};
+
+/// An end-of-round effect lowering the opposing player's Pillz towards a floor.
+/// `PostRoundSourceEffect::floors_opposing_pillz` is exhaustive, so a later grammar cannot
+/// slip past the Recover refusal.
+fn floors_opposing_pillz(plan: CombatStatSourcePlanV1) -> bool {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
+        return false;
+    };
+    shared_post_round_effect(effect).is_some_and(PostRoundSourceEffect::floors_opposing_pillz)
 }
 
 /// Whether `plan`, from the opposing hand, changes or reads a stat of the owner's card that no
@@ -2377,27 +2454,47 @@ fn validate_combat_stat_source_plan(
             InvalidCombatStatPlanReasonV1::ReprisalStopOpponentAbilityIdentity,
         ));
     }
-    if effect == CombatStatEffectV1::RecoverPaidPillzOnDefeat {
-        if !matches!(
-            (source, source_id),
-            (CombatStatEffectSourceV1::Ability, 729 | 1418)
-                | (CombatStatEffectSourceV1::Bonus, 577)
-        ) {
+    // Recovery is admitted by grammar since revision 63. A zero denominator would divide
+    // by zero in the engine arm, and no card prints a ratio of one or more.
+    if let CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+        numerator,
+        denominator,
+    }
+    | CombatStatEffectV1::RecoverPaidPillzOnVictory {
+        numerator,
+        denominator,
+    } = effect
+    {
+        if numerator == 0 || numerator >= denominator {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
                 source,
                 source_id,
-                InvalidCombatStatPlanReasonV1::DefeatRecoveryIdentity,
+                InvalidCombatStatPlanReasonV1::RecoveryRatio,
             ));
         }
-        if predicate != CombatStatPredicateV1::Always {
+        let on_victory = matches!(effect, CombatStatEffectV1::RecoverPaidPillzOnVictory { .. });
+        // Only the Vortex bonus prints a Recover, and it prints the Defeat form.
+        if on_victory && source != CombatStatEffectSourceV1::Ability {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
                 source,
                 source_id,
-                InvalidCombatStatPlanReasonV1::DefeatRecoveryPredicate,
+                InvalidCombatStatPlanReasonV1::RecoverySource,
+            ));
+        }
+        // `Unison :` prints only the Victory form.
+        if !(predicate == CombatStatPredicateV1::Always
+            || (on_victory && predicate == CombatStatPredicateV1::OwnerHandUnison))
+        {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::RecoveryPredicate,
             ));
         }
         return Ok(());
@@ -3578,7 +3675,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 },
             }
         }
-        CombatStatEffectV1::RecoverPaidPillzOnDefeat
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat { .. }
+        | CombatStatEffectV1::RecoverPaidPillzOnVictory { .. }
         | CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat
         | CombatStatEffectV1::GainOnePillzAndLifeOnVictory
         | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven
@@ -3633,8 +3731,23 @@ pub(crate) fn shared_post_round_effect(
     effect: CombatStatEffectV1,
 ) -> Option<PostRoundSourceEffect> {
     match effect {
-        CombatStatEffectV1::RecoverPaidPillzOnDefeat => Some(PostRoundSourceEffect::Fixed(
-            PostRoundEffect::RecoverPaidPillzOnDefeat,
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+            numerator,
+            denominator,
+        } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::RecoverPaidPillzOnDefeat {
+                numerator,
+                denominator,
+            },
+        )),
+        CombatStatEffectV1::RecoverPaidPillzOnVictory {
+            numerator,
+            denominator,
+        } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::RecoverPaidPillzOnVictory {
+                numerator,
+                denominator,
+            },
         )),
         CombatStatEffectV1::GainOnePillzOnVictoryOrDefeat => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainOnePillzOnVictoryOrDefeat,
@@ -3885,6 +3998,11 @@ mod tests {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
+    const TWO_OF_THREE: CombatStatEffectV1 = CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+        numerator: 2,
+        denominator: 3,
+    };
+
     fn base_spec(p1_pillz: u16) -> BaseRulesMatchSpec {
         let card = |id, power| BaseRulesCardSpec {
             key: CardKey::new(id, 3),
@@ -3968,12 +4086,7 @@ mod tests {
 
     #[test]
     fn defeat_recovery_uses_fury_inclusive_cost_and_undo_is_exact() {
-        let spec = spec_with_p1(
-            CombatStatEffectSourceV1::Ability,
-            729,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            7,
-        );
+        let spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 729, TWO_OF_THREE, 7);
         let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
         let before = game.position().clone();
         let mut hasher = DefaultHasher::new();
@@ -3990,6 +4103,85 @@ mod tests {
         let mut restored_hasher = DefaultHasher::new();
         game.position().hash(&mut restored_hasher);
         assert_eq!(restored_hasher.finish(), before_hash);
+    }
+
+    /// The recovered amount is `max(1, floor((paid + 1) * N / M))`: the Pillz placed on the
+    /// card, free pill included, rounded down. For 2/3 and 1/2 that equals rounding the paid
+    /// cost up, which is what the Defeat captures show; 1/3 is where the two differ.
+    #[test]
+    fn recovery_ratio_rounds_down_over_the_pillz_placed_including_the_free_pill() {
+        let defeat = |numerator, denominator| CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+            numerator,
+            denominator,
+        };
+        let victory = |numerator, denominator| CombatStatEffectV1::RecoverPaidPillzOnVictory {
+            numerator,
+            denominator,
+        };
+        let play = |effect, pillz, fury, win: bool| {
+            let mut spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 1, effect, 20);
+            spec.base_rules.players[PlayerId::P1].hand[0].power = if win { 400 } else { 1 };
+            let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+            let (report, _) = game.make(input(pillz, fury)).unwrap();
+            assert_eq!(report.cards[PlayerId::P1].won, win);
+            report.players[PlayerId::P1].pillz
+        };
+        let cost = |pillz: u16, fury: bool| pillz + if fury { 3 } else { 0 };
+        for (effect, pillz, fury, win, recovered) in [
+            // 1207064/0: Bubbles bets 5 and loses; 12 - 5 + 3 = 10.
+            (defeat(1, 2), 5, false, false, 3),
+            // 1131463/1: Morgane bets 6 and loses; 10 - 6 + 3 = 7.
+            (defeat(1, 2), 6, false, false, 3),
+            // 877983/1 and 1145886/1: a bet of nothing still recovers one.
+            (defeat(1, 2), 0, false, false, 1),
+            (defeat(1, 2), 4, true, false, 4),
+            // 947010/0: Kyrioz Ld bets 7 and wins; 12 - 7 + 2 = 7, not the 3 rounding up gives.
+            (victory(1, 3), 7, false, true, 2),
+            // 1093500/3, 946570/0, 1025563/0: 9, 6 and 3 recover 3, 2 and 1.
+            (victory(1, 3), 9, false, true, 3),
+            (victory(1, 3), 6, false, true, 2),
+            (victory(1, 3), 3, false, true, 1),
+            (victory(1, 3), 0, false, true, 1),
+            (victory(1, 3), 2, true, true, 2),
+            // 1025181/0: Porcusite's Unison 1/2 bets 10 and wins; 12 - 10 + 5 = 7.
+            (victory(1, 2), 10, false, true, 5),
+            // A Recover on the other outcome pays nothing.
+            (victory(1, 3), 6, false, false, 0),
+            (defeat(1, 2), 6, false, true, 0),
+        ] {
+            assert_eq!(
+                play(effect, pillz, fury, win),
+                20 - cost(pillz, fury) + recovered,
+                "{effect:?} bet {pillz} fury {fury} win {win}"
+            );
+        }
+    }
+
+    #[test]
+    fn unison_recovery_pays_only_a_one_clan_hand() {
+        let effect = CombatStatEffectV1::RecoverPaidPillzOnVictory {
+            numerator: 1,
+            denominator: 3,
+        };
+        let play = |unison: bool| {
+            let mut spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 3752, effect, 20);
+            spec.base_rules.players[PlayerId::P1].hand[0].power = 400;
+            spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+                source_id: 3752,
+                predicate: CombatStatPredicateV1::OwnerHandUnison,
+                effect,
+            };
+            if unison {
+                for card in &mut spec.cards[PlayerId::P1] {
+                    card.effective_clan_id = 31;
+                }
+            }
+            let mut game = CombatStatDiagnosticV1::new(spec).unwrap();
+            game.make(input(6, false)).unwrap().0.players[PlayerId::P1].pillz
+        };
+        // 1093079/0: Cynosine bets 6 in an all-Bangers hand and wins; 12 - 6 + 2 = 8.
+        assert_eq!(play(true), 16);
+        assert_eq!(play(false), 14);
     }
 
     #[test]
@@ -4296,12 +4488,7 @@ mod tests {
 
     #[test]
     fn defeat_recovery_is_source_live_but_not_a_combat_stat_modifier() {
-        let mut spec = spec_with_p1(
-            CombatStatEffectSourceV1::Bonus,
-            577,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            3,
-        );
+        let mut spec = spec_with_p1(CombatStatEffectSourceV1::Bonus, 577, TWO_OF_THREE, 3);
         spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
             source_id: 1,
             predicate: CombatStatPredicateV1::Always,
@@ -4311,12 +4498,7 @@ mod tests {
         let (report, _) = stopped.make(input(3, false)).unwrap();
         assert_eq!(report.players[PlayerId::P1].pillz, 0);
 
-        let mut spec = spec_with_p1(
-            CombatStatEffectSourceV1::Ability,
-            1418,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            3,
-        );
+        let mut spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 1418, TWO_OF_THREE, 3);
         spec.cards[PlayerId::P2][0].ability = CombatStatSourcePlanV1::Execute {
             source_id: 1,
             predicate: CombatStatPredicateV1::Always,
@@ -4331,7 +4513,7 @@ mod tests {
         let mut minimum = CombatStatDiagnosticV1::new(spec_with_p1(
             CombatStatEffectSourceV1::Ability,
             1418,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            TWO_OF_THREE,
             0,
         ))
         .unwrap();
@@ -4340,16 +4522,11 @@ mod tests {
 
         // The two independently active sources represent two END events, so each exact
         // recovery applies after the same paid cost.
-        let mut double = spec_with_p1(
-            CombatStatEffectSourceV1::Ability,
-            729,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            3,
-        );
+        let mut double = spec_with_p1(CombatStatEffectSourceV1::Ability, 729, TWO_OF_THREE, 3);
         double.cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::Execute {
             source_id: 577,
             predicate: CombatStatPredicateV1::Always,
-            effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            effect: TWO_OF_THREE,
         };
         double.cards[PlayerId::P1][0].source_bonus_support_count = 1;
         let mut double = CombatStatDiagnosticV1::new(double).unwrap();
@@ -4359,24 +4536,15 @@ mod tests {
 
     #[test]
     fn defeat_recovery_requires_a_round_loss_and_still_runs_after_a_tie_break_or_ko() {
-        let mut winning_spec = spec_with_p1(
-            CombatStatEffectSourceV1::Ability,
-            1418,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            3,
-        );
+        let mut winning_spec =
+            spec_with_p1(CombatStatEffectSourceV1::Ability, 1418, TWO_OF_THREE, 3);
         winning_spec.base_rules.players[PlayerId::P1].hand[0].power = 40;
         let mut winner = CombatStatDiagnosticV1::new(winning_spec).unwrap();
         let (report, _) = winner.make(input(3, false)).unwrap();
         assert!(report.cards[PlayerId::P1].won);
         assert_eq!(report.players[PlayerId::P1].pillz, 0);
 
-        let mut tied_spec = spec_with_p1(
-            CombatStatEffectSourceV1::Ability,
-            1418,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            0,
-        );
+        let mut tied_spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 1418, TWO_OF_THREE, 0);
         tied_spec.base_rules.players[PlayerId::P2].hand[0].power = 6;
         let mut tied = CombatStatDiagnosticV1::new(tied_spec).unwrap();
         let (report, _) = tied
@@ -4391,12 +4559,7 @@ mod tests {
         assert!(!report.cards[PlayerId::P1].won);
         assert_eq!(report.players[PlayerId::P1].pillz, 1);
 
-        let mut ko_spec = spec_with_p1(
-            CombatStatEffectSourceV1::Ability,
-            1418,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            3,
-        );
+        let mut ko_spec = spec_with_p1(CombatStatEffectSourceV1::Ability, 1418, TWO_OF_THREE, 3);
         ko_spec.base_rules.players[PlayerId::P1].initial_life = 2;
         let mut ko = CombatStatDiagnosticV1::new(ko_spec).unwrap();
         let (report, _) = ko.make(input(3, false)).unwrap();
@@ -4406,36 +4569,84 @@ mod tests {
     }
 
     #[test]
-    fn defeat_recovery_public_plans_are_identity_locked_and_overflow_is_atomic() {
-        let wrong_identity = spec_with_p1(
+    fn recovery_public_plans_are_bounded_by_grammar_and_overflow_is_atomic() {
+        // Sasl Lovelace's same-text `2475` was locked out until revision 63.
+        assert!(CombatStatDiagnosticV1::new(spec_with_p1(
             CombatStatEffectSourceV1::Ability,
             2475,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            TWO_OF_THREE,
             3,
-        );
+        ))
+        .is_ok());
+        let defeat = |numerator, denominator| CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+            numerator,
+            denominator,
+        };
+        let victory = |numerator, denominator| CombatStatEffectV1::RecoverPaidPillzOnVictory {
+            numerator,
+            denominator,
+        };
+        for effect in [
+            defeat(0, 3),
+            defeat(3, 3),
+            defeat(1, 0),
+            victory(0, 0),
+            victory(4, 3),
+        ] {
+            assert!(
+                matches!(
+                    CombatStatDiagnosticV1::new(spec_with_p1(
+                        CombatStatEffectSourceV1::Ability,
+                        2475,
+                        effect,
+                        3,
+                    )),
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason: InvalidCombatStatPlanReasonV1::RecoveryRatio,
+                        ..
+                    })
+                ),
+                "{effect:?}"
+            );
+        }
         assert!(matches!(
-            CombatStatDiagnosticV1::new(wrong_identity),
+            CombatStatDiagnosticV1::new(spec_with_p1(
+                CombatStatEffectSourceV1::Bonus,
+                3459,
+                victory(1, 3),
+                3,
+            )),
             Err(CombatStatPlanErrorV1::InvalidExecute {
-                reason: InvalidCombatStatPlanReasonV1::DefeatRecoveryIdentity,
+                reason: InvalidCombatStatPlanReasonV1::RecoverySource,
+                ..
+            })
+        ));
+        let mut unison_defeat =
+            spec_with_p1(CombatStatEffectSourceV1::Ability, 770, defeat(1, 2), 3);
+        unison_defeat.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 770,
+            predicate: CombatStatPredicateV1::OwnerHandUnison,
+            effect: defeat(1, 2),
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(unison_defeat),
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::RecoveryPredicate,
                 ..
             })
         ));
 
-        let mut wrong_predicate = spec_with_p1(
-            CombatStatEffectSourceV1::Ability,
-            1418,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
-            3,
-        );
+        let mut wrong_predicate =
+            spec_with_p1(CombatStatEffectSourceV1::Ability, 1418, TWO_OF_THREE, 3);
         wrong_predicate.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
             source_id: 1418,
             predicate: CombatStatPredicateV1::OwnerLostPreviousRound,
-            effect: CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            effect: TWO_OF_THREE,
         };
         assert!(matches!(
             CombatStatDiagnosticV1::new(wrong_predicate),
             Err(CombatStatPlanErrorV1::InvalidExecute {
-                reason: InvalidCombatStatPlanReasonV1::DefeatRecoveryPredicate,
+                reason: InvalidCombatStatPlanReasonV1::RecoveryPredicate,
                 ..
             })
         ));
@@ -4443,7 +4654,7 @@ mod tests {
         let mut overflow = CombatStatDiagnosticV1::new(spec_with_p1(
             CombatStatEffectSourceV1::Ability,
             1418,
-            CombatStatEffectV1::RecoverPaidPillzOnDefeat,
+            TWO_OF_THREE,
             u16::MAX,
         ))
         .unwrap();
