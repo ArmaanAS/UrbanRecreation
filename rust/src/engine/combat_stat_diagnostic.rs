@@ -107,6 +107,11 @@ pub enum CombatStatPredicateV1 {
     OwnerPreviousCardClanIn(ClanSetV1),
     /// `Versus [clan:A] : X`: some card in the opposing hand has a listed canonical clan.
     OpponentHandHasClan(ClanSetV1),
+    /// `Bet > N Pillz: X`: the owner's Pillz for the round exceed N, counted as the server's
+    /// `pillzUsed` - the free pill included, Fury's three excluded.
+    OwnerPillzUsedAbove(u8),
+    /// `Bet < N Pillz: X`: the owner's `pillzUsed` for the round is below N.
+    OwnerPillzUsedBelow(u8),
 }
 
 /// A set of clan ids below 64, as a bit mask so the predicate stays `Copy`.
@@ -139,6 +144,9 @@ struct ClanContext {
     owner_effective_clan: u32,
     owner_previous_clan: Option<u32>,
     opponent_hand_clans: u64,
+    /// The owner's paid Pillz plus the free pill: what the `Bet` gates compare. Carried
+    /// here because this is already the per-owner context every predicate reads.
+    owner_pillz_used: u16,
 }
 
 /// Public provenance metadata for an admitted post-round effect. The hot path converts this
@@ -1710,7 +1718,10 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryOpponentLifeMagnitude,
             ));
         }
-        if predicate != CombatStatPredicateV1::Always {
+        if !matches!(
+            predicate,
+            CombatStatPredicateV1::Always | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+        ) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -2017,13 +2028,18 @@ fn validate_combat_stat_source_plan(
         }
         // The plain grammar is unconditional; the two reviewed prefixed forms carry one
         // already-resolved predicate each, and both are card abilities only.
-        if !matches!(
-            predicate,
-            CombatStatPredicateV1::Always
-                | CombatStatPredicateV1::OwnerWonPreviousRound
-                | CombatStatPredicateV1::SelectedHandSlotsDiffer
-        ) || (predicate != CombatStatPredicateV1::Always
-            && source != CombatStatEffectSourceV1::Ability)
+        // `Bet > N Pillz:` is the one gate a clan bonus prints on it (the Zenith bonus).
+        let bet_gate = matches!(predicate, CombatStatPredicateV1::OwnerPillzUsedAbove(_));
+        if !(bet_gate
+            || matches!(
+                predicate,
+                CombatStatPredicateV1::Always
+                    | CombatStatPredicateV1::OwnerWonPreviousRound
+                    | CombatStatPredicateV1::SelectedHandSlotsDiffer
+            ))
+            || (predicate != CombatStatPredicateV1::Always
+                && !bet_gate
+                && source != CombatStatEffectSourceV1::Ability)
         {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -2089,7 +2105,10 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryOpponentPillzMagnitude,
             ));
         }
-        if predicate != CombatStatPredicateV1::Always {
+        if !matches!(
+            predicate,
+            CombatStatPredicateV1::Always | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+        ) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -2501,6 +2520,8 @@ fn validate_combat_stat_source_plan(
                 | CombatStatPredicateV1::OwnerAbilityStopped
                 | CombatStatPredicateV1::OwnerClanIn(_)
                 | CombatStatPredicateV1::OpponentHandHasClan(_)
+                | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+                | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
         ) || (matches!(
             predicate,
             CombatStatPredicateV1::SelectedHandSlotsMatch
@@ -2682,6 +2703,8 @@ fn predicate_matches(
             clan.owner_previous_clan.is_some_and(|id| set.contains(id))
         }
         CombatStatPredicateV1::OpponentHandHasClan(set) => set.0 & clan.opponent_hand_clans != 0,
+        CombatStatPredicateV1::OwnerPillzUsedAbove(n) => clan.owner_pillz_used > u16::from(n),
+        CombatStatPredicateV1::OwnerPillzUsedBelow(n) => clan.owner_pillz_used < u16::from(n),
         CombatStatPredicateV1::OwnerHandUnison => owner_unison,
         CombatStatPredicateV1::Always => true,
         CombatStatPredicateV1::OwnerMovesFirst => owner == first_mover,
@@ -2741,6 +2764,7 @@ fn prepare_combat_stat_diagnostic(
             .iter()
             .filter(|id| **id < 64)
             .fold(0_u64, |mask, id| mask | (1 << id)),
+        owner_pillz_used: validated[player].selection.pillz.saturating_add(1),
     };
     let plans = ByPlayer::new(
         resolution_card_plan(

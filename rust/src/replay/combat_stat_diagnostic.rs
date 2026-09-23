@@ -15,23 +15,24 @@ use crate::effect_registry::{
 };
 use crate::engine::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_both_players_life_reduction, classify_brawl_post_round, classify_combat_stat_effect,
-    classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
-    classify_defeat_pillz, classify_defeat_pillz_and_life, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_round_scaled_post_round,
+    classify_bet_gated_post_round, classify_both_players_life_reduction, classify_brawl_post_round,
+    classify_combat_stat_effect, classify_defeat_life, classify_defeat_opponent_life,
+    classify_defeat_opponent_pillz, classify_defeat_pillz, classify_defeat_pillz_and_life,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_heal_life_on_victory, classify_killshot_opponent_life,
+    classify_killshot_pillz_and_life, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory, classify_round_scaled_post_round,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
     classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
-    classify_victory_pillz_per_damage, compact_effect, has_both_players_life_reduction_shape,
-    has_brawl_post_round_shape, has_defeat_life_shape, has_defeat_opponent_pillz_shape,
-    has_defeat_pillz_shape, has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
-    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
-    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    classify_victory_pillz_per_damage, compact_effect, has_bet_gated_post_round_shape,
+    has_both_players_life_reduction_shape, has_brawl_post_round_shape, has_defeat_life_shape,
+    has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_heal_life_on_victory_shape,
+    has_killshot_opponent_life_shape, has_poison_opponent_life_on_defeat_shape,
+    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
+    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
     has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_pillz_per_damage_shape,
@@ -812,6 +813,16 @@ fn prepare_combat_stat_source(
             CombatStatPredicateV1::Always,
         ));
     }
+    if let Some((effect, predicate)) = classify_bet_gated_post_round(definition, source_kind) {
+        let (post_round_effect, compact_effect) = effect.effects();
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            predicate,
+        ));
+    }
     if let Some((scale, effect)) = classify_round_scaled_post_round(definition, source_kind) {
         let (post_round_effect, compact_effect) = effect.effects(scale);
         return Ok(executes_post_round(
@@ -1339,6 +1350,18 @@ fn prepare_combat_stat_source(
                 | AttributeAffectedV1::LifeAndPillz
         ))
         || has_round_scaled_post_round_shape(definition);
+    // `Bet > N Pillz:` over a Life or Pillz record, or the complete gated Victory shape
+    // under other text, rejects when selected; before the gate was admitted these were
+    // inert disabled sources (the Zenith bonus `4657` among them).
+    let unadmitted_bet_gated_post_round = ((source.description.starts_with("Bet > ")
+        || source.description.starts_with("Bet < "))
+        && matches!(
+            input.attribute_affected,
+            AttributeAffectedV1::Life
+                | AttributeAffectedV1::Pillz
+                | AttributeAffectedV1::LifeAndPillz
+        ))
+        || has_bet_gated_post_round_shape(definition);
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
@@ -1399,6 +1422,7 @@ fn prepare_combat_stat_source(
         || unadmitted_stop_triggered
         || unadmitted_defeat_pillz
         || unadmitted_round_scaled_post_round
+        || unadmitted_bet_gated_post_round
         || unadmitted_heal_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
@@ -1440,6 +1464,7 @@ fn prepare_combat_stat_source(
         || unadmitted_stop_triggered
         || unadmitted_defeat_pillz
         || unadmitted_round_scaled_post_round
+        || unadmitted_bet_gated_post_round
         || unadmitted_heal_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {

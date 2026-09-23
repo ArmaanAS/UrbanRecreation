@@ -6,15 +6,15 @@
 
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_both_players_life_reduction, classify_brawl_post_round, classify_combat_stat_effect,
-    classify_conditional_stat_copy, classify_conditional_stop, classify_copy_opponent_source,
-    classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
-    classify_defeat_pillz, classify_defeat_pillz_and_life, classify_defeat_recover_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life,
-    classify_regen_life_on_victory, classify_round_scaled_post_round,
+    classify_bet_gated_post_round, classify_both_players_life_reduction, classify_brawl_post_round,
+    classify_combat_stat_effect, classify_conditional_stat_copy, classify_conditional_stop,
+    classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
+    classify_defeat_opponent_pillz, classify_defeat_pillz, classify_defeat_pillz_and_life,
+    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_heal_life_on_victory, classify_killshot_opponent_life,
+    classify_killshot_pillz_and_life, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_regen_life_on_victory, classify_round_scaled_post_round,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
@@ -116,6 +116,10 @@ const KOMBOKA_CATALOG_BONUS_ID: u32 = 53;
 const KOMBOKA_VICTORY_PILLZ_AND_LIFE_DESCRIPTION: &str = "+1 Pillz And Life";
 const KOMBOKA_VICTORY_PILLZ_AND_LIFE_REGISTRY_ID: u32 = 1714;
 const JUNGO_CLAN_ID: u32 = 43;
+/// The Zenith clan bonus `Bet > 3 Pillz: +3 Life` is catalog bonus 58 and capture-registry
+/// definition 4657; like Jungo's it is bridged only for its active effective clan.
+const ZENITH_CLAN_ID: u32 = 59;
+const ZENITH_CATALOG_BONUS_ID: u32 = 58;
 const JUNGO_CATALOG_BONUS_ID: u32 = 41;
 const JUNGO_VICTORY_LIFE_BONUS_REGISTRY_ID: u32 = 401;
 const JUNGO_VICTORY_LIFE_DESCRIPTION: &str = "+2 Life";
@@ -1443,6 +1447,53 @@ fn prepare_catalog_source(
                 description,
                 definition,
             )?;
+        }
+        // `Bet > N Pillz:` over a plain Victory body. A printed ability level must be a
+        // structural alias of the definition its text resolves to; the one bonus that
+        // prints the gate is bridged by clan and catalog id, as Jungo's Victory Life is.
+        if classify_bet_gated_post_round(definition, source_kind).is_some() {
+            if source_kind == CombatStatEffectSourceV1::Ability {
+                require_catalog_alias(
+                    match_.alias_ids(),
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description,
+                    definition,
+                )?;
+            } else if effective_clan_id != ZENITH_CLAN_ID
+                || catalog_id != Some(ZENITH_CATALOG_BONUS_ID)
+            {
+                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description: description.to_owned(),
+                    registry_definition_id: definition.id(),
+                    registry_reasons: definition
+                        .compiled()
+                        .unsupported_reasons()
+                        .to_vec()
+                        .into_boxed_slice(),
+                });
+            }
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let (effect, predicate) =
+                        classify_bet_gated_post_round(definition, source_kind)?;
+                    let (effect, compact_effect) = effect.effects();
+                    Some((effect, compact_effect, predicate))
+                },
+            );
         }
         if classify_victory_life(definition, source_kind).is_some() {
             require_catalog_alias(

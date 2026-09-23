@@ -6624,6 +6624,83 @@ fn life_lost_damage_reads_the_owner_shortfall_and_refuses_a_life_that_can_rise()
     assert!(!refused(false, false, false, true));
 }
 
+/// `Bet > N Pillz:` and `Bet < N Pillz:` compare the owner's `pillzUsed` - the bet plus the
+/// free pill, Fury's three excluded - strictly with N. The corpus pins both edges:
+/// 1207064/0 and 945791/1 win at exactly N and pay nothing, and 1093129/3 wins on a Fury
+/// that would have cleared the gate and pays nothing. The gate works the same on a
+/// combat-stat body, on a post-round Victory gain and on a Copy's adoption.
+#[test]
+fn bet_gates_compare_the_owner_pillz_used_strictly_and_ignore_fury() {
+    use CombatStatPredicateV1::{OwnerPillzUsedAbove as Above, OwnerPillzUsedBelow as Below};
+    let cases = [
+        (Above(3), 2, false, false),
+        (Above(3), 3, false, true),
+        (Above(3), 2, true, false),
+        (Below(3), 1, false, true),
+        (Below(3), 2, false, false),
+        (Below(3), 1, true, true),
+    ];
+    for (predicate, bet, fury, fires) in cases {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability =
+            execute(5401, predicate, own(CombatStatAttributeV1::Power, 3));
+        let mut diag = game(base, cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, bet, fury), (0, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].power,
+            if fires { 9 } else { 6 },
+            "{predicate:?} bet {bet} fury {fury}"
+        );
+    }
+
+    // A won round's Victory Life, gated.
+    for (bet, fury, life) in [(2, false, 20), (3, false, 23), (2, true, 20)] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(
+            4657,
+            Above(3),
+            CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+        );
+        let mut diag = game(base, cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, bet, fury), (0, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(
+            report.players[PlayerId::P1].life,
+            life,
+            "bet {bet} fury {fury}"
+        );
+    }
+
+    // A gated Copy adopts the opposing ability only when the gate holds (943231/1 pins the
+    // refusal at exactly N: Madlocks does not take Miyo's Stop Opp. Bonus).
+    for (bet, power) in [(2, 6), (3, 9)] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 5304,
+            copied: CopiedSourceKindV1::Ability,
+            predicate: Above(3),
+        };
+        cards[PlayerId::P1][0].source_ability_support_count = 1;
+        cards[PlayerId::P2][0].ability = execute(
+            310,
+            CombatStatPredicateV1::Always,
+            own(CombatStatAttributeV1::Power, 3),
+        );
+        let mut diag = game(base, cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, bet, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(report.cards[PlayerId::P1].power, power, "bet {bet}");
+    }
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {

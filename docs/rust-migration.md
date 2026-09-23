@@ -2159,6 +2159,39 @@ exhaustive, so a new Life effect has to say whose Life it raises. The refusal co
 draw. The gate grows from 568 to 600 rounds: 875032, 876796, 925999, 1090531 and 1092066
 extended, and 925818, 957442, 963931, 1081688, 1088008, 1090096, 1090269 and 1131170 added.
 
+Semantic revision 56 admits the `Bet > N Pillz:` and `Bet < N Pillz:` gates under two new
+predicates, `OwnerPillzUsedAbove(N)` and `OwnerPillzUsedBelow(N)`: the owner's `pillzUsed`
+for the round - the bet plus the free pill, Fury's three excluded - strictly above or
+below N. They sit over the plain fixed numeric body (`5189`, `5190`, `5401`, `4807`,
+`4808`), over `Stop Opp. Bonus` (`4860`, `4949`), over the plain Victory Life gain and
+opponent Life and Pillz reductions (`4657`, `4866`, `4893`, `4870`, `5387`, `5388`,
+`5769`, `4797`) and over `Copy: Opp. Ability` (`5304`), where the gate decides the adoption
+itself. It measured 7 and unlocked exactly 7 - `878093`, `926292`, `943231`, `1025349`,
+`1070298`, `1072587` and `1131225` - taking eligibility from 173 to 180.
+
+The gate lives in the registry's `betPillzLink` and `valueCondition`, which every other
+grammar requires neutral: the classifier reads the direction and threshold from the record,
+rebuilds the printed prefix from them and requires the text to match, and
+`PostRoundShapeV1` gains a `bet_gated` flag that only these grammars set. `Bet <` is printed
+only over combat-stat bodies, so the post-round, Stop and Copy forms admit `Bet >` alone.
+The one clan bonus that prints a gate is Zenith's `Bet > 3 Pillz: +3 Life`, catalog bonus 58
+and capture definition `4657`, bridged by effective clan and catalog id as Jungo's Victory
+Life is. The count is read where the other predicates are, from the round's own selection.
+
+The server pins both edges of the comparison and the Fury exclusion. The Zenith bonus pays
+in more than twenty rounds - 1130726/0 (14 to 17), 1131225/1 and /3, beside Uuber's
+Victory-or-Defeat reduction in 949959/1 (7 + 3 - 1 = 9) - and is stopped by Miyo's Stop
+Opp. Bonus in 949959/3 and 949439/1. At exactly N nothing pays: Tyd's `Bet > 6 Pillz: +2
+Life` wins at 6 in 1207064/0 and stays at 15, the Zenith bonus wins at 3 in 945791/1, and
+Madlocks' gated Copy at 3 in 943231/1 does not take Miyo's `Stop Opp. Bonus` (27 - 6 = 21,
+where the adopted Stop would have left 27). 1093129/3 wins on a bet of 2 with Fury and pays
+nothing. The combat-stat bodies pay on the open side of their gates: Leander's `Damage +4`
+takes 4 to 8 in 1011595/0 and 1070298/0, Zalindra's `Bet < 6 Pillz: Power +2` pays at 5 in
+945791/0 and 1093129/0, and Usvayn Boltorr's `-2 Opp Power, Min 4` lands before his bonus's
+Min 1 in 926292/0 (6 to 4 to 2). The Copy rounds are catalog evidence only, as for every
+Copy: the replay reads an adopted source from the capture and cannot execute a Copy. The
+gate grows from 600 to 632 rounds with twelve battles added and 1131144 extended to two rounds.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

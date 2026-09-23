@@ -405,7 +405,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1069608, 3),
     // Three rounds since revision 50: Blackie's Confidence Power Exchange in round 2.
     (947488, 3),
-    (1131144, 1),
+    // Two rounds since revision 56: Ilarius' `Bet > 4 Pillz: Stop Opp. Bonus` bets 0 in
+    // round 1, so its gate is closed and Callie's Support stands (36 + 12 = 48).
+    (1131144, 2),
     (867173, 2),
     // Revision 47 admits `Stop Opp. Ability`/`Stop Opp. Bonus` under the Courage,
     // Confidence, Revenge, Asymmetry, Symmetry and Night predicates. Kerry Cr moves first in
@@ -503,6 +505,27 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1090096, 2),
     (1090269, 2),
     (1131170, 4),
+    // Revision 56 admits the `Bet > N Pillz:` and `Bet < N Pillz:` gates, which compare the
+    // owner's `pillzUsed` strictly with N. The Zenith bonus `Bet > 3 Pillz: +3 Life` pays in
+    // 1130726/0 (14 to 17), 924853/0, 945791/0, 1131225/1 and /3, beside Uuber's
+    // Victory-or-Defeat reduction in 949959/1 (7 + 3 - 1 = 9), and is stopped by Miyo in
+    // 949959/3. Leander's `Bet > 5 Pillz: Damage +4` takes 4 to 8 in 1011595/0 and 1070298/0,
+    // Usvayn Boltorr's `-2 Opp Power, Min 4` applies before his bonus's Min 1 in 926292/0
+    // (6 to 4 to 2), Zalindra's `Bet < 6 Pillz: Power +2` pays at 5 in 945791/0 and
+    // 1093129/0, `Bet > 2 Pillz: -2 Opp. Life Min 0` takes 6 to 2 in 1130791/1, and
+    // `Bet > 6 Pillz: +2 Life` 14 to 16 in 1145886/0.
+    (1130726, 1),
+    (924853, 2),
+    (945791, 1),
+    (1131225, 4),
+    (949959, 4),
+    (924999, 4),
+    (1011595, 1),
+    (1070298, 4),
+    (926292, 4),
+    (1093129, 1),
+    (1130791, 4),
+    (1145886, 1),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

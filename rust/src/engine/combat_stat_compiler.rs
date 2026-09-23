@@ -77,6 +77,16 @@ pub(crate) fn is_copy_opponent_source_description(description: &str) -> bool {
     COPY_OPPONENT_SOURCE_GRAMMARS
         .iter()
         .any(|(text, _, _)| *text == description)
+        || bet_gated_copy_body(description).is_some()
+}
+
+/// `Bet > N Pillz: Copy: Opp. Ability` (and its Bonus twin): the unconditional Copy text
+/// under a Bet prefix. Returns the unconditional body; the threshold is read from the
+/// structured record, which must print exactly this prefix.
+fn bet_gated_copy_body(description: &str) -> Option<&str> {
+    let (threshold, body) = description.strip_prefix("Bet > ")?.split_once(" Pillz: ")?;
+    (threshold.parse::<u8>().is_ok() && matches!(body, "Copy: Opp. Ability" | "Copy: Opp. Bonus"))
+        .then_some(body)
 }
 use crate::effect_registry::{
     AffectedSideV1, AttributeActionV1, AttributeAffectedV1, BetPillzLinkV1, CombatStatV1,
@@ -85,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 55;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 56;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -95,21 +105,41 @@ pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 55;
 pub(crate) fn classify_copy_opponent_source(
     definition: &EffectDefinitionV1,
 ) -> Option<(CopiedSourceKindV1, CombatStatPredicateV1)> {
+    let description = definition.description();
+    let input = definition.structured_input();
+    // A Bet-gated Copy is the unconditional row with the gate as its predicate: the adoption
+    // itself happens only when the owner's `pillzUsed` clears the threshold.
+    let (text, bet) = match bet_gated_copy_body(description) {
+        Some(body) => {
+            let (predicate, prefix) = bet_gate(input)?;
+            if !matches!(predicate, CombatStatPredicateV1::OwnerPillzUsedAbove(_))
+                || description.strip_prefix(prefix.as_str()) != Some(body)
+            {
+                return None;
+            }
+            (body, Some(predicate))
+        }
+        None => (description, None),
+    };
     let (_, copied, predicate) = COPY_OPPONENT_SOURCE_GRAMMARS
         .iter()
-        .find(|(text, _, _)| *text == definition.description())?;
+        .find(|(row, _, _)| *row == text)?;
+    if bet.is_some() && *predicate != CombatStatPredicateV1::Always {
+        return None;
+    }
     let action = match copied {
         CopiedSourceKindV1::Ability => SpecialActionV1::CopyAbility,
         CopiedSourceKindV1::Bonus => SpecialActionV1::CopyBonus,
     };
-    copy_opponent_source_shape_matches(definition.structured_input(), action, *predicate)
-        .then_some((*copied, *predicate))
+    copy_opponent_source_shape_matches(input, action, *predicate, bet.is_some())
+        .then_some((*copied, bet.unwrap_or(*predicate)))
 }
 
 fn copy_opponent_source_shape_matches(
     input: &StructuredEffectV1,
     action: SpecialActionV1,
     predicate: CombatStatPredicateV1,
+    bet_gated: bool,
 ) -> bool {
     // Exactly one structured field may carry the condition, and it must be the one the
     // printed prefix names. Everything else stays neutral, so an unfamiliar nested context
@@ -148,13 +178,20 @@ fn copy_opponent_source_shape_matches(
         | CombatStatPredicateV1::OwnerAbilityStopped
         | CombatStatPredicateV1::OwnerClanIn(_)
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
-        | CombatStatPredicateV1::OpponentHandHasClan(_) => return false,
+        | CombatStatPredicateV1::OpponentHandHasClan(_)
+        | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => return false,
     };
     let unison = predicate == CombatStatPredicateV1::OwnerHandUnison;
+    let bet_fields_match = if bet_gated {
+        input.bet_pillz_link == BetPillzLinkV1::More && input.value_condition > 0
+    } else {
+        input.bet_pillz_link == BetPillzLinkV1::No && input.value_condition == 0
+    };
     input.value == 0
         && input.value_min == 0
         && input.value_max == 0
-        && input.value_condition == 0
+        && bet_fields_match
         && input.position_requirement == position
         && input.previous_round_requirement == previous_round
         && input.current_round_requirement == CurrentRoundRequirementV1::Any
@@ -162,7 +199,6 @@ fn copy_opponent_source_shape_matches(
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
         && input.side_affected == AffectedSideV1::Player
         && input.attribute_affected == AttributeAffectedV1::None
         && input.attribute_action == AttributeActionV1::None
@@ -401,6 +437,7 @@ pub(crate) fn conditional_stop_predicate_admitted(predicate: CombatStatPredicate
             | CombatStatPredicateV1::MatchIsNight
             | CombatStatPredicateV1::OwnerClanIn(_)
             | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
+            | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
     )
 }
 
@@ -1106,7 +1143,9 @@ fn victory_opponent_life_shape_matches(
         | CombatStatPredicateV1::OwnerAbilityStopped
         | CombatStatPredicateV1::OwnerClanIn(_)
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
-        | CombatStatPredicateV1::OpponentHandHasClan(_) => return false,
+        | CombatStatPredicateV1::OpponentHandHasClan(_)
+        | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => return false,
     };
     input.value == life
         && input.value_min == minimum
@@ -1555,6 +1594,118 @@ impl BrawlPostRoundEffectV1 {
 /// count is bound at resolution the way Equalizer's stars are and the bound effect is paid by
 /// the arm that already pays the plain grammar. Exact printed text rebuilt from the record's
 /// own numbers, complete structured shape, card abilities only: no clan bonus prints one.
+/// What a `Bet > N Pillz:` post-round grammar pays: the plain Victory Life gain and the
+/// plain Victory opponent-Life and opponent-Pillz reductions, each gated on the owner's
+/// `pillzUsed`. Only `Bet >` is printed over these bodies.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BetGatedPostRoundEffectV1 {
+    GainLife { life: u16 },
+    ReduceOpponentLife { life: u16, minimum: u16 },
+    ReduceOpponentPillz { pillz: u16, minimum: u16 },
+}
+
+impl BetGatedPostRoundEffectV1 {
+    pub(crate) fn effects(self) -> (CombatStatPostRoundEffectV1, CombatStatEffectV1) {
+        match self {
+            Self::GainLife { life } => (
+                CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
+                CombatStatEffectV1::GainLifeOnVictory { life },
+            ),
+            Self::ReduceOpponentLife { life, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+                CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+            ),
+            Self::ReduceOpponentPillz { pillz, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+                CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+            ),
+        }
+    }
+}
+
+/// Recognize `Bet > N Pillz:` over the three plain Victory bodies: exact text rebuilt from
+/// the structured gate and magnitudes, and the complete shape of the plain grammar with
+/// only the bet fields set. Card abilities, and the Zenith clan bonus for the Life gain.
+pub(crate) fn classify_bet_gated_post_round(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(BetGatedPostRoundEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    if input.value == 0 {
+        return None;
+    }
+    let (predicate, prefix) = bet_gate(input)?;
+    if !matches!(predicate, CombatStatPredicateV1::OwnerPillzUsedAbove(_)) {
+        return None;
+    }
+    let (effect, body) = if bet_gated_shape_matches(input, POST_ROUND_SHAPE) {
+        (
+            BetGatedPostRoundEffectV1::GainLife { life: input.value },
+            format!("+{} Life", input.value),
+        )
+    } else if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    } else if bet_gated_shape_matches(input, BET_OPPONENT_LIFE_SHAPE) {
+        (
+            BetGatedPostRoundEffectV1::ReduceOpponentLife {
+                life: input.value,
+                minimum: input.value_min,
+            },
+            format!("-{} Opp. Life Min {}", input.value, input.value_min),
+        )
+    } else if bet_gated_shape_matches(input, BET_OPPONENT_PILLZ_SHAPE) {
+        (
+            BetGatedPostRoundEffectV1::ReduceOpponentPillz {
+                pillz: input.value,
+                minimum: input.value_min,
+            },
+            format!("-{} Opp Pillz. Min {}", input.value, input.value_min),
+        )
+    } else {
+        return None;
+    };
+    (definition.description() == format!("{prefix}{body}")).then_some((effect, predicate))
+}
+
+const BET_OPPONENT_LIFE_SHAPE: PostRoundShapeV1 = PostRoundShapeV1 {
+    value_min: ShapeFieldV1::Read,
+    side: AffectedSideV1::Opponent,
+    action: AttributeActionV1::Decrease,
+    ..POST_ROUND_SHAPE
+};
+
+const BET_OPPONENT_PILLZ_SHAPE: PostRoundShapeV1 = PostRoundShapeV1 {
+    value_min: ShapeFieldV1::Read,
+    side: AffectedSideV1::Opponent,
+    attribute: AttributeAffectedV1::Pillz,
+    action: AttributeActionV1::Decrease,
+    ..POST_ROUND_SHAPE
+};
+
+fn bet_gated_shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            bet_gated: true,
+            ..shape
+        },
+    )
+}
+
+/// Structural half of the Bet post-round boundary, so replay preparation can reject a
+/// complete shape under malformed text instead of silently disabling it.
+pub(crate) fn has_bet_gated_post_round_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && [
+            POST_ROUND_SHAPE,
+            BET_OPPONENT_LIFE_SHAPE,
+            BET_OPPONENT_PILLZ_SHAPE,
+        ]
+        .into_iter()
+        .any(|shape| bet_gated_shape_matches(input, shape))
+}
+
 pub(crate) fn classify_brawl_post_round(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -1863,6 +2014,7 @@ pub(crate) fn classify_combat_stat_effect(
     // convention every post-round grammar keeps rather than a live guard.
     if classify_brawl_post_round(definition, source_kind).is_some()
         || classify_round_scaled_post_round(definition, source_kind).is_some()
+        || classify_bet_gated_post_round(definition, source_kind).is_some()
     {
         return None;
     }
@@ -1915,6 +2067,9 @@ pub(crate) fn classify_combat_stat_effect(
         return Some(classified);
     }
     if let Some(classified) = classify_clan_gated(definition, source_kind) {
+        return Some(classified);
+    }
+    if let Some(classified) = classify_bet_gated(definition, source_kind) {
         return Some(classified);
     }
     let input = definition.structured_input();
@@ -2527,6 +2682,84 @@ fn neutral_except_inverted(input: &StructuredEffectV1) -> bool {
         && !input.is_immediate_permanent
 }
 
+/// The `Bet` gate read from the structured record: `betPillzLink` names the comparison and
+/// `valueCondition` the threshold, compared with the owner's `pillzUsed` (free pill in,
+/// Fury out). Returns the predicate and the exact prefix the text must print.
+fn bet_gate(input: &StructuredEffectV1) -> Option<(CombatStatPredicateV1, String)> {
+    let threshold = u8::try_from(input.value_condition)
+        .ok()
+        .filter(|n| *n > 0)?;
+    match input.bet_pillz_link {
+        BetPillzLinkV1::More => Some((
+            CombatStatPredicateV1::OwnerPillzUsedAbove(threshold),
+            format!("Bet > {threshold} Pillz: "),
+        )),
+        BetPillzLinkV1::Less => Some((
+            CombatStatPredicateV1::OwnerPillzUsedBelow(threshold),
+            format!("Bet < {threshold} Pillz: "),
+        )),
+        BetPillzLinkV1::No => None,
+    }
+}
+
+/// `Bet > N Pillz:` and `Bet < N Pillz:` over the plain fixed numeric body, and `Bet > N
+/// Pillz:` over `Stop Opp. Bonus`. Like the clan gates this is one orthogonal classifier:
+/// the gate is the only structured field that may be set, the printed prefix is rebuilt
+/// from it, and no existing `neutral_except_*` gate is touched. Card abilities only - the
+/// one clan bonus that prints a Bet gate prints it over Victory Life.
+fn classify_bet_gated(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (predicate, prefix) = bet_gate(input)?;
+    if !neutral_except_bet_gate(input) || input.position_requirement != PositionRequirementV1::Both
+    {
+        return None;
+    }
+    let body = definition.description().strip_prefix(prefix.as_str())?;
+    if input.special_action == SpecialActionV1::StopBonus {
+        return (matches!(predicate, CombatStatPredicateV1::OwnerPillzUsedAbove(_))
+            && input.value == 0
+            && input.value_min == 0
+            && input.value_max == 0
+            && input.side_affected == AffectedSideV1::Player
+            && input.attribute_affected == AttributeAffectedV1::None
+            && input.attribute_action == AttributeActionV1::None
+            && body == "Stop Opp. Bonus")
+            .then_some((SupportedEffectV1::StopOpponentBonus, predicate));
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
+    numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
+        .then_some((effect, predicate))
+}
+
+fn neutral_except_bet_gate(input: &StructuredEffectV1) -> bool {
+    input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.current_round_requirement == CurrentRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && input.clan_requirement.is_empty()
+        && input.opponent_clan_requirement.is_empty()
+        && input.previous_clan_requirement.is_empty()
+        && !input.is_inverted
+        && !input.is_support
+        && !input.is_anti_support
+        && !input.is_overdrive
+        && !input.is_divide
+        && !input.is_life_linked
+        && !input.is_pillz_linked
+        && !input.is_lost_life_linked
+        && !input.is_lost_pillz_linked
+        && !input.is_opponent_stars_linked
+        && !input.is_clanmates_count_linked
+        && !input.is_anti_clanmates_count_linked
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+}
+
 fn classify_equalizer_numeric(
     definition: &EffectDefinitionV1,
 ) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
@@ -3032,6 +3265,9 @@ pub(crate) struct PostRoundShapeV1 {
     /// The `Growth:`/`Degrowth:` round scaling, carried as `isOverdrive`/`isDivide`. `None`
     /// for every other grammar, which then requires both flags false as before.
     pub(crate) round_scale: Option<RoundScaleV1>,
+    /// The `Bet > N Pillz:` gate, carried as `betPillzLink` and `valueCondition`. False for
+    /// every other grammar, which then requires both neutral as before.
+    pub(crate) bet_gated: bool,
 }
 
 /// The one unconditional slot: no previous-round requirement and no hand-slot requirement.
@@ -3055,6 +3291,7 @@ const POST_ROUND_SHAPE: PostRoundShapeV1 = PostRoundShapeV1 {
     opponent_stars_linked: false,
     anti_support: false,
     round_scale: None,
+    bet_gated: false,
 };
 
 /// True when `input` is exactly the record `shape` describes. The fields the shape does not
@@ -3075,11 +3312,14 @@ fn shape_matches(input: &StructuredEffectV1, shape: PostRoundShapeV1) -> bool {
         && input.attribute_action == shape.action
         && input.special_action == shape.special
         && input.is_opponent_stars_linked == shape.opponent_stars_linked
-        && input.value_condition == 0
+        && if shape.bet_gated {
+            input.bet_pillz_link == BetPillzLinkV1::More && input.value_condition > 0
+        } else {
+            input.bet_pillz_link == BetPillzLinkV1::No && input.value_condition == 0
+        }
         && input.clan_requirement.is_empty()
         && input.opponent_clan_requirement.is_empty()
         && input.previous_clan_requirement.is_empty()
-        && input.bet_pillz_link == BetPillzLinkV1::No
         && !input.is_inverted
         && !input.is_support
         && input.is_anti_support == shape.anti_support
@@ -3469,7 +3709,9 @@ fn position_description_matches(
         | CombatStatPredicateV1::OwnerAbilityStopped
         | CombatStatPredicateV1::OwnerClanIn(_)
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
-        | CombatStatPredicateV1::OpponentHandHasClan(_) => return false,
+        | CombatStatPredicateV1::OpponentHandHasClan(_)
+        | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -3497,7 +3739,9 @@ fn index_description_matches(
         | CombatStatPredicateV1::OwnerAbilityStopped
         | CombatStatPredicateV1::OwnerClanIn(_)
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
-        | CombatStatPredicateV1::OpponentHandHasClan(_) => return false,
+        | CombatStatPredicateV1::OpponentHandHasClan(_)
+        | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -3527,7 +3771,9 @@ fn previous_round_description_matches(
         | CombatStatPredicateV1::OwnerAbilityStopped
         | CombatStatPredicateV1::OwnerClanIn(_)
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
-        | CombatStatPredicateV1::OpponentHandHasClan(_) => None,
+        | CombatStatPredicateV1::OpponentHandHasClan(_)
+        | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => None,
     };
     body.is_some_and(|body| {
         numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
@@ -4048,6 +4294,154 @@ mod tests {
                 ),
                 None,
                 "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn bet_gates_are_read_from_the_record_and_admitted_by_the_exact_prefix() {
+        use CombatStatPredicateV1::{OwnerPillzUsedAbove as Above, OwnerPillzUsedBelow as Below};
+        let registry = registry();
+        for (id, expected, threshold) in [
+            (4657, BetGatedPostRoundEffectV1::GainLife { life: 3 }, 3),
+            (4866, BetGatedPostRoundEffectV1::GainLife { life: 3 }, 4),
+            (4893, BetGatedPostRoundEffectV1::GainLife { life: 2 }, 6),
+            (
+                4870,
+                BetGatedPostRoundEffectV1::ReduceOpponentLife {
+                    life: 5,
+                    minimum: 0,
+                },
+                11,
+            ),
+            (
+                5387,
+                BetGatedPostRoundEffectV1::ReduceOpponentLife {
+                    life: 2,
+                    minimum: 0,
+                },
+                3,
+            ),
+            (
+                5388,
+                BetGatedPostRoundEffectV1::ReduceOpponentLife {
+                    life: 3,
+                    minimum: 0,
+                },
+                4,
+            ),
+            (
+                5769,
+                BetGatedPostRoundEffectV1::ReduceOpponentLife {
+                    life: 2,
+                    minimum: 0,
+                },
+                2,
+            ),
+            (
+                4797,
+                BetGatedPostRoundEffectV1::ReduceOpponentPillz {
+                    pillz: 2,
+                    minimum: 1,
+                },
+                6,
+            ),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_bet_gated_post_round(definition, CombatStatEffectSourceV1::Ability),
+                Some((expected, Above(threshold))),
+                "{id}"
+            );
+            assert!(has_bet_gated_post_round_shape(definition), "{id}");
+            // Post-round work, never a combat-stat modifier.
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id}"
+            );
+        }
+        // The Zenith bonus is the one clan bonus that prints a gate, over Victory Life only.
+        assert!(classify_bet_gated_post_round(
+            registry.get(4657).unwrap(),
+            CombatStatEffectSourceV1::Bonus
+        )
+        .is_some());
+        assert_eq!(
+            classify_bet_gated_post_round(
+                registry.get(5387).unwrap(),
+                CombatStatEffectSourceV1::Bonus
+            ),
+            None
+        );
+        // The combat-stat bodies and `Stop Opp. Bonus`, card abilities only.
+        for (id, predicate) in [
+            (5189, Above(5)),
+            (5190, Above(5)),
+            (5401, Above(5)),
+            (4807, Below(6)),
+            (4808, Below(6)),
+            (4860, Above(6)),
+            (4949, Above(4)),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(
+                matches!(
+                    classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                    Some((_, actual)) if actual == predicate
+                ),
+                "{id}"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} as a bonus"
+            );
+        }
+        // The gated Copy adopts only when its gate holds.
+        assert_eq!(
+            classify_copy_opponent_source(registry.get(5304).unwrap()),
+            Some((CopiedSourceKindV1::Ability, Above(3)))
+        );
+
+        // The threshold and direction are read from the record and must agree with the
+        // printed prefix; `Bet <` is printed over no post-round body, Stop or Copy.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("4657", "valueCondition", serde_json::json!(4)),
+            ("4657", "betPillzLink", serde_json::json!("less")),
+            ("4657", "betPillzLink", serde_json::json!("no")),
+            ("5387", "valueCondition", serde_json::json!(0)),
+            ("5401", "valueCondition", serde_json::json!(6)),
+            ("4808", "betPillzLink", serde_json::json!("more")),
+            ("4860", "betPillzLink", serde_json::json!("less")),
+            ("4860", "valueCondition", serde_json::json!(5)),
+            ("5304", "valueCondition", serde_json::json!(4)),
+            ("5304", "betPillzLink", serde_json::json!("less")),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value;
+            let Ok(malformed) = EffectRegistryV1::from_reader(malformed.to_string().as_bytes())
+            else {
+                continue;
+            };
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_bet_gated_post_round(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id} {field}"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id} {field}"
+            );
+            assert_eq!(
+                classify_copy_opponent_source(definition),
+                None,
+                "{id} {field}"
             );
         }
     }
@@ -4905,10 +5299,10 @@ mod tests {
         // Every other conditional keeps its own deferred grammar, and a stat-copying
         // variant is never a source copy: since revision 24 the unconditional ones are
         // admitted as their own effect, and `4126` matters in particular because it is a
-        // Reprisal Copy, but of a stat.
+        // Reprisal Copy, but of a stat. (`5304`, the `Bet > 3 Pillz:` Copy, is admitted
+        // since revision 56 with its gate as the adoption predicate.)
         for (id, description) in [
             (1409, "Confidence: Copy: Opp. Power"),
-            (5304, "Bet > 3 Pillz: Copy: Opp. Ability"),
             (
                 5073,
                 "[clan:46][clan:58][clan:40][clan:55][clan:42][clan:50] Asy. : Copy: Opp. Ability",
