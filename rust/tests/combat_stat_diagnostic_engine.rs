@@ -7397,6 +7397,154 @@ fn dope_is_refused_beside_any_other_effect_on_its_owners_pillz() {
     }
 }
 
+/// `Unison: Defeat: +N Life` is Defeat Life that pays only when every card in the owner's hand
+/// shares one effective clan (1066077/2: 8 - 3 + 2 = 7), and `Unison : +N Pillz And Life`
+/// the Victory compound under the same gate, Pillz and then Life (878178/0).
+#[test]
+fn unison_life_gains_pay_only_a_one_clan_hand_on_their_outcome() {
+    let defeat_life = execute(
+        4015,
+        CombatStatPredicateV1::OwnerHandUnison,
+        CombatStatEffectV1::GainLifeOnDefeat { life: 2 },
+    );
+    let compound = execute(
+        3973,
+        CombatStatPredicateV1::OwnerHandUnison,
+        CombatStatEffectV1::GainPillzAndLifeOnVictory { amount: 2 },
+    );
+    // (source, one clan, P1 wins, P1 Pillz, P1 Life) after P1 bets 4 into a 6/3 opposing card.
+    for (source, mono, win, pillz, life) in [
+        (compound, true, true, 20 - 4 + 2, 20 + 2),
+        (compound, false, true, 20 - 4, 20),
+        (compound, true, false, 20 - 4, 20 - 3),
+        (defeat_life, true, false, 20 - 4, 20 - 3 + 2),
+        (defeat_life, false, false, 20 - 4, 20 - 3),
+        (defeat_life, true, true, 20 - 4, 20),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = source;
+        if mono {
+            for slot in 0..4 {
+                cards[PlayerId::P1][slot].effective_clan_id = 900;
+            }
+        }
+        let mut diag = game(base, cards);
+        let opposing_bet = if win { 0 } else { 10 };
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 4, false), (0, opposing_bet, false)))
+            .unwrap();
+        assert_eq!(report.cards[PlayerId::P1].won, win);
+        assert_eq!(
+            (
+                report.players[PlayerId::P1].pillz,
+                report.players[PlayerId::P1].life
+            ),
+            (pillz, life),
+            "{source:?} mono {mono} win {win}"
+        );
+    }
+}
+
+/// The Unison gains are uncapped, so another uncapped gain commutes with them, but an
+/// opposing floor on the resource, an own cap or revival on it, or a Copy meets them in an
+/// order no round pins, and construction refuses the match. The compound also meets an
+/// opposing Pillz floor. The plain Defeat Life keeps the admission it had.
+#[test]
+fn unison_life_gains_are_refused_beside_an_unpinned_effect_on_their_resource() {
+    let unison_defeat_life = execute(
+        4015,
+        CombatStatPredicateV1::OwnerHandUnison,
+        CombatStatEffectV1::GainLifeOnDefeat { life: 2 },
+    );
+    let plain_defeat_life = execute(
+        862,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnDefeat { life: 2 },
+    );
+    let compound = execute(
+        3973,
+        CombatStatPredicateV1::OwnerHandUnison,
+        CombatStatEffectV1::GainPillzAndLifeOnVictory { amount: 2 },
+    );
+    let life_floor = execute(
+        1399,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 5,
+            minimum: 5,
+        },
+    );
+    let pillz_floor = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let heal = execute(
+        3526,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 20,
+        },
+    );
+    let life_gain = execute(
+        377,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    for (source, own, opposing, refused) in [
+        (unison_defeat_life, None, Some(life_floor), true),
+        (unison_defeat_life, Some(heal), None, true),
+        (unison_defeat_life, None, Some(copy), true),
+        (unison_defeat_life, Some(life_gain), Some(life_gain), false),
+        (unison_defeat_life, None, Some(pillz_floor), false),
+        (compound, None, Some(pillz_floor), true),
+        (compound, None, Some(life_floor), true),
+        (compound, None, Some(life_gain), false),
+        (plain_defeat_life, None, Some(life_floor), false),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = source;
+        if let Some(plan) = own {
+            cards[PlayerId::P1][1].ability = plan;
+        }
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][2].ability = plan;
+            if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+                cards[PlayerId::P2][2].source_ability_support_count = 1;
+            }
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason: InvalidCombatStatPlanReasonV1::UnisonGainAgainstUnpinnedEffect,
+                        ..
+                    })
+                ),
+                "{source:?} / {own:?} / {opposing:?}"
+            );
+        } else {
+            assert!(result.is_ok(), "{source:?} / {own:?} / {opposing:?}");
+        }
+    }
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {

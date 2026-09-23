@@ -18,13 +18,14 @@ use super::combat_stat_compiler::{
     classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
     classify_poison_opponent_life_on_victory, classify_reanimate_life, classify_recover_pillz,
     classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
-    classify_toxin_opponent_life_on_victory, classify_victory_life,
-    classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
-    classify_victory_opponent_life, classify_victory_opponent_pillz,
-    classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_pillz, classify_victory_pillz, classify_victory_pillz_per_damage,
-    compact_effect, is_copy_opponent_source_description, BothPlayersGainV1,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
+    classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
+    classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
+    classify_victory_opponent_pillz, classify_victory_or_defeat_both_players_gain,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_pillz, classify_victory_pillz,
+    classify_victory_pillz_per_damage, compact_effect, is_copy_opponent_source_description,
+    BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::effect_reads_support_count;
 use super::CopiedSourceKindV1;
@@ -1896,7 +1897,9 @@ fn prepare_catalog_source(
         // Ordinary Defeat Life is generic within its reviewed grammar, but the catalog
         // source must be a real structural alias of the selected registry definition.
         // A same-text row with another numeric identity cannot borrow execution authority.
-        if classify_defeat_life(definition, source_kind).is_some() {
+        if classify_defeat_life(definition, source_kind).is_some()
+            || classify_unison_defeat_life(definition, source_kind).is_some()
+        {
             require_catalog_alias(
                 match_.alias_ids(),
                 player,
@@ -1914,6 +1917,35 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
                 definition.id(),
+            );
+        }
+        // The Unison Victory compound, by the same rule.
+        if classify_unison_pillz_and_life(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let amount = classify_unison_pillz_and_life(definition, source_kind)?;
+                    Some((
+                        CombatStatPostRoundEffectV1::GainPillzAndLifeOnVictory { amount },
+                        CombatStatEffectV1::GainPillzAndLifeOnVictory { amount },
+                        CombatStatPredicateV1::OwnerHandUnison,
+                    ))
+                },
             );
         }
         // Recover is admitted by grammar under the same rule: every printed prefix and
@@ -2617,11 +2649,16 @@ fn prepare_defeat_life_source(
         description,
         registry_definition_id,
         |definition, source_kind| {
-            let life = classify_defeat_life(definition, source_kind)?;
+            let (life, predicate) = classify_defeat_life(definition, source_kind)
+                .map(|life| (life, CombatStatPredicateV1::Always))
+                .or_else(|| {
+                    classify_unison_defeat_life(definition, source_kind)
+                        .map(|life| (life, CombatStatPredicateV1::OwnerHandUnison))
+                })?;
             Some((
                 CombatStatPostRoundEffectV1::GainLifeOnDefeat { life },
                 CombatStatEffectV1::GainLifeOnDefeat { life },
-                CombatStatPredicateV1::Always,
+                predicate,
             ))
         },
     )

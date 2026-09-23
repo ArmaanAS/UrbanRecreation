@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 64;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 65;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -723,7 +723,58 @@ pub(crate) fn classify_defeat_life(
 /// from Reanimate's zero-life exception and makes malformed near-misses rejectable.
 pub(crate) fn has_defeat_life_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
-    input.value > 0 && defeat_life_shape_matches(input, 1)
+    input.value > 0 && defeat_life_shape_matches(input, 1, false)
+}
+
+/// `Unison: Defeat: +N Life`: ordinary Defeat Life under the Unison gate. The record is the
+/// Defeat Life record with the clan-mates link set and nothing else changed, `valueMin` 1
+/// included; the site prints this prefix without the space `Unison :` has elsewhere. Card
+/// abilities only. Returns the Life.
+pub(crate) fn classify_unison_defeat_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_unison_defeat_life_shape(definition)
+        && definition.description() == format!("Unison: Defeat: +{} Life", input.value))
+    .then_some(input.value)
+}
+
+pub(crate) fn has_unison_defeat_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0 && defeat_life_shape_matches(input, 1, true)
+}
+
+/// `Unison : +N Pillz And Life`: a living winner whose hand is one effective clan gains N
+/// Pillz and then N Life. Korakine's record reads `valueMin` 2 beside its value of 2, and the
+/// shape reads it exactly, so neither the Komboka compound (`valueMin` 0, no link) nor Kubra's
+/// Defeat compound (`valueMin` 1, `lose`) can pass for it. Card abilities only. Returns the
+/// amount.
+pub(crate) fn classify_unison_pillz_and_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_unison_pillz_and_life_shape(definition)
+        && definition.description() == format!("Unison : +{} Pillz And Life", input.value))
+    .then_some(input.value)
+}
+
+pub(crate) fn has_unison_pillz_and_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && input.value_min == input.value
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_min: ShapeFieldV1::Read,
+                attribute: AttributeAffectedV1::LifeAndPillz,
+                clanmates_count: true,
+                ..POST_ROUND_SHAPE
+            },
+        )
 }
 
 /// Recognize `Defeat: +N Pillz`: a loser the round has not knocked out gains N Pillz. The
@@ -799,7 +850,7 @@ pub(crate) fn classify_reanimate_life(
 /// difference from ordinary Defeat Life.
 pub(crate) fn has_reanimate_life_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
-    input.value > 0 && defeat_life_shape_matches(input, 0)
+    input.value > 0 && defeat_life_shape_matches(input, 0, false)
 }
 
 /// The Recover grammar's typed reading: which outcome pays, the printed ratio, and the
@@ -4047,8 +4098,8 @@ pub(crate) struct PostRoundShapeV1 {
     /// every other grammar, which then requires both neutral as before.
     pub(crate) bet_gated: bool,
     /// The `Unison:` gate, carried as `isClanmatesCountLinked`. Only `Unison: Killshot: +N
-    /// Life` and `Unison : Recover N Pillz Out Of M` name it; every other grammar requires
-    /// the flag false, so none of them can admit a Unison record.
+    /// Life`, `Unison : Recover N Pillz Out Of M` and `Unison : +N Pillz And Life` name it;
+    /// every other grammar requires the flag false, so none of them can admit a Unison record.
     pub(crate) clanmates_count: bool,
 }
 
@@ -4247,7 +4298,8 @@ fn victory_life_per_damage_shape_matches(input: &StructuredEffectV1) -> bool {
     )
 }
 
-fn defeat_life_shape_matches(input: &StructuredEffectV1, minimum: u16) -> bool {
+/// `clanmates` is the `Unison:` gate, carried as `isClanmatesCountLinked`.
+fn defeat_life_shape_matches(input: &StructuredEffectV1, minimum: u16, clanmates: bool) -> bool {
     input.value_min == minimum
         && input.value_max == 0
         && input.value_condition == 0
@@ -4273,7 +4325,7 @@ fn defeat_life_shape_matches(input: &StructuredEffectV1, minimum: u16) -> bool {
         && !input.is_lost_life_linked
         && !input.is_lost_pillz_linked
         && !input.is_opponent_stars_linked
-        && !input.is_clanmates_count_linked
+        && input.is_clanmates_count_linked == clanmates
         && !input.is_anti_clanmates_count_linked
         && !input.is_permanent
         && !input.is_immediate_permanent
@@ -5334,6 +5386,72 @@ mod tests {
                 ),
                 None,
                 "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn unison_defeat_life_and_the_unison_compound_are_their_own_grammars() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        for (id, life) in [(4015, 2), (5312, 3)] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(classify_unison_defeat_life(definition, ability), Some(life));
+            assert_eq!(
+                classify_unison_defeat_life(definition, CombatStatEffectSourceV1::Bonus),
+                None
+            );
+            assert_eq!(classify_defeat_life(definition, ability), None);
+            assert_eq!(classify_unison_pillz_and_life(definition, ability), None);
+        }
+        let korakine = registry.get(3973).expect("registry definition");
+        assert_eq!(classify_unison_pillz_and_life(korakine, ability), Some(2));
+        assert_eq!(
+            classify_unison_pillz_and_life(korakine, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        assert_eq!(classify_unison_defeat_life(korakine, ability), None);
+        // The plain forms are other grammars.
+        for id in [862, 1714, 1716] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_unison_defeat_life(definition, ability),
+                None,
+                "{id}"
+            );
+            assert_eq!(
+                classify_unison_pillz_and_life(definition, ability),
+                None,
+                "{id}"
+            );
+        }
+        // The printed numbers and the gate are authority.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("4015", "value", serde_json::json!(3)),
+            ("4015", "isClanmatesCountLinked", serde_json::json!(false)),
+            ("4015", "currentRoundRequirement", serde_json::json!("win")),
+            ("3973", "value", serde_json::json!(3)),
+            ("3973", "valueMin", serde_json::json!(0)),
+            ("3973", "isClanmatesCountLinked", serde_json::json!(false)),
+            ("3973", "currentRoundRequirement", serde_json::json!("lose")),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_unison_defeat_life(definition, ability),
+                None,
+                "{id} {field} = {value}"
+            );
+            assert_eq!(
+                classify_unison_pillz_and_life(definition, ability),
+                None,
+                "{id} {field} = {value}"
             );
         }
     }

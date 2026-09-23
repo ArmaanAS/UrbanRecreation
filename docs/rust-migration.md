@@ -2458,6 +2458,33 @@ opposing player's, or floors the opposing player's. The gate grows from 735 to 7
 1024878, 1091521, 924853, 956902 and 1130726 gain fifteen, and 1145745 and 1145812 lose five
 where they select the closed `Support: Dope`.
 
+Semantic revision 65 admits the two Unison Life grammars. `Unison: Defeat: +N Life` (`4015`,
+`5312`) is ordinary Defeat Life under the one-clan gate. The site prints it without the space
+`Unison :` has elsewhere, and the record is the Defeat Life record with the clan-mates link set.
+`Unison : +N Pillz And Life` (`3973`) is a Victory compound, Pillz then Life, for a living
+winner whose hand is one clan. Both are card abilities only, admitted by exact text over the
+complete shape; the compound's `valueMin` of 2 is read exactly, so neither the Komboka nor
+the Kubra compound can pass for it. The family line read 4, and the slice unlocked 3 -
+`877733`, `1066077` and `1078669` - taking eligibility from 223 to 226.
+
+The corpus pins both halves of each. Pantherine's Defeat Life pays on a loss (1066077/2: 8 -
+3 + 2 = 7; 1066337/1: 13 - 3 + 2 = 12) and not on a win (1023495/0, and 1131352/0, where
+Ulrich's Stop also takes the Komboka bonus). Korakine's compound pays 2 Pillz and 2 Life on a
+Unison win in 878178/0 (12 - 6 + 2 + 1 with the Riots bonus, and 12 + 2), and nothing on a loss
+(877733/1, 1078669/2).
+
+Both gains are uncapped, so they commute with any other uncapped gain. They do not commute
+with an opposing floor on the same resource: 1093173/1 is exactly a Defeat Life gain landing
+before a winner's floored reduction, against the engine's P1-then-P2 pass. Nor do they commute
+with an own cap or revival (Heal, Regen, capped Killshot or per-Damage Life, Reanimate, a
+both-players reduction). So construction refuses either Unison form beside such an effect,
+beside one an own Copy could take, or beside an opposing Copy of its slot, and refuses the
+compound beside an opposing Pillz floor too (`UnisonGainAgainstUnpinnedEffect`). That costs
+926470, where Mou's `-5 Opp. Life Min 5` and Uuber's Victory-or-Defeat reduction face
+Chiropterine. A new exhaustive `life_writes` decides it, the Life twin of revision 64's
+`pillz_writes`. The plain `Defeat: +N Life` keeps the admission it had before the question was
+found. The gate grows from 745 to 761 rounds, the paying 878178/0 among them.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

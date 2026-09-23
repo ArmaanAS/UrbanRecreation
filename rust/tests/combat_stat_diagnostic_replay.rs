@@ -136,7 +136,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Equalizer in the same round, 40 + 4 - 12 = 32.
     // Four rounds since revision 54: Pistache's `After [clan:27][clan:29]` reduction.
     (925899, 4),
-    (1066077, 2),
+    // Four rounds since revision 65: Pantherine's `Unison: Defeat: +2 Life` pays in round 2
+    // (8 - 3 + 2 = 7).
+    (1066077, 4),
     (1079482, 3),
     (1090418, 2),
     // Four rounds since revision 54, whose `After` Stop Opp. Bonus decides round 2.
@@ -359,7 +361,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1024524, 4),
     (1088716, 4),
     (1079263, 4),
-    (1078669, 2),
+    // Three rounds since revision 65, whose round 2 has Korakine's `Unison : +2 Pillz And
+    // Life` lose and pay nothing.
+    (1078669, 3),
     // Revision 43 admits the unconditional Exchanges: the two selected cards swap their
     // printed values of the stat before any own increase or opposing reduction. Clean swaps:
     // Lagertha Cr 5 against Uuber's 7 in 867116/0, Djet 4 against Aurora's 7 in 1088919/0
@@ -627,6 +631,15 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1024878, 3),
     (1091521, 4),
     (956902, 3),
+    // Revision 65 admits `Unison: Defeat: +N Life` and `Unison : +N Pillz And Life`, the
+    // ordinary Defeat Life and a Victory compound under the one-clan gate. Korakine's
+    // compound pays 2 Pillz then 2 Life on a Unison win in 878178/0 (12 - 6 + 2 + 1 with the
+    // Riots bonus, 12 + 2) and nothing on a loss in 877733/1; Pantherine's Defeat Life pays
+    // 13 - 3 + 2 = 12 in 1066337/1 and nothing on her stopped-bonus win in 1131352/0.
+    (878178, 4),
+    (877733, 4),
+    (1066337, 3),
+    (1131352, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

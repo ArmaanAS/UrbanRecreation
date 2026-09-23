@@ -18,9 +18,9 @@ use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
     DiagnosticCombatEffectV1, DiagnosticCombatStatV1, DiagnosticMagnitudeV1,
-    DiagnosticStatOperationV1, HandSlot, LatchedEffectV1, LifeBeneficiaryV1, PillzWritesV1,
-    PlayerId, PostRoundEffect, PostRoundResourceV1, PostRoundSourceEffect, ValidatedSelection,
-    HAND_SIZE,
+    DiagnosticStatOperationV1, HandSlot, LatchedEffectV1, LifeBeneficiaryV1, LifeWritesV1,
+    PillzWritesV1, PlayerId, PostRoundEffect, PostRoundResourceV1, PostRoundSourceEffect,
+    ValidatedSelection, HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -404,6 +404,10 @@ pub enum CombatStatPostRoundEffectV1 {
         pillz: u16,
         maximum: u16,
     },
+    /// `Unison : +N Pillz And Life`: a living winner gains N Pillz and then N Life.
+    GainPillzAndLifeOnVictory {
+        amount: u16,
+    },
     /// `Defeat: Dope N, Max. M`: the same permanent latched by a loss. Ability slot only.
     DopePillzOnDefeat {
         pillz: u16,
@@ -704,6 +708,10 @@ pub enum CombatStatEffectV1 {
         pillz: u16,
         maximum: u16,
     },
+    /// The Unison Victory compound: Ability slot only, under `OwnerHandUnison`.
+    GainPillzAndLifeOnVictory {
+        amount: u16,
+    },
     DopePillzOnDefeat {
         pillz: u16,
         maximum: u16,
@@ -904,6 +912,12 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// A Dope beside any other effect on its owner's Pillz, or an opposing Copy: its cap
     /// makes the order observable, and no round pins it.
     DopeAgainstUnpinnedEffect,
+    UnisonPillzAndLifeSource,
+    UnisonPillzAndLifeMagnitude,
+    UnisonPillzAndLifePredicate,
+    /// A Unison Life gain beside an effect on its owner's Life - or, for the compound, on
+    /// its owner's Pillz - whose order against it no round pins, or an opposing Copy.
+    UnisonGainAgainstUnpinnedEffect,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
     BothPlayersGainSource,
@@ -1422,6 +1436,28 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::RecoveryAgainstUnpinnedEffect)
         }
+        // The Unison Life gains are uncapped, so they commute with other uncapped gains, but
+        // an opposing floor on the resource, an own cap or revival on it, or a Copy meets
+        // them in an order no round pins. The compound meets both resources.
+        CombatStatSourcePlanV1::Execute {
+            effect: effect @ CombatStatEffectV1::GainLifeOnDefeat { .. },
+            predicate: CombatStatPredicateV1::OwnerHandUnison,
+            ..
+        }
+        | CombatStatSourcePlanV1::Execute {
+            effect: effect @ CombatStatEffectV1::GainPillzAndLifeOnVictory { .. },
+            ..
+        } if opposing_copy_can_take(plan, own, opponent)
+            || source_plans(opponent).any(|opposing| life_writes(opposing).opposing_floor)
+            || source_plans(own).any(|own_plan| life_writes(own_plan).own_order_sensitive)
+            || (hand_has_copy(own)
+                && source_plans(opponent)
+                    .any(|opposing| life_writes(opposing).own_order_sensitive))
+            || (matches!(effect, CombatStatEffectV1::GainPillzAndLifeOnVictory { .. })
+                && source_plans(opponent).any(floors_opposing_pillz)) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::UnisonGainAgainstUnpinnedEffect)
+        }
         // Dope's cap makes its order against any other effect on the owner's Pillz
         // observable: an own gain landing first leaves less room below the Max, and an
         // opposing floor or gain moves the value the cap reads. No round shows a Dope beside
@@ -1676,6 +1712,17 @@ fn pillz_writes(plan: CombatStatSourcePlanV1) -> PillzWritesV1 {
     match shared_post_round_effect(effect) {
         Some(effect) => effect.pillz_writes(),
         None => PillzWritesV1::NONE,
+    }
+}
+
+/// Whose Life an end-of-round `plan` writes; `life_writes` is exhaustive like `pillz_writes`.
+fn life_writes(plan: CombatStatSourcePlanV1) -> LifeWritesV1 {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
+        return LifeWritesV1::NONE;
+    };
+    match shared_post_round_effect(effect) {
+        Some(effect) => effect.life_writes(),
+        None => LifeWritesV1::NONE,
     }
 }
 
@@ -2130,6 +2177,25 @@ fn validate_combat_stat_source_plan(
     // positive magnitude below a positive cap, and no condition of its own.
     // The other three permanents follow the same generic-by-grammar rule. Poison is the one
     // permanent a clan prints as its bonus, so it alone is open to both slots.
+    // The Unison Victory compound: a card ability, positive, and only under its gate - the
+    // unconditional `+1 Pillz And Life` is Komboka's identity-locked bonus above.
+    if let CombatStatEffectV1::GainPillzAndLifeOnVictory { amount } = effect {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::UnisonPillzAndLifeSource)
+        } else if amount == 0 {
+            Some(InvalidCombatStatPlanReasonV1::UnisonPillzAndLifeMagnitude)
+        } else if predicate != CombatStatPredicateV1::OwnerHandUnison {
+            Some(InvalidCombatStatPlanReasonV1::UnisonPillzAndLifePredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
+    }
     match effect {
         // Dope is Regen on the owner's Pillz, from either outcome channel, with no prefix.
         CombatStatEffectV1::DopePillzOnVictory { pillz, maximum }
@@ -3076,7 +3142,11 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::DefeatLifeMagnitude,
             ));
         }
-        if predicate != CombatStatPredicateV1::Always {
+        // Plain, or under the `Unison:` gate.
+        if !matches!(
+            predicate,
+            CombatStatPredicateV1::Always | CombatStatPredicateV1::OwnerHandUnison
+        ) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -3801,7 +3871,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. }
         | CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { .. }
         | CombatStatEffectV1::DopePillzOnVictory { .. }
-        | CombatStatEffectV1::DopePillzOnDefeat { .. } => return None,
+        | CombatStatEffectV1::DopePillzOnDefeat { .. }
+        | CombatStatEffectV1::GainPillzAndLifeOnVictory { .. } => return None,
     })
 }
 
@@ -3950,6 +4021,9 @@ pub(crate) fn shared_post_round_effect(
             PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnVictory(
                 LatchedEffectV1::CombustOpponentLifeAndPillz { amount, minimum },
             )),
+        ),
+        CombatStatEffectV1::GainPillzAndLifeOnVictory { amount } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzAndLifeOnVictory(amount)),
         ),
         CombatStatEffectV1::DopePillzOnVictory { pillz, maximum } => {
             Some(PostRoundSourceEffect::Fixed(
