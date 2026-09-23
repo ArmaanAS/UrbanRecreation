@@ -399,7 +399,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877533, 4),
     (1130454, 2),
     (1025349, 3),
-    (1145812, 4),
+    // Two rounds since revision 64: round 2 selects Segar's `Support: Dope 1, Max. 4`, a
+    // Dope form that stays closed and now rejects when selected rather than acting inert.
+    (1145812, 2),
     (1079173, 4),
     (1079650, 4),
     (876752, 2),
@@ -529,8 +531,12 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // (6 to 4 to 2), Zalindra's `Bet < 6 Pillz: Power +2` pays at 5 in 945791/0 and
     // 1093129/0, `Bet > 2 Pillz: -2 Opp. Life Min 0` takes 6 to 2 in 1130791/1, and
     // `Bet > 6 Pillz: +2 Life` 14 to 16 in 1145886/0.
-    (1130726, 1),
-    (924853, 2),
+    // Four rounds since revision 64, whose Talhia latches `Dope 3, Max. 4` in round 0 on
+    // exactly its Max of 4 (12 - 8), then pays 1 + 3 = 4, 0 + 3 and 0 + 3 in rounds 1-3.
+    (1130726, 4),
+    // Four rounds since revision 64: Talhia's Dope pays 3 + 1 = 4 under its Max in round 2,
+    // and 0 + 3 in round 3 to an owner the round knocks out.
+    (924853, 4),
     (945791, 1),
     (1131225, 4),
     (949959, 4),
@@ -594,9 +600,11 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Kyrioz Ld's 1/3 recovers 2 of 8 in 947010/0, where rounding the paid 7 up would give 3,
     // 1 of 4 in 1025563/0 and 2 of 7 in 946570/0, and Costello's pays nothing on a loss in
     // 946810/0. Morgane's 1/2 recovers 3 of 7 in 1131463/1, Bubbles' 3 of 6 in 1207064/0 and
-    // Eebiza's 1 of 1 in 877983/1; Morgane's wins pay nothing in 1131373/3 and 1131420/3, nor
-    // does her stopped loss in 1145745/3. Porcusite's Unison 1/2 recovers 5 of 11 in an
-    // all-Freaks hand in 1025181/0, and Cynosine's Unison 1/3 2 of 7 in 1093079/0.
+    // Eebiza's 1 of 1 in 877983/1; Morgane's wins pay nothing in 1131373/3 and 1131420/3.
+    // Porcusite's Unison 1/2 recovers 5 of 11 in an all-Freaks hand in 1025181/0, and
+    // Cynosine's Unison 1/3 2 of 7 in 1093079/0. 1145745 stops at one round since revision
+    // 64: round 1 selects Segar's `Support: Dope`, which stays closed and rejects when
+    // selected.
     (947010, 4),
     (1025563, 2),
     (946570, 2),
@@ -606,9 +614,19 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877983, 3),
     (1131373, 4),
     (1131420, 4),
-    (1145745, 4),
+    (1145745, 1),
     (1025181, 3),
     (1093079, 4),
+    // Revision 64 admits `Dope N, Max. M` and `Defeat: Dope N, Max. M`, Regen on the owner's
+    // Pillz: the latching round pays, every later one raises the owner's Pillz by N while
+    // below M, and a knocked-out owner is still paid. Poppy Mary's `Dope 1, Max. 11` pays one
+    // after each of rounds 0-2 of 1024878 (12 - 5 + 1 = 8, then 5 and 1), Raaz's `Max. 10`
+    // one after each of rounds 1-3 of 1091521, and Shao Xue's `Defeat: Dope 1, Max. 13`
+    // latches on a loss in 956902/0 (12 to 13, the Max) and pays in round 2 as the round
+    // ends its owner at 0 Life.
+    (1024878, 3),
+    (1091521, 4),
+    (956902, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

@@ -189,6 +189,11 @@ pub enum LatchedEffectV1 {
     /// halves are floored independently (1130889 r2: Life 5 to 4 while Pillz stays on 1
     /// under Min 2), and the latching round pays neither (867173 r1, 1130889 r1).
     CombustOpponentLifeAndPillz { amount: u16, minimum: u16 },
+    /// `Dope N, Max. M`: the owner gains N Pillz while below M, never past M, from the
+    /// latching round on (1024878: 12 - 5 + 1 = 8 as Poppy Mary wins, then one each round;
+    /// 1130726 r0 leaves Talhia's owner on its Max of 4). A knocked-out owner is still paid:
+    /// 924853 r3 takes Talhia's owner from 0 to 3 in the round that ends it at 0 Life.
+    DopePillz { pillz: u16, maximum: u16 },
 }
 
 impl LatchedEffectV1 {
@@ -200,20 +205,59 @@ impl LatchedEffectV1 {
             | Self::CombustOpponentLifeAndPillz { .. } => false,
             Self::RegenLife { .. }
             | Self::ToxinOpponentLife { .. }
-            | Self::ConsumeOpponentPillz { .. } => true,
+            | Self::ConsumeOpponentPillz { .. }
+            | Self::DopePillz { .. } => true,
         }
     }
 
-    /// Whether the permanent lowers the opposing player's Pillz towards a floor.
-    pub(super) const fn floors_opposing_pillz(self) -> bool {
+    pub(super) const fn pillz_writes(self) -> PillzWritesV1 {
         match self {
-            Self::ConsumeOpponentPillz { .. } | Self::CombustOpponentLifeAndPillz { .. } => true,
+            Self::ConsumeOpponentPillz { .. } | Self::CombustOpponentLifeAndPillz { .. } => {
+                PillzWritesV1::OPPOSING_FLOOR
+            }
+            Self::DopePillz { .. } => PillzWritesV1::OWN_GAIN,
             Self::HealLife { .. }
             | Self::RegenLife { .. }
             | Self::PoisonOpponentLife { .. }
-            | Self::ToxinOpponentLife { .. } => false,
+            | Self::ToxinOpponentLife { .. } => PillzWritesV1::NONE,
         }
     }
+}
+
+/// Whose Pillz an end-of-round effect writes, and which way. Two effects on one player's
+/// Pillz commute only when both are uncapped gains: a floor or a cap makes their order
+/// observable, and no round pins the server's (1093173/1 shows it is not the engine's
+/// P1-then-P2 for a gain against an opposing floor), so the classifiers below are
+/// exhaustive and a new effect has to say.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct PillzWritesV1 {
+    /// Raises its owner's Pillz.
+    pub(super) own_gain: bool,
+    /// Raises the opposing player's Pillz.
+    pub(super) opposing_gain: bool,
+    /// Lowers the opposing player's Pillz towards a floor.
+    pub(super) opposing_floor: bool,
+}
+
+impl PillzWritesV1 {
+    const NONE: Self = Self {
+        own_gain: false,
+        opposing_gain: false,
+        opposing_floor: false,
+    };
+    const OWN_GAIN: Self = Self {
+        own_gain: true,
+        ..Self::NONE
+    };
+    const OPPOSING_FLOOR: Self = Self {
+        opposing_floor: true,
+        ..Self::NONE
+    };
+    const BOTH_GAIN: Self = Self {
+        own_gain: true,
+        opposing_gain: true,
+        opposing_floor: false,
+    };
 }
 
 /// The permanents one player has latched so far, in latch order, which is also the order
@@ -685,48 +729,49 @@ impl PostRoundEffect {
 }
 
 impl PostRoundSourceEffect {
-    /// Whether the effect lowers the opposing player's Pillz towards a floor. Where one meets
-    /// that player's own uncapped Pillz gain in a round, the two orders differ exactly when
-    /// the floor binds, and no round pins the server's (1093173/1 shows it is not the engine's
-    /// P1-then-P2 for Life). Exhaustive, so that a new effect has to say.
-    pub(super) const fn floors_opposing_pillz(self) -> bool {
+    pub(super) const fn pillz_writes(self) -> PillzWritesV1 {
         match self {
-            Self::Fixed(effect) => effect.floors_opposing_pillz(),
+            Self::Fixed(effect) => effect.pillz_writes(),
             Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
-            | Self::ReduceOpponentPillzOnVictoryPerRound { .. } => true,
+            | Self::ReduceOpponentPillzOnVictoryPerRound { .. } => PillzWritesV1::OPPOSING_FLOOR,
+            Self::GainPillzOnVictoryPerAntiSupport { .. }
+            | Self::GainPillzOnVictoryPerRound { .. }
+            | Self::GainPillzOnVictoryPerSupport { .. }
+            | Self::GainPillzOnVictoryPerOpponentStars { .. } => PillzWritesV1::OWN_GAIN,
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
             | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
             | Self::GainLifeOnVictoryPerRound { .. }
-            | Self::GainPillzOnVictoryPerAntiSupport { .. }
-            | Self::GainPillzOnVictoryPerRound { .. }
             | Self::ReduceOpponentLifeOnVictoryPerSupport { .. }
             | Self::GainLifeOnVictoryPerSupport { .. }
-            | Self::GainPillzOnVictoryPerSupport { .. }
-            | Self::GainLifeOnVictoryPerOpponentStars { .. }
-            | Self::GainPillzOnVictoryPerOpponentStars { .. } => false,
+            | Self::GainLifeOnVictoryPerOpponentStars { .. } => PillzWritesV1::NONE,
         }
     }
 }
 
 impl PostRoundEffect {
-    pub(super) const fn floors_opposing_pillz(self) -> bool {
+    pub(super) const fn pillz_writes(self) -> PillzWritesV1 {
         match self {
             Self::ReduceOpponentPillzOnVictory { .. }
-            | Self::ReduceOpponentPillzOnDefeat { .. } => true,
+            | Self::ReduceOpponentPillzOnDefeat { .. } => PillzWritesV1::OPPOSING_FLOOR,
             Self::LatchOnVictory(latched)
             | Self::LatchOnDefeat(latched)
-            | Self::LatchOnKillshot(latched) => latched.floors_opposing_pillz(),
+            | Self::LatchOnKillshot(latched) => latched.pillz_writes(),
+            Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => PillzWritesV1::BOTH_GAIN,
             Self::RecoverPaidPillzOnDefeat { .. }
             | Self::RecoverPaidPillzOnVictory { .. }
             | Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainOnePillzAndLifeOnVictory
             | Self::GainTwoPillzOnDefeatMaxEleven
-            | Self::GainLifeEqualToFinalDamageOnCourageVictory
-            | Self::GainLifeOnVictory(_)
             | Self::GainPillzOnVictory(_)
             | Self::GainPillzOnVictoryMax { .. }
             | Self::GainPillzEqualToFinalDamageOnVictory
+            | Self::GainPillzOnDefeat(_)
+            | Self::GainPillzAndLifeOnDefeat(_)
+            | Self::GainPillzAndLifeOnKillshot { .. }
+            | Self::GainPillzOnKillshot(_) => PillzWritesV1::OWN_GAIN,
+            Self::GainLifeEqualToFinalDamageOnCourageVictory
+            | Self::GainLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictory { .. }
             | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
             | Self::GainLifeOnDefeat(_)
@@ -737,13 +782,8 @@ impl PostRoundEffect {
             | Self::ReduceOpponentLifeOnDefeat { .. }
             | Self::ReduceOpponentLifeOnKillshot { .. }
             | Self::ReduceBothPlayersLife { .. }
-            | Self::GainPillzOnDefeat(_)
-            | Self::GainPillzAndLifeOnDefeat(_)
-            | Self::GainPillzAndLifeOnKillshot { .. }
-            | Self::GainPillzOnKillshot(_)
             | Self::GainLifeOnKillshot { .. }
-            | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
-            | Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => false,
+            | Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => PillzWritesV1::NONE,
         }
     }
 }
@@ -789,7 +829,8 @@ impl PostRoundEffect {
                 LatchedEffectV1::PoisonOpponentLife { .. }
                 | LatchedEffectV1::ToxinOpponentLife { .. }
                 | LatchedEffectV1::ConsumeOpponentPillz { .. }
-                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. },
+                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. }
+                | LatchedEffectV1::DopePillz { .. },
             )
             | Self::RecoverPaidPillzOnDefeat { .. }
             | Self::RecoverPaidPillzOnVictory { .. }
@@ -810,13 +851,15 @@ impl PostRoundEffect {
                 LatchedEffectV1::PoisonOpponentLife { .. }
                 | LatchedEffectV1::ToxinOpponentLife { .. }
                 | LatchedEffectV1::ConsumeOpponentPillz { .. }
-                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. },
+                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. }
+                | LatchedEffectV1::DopePillz { .. },
             )
             | Self::LatchOnDefeat(
                 LatchedEffectV1::PoisonOpponentLife { .. }
                 | LatchedEffectV1::ToxinOpponentLife { .. }
                 | LatchedEffectV1::ConsumeOpponentPillz { .. }
-                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. },
+                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. }
+                | LatchedEffectV1::DopePillz { .. },
             ) => LifeBeneficiaryV1::Nobody,
         }
     }
@@ -1558,6 +1601,17 @@ impl BaseRulesGame {
                         if pillz > minimum {
                             position.players[target].pillz =
                                 pillz.saturating_sub(amount).max(minimum);
+                        }
+                    }
+                    // Dope is Regen on the owner's Pillz with no living guard: the server pays
+                    // an owner the round has just knocked out (924853 r3, 956902 r2).
+                    LatchedEffectV1::DopePillz { pillz, maximum } => {
+                        let current = position.players[owner].pillz;
+                        if current < maximum {
+                            position.players[owner].pillz = current
+                                .checked_add(pillz)
+                                .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?
+                                .min(maximum);
                         }
                     }
                 }

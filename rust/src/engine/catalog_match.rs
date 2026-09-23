@@ -11,7 +11,7 @@ use super::combat_stat_compiler::{
     classify_conditional_stat_copy, classify_conditional_stop,
     classify_consume_opponent_pillz_on_victory, classify_copy_opponent_source,
     classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
-    classify_defeat_pillz, classify_defeat_pillz_and_life,
+    classify_defeat_pillz, classify_defeat_pillz_and_life, classify_dope_pillz,
     classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
     classify_heal_life_on_victory, classify_killshot_opponent_life,
     classify_killshot_pillz_and_life, classify_killshot_post_round,
@@ -2078,6 +2078,7 @@ fn prepare_catalog_source(
             || classify_consume_opponent_pillz_on_victory(definition, source_kind).is_some()
             || classify_combust_opponent_life_and_pillz_on_victory(definition, source_kind)
                 .is_some()
+            || classify_dope_pillz(definition, source_kind).is_some()
         {
             require_catalog_alias(
                 match_.alias_ids(),
@@ -2833,6 +2834,10 @@ fn prepare_permanent_life_source(
         // The four plain permanents share one latch and one shape family, so they are tried
         // in turn here rather than given four near-identical preparers of their own.
         |definition, source_kind| {
+            if let Some((pillz, maximum, latch)) = classify_dope_pillz(definition, source_kind) {
+                let (effect, compact_effect) = latch.effects(pillz, maximum);
+                return Some((effect, compact_effect, CombatStatPredicateV1::Always));
+            }
             if let Some((life, maximum, predicate)) =
                 classify_heal_life_on_victory(definition, source_kind)
             {

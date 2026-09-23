@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 63;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 64;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -2521,6 +2521,89 @@ pub(crate) fn has_combust_opponent_life_and_pillz_on_victory_shape(
     combust_opponent_life_and_pillz_shape_matches(definition.structured_input())
 }
 
+/// Which outcome latches an admitted Dope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DopeLatchV1 {
+    /// `Dope N, Max. M`: a won round.
+    Victory,
+    /// `Defeat: Dope N, Max. M`: a lost one.
+    Defeat,
+}
+
+impl DopeLatchV1 {
+    /// The public and compact plans, which catalog and replay preparation must build
+    /// identically.
+    pub(crate) const fn effects(
+        self,
+        pillz: u16,
+        maximum: u16,
+    ) -> (CombatStatPostRoundEffectV1, CombatStatEffectV1) {
+        match self {
+            Self::Victory => (
+                CombatStatPostRoundEffectV1::DopePillzOnVictory { pillz, maximum },
+                CombatStatEffectV1::DopePillzOnVictory { pillz, maximum },
+            ),
+            Self::Defeat => (
+                CombatStatPostRoundEffectV1::DopePillzOnDefeat { pillz, maximum },
+                CombatStatEffectV1::DopePillzOnDefeat { pillz, maximum },
+            ),
+        }
+    }
+}
+
+/// `Dope N, Max. M` and `Defeat: Dope N, Max. M`: Regen on the owner's Pillz. The round that
+/// latches it pays at once - `isImmediatePermanent`, as on Regen - and every later round then
+/// raises the owner's Pillz by N while below M, never past it. Card abilities only: no clan
+/// prints one. The `Support:` form scales by the clan count and is another grammar.
+/// Returns `(pillz, maximum, latch)`.
+pub(crate) fn classify_dope_pillz(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16, DopeLatchV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (latch, prefix) = if dope_pillz_shape_matches(input, CurrentRoundRequirementV1::Win) {
+        (DopeLatchV1::Victory, "")
+    } else if dope_pillz_shape_matches(input, CurrentRoundRequirementV1::Lose) {
+        (DopeLatchV1::Defeat, "Defeat: ")
+    } else {
+        return None;
+    };
+    (definition.description() == format!("{prefix}Dope {}, Max. {}", input.value, input.value_max))
+        .then_some((input.value, input.value_max, latch))
+}
+
+/// Structural half of the Dope boundary, on either latch, so replay preparation can reject
+/// the complete shape under malformed text instead of disabling it.
+pub(crate) fn has_dope_pillz_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    dope_pillz_shape_matches(input, CurrentRoundRequirementV1::Win)
+        || dope_pillz_shape_matches(input, CurrentRoundRequirementV1::Lose)
+}
+
+/// An own-Pillz increase of `value` capped at `value_max`, permanent and immediate, with no
+/// floor and no condition beside the outcome that latches it.
+fn dope_pillz_shape_matches(
+    input: &StructuredEffectV1,
+    current_round: CurrentRoundRequirementV1,
+) -> bool {
+    input.value > 0
+        && input.value_min == 0
+        && input.value_max > input.value
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Any
+        && input.index_requirement == IndexRequirementV1::Any
+        && permanent_life_neutral_shape_matches(
+            input,
+            AffectedSideV1::Player,
+            AttributeAffectedV1::Pillz,
+            AttributeActionV1::Increase,
+            true,
+            current_round,
+        )
+}
+
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -2537,6 +2620,7 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_toxin_opponent_life_on_victory(definition, source_kind).is_some()
         || classify_consume_opponent_pillz_on_victory(definition, source_kind).is_some()
         || classify_combust_opponent_life_and_pillz_on_victory(definition, source_kind).is_some()
+        || classify_dope_pillz(definition, source_kind).is_some()
     {
         return None;
     }
@@ -5250,6 +5334,72 @@ mod tests {
                 ),
                 None,
                 "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn dope_is_admitted_on_either_latch_as_an_ability_and_support_dope_stays_closed() {
+        let registry = registry();
+        for (id, pillz, maximum, latch) in [
+            (1451, 1, 11, DopeLatchV1::Victory),
+            (4931, 3, 4, DopeLatchV1::Victory),
+            (4932, 3, 4, DopeLatchV1::Victory),
+            (5888, 1, 10, DopeLatchV1::Victory),
+            (1507, 1, 13, DopeLatchV1::Defeat),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_dope_pillz(definition, CombatStatEffectSourceV1::Ability),
+                Some((pillz, maximum, latch)),
+                "{id}"
+            );
+            assert_eq!(
+                classify_dope_pillz(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id}"
+            );
+            assert!(has_dope_pillz_shape(definition), "{id}");
+            // A permanent is post-round work, never a combat-stat effect.
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id}"
+            );
+        }
+        // `Support: Dope` scales by the clan count, and Regen is the Life twin.
+        for id in [2000, 1458, 3433] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_dope_pillz(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id}"
+            );
+        }
+        // The printed numbers, the latch and the immediacy are all authority.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("1451", "value", serde_json::json!(2)),
+            ("1451", "valueMax", serde_json::json!(12)),
+            ("1451", "valueMin", serde_json::json!(1)),
+            ("1451", "isImmediatePermanent", serde_json::json!(false)),
+            ("1451", "currentRoundRequirement", serde_json::json!("lose")),
+            ("1451", "previousRoundRequirement", serde_json::json!("win")),
+            ("1451", "isSupport", serde_json::json!(true)),
+            ("1507", "currentRoundRequirement", serde_json::json!("win")),
+            ("4931", "valueMax", serde_json::json!(3)),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_dope_pillz(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id} {field} = {value}"
             );
         }
     }

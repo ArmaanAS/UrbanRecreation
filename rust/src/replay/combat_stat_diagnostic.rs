@@ -19,13 +19,13 @@ use crate::engine::combat_stat_compiler::{
     classify_combat_stat_effect, classify_combust_opponent_life_and_pillz_on_victory,
     classify_consume_opponent_pillz_on_victory, classify_defeat_life,
     classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_pillz,
-    classify_defeat_pillz_and_life, classify_equalizer_opponent_life_on_victory,
-    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
-    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
-    classify_round_scaled_post_round, classify_support_post_round,
+    classify_defeat_pillz_and_life, classify_dope_pillz,
+    classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
+    classify_heal_life_on_victory, classify_killshot_opponent_life,
+    classify_killshot_pillz_and_life, classify_killshot_post_round,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life, classify_recover_pillz,
+    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
@@ -34,11 +34,11 @@ use crate::engine::combat_stat_compiler::{
     compact_effect, has_bet_gated_post_round_shape, has_both_players_life_reduction_shape,
     has_brawl_post_round_shape, has_combust_opponent_life_and_pillz_on_victory_shape,
     has_consume_opponent_pillz_on_victory_shape, has_defeat_life_shape,
-    has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_equalizer_post_round_shape,
-    has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
-    has_killshot_post_round_shape, has_poison_opponent_life_on_defeat_shape,
-    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
-    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_dope_pillz_shape,
+    has_equalizer_post_round_shape, has_heal_life_on_victory_shape,
+    has_killshot_opponent_life_shape, has_killshot_post_round_shape,
+    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape, has_victory_life_shape,
     has_victory_opponent_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_both_players_gain_shape, has_victory_or_defeat_opponent_life_shape,
@@ -1222,6 +1222,21 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    if let Some((pillz, maximum, latch)) = classify_dope_pillz(definition, source_kind) {
+        let (effect, compact_effect) = latch.effects(pillz, maximum);
+        return Ok(PreparedCombatStatSourceV1 {
+            disposition: CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                effect,
+                predicate: CombatStatPredicateV1::Always,
+            },
+            compact_plan: CombatStatSourcePlanV1::Execute {
+                source_id: source.id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: compact_effect,
+            },
+        });
+    }
     if let Some((pillz, minimum, predicate)) =
         classify_consume_opponent_pillz_on_victory(definition, source_kind)
     {
@@ -1540,6 +1555,11 @@ fn prepare_combat_stat_source(
         || source.description.starts_with("Combust ")
         || has_consume_opponent_pillz_on_victory_shape(definition)
         || has_combust_opponent_life_and_pillz_on_victory_shape(definition)
+        // Dope, on either latch, and its `Support:` form, which is another grammar.
+        || source.description.starts_with("Dope ")
+        || source.description.starts_with("Defeat: Dope ")
+        || source.description.starts_with("Support: Dope ")
+        || has_dope_pillz_shape(definition)
         // `Unison :` and `Growth:` permanents carry the clan-mates link or `isOverdrive`
         // beside the plain permanent structure, so none of the shapes above reach them;
         // without this they would be inert disabled sources whose latch replay drops.

@@ -18,8 +18,9 @@ use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
     DiagnosticCombatEffectV1, DiagnosticCombatStatV1, DiagnosticMagnitudeV1,
-    DiagnosticStatOperationV1, HandSlot, LatchedEffectV1, LifeBeneficiaryV1, PlayerId,
-    PostRoundEffect, PostRoundResourceV1, PostRoundSourceEffect, ValidatedSelection, HAND_SIZE,
+    DiagnosticStatOperationV1, HandSlot, LatchedEffectV1, LifeBeneficiaryV1, PillzWritesV1,
+    PlayerId, PostRoundEffect, PostRoundResourceV1, PostRoundSourceEffect, ValidatedSelection,
+    HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -398,6 +399,16 @@ pub enum CombatStatPostRoundEffectV1 {
         amount: u16,
         minimum: u16,
     },
+    /// `Dope N, Max. M`: Regen on the owner's Pillz, latched by a win. Ability slot only.
+    DopePillzOnVictory {
+        pillz: u16,
+        maximum: u16,
+    },
+    /// `Defeat: Dope N, Max. M`: the same permanent latched by a loss. Ability slot only.
+    DopePillzOnDefeat {
+        pillz: u16,
+        maximum: u16,
+    },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -686,6 +697,17 @@ pub enum CombatStatEffectV1 {
         amount: u16,
         minimum: u16,
     },
+    /// From the latching round on, the owner gains `pillz` Pillz while below `maximum`,
+    /// never past it, whether or not the owner is still living. Latched by a win, or by a
+    /// loss for the Defeat form.
+    DopePillzOnVictory {
+        pillz: u16,
+        maximum: u16,
+    },
+    DopePillzOnDefeat {
+        pillz: u16,
+        maximum: u16,
+    },
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and
@@ -879,6 +901,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// A Recover facing an opposing reduction of its owner's Pillz towards a floor, or an
     /// opposing Copy.
     RecoveryAgainstUnpinnedEffect,
+    /// A Dope beside any other effect on its owner's Pillz, or an opposing Copy: its cap
+    /// makes the order observable, and no round pins it.
+    DopeAgainstUnpinnedEffect,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
     BothPlayersGainSource,
@@ -1397,6 +1422,31 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::RecoveryAgainstUnpinnedEffect)
         }
+        // Dope's cap makes its order against any other effect on the owner's Pillz
+        // observable: an own gain landing first leaves less room below the Max, and an
+        // opposing floor or gain moves the value the cap reads. No round shows a Dope beside
+        // another such effect, so the match is refused wherever one could meet it - another
+        // own gain in the hand (or one an own Copy could take from the opposing hand), any
+        // opposing write to the owner's Pillz, or an opposing Copy of the Dope's slot.
+        CombatStatSourcePlanV1::Execute {
+            effect:
+                CombatStatEffectV1::DopePillzOnVictory { .. }
+                | CombatStatEffectV1::DopePillzOnDefeat { .. },
+            ..
+        } if opposing_copy_can_take(plan, own, opponent)
+            || source_plans(own)
+                .filter(|&own_plan| pillz_writes(own_plan).own_gain)
+                .count()
+                > 1
+            || (hand_has_copy(own)
+                && source_plans(opponent).any(|opposing| pillz_writes(opposing).own_gain))
+            || source_plans(opponent).any(|opposing| {
+                let writes = pillz_writes(opposing);
+                writes.opposing_gain || writes.opposing_floor
+            }) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::DopeAgainstUnpinnedEffect)
+        }
         // The single-stat Protections have seven selected rounds between them, and each shows
         // one only leaving a reduction of another stat alone: an Attack cut on `Protection:
         // Power` (948108/0, 964088/0, 925204/2) and on `Protection : Damage` (947121/1), and a
@@ -1616,14 +1666,21 @@ const REVISION_8_RECOVERY: CombatStatEffectV1 = CombatStatEffectV1::RecoverPaidP
     denominator: 3,
 };
 
-/// An end-of-round effect lowering the opposing player's Pillz towards a floor.
-/// `PostRoundSourceEffect::floors_opposing_pillz` is exhaustive, so a later grammar cannot
-/// slip past the Recover refusal.
-fn floors_opposing_pillz(plan: CombatStatSourcePlanV1) -> bool {
+/// Whose Pillz an end-of-round `plan` writes, from its own owner's side.
+/// `PostRoundSourceEffect::pillz_writes` is exhaustive, so a later grammar cannot slip past
+/// the Recover and Dope refusals.
+fn pillz_writes(plan: CombatStatSourcePlanV1) -> PillzWritesV1 {
     let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
-        return false;
+        return PillzWritesV1::NONE;
     };
-    shared_post_round_effect(effect).is_some_and(PostRoundSourceEffect::floors_opposing_pillz)
+    match shared_post_round_effect(effect) {
+        Some(effect) => effect.pillz_writes(),
+        None => PillzWritesV1::NONE,
+    }
+}
+
+fn floors_opposing_pillz(plan: CombatStatSourcePlanV1) -> bool {
+    pillz_writes(plan).opposing_floor
 }
 
 /// Whether `plan`, from the opposing hand, changes or reads a stat of the owner's card that no
@@ -2074,6 +2131,25 @@ fn validate_combat_stat_source_plan(
     // The other three permanents follow the same generic-by-grammar rule. Poison is the one
     // permanent a clan prints as its bonus, so it alone is open to both slots.
     match effect {
+        // Dope is Regen on the owner's Pillz, from either outcome channel, with no prefix.
+        CombatStatEffectV1::DopePillzOnVictory { pillz, maximum }
+        | CombatStatEffectV1::DopePillzOnDefeat { pillz, maximum } => {
+            let reason = if source != CombatStatEffectSourceV1::Ability {
+                Some(InvalidCombatStatPlanReasonV1::PermanentLifeSource)
+            } else if pillz == 0 || maximum <= pillz {
+                Some(InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude)
+            } else if predicate != CombatStatPredicateV1::Always {
+                Some(InvalidCombatStatPlanReasonV1::PermanentLifePredicate)
+            } else {
+                None
+            };
+            return match reason {
+                Some(reason) => Err(invalid_combat_stat_execute(
+                    player, hand_slot, source, source_id, reason,
+                )),
+                None => Ok(()),
+            };
+        }
         CombatStatEffectV1::RegenLifeOnVictory { life, maximum } => {
             if source != CombatStatEffectSourceV1::Ability {
                 return Err(invalid_combat_stat_execute(
@@ -3723,7 +3799,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::PoisonOpponentLifeOnDefeat { .. }
         | CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. }
         | CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. }
-        | CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { .. } => return None,
+        | CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { .. }
+        | CombatStatEffectV1::DopePillzOnVictory { .. }
+        | CombatStatEffectV1::DopePillzOnDefeat { .. } => return None,
     })
 }
 
@@ -3873,6 +3951,16 @@ pub(crate) fn shared_post_round_effect(
                 LatchedEffectV1::CombustOpponentLifeAndPillz { amount, minimum },
             )),
         ),
+        CombatStatEffectV1::DopePillzOnVictory { pillz, maximum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::LatchOnVictory(LatchedEffectV1::DopePillz { pillz, maximum }),
+            ))
+        }
+        CombatStatEffectV1::DopePillzOnDefeat { pillz, maximum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::LatchOnDefeat(LatchedEffectV1::DopePillz { pillz, maximum }),
+            ))
+        }
         CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star, minimum } => {
             Some(
                 PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerOpponentStars {

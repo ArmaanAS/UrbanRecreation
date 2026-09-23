@@ -2427,6 +2427,37 @@ revision 30's own evidence in 924413/0, 946288/2 and 1091644/1. That decision is
 owner, as is the same order question under revision 30's `-N Opp Pillz. Min M` facing every
 admitted opposing Pillz gain. The gate grows from 696 to 735 rounds.
 
+Semantic revision 64 admits Dope, the first permanent on the owner's own Pillz: `Dope N,
+Max. M` (`1451`, `4931`, `4932`, `5888`), latched by a win, and `Defeat: Dope N, Max. M`
+(`1507`), latched by a loss. Both are Regen on Pillz: the latching round pays, and every later
+round raises the owner's Pillz by N while below M, never past it. Each is admitted by exact
+text over the complete immediate-permanent shape, from card abilities only. `Support: Dope N,
+Max. M` (`2000`) scales by the clan count and stays closed. It now rejects when selected
+rather than acting as an inert source, and so do malformed Dope records. The family line read
+8, and the slice unlocked 4 - `924485`, `924853`, `956902` and `1130726` - taking eligibility
+from 219 to 223.
+
+The server pins the rest. Poppy Mary's `Dope 1, Max. 11` pays in its latching round and after
+every later one (1024878: 12 - 5 + 1 = 8, then 5 and 1). Talhia's `Dope 3, Max. 4` latches on
+exactly its Max and pays nothing (1130726/0: 12 - 8 = 4), then stops at the Max (1 + 3 = 4 in
+1130726/1, 3 + 1 in 924853/2). It pays whatever card is played, won or lost, and pays an owner
+the round knocks out (0 + 3 in 924853/3; Shao Xue's `Defeat: Dope` in 956902/2). So the engine
+arm has no living guard, unlike Heal's. A losing Dope never latches (924485/0). One new
+`LatchedEffectV1::DopePillz`, paid in the latching round, carries both forms.
+
+What the corpus never shows is a Dope beside another effect on its owner's Pillz, and its cap
+makes the order observable there. An own gain landing first leaves less room below the Max,
+and an opposing gain or floor moves the value the cap reads. Construction therefore refuses a
+Dope beside another own Pillz gain in the hand, beside one an own Copy could take from the
+opposing hand, beside any opposing write to the owner's Pillz, or beside an opposing Copy of
+its slot (`DopeAgainstUnpinnedEffect`). That costs 946570 (Kyrioz Ld's Recover beside
+Talhia), and the three `Support: Dope` draws would face it too (1131463, 1145812 and 1207064).
+To decide it, revision 63's `floors_opposing_pillz` becomes an exhaustive `pillz_writes`,
+which says for every end-of-round effect whether it raises its owner's Pillz, raises the
+opposing player's, or floors the opposing player's. The gate grows from 735 to 745 rounds:
+1024878, 1091521, 924853, 956902 and 1130726 gain fifteen, and 1145745 and 1145812 lose five
+where they select the closed `Support: Dope`.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

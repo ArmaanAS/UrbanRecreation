@@ -7225,6 +7225,178 @@ fn recovery_is_refused_beside_an_opposing_pillz_floor_or_a_copy_of_its_slot() {
     }
 }
 
+/// `Dope N, Max. M` is Regen on the owner's Pillz: the latching round pays, every later round
+/// raises the owner's Pillz by N while below M and never past it, whatever card is played,
+/// and a knocked-out owner is still paid (924853/3). `Defeat: Dope` latches on a loss.
+#[test]
+fn dope_latches_pays_at_once_caps_at_its_max_and_pays_a_knocked_out_owner() {
+    let dope = |pillz, maximum, defeat: bool| {
+        execute(
+            4931,
+            CombatStatPredicateV1::Always,
+            if defeat {
+                CombatStatEffectV1::DopePillzOnDefeat { pillz, maximum }
+            } else {
+                CombatStatEffectV1::DopePillzOnVictory { pillz, maximum }
+            },
+        )
+    };
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_pillz = 12;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = dope(3, 4, false);
+    let mut diag = game(base, cards);
+    let start = diag.position().clone();
+    // Round 0: P1 wins betting 8 and sits on exactly the Max of 4 (1130726/0): nothing paid.
+    let (report, first) = diag
+        .make(input(PlayerId::P1, (0, 8, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 4);
+    // Round 1: P1 loses on another card betting 3; 1 + 3 = 4, capped at the Max.
+    let (report, second) = diag
+        .make(input(PlayerId::P2, (1, 3, false), (1, 5, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 4);
+    // Round 2: betting all 4 leaves 0, and 0 + 3 = 3 under the Max.
+    let (report, third) = diag
+        .make(input(PlayerId::P1, (2, 4, false), (2, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].pillz, 3);
+    diag.unmake(third);
+    diag.unmake(second);
+    diag.unmake(first);
+    assert_eq!(diag.position(), &start);
+
+    // A losing plain Dope never latches: P1 stays on the base 20.
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = dope(1, 11, false);
+    let mut diag = game(base, cards);
+    diag.make(input(PlayerId::P1, (0, 0, false), (0, 5, false)))
+        .unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 5, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].pillz, 20);
+
+    // `Defeat: Dope` latches on a loss and pays at once (956902/0), and pays an owner the
+    // round knocks out: P1 starts on 3 Life, loses both rounds and is paid in each.
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_life = 6;
+    base.players[PlayerId::P1].initial_pillz = 12;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = dope(1, 13, true);
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 2, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].pillz, 13);
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (1, 4, false), (1, 9, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 0);
+    assert_eq!(report.players[PlayerId::P1].pillz, 13 - 4 + 1);
+}
+
+/// No round shows a Dope beside another effect on its owner's Pillz, and its cap makes the
+/// order observable, so a match is refused wherever one could meet it: another own Pillz
+/// gain in the hand, an own Copy with an opposing gain to take, any opposing write to the
+/// owner's Pillz, or an opposing Copy of the Dope's slot. Life effects and a Copy of the
+/// other slot are admitted.
+#[test]
+fn dope_is_refused_beside_any_other_effect_on_its_owners_pillz() {
+    let dope = execute(
+        4931,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::DopePillzOnVictory {
+            pillz: 3,
+            maximum: 4,
+        },
+    );
+    let pillz_gain = execute(
+        337,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 3 },
+    );
+    let recover = execute(
+        902,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+            numerator: 1,
+            denominator: 2,
+        },
+    );
+    let pillz_floor = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let life_gain = execute(
+        377,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    let copy = |copied| CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    for (own, opposing, refused) in [
+        (Some(pillz_gain), None, true),
+        (Some(recover), None, true),
+        (None, Some(pillz_floor), true),
+        (None, Some(copy(CopiedSourceKindV1::Ability)), true),
+        (
+            Some(copy(CopiedSourceKindV1::Ability)),
+            Some(pillz_gain),
+            true,
+        ),
+        (None, Some(pillz_gain), false),
+        (Some(life_gain), Some(life_gain), false),
+        (None, Some(copy(CopiedSourceKindV1::Bonus)), false),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = dope;
+        if let Some(plan) = own {
+            cards[PlayerId::P1][1].ability = plan;
+            if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+                cards[PlayerId::P1][1].source_ability_support_count = 1;
+            }
+        }
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][2].ability = plan;
+            if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+                cards[PlayerId::P2][2].source_ability_support_count = 1;
+            }
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason: InvalidCombatStatPlanReasonV1::DopeAgainstUnpinnedEffect,
+                        ..
+                    })
+                ),
+                "{own:?} / {opposing:?}"
+            );
+        } else {
+            assert!(result.is_ok(), "{own:?} / {opposing:?}");
+        }
+    }
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {
