@@ -179,14 +179,28 @@ pub enum LatchedEffectV1 {
     /// the match: 963039 r2 takes the opponent from 3 to 1 by Regan's reduction and then to
     /// 0 by the Toxin.
     ToxinOpponentLife { life: u16, minimum: u16 },
+    /// `Consume N, Min M`: the opposing player loses N Pillz while above M, never below M,
+    /// from the latching round on (1131085 r0-r2: 7 to 6, 6 to 5, 5 to 4). A knocked-out
+    /// target still pays: 876464 r2 takes the target's last round from 3 to 2 Pillz while
+    /// the round ends it at 0 Life, which is what the plain Pillz reduction does too.
+    ConsumeOpponentPillz { pillz: u16, minimum: u16 },
+    /// `Combust N, Min M`: from the round after the latch, the opposing player loses N Life
+    /// and N Pillz, each only while that resource is above M and never below it. The two
+    /// halves are floored independently (1130889 r2: Life 5 to 4 while Pillz stays on 1
+    /// under Min 2), and the latching round pays neither (867173 r1, 1130889 r1).
+    CombustOpponentLifeAndPillz { amount: u16, minimum: u16 },
 }
 
 impl LatchedEffectV1 {
     /// Whether the round that latches this effect also pays it.
     pub const fn pays_in_latching_round(self) -> bool {
         match self {
-            Self::HealLife { .. } | Self::PoisonOpponentLife { .. } => false,
-            Self::RegenLife { .. } | Self::ToxinOpponentLife { .. } => true,
+            Self::HealLife { .. }
+            | Self::PoisonOpponentLife { .. }
+            | Self::CombustOpponentLifeAndPillz { .. } => false,
+            Self::RegenLife { .. }
+            | Self::ToxinOpponentLife { .. }
+            | Self::ConsumeOpponentPillz { .. } => true,
         }
     }
 }
@@ -696,7 +710,9 @@ impl PostRoundEffect {
             | Self::GainPillzOnKillshot(_)
             | Self::LatchOnKillshot(
                 LatchedEffectV1::PoisonOpponentLife { .. }
-                | LatchedEffectV1::ToxinOpponentLife { .. },
+                | LatchedEffectV1::ToxinOpponentLife { .. }
+                | LatchedEffectV1::ConsumeOpponentPillz { .. }
+                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. },
             )
             | Self::RecoverPaidPillzOnDefeat
             | Self::GainOnePillzOnVictoryOrDefeat
@@ -714,11 +730,15 @@ impl PostRoundEffect {
             | Self::ReduceBothPlayersLife { .. }
             | Self::LatchOnVictory(
                 LatchedEffectV1::PoisonOpponentLife { .. }
-                | LatchedEffectV1::ToxinOpponentLife { .. },
+                | LatchedEffectV1::ToxinOpponentLife { .. }
+                | LatchedEffectV1::ConsumeOpponentPillz { .. }
+                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. },
             )
             | Self::LatchOnDefeat(
                 LatchedEffectV1::PoisonOpponentLife { .. }
-                | LatchedEffectV1::ToxinOpponentLife { .. },
+                | LatchedEffectV1::ToxinOpponentLife { .. }
+                | LatchedEffectV1::ConsumeOpponentPillz { .. }
+                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. },
             ) => LifeBeneficiaryV1::Nobody,
         }
     }
@@ -1406,6 +1426,30 @@ impl BaseRulesGame {
                         if current > minimum {
                             position.players[target].life =
                                 current.saturating_sub(life).max(minimum);
+                        }
+                    }
+                    // The Pillz reduction reads the target's Pillz after both bets, like
+                    // the plain `-N Opp Pillz. Min M`, and does not ask whether the target
+                    // is still living.
+                    LatchedEffectV1::ConsumeOpponentPillz { pillz, minimum } => {
+                        let target = owner.other();
+                        let current = position.players[target].pillz;
+                        if current > minimum {
+                            position.players[target].pillz =
+                                current.saturating_sub(pillz).max(minimum);
+                        }
+                    }
+                    LatchedEffectV1::CombustOpponentLifeAndPillz { amount, minimum } => {
+                        let target = owner.other();
+                        let life = position.players[target].life;
+                        if life > minimum {
+                            position.players[target].life =
+                                life.saturating_sub(amount).max(minimum);
+                        }
+                        let pillz = position.players[target].pillz;
+                        if pillz > minimum {
+                            position.players[target].pillz =
+                                pillz.saturating_sub(amount).max(minimum);
                         }
                     }
                 }

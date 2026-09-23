@@ -407,14 +407,16 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // clan. Sauropsite's `5318` takes 5/3 to 8/6 in 1069608/2 and so wins at 72 against 49,
     // where 45 would lose; Aurora falls from 7 to 4 under `4553` in 1131144/0; Wesley 6 - 2
     // - 2 = 2 in 1088323/3 shows the whole-hand condition holds after cards are spent.
-    // 867173 stops at two rounds, where Prince Candle's unadmitted Combust latches.
+    // 867173 stops at one round since revision 61: Prince Candle's Combust, admitted since,
+    // faces AI-Lycs' Pillz recovery in the opposing hand, whose order against it at a
+    // binding floor is unpinned, so the round that selects it is a refused hazard.
     (1069608, 3),
     // Three rounds since revision 50: Blackie's Confidence Power Exchange in round 2.
     (947488, 3),
     // Two rounds since revision 56: Ilarius' `Bet > 4 Pillz: Stop Opp. Bonus` bets 0 in
     // round 1, so its gate is closed and Callie's Support stands (36 + 12 = 48).
     (1131144, 2),
-    (867173, 2),
+    (867173, 1),
     // Revision 47 admits `Stop Opp. Ability`/`Stop Opp. Bonus` under the Courage,
     // Confidence, Revenge, Asymmetry, Symmetry and Night predicates. Kerry Cr moves first in
     // 1069721/0 and stops Callie's `Support: Attack +3`, so her attack is 6 x 8 = 48, not
@@ -510,7 +512,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (963931, 4),
     (1081688, 4),
     (1088008, 2),
-    (1090096, 2),
+    // One round since revision 61: round 1 selects Kontra Ld's `Combust 1, Min 0`, refused
+    // as a hazard there because Aurora's `+3 Life` writes the Life it floors.
+    (1090096, 1),
     (1090269, 2),
     (1131170, 4),
     // Revision 56 admits the `Bet > N Pillz:` and `Bet < N Pillz:` gates, which compare the
@@ -563,6 +567,13 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1011016, 3),
     (1066481, 4),
     (876939, 4),
+    // Revision 61 admits the plain Pillz permanents `Consume N, Min M` and `Combust N, Min
+    // M`. Maelt Riv's Consume pays in its latching round and every later one in 1131085
+    // (12 - 5 - 1 = 6, then 5, then 4) and leaves 0 alone under Min 2 in round 3; Kontra
+    // Ld's Combust latches in 1130889/1, then takes Life 5 to 4 while Pillz 1 stays under
+    // Min 2, and pays once more in round 3.
+    (1131085, 4),
+    (1130889, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

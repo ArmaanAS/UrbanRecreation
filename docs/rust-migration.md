@@ -2328,6 +2328,35 @@ source that matched the server by losing into a selected hazard; neither was a g
 The gate stays at 679 rounds: the non-firing rounds of the unlocked draws were already in
 it with the sources inert, and now replay with them executing.
 
+Semantic revision 61 admits the first two Pillz permanents on the Victory latch: `Consume
+N, Min M` (`5871`, `5873`), Toxin on the opposing Pillz - it pays in its latching round and
+every later one, after both bets, and leaves a target at or below Min alone - and `Combust
+N, Min M` (`4799`, `5683`, `5684`), a delayed permanent taking N Life and N Pillz each round,
+each floored at Min on its own. Two new `LatchedEffectV1` kinds carry them; their `resource()`
+is Permanent, so the resource cancellers stay refused against them. The family line read 5,
+and the slice unlocked 2 - `1130889` and `1131085` - taking eligibility from 206 to 208.
+
+The other three are refused on purpose. A permanent floors a resource of the opposing player
+every round, and wherever that player's own end-of-round effects also write the resource the
+two players' effects meet on it; the order then decides the result exactly when the floor
+binds (a target on its Min with a pending +1 ends at Min + 1 one way and Min the other). No
+round pins that order for a permanent, and 1093173/1 already shows the server ordering fresh
+effects differently from the engine's P1-then-P2 pass, so construction refuses `Consume`
+facing any opposing Pillz writer and `Combust` facing any opposing Life or Pillz writer, or
+either facing an opposing Copy (`PillzPermanentAgainstOpposingResourceEffect`). That costs
+876464 (a Komboka hand's `+1 Pillz And Life`), 1023174 (Ramak's `+1 Pillz Per Damage`) and
+867173 (AI-Lycs' Pillz recovery). The same question sits under the Poison and Toxin latches
+of revisions 27-28, which were admitted without it.
+
+The server pins what is admitted. Maelt Riv's Consume takes 12 - 5 bet - 1 to 6 in its
+latching round of 1131085, then 5 and 4, and leaves 0 alone under Min 2 in round 3; in
+876464/2 it takes one from a target the round knocks out. Kontra Ld's Combust latches in
+1130889/1 and pays nothing, then takes Life 5 to 4 in round 2 while Pillz 1 stays under Min 2,
+and pays again in round 3, where the server names it permanent. Two gate fixtures shrink,
+because the rounds that select the refused permanents are now selected hazards rather than
+inert sources that happened to match: 867173 to one round and 1090096 to one round. The gate
+grows from 679 to 685 rounds with 1131085 and 1130889.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

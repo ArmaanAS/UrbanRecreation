@@ -7,16 +7,18 @@
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_bet_gated_post_round, classify_both_players_life_reduction, classify_brawl_post_round,
-    classify_combat_stat_effect, classify_conditional_stat_copy, classify_conditional_stop,
-    classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
-    classify_defeat_opponent_pillz, classify_defeat_pillz, classify_defeat_pillz_and_life,
-    classify_defeat_recover_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
-    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_regen_life_on_victory, classify_round_scaled_post_round,
-    classify_support_post_round, classify_toxin_opponent_life_on_victory, classify_victory_life,
+    classify_combat_stat_effect, classify_combust_opponent_life_and_pillz_on_victory,
+    classify_conditional_stat_copy, classify_conditional_stop,
+    classify_consume_opponent_pillz_on_victory, classify_copy_opponent_source,
+    classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
+    classify_defeat_pillz, classify_defeat_pillz_and_life, classify_defeat_recover_pillz,
+    classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
+    classify_heal_life_on_victory, classify_killshot_opponent_life,
+    classify_killshot_pillz_and_life, classify_killshot_post_round,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life,
+    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
+    classify_toxin_opponent_life_on_victory, classify_victory_life,
     classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
     classify_victory_opponent_life, classify_victory_opponent_pillz,
     classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
@@ -2050,6 +2052,9 @@ fn prepare_catalog_source(
             || classify_poison_opponent_life_on_victory(definition, source_kind).is_some()
             || classify_poison_opponent_life_on_defeat(definition, source_kind).is_some()
             || classify_toxin_opponent_life_on_victory(definition, source_kind).is_some()
+            || classify_consume_opponent_pillz_on_victory(definition, source_kind).is_some()
+            || classify_combust_opponent_life_and_pillz_on_victory(definition, source_kind)
+                .is_some()
         {
             require_catalog_alias(
                 match_.alias_ids(),
@@ -2842,6 +2847,27 @@ fn prepare_permanent_life_source(
                     CombatStatPostRoundEffectV1::PoisonOpponentLifeOnDefeat { life, minimum },
                     CombatStatEffectV1::PoisonOpponentLifeOnDefeat { life, minimum },
                     CombatStatPredicateV1::Always,
+                ));
+            }
+            if let Some((pillz, minimum, predicate)) =
+                classify_consume_opponent_pillz_on_victory(definition, source_kind)
+            {
+                return Some((
+                    CombatStatPostRoundEffectV1::ConsumeOpponentPillzOnVictory { pillz, minimum },
+                    CombatStatEffectV1::ConsumeOpponentPillzOnVictory { pillz, minimum },
+                    predicate,
+                ));
+            }
+            if let Some((amount, minimum, predicate)) =
+                classify_combust_opponent_life_and_pillz_on_victory(definition, source_kind)
+            {
+                return Some((
+                    CombatStatPostRoundEffectV1::CombustOpponentLifeAndPillzOnVictory {
+                        amount,
+                        minimum,
+                    },
+                    CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { amount, minimum },
+                    predicate,
                 ));
             }
             let (life, minimum, predicate) =

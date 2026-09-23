@@ -6840,6 +6840,123 @@ fn killshot_is_refused_where_both_attacks_could_reach_zero() {
     }
 }
 
+/// `Consume N, Min M` latches on a win and pays at once, like Toxin but on the opposing
+/// Pillz after both bets: it repeats every later round, leaves a target at or below Min
+/// alone, and still takes from a target the round has knocked out (876464/2). `Combust N,
+/// Min M` latches on a win and pays from the next round, taking N Life and N Pillz, each
+/// floored at Min on its own (1130889/2 takes Life 5 to 4 while Pillz 1 stays under Min 2).
+#[test]
+fn consume_and_combust_latch_on_a_win_and_floor_each_resource_on_its_own() {
+    let consume = execute(
+        5871,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 2,
+        },
+    );
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = consume;
+    let mut diag = game(base, cards);
+    let start = diag.position().clone();
+    // Round 0: P1 wins with Consume; P2 bets 5, so 20 - 5 - 1 = 14 at once.
+    let (report, first) = diag
+        .make(input(PlayerId::P1, (0, 6, false), (0, 5, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 14);
+    // Round 1: P1 loses on another card and the latch still pays: 14 - 11 = 3, then 2.
+    let (report, second) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 11, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 2);
+    // Round 2: at Min 2 after the bet of 0, the target is left alone.
+    let (report, third) = diag
+        .make(input(PlayerId::P1, (2, 0, false), (2, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].pillz, 2);
+    diag.unmake(third);
+    diag.unmake(second);
+    diag.unmake(first);
+    assert_eq!(diag.position(), &start);
+
+    let combust = execute(
+        5683,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory {
+            amount: 1,
+            minimum: 2,
+        },
+    );
+    let base = base_spec(6, 3);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = combust;
+    let mut diag = game(base, cards);
+    // Round 0 latches and pays nothing: P2 at 20 - 3 Life and 20 Pillz.
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 17);
+    assert_eq!(report.players[PlayerId::P2].pillz, 20);
+    // Round 1 pays both: Life 17 - 1 = 16, Pillz 20 - 18 = 2 already at Min 2, unchanged.
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (1, 18, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P2].life, 16);
+    assert_eq!(report.players[PlayerId::P2].pillz, 2);
+
+    // Either permanent facing an opposing effect on a resource it floors - here the
+    // opponent's own Victory gains - or an opposing Copy is refused.
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    let pillz_gain = execute(
+        1150,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+    );
+    let life_gain = execute(
+        377,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    for (permanent, opposing, refused) in [
+        (consume, pillz_gain, true),
+        (consume, copy, true),
+        (consume, life_gain, false),
+        (combust, life_gain, true),
+        (combust, pillz_gain, true),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = permanent;
+        cards[PlayerId::P2][2].ability = opposing;
+        if matches!(opposing, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+            cards[PlayerId::P2][2].source_ability_support_count = 1;
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        assert_eq!(
+            matches!(
+                result,
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason:
+                        InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect,
+                    ..
+                })
+            ),
+            refused,
+            "{permanent:?} against {opposing:?}"
+        );
+    }
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {

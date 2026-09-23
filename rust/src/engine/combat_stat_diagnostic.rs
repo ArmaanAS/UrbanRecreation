@@ -377,6 +377,17 @@ pub enum CombatStatPostRoundEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// `Consume N, Min M`: Toxin on the opposing Pillz. Ability slot only.
+    ConsumeOpponentPillzOnVictory {
+        pillz: u16,
+        minimum: u16,
+    },
+    /// `Combust N, Min M`: Poison on both opposing Life and Pillz, each floored at M.
+    /// Ability slot only.
+    CombustOpponentLifeAndPillzOnVictory {
+        amount: u16,
+        minimum: u16,
+    },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -645,6 +656,18 @@ pub enum CombatStatEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// The opposing player loses `pillz` Pillz from the latching round on while above
+    /// `minimum`, whether or not that player is still living.
+    ConsumeOpponentPillzOnVictory {
+        pillz: u16,
+        minimum: u16,
+    },
+    /// From the round after the latch, the opposing player loses `amount` Life and `amount`
+    /// Pillz, each only while above `minimum`. With Min 0 the Life half can end the match.
+    CombustOpponentLifeAndPillzOnVictory {
+        amount: u16,
+        minimum: u16,
+    },
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and
@@ -826,6 +849,11 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// A Killshot in a match where both final Attacks could reach 0: the ratio then holds
     /// for the side that loses the tie, and no round shows whether that pays.
     KillshotAgainstZeroAttacks,
+    /// `Consume` or `Combust` facing an opposing end-of-round effect on a resource it
+    /// floors, or an opposing Copy. The two players' effects then meet on one resource, and
+    /// their order at a binding floor is unpinned (1093173/1 shows the server's is not the
+    /// engine's for fresh effects).
+    PillzPermanentAgainstOpposingResourceEffect,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
     BothPlayersGainSource,
@@ -1310,6 +1338,22 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::AttackSimplificationAgainstUnpinnedEffect)
         }
+        // `Consume` and `Combust` floor the opposing player's Pillz (and Life) every round
+        // after they latch. Wherever that player's own end-of-round effects also write the
+        // resource, the two players' effects meet on it, and which lands first decides the
+        // result exactly when the floor binds. No round pins that order for a permanent, and
+        // 1093173/1 shows the server's order for fresh effects is not the engine's, so such
+        // a match is refused - as is one where an opposing Copy could adopt a writer.
+        CombatStatSourcePlanV1::Execute {
+            effect:
+                effect @ (CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. }
+                | CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { .. }),
+            ..
+        } if hand_has_copy(opponent)
+            || source_plans(opponent).any(|plan| writes_floored_resource(plan, effect)) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect)
+        }
         // A `Cards` modifier has been seen on both cards in nine rounds, but never facing an
         // opposing cancel of its stat or an opposing Copy.
         CombatStatSourcePlanV1::Execute {
@@ -1421,6 +1465,29 @@ fn simplifies_attack(plan: CombatStatSourcePlanV1) -> bool {
             ..
         }
     )
+}
+
+/// Whether an opposing end-of-round effect writes a resource `permanent` floors: Pillz for
+/// `Consume`, Life or Pillz for `Combust`. A permanent of the opposing player counts too,
+/// whatever it writes, since its own repeat meets this one every round.
+fn writes_floored_resource(plan: CombatStatSourcePlanV1, permanent: CombatStatEffectV1) -> bool {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
+        return false;
+    };
+    let Some(effect) = shared_post_round_effect(effect) else {
+        return false;
+    };
+    let floors_life = matches!(
+        permanent,
+        CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { .. }
+    );
+    match effect.resource() {
+        PostRoundResourceV1::Pillz
+        | PostRoundResourceV1::PillzAndLife
+        | PostRoundResourceV1::BothPlayersPillz
+        | PostRoundResourceV1::Permanent => true,
+        PostRoundResourceV1::Life | PostRoundResourceV1::BothPlayersLife => floors_life,
+    }
 }
 
 /// A reduction that can take the opposing card's Attack to 0: a Min 0 cut of its Attack, or
@@ -1915,7 +1982,9 @@ fn validate_combat_stat_source_plan(
         }
         CombatStatEffectV1::PoisonOpponentLifeOnVictory { life, .. }
         | CombatStatEffectV1::PoisonOpponentLifeOnDefeat { life, .. }
-        | CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, .. } => {
+        | CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, .. }
+        | CombatStatEffectV1::ConsumeOpponentPillzOnVictory { pillz: life, .. }
+        | CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { amount: life, .. } => {
             if source != CombatStatEffectSourceV1::Ability
                 && !matches!(
                     effect,
@@ -3507,7 +3576,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::RegenLifeOnVictory { .. }
         | CombatStatEffectV1::PoisonOpponentLifeOnVictory { .. }
         | CombatStatEffectV1::PoisonOpponentLifeOnDefeat { .. }
-        | CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. } => return None,
+        | CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. }
+        | CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. }
+        | CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { .. } => return None,
     })
 }
 
@@ -3630,6 +3701,16 @@ pub(crate) fn shared_post_round_effect(
         CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, minimum } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnVictory(
                 LatchedEffectV1::ToxinOpponentLife { life, minimum },
+            )),
+        ),
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory { pillz, minimum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnVictory(
+                LatchedEffectV1::ConsumeOpponentPillz { pillz, minimum },
+            )),
+        ),
+        CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { amount, minimum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnVictory(
+                LatchedEffectV1::CombustOpponentLifeAndPillz { amount, minimum },
             )),
         ),
         CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star, minimum } => {

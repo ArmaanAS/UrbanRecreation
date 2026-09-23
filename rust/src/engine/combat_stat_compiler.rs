@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 60;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 61;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -2412,6 +2412,52 @@ pub(crate) fn has_toxin_opponent_life_on_victory_shape(definition: &EffectDefini
     permanent_opponent_life_shape_matches(definition.structured_input(), true)
 }
 
+/// `Consume N, Min M`: the first Pillz permanent. A won round latches it and pays at once;
+/// every later round then takes `pillz` from the opposing player's Pillz while above
+/// `minimum`. Card abilities only: no clan prints it as a bonus. The `Unison :` and
+/// clan-gated `Repris.:` forms carry the clan-mates link, or a clan list and a position, so
+/// no shape here reaches them. Returns `(pillz, minimum)`.
+pub(crate) fn classify_consume_opponent_pillz_on_victory(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    let (predicate, prefix) = permanent_condition(input)?;
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_consume_opponent_pillz_on_victory_shape(definition)
+        && definition.description()
+            == format!("{prefix}Consume {}, Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min, predicate))
+}
+
+pub(crate) fn has_consume_opponent_pillz_on_victory_shape(definition: &EffectDefinitionV1) -> bool {
+    consume_opponent_pillz_shape_matches(definition.structured_input())
+}
+
+/// `Combust N, Min M`: the first compound permanent. A won round latches it and pays
+/// nothing; every later round takes `amount` Life and `amount` Pillz from the opposing
+/// player, each only while above `minimum`. Card abilities only. `Mindwipe` moves the same
+/// resources but pays at once and has no captured paying round, so it is not this grammar.
+/// Returns `(amount, minimum)`.
+pub(crate) fn classify_combust_opponent_life_and_pillz_on_victory(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    let (predicate, prefix) = permanent_condition(input)?;
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_combust_opponent_life_and_pillz_on_victory_shape(definition)
+        && definition.description()
+            == format!("{prefix}Combust {}, Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min, predicate))
+}
+
+pub(crate) fn has_combust_opponent_life_and_pillz_on_victory_shape(
+    definition: &EffectDefinitionV1,
+) -> bool {
+    combust_opponent_life_and_pillz_shape_matches(definition.structured_input())
+}
+
 pub(crate) fn classify_combat_stat_effect(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -2426,6 +2472,8 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_regen_life_on_victory(definition, source_kind).is_some()
         || classify_poison_opponent_life_on_victory(definition, source_kind).is_some()
         || classify_toxin_opponent_life_on_victory(definition, source_kind).is_some()
+        || classify_consume_opponent_pillz_on_victory(definition, source_kind).is_some()
+        || classify_combust_opponent_life_and_pillz_on_victory(definition, source_kind).is_some()
     {
         return None;
     }
@@ -4208,6 +4256,7 @@ fn permanent_own_life_shape_matches(input: &StructuredEffectV1, immediate: bool)
         && permanent_life_neutral_shape_matches(
             input,
             AffectedSideV1::Player,
+            AttributeAffectedV1::Life,
             AttributeActionV1::Increase,
             immediate,
             CurrentRoundRequirementV1::Win,
@@ -4230,15 +4279,48 @@ fn permanent_opponent_life_shape_matches_on(
         && permanent_life_neutral_shape_matches(
             input,
             AffectedSideV1::Opponent,
+            AttributeAffectedV1::Life,
             AttributeActionV1::Decrease,
             immediate,
             current_round,
         )
 }
 
+/// `Consume N, Min M`: Toxin's shape on the opposing Pillz - a decrease of `value` bounded
+/// below by `value_min`, no cap, won round, immediate.
+fn consume_opponent_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value > 0
+        && input.value_max == 0
+        && permanent_life_neutral_shape_matches(
+            input,
+            AffectedSideV1::Opponent,
+            AttributeAffectedV1::Pillz,
+            AttributeActionV1::Decrease,
+            true,
+            CurrentRoundRequirementV1::Win,
+        )
+}
+
+/// `Combust N, Min M`: Poison's shape on both opposing resources - `life&pillz`, delayed.
+fn combust_opponent_life_and_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
+    input.value > 0
+        && input.value_max == 0
+        && permanent_life_neutral_shape_matches(
+            input,
+            AffectedSideV1::Opponent,
+            AttributeAffectedV1::LifeAndPillz,
+            AttributeActionV1::Decrease,
+            false,
+            CurrentRoundRequirementV1::Win,
+        )
+}
+
 fn permanent_life_neutral_shape_matches(
     input: &StructuredEffectV1,
     side: AffectedSideV1,
+    // Which resource the permanent moves. Every permanent before Consume and Combust moved
+    // Life only.
+    attribute: AttributeAffectedV1,
     action: AttributeActionV1,
     immediate: bool,
     // Which round outcome latches it. Every permanent admitted before semantic revision 41
@@ -4254,7 +4336,7 @@ fn permanent_life_neutral_shape_matches(
         && input.previous_clan_requirement.is_empty()
         && input.bet_pillz_link == BetPillzLinkV1::No
         && input.side_affected == side
-        && input.attribute_affected == AttributeAffectedV1::Life
+        && input.attribute_affected == attribute
         && input.attribute_action == action
         && input.special_action == SpecialActionV1::None
         && !input.is_inverted
@@ -5094,6 +5176,96 @@ mod tests {
                 ),
                 None,
                 "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn consume_and_combust_are_admitted_as_plain_pillz_permanents() {
+        let registry = registry();
+        for (id, amount, minimum) in [(5871, 1, 2), (5873, 1, 2)] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_consume_opponent_pillz_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                Some((amount, minimum, CombatStatPredicateV1::Always)),
+                "{id}"
+            );
+            assert_eq!(
+                classify_consume_opponent_pillz_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Bonus
+                ),
+                None
+            );
+        }
+        for (id, amount, minimum) in [(4799, 1, 1), (5683, 1, 2), (5684, 1, 0)] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_combust_opponent_life_and_pillz_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                Some((amount, minimum, CombatStatPredicateV1::Always)),
+                "{id}"
+            );
+            assert!(has_combust_opponent_life_and_pillz_on_victory_shape(
+                definition
+            ));
+        }
+        // The Unison and clan-gated Consume records and the other Pillz permanents are other
+        // grammars.
+        for id in [4695, 5275, 1451, 3796, 2582, 5286] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_consume_opponent_pillz_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id}"
+            );
+            assert_eq!(
+                classify_combust_opponent_life_and_pillz_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id}"
+            );
+        }
+        // The printed numbers are authority.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("5871", "value", serde_json::json!(2)),
+            ("5871", "valueMin", serde_json::json!(3)),
+            ("5683", "value", serde_json::json!(2)),
+            ("5683", "valueMin", serde_json::json!(1)),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_consume_opponent_pillz_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id} {field}"
+            );
+            assert_eq!(
+                classify_combust_opponent_life_and_pillz_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id} {field}"
             );
         }
     }
