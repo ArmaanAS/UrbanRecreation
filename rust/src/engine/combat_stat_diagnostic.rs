@@ -18,8 +18,8 @@ use super::{
     BaseRulesError, BaseRulesGame, BaseRulesMatchSpec, BaseRulesPosition, BaseRulesRoundInput,
     BaseRulesRoundReport, BaseRulesUndo, ByPlayer, DiagnosticAffectedSideV1,
     DiagnosticCombatEffectV1, DiagnosticCombatStatV1, DiagnosticMagnitudeV1,
-    DiagnosticStatOperationV1, HandSlot, LatchedEffectV1, PlayerId, PostRoundEffect,
-    PostRoundResourceV1, PostRoundSourceEffect, ValidatedSelection, HAND_SIZE,
+    DiagnosticStatOperationV1, HandSlot, LatchedEffectV1, LifeBeneficiaryV1, PlayerId,
+    PostRoundEffect, PostRoundResourceV1, PostRoundSourceEffect, ValidatedSelection, HAND_SIZE,
 };
 use crate::catalog::CardKey;
 use std::error::Error;
@@ -74,6 +74,8 @@ pub enum CombatStatMagnitudeV1 {
     OwnerPillz,
     /// `Per Pillz Lost`. The owner's match-start Pillz less their round-start Pillz.
     OwnerPillzLost,
+    /// `/ Life Lost`. The owner's match-start Life less their round-start Life.
+    OwnerLifeLost,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -706,6 +708,12 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// has shown: a permanent, a compound, a both-players reduction, a Copy, or - for Pillz
     /// and Life - any Pillz effect.
     ResourceCancellationAgainstUnpinnedEffect,
+    /// A `/ Life Lost` magnitude whose reader's Life could rise during the match: an own
+    /// Life gain, an opposing one an own Copy could adopt, or either of those for an
+    /// opposing Copy that could adopt the source itself. Every captured round reads an
+    /// owner whose Life has only fallen, which cannot tell the net shortfall from the sum
+    /// of every point lost.
+    LifeLostOwnerLifeCanRise,
     ReprisalStopOpponentAbilityCard,
     ReprisalStopOpponentAbilityEffect,
     ReprisalStopOpponentAbilityIdentity,
@@ -979,6 +987,14 @@ impl CombatStatDiagnosticV1 {
                 .initial_pillz
                 .saturating_sub(players[PlayerId::P2].pillz),
         );
+        let life_lost = ByPlayer::new(
+            initial[PlayerId::P1]
+                .initial_life
+                .saturating_sub(players[PlayerId::P1].life),
+            initial[PlayerId::P2]
+                .initial_life
+                .saturating_sub(players[PlayerId::P2].life),
+        );
         let prepared = prepare_combat_stat_diagnostic(
             validated,
             &self.spec.cards,
@@ -989,6 +1005,7 @@ impl CombatStatDiagnosticV1 {
             life,
             pillz,
             pillz_lost,
+            life_lost,
             self.spec
                 .base_rules
                 .players
@@ -1076,7 +1093,7 @@ fn validate_stop_triggered_context(
             own[hand_slot.index()].bonus,
         ),
     ] {
-        if let Some(reason) = unmodelled_source_context(plan, opponent) {
+        if let Some(reason) = unmodelled_source_context(plan, own, opponent) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -1090,15 +1107,27 @@ fn validate_stop_triggered_context(
 }
 
 /// The sources admitted only where their context is one the corpus has pinned, and why a
-/// given opposing hand is not: a `Stop:` source facing anything that could stop its owner's
-/// ability, and a resource canceller facing an effect whose cancellation is unpinned.
-/// Construction refuses them (catalog as an unsupported source, replay as a selected
-/// hazard, the engine as an invalid plan).
+/// given match is not: a `Stop:` source facing anything that could stop its owner's
+/// ability, a resource canceller facing an effect whose cancellation is unpinned, and a
+/// `/ Life Lost` magnitude whose owner's Life could rise. Construction refuses them
+/// (catalog as an unsupported source, replay as a selected hazard, the engine as an invalid
+/// plan).
 pub(crate) fn unmodelled_source_context(
     plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
     opponent: &[CombatStatCardPlanV1; HAND_SIZE],
 ) -> Option<InvalidCombatStatPlanReasonV1> {
     match plan {
+        CombatStatSourcePlanV1::Execute {
+            effect:
+                CombatStatEffectV1::ModifyCombatStat {
+                    multiplier: CombatStatMagnitudeV1::OwnerLifeLost,
+                    ..
+                },
+            ..
+        } if life_lost_reader_life_can_rise(own, opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::LifeLostOwnerLifeCanRise)
+        }
         CombatStatSourcePlanV1::Execute {
             predicate: CombatStatPredicateV1::OwnerAbilityStopped,
             ..
@@ -1113,6 +1142,47 @@ pub(crate) fn unmodelled_source_context(
         }
         _ => None,
     }
+}
+
+/// True when the Life a `/ Life Lost` source reads could rise during the match. Its owner
+/// reads it, and so does an opposing Copy that adopts it, so the Life of each player who
+/// could hold it must be one that can only fall.
+fn life_lost_reader_life_can_rise(
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    player_life_can_rise(own, opponent)
+        || (hand_has_copy(opponent) && player_life_can_rise(opponent, own))
+}
+
+/// True when anything could raise this player's Life: one of their own executable
+/// post-round effects that gains Life, or an opposing one that a Copy in their hand could
+/// adopt. No admitted effect raises the other player's Life, so the opposing hand matters
+/// only through what could be copied from it.
+fn player_life_can_rise(
+    hand: &[CombatStatCardPlanV1; HAND_SIZE],
+    opposing: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let gains_life = |plan: CombatStatSourcePlanV1| match plan {
+        CombatStatSourcePlanV1::Execute { effect, .. } => shared_post_round_effect(effect)
+            .is_some_and(|effect| effect.life_beneficiary() == LifeBeneficiaryV1::Owner),
+        CombatStatSourcePlanV1::CopyOpponentSource { .. }
+        | CombatStatSourcePlanV1::Absent
+        | CombatStatSourcePlanV1::Disabled { .. }
+        | CombatStatSourcePlanV1::RejectIfSelected { .. } => false,
+    };
+    source_plans(hand).any(gains_life)
+        || (hand_has_copy(hand) && source_plans(opposing).any(gains_life))
+}
+
+fn source_plans(
+    hand: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> impl Iterator<Item = CombatStatSourcePlanV1> + '_ {
+    hand.iter().flat_map(|card| [card.ability, card.bonus])
+}
+
+fn hand_has_copy(hand: &[CombatStatCardPlanV1; HAND_SIZE]) -> bool {
+    source_plans(hand).any(|plan| matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }))
 }
 
 fn opponent_defeats_resource_cancellation(
@@ -2395,10 +2465,24 @@ fn validate_combat_stat_source_plan(
             | CombatStatMagnitudeV1::OwnerLife
             | CombatStatMagnitudeV1::OwnerPillz
             | CombatStatMagnitudeV1::OwnerPillzLost
+            | CombatStatMagnitudeV1::OwnerLifeLost
     ) && predicate != CombatStatPredicateV1::Always
         && !(multiplier == CombatStatMagnitudeV1::OwnerPillz
             && predicate == CombatStatPredicateV1::OwnerHandUnison
             && source == CombatStatEffectSourceV1::Ability)
+        // The owner-clan gate is decided from the owner's own effective clan, and every one
+        // of these magnitudes is read independently of it, so the two compose. Ability slot
+        // only, and only the gate and magnitudes the server has shown together.
+        && !(matches!(predicate, CombatStatPredicateV1::OwnerClanIn(_))
+            && source == CombatStatEffectSourceV1::Ability
+            && matches!(
+                multiplier,
+                CombatStatMagnitudeV1::Growth
+                    | CombatStatMagnitudeV1::Degrowth
+                    | CombatStatMagnitudeV1::OpponentStars
+                    | CombatStatMagnitudeV1::AntiSupport
+                    | CombatStatMagnitudeV1::OwnerLifeLost
+            ))
     {
         return Err(invalid_combat_stat_execute(
             player,
@@ -2435,11 +2519,13 @@ fn validate_combat_stat_source_plan(
     }
     if operation == CombatStatOperationV1::Increase
         && maximum.is_some()
-        && !(multiplier == CombatStatMagnitudeV1::OwnerLife
-            && matches!(
-                stat,
-                CombatStatAttributeV1::Power | CombatStatAttributeV1::Damage
-            ))
+        && !(matches!(
+            multiplier,
+            CombatStatMagnitudeV1::OwnerLife | CombatStatMagnitudeV1::OwnerLifeLost
+        ) && matches!(
+            stat,
+            CombatStatAttributeV1::Power | CombatStatAttributeV1::Damage
+        ))
     {
         return Err(invalid_combat_stat_execute(
             player,
@@ -2623,6 +2709,7 @@ fn prepare_combat_stat_diagnostic(
     life: ByPlayer<u16>,
     pillz: ByPlayer<u16>,
     pillz_lost: ByPlayer<u16>,
+    life_lost: ByPlayer<u16>,
     canonical_clans: ByPlayer<[u32; HAND_SIZE]>,
     previous_round_slots: ByPlayer<Option<HandSlot>>,
 ) -> Result<PreparedCombatResolution, CombatStatDiagnosticErrorV1> {
@@ -2669,6 +2756,7 @@ fn prepare_combat_stat_diagnostic(
             life[PlayerId::P1],
             pillz[PlayerId::P1],
             pillz_lost[PlayerId::P1],
+            life_lost[PlayerId::P1],
             unison(PlayerId::P1),
             clan(PlayerId::P1),
         ),
@@ -2685,6 +2773,7 @@ fn prepare_combat_stat_diagnostic(
             life[PlayerId::P2],
             pillz[PlayerId::P2],
             pillz_lost[PlayerId::P2],
+            life_lost[PlayerId::P2],
             unison(PlayerId::P2),
             clan(PlayerId::P2),
         ),
@@ -2755,6 +2844,7 @@ fn resolution_card_plan(
     owner_life: u16,
     owner_pillz: u16,
     owner_pillz_lost: u16,
+    owner_life_lost: u16,
     owner_unison: bool,
     clan: ClanContext,
 ) -> ResolutionCardPlan {
@@ -2792,6 +2882,7 @@ fn resolution_card_plan(
             owner_life,
             owner_pillz,
             owner_pillz_lost,
+            owner_life_lost,
         }
     };
     ResolutionCardPlan {
@@ -2841,6 +2932,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 CombatStatMagnitudeV1::OwnerLife => DiagnosticMagnitudeV1::OwnerLife,
                 CombatStatMagnitudeV1::OwnerPillz => DiagnosticMagnitudeV1::OwnerPillz,
                 CombatStatMagnitudeV1::OwnerPillzLost => DiagnosticMagnitudeV1::OwnerPillzLost,
+                CombatStatMagnitudeV1::OwnerLifeLost => DiagnosticMagnitudeV1::OwnerLifeLost,
             },
         },
         CombatStatEffectV1::StopOpponentAbility => DiagnosticCombatEffectV1::StopOpponentAbility,

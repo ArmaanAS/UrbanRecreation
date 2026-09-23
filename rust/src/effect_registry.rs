@@ -257,6 +257,9 @@ pub enum MagnitudeMultiplierV1 {
     /// `Per Pillz Lost`. Scaled by the owner's match-start Pillz less their Pillz at the
     /// start of the round, never below zero.
     OwnerPillzLost,
+    /// `/ Life Lost`. Scaled by the owner's match-start Life less their Life at the start
+    /// of the round, never below zero.
+    OwnerLifeLost,
 }
 
 /// Compact, string-free building blocks safe to copy into later round plans.
@@ -1377,7 +1380,8 @@ fn reviewed_stat_description(
         MagnitudeMultiplierV1::OpponentDamage
         | MagnitudeMultiplierV1::OwnerLife
         | MagnitudeMultiplierV1::OwnerPillz
-        | MagnitudeMultiplierV1::OwnerPillzLost => return false,
+        | MagnitudeMultiplierV1::OwnerPillzLost
+        | MagnitudeMultiplierV1::OwnerLifeLost => return false,
     };
     let expected = match (side, operation) {
         (AffectedSideV1::Player, StatOperationV1::Increase) => {

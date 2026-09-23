@@ -361,18 +361,20 @@ struct PreparedCombatStatCardV1 {
 
 /// Some sources are admitted only where their context is one the corpus has pinned - a
 /// `Stop:` source nothing opposite can stop, a resource canceller facing nothing whose
-/// cancellation is unpinned - and the engine refuses a plan that puts them elsewhere. A
+/// cancellation is unpinned, a `/ Life Lost` magnitude whose owner's Life cannot rise - and
+/// the engine refuses a plan that puts them elsewhere. A
 /// capture is concrete, though, so rather than refusing the whole replay such a source
 /// becomes a selected hazard: a round that selects it is refused, and every other round is
 /// still checked against the server.
 fn downgrade_unmodelled_stop_triggered_sources(prepared: &mut PreparedCombatStatCardsV1) {
     for player in PlayerId::ALL {
         let opponent = prepared.compact_plans[player.other()];
+        let own = prepared.compact_plans[player];
         for slot in 0..HAND_SIZE {
             for bonus in [false, true] {
                 let card = &mut prepared.compact_plans[player][slot];
                 let plan = if bonus { card.bonus } else { card.ability };
-                if unmodelled_source_context(plan, &opponent).is_none() {
+                if unmodelled_source_context(plan, &own, &opponent).is_none() {
                     continue;
                 }
                 let CombatStatSourcePlanV1::Execute { source_id, .. } = plan else {

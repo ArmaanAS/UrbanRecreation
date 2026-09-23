@@ -85,7 +85,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 54;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 55;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -2377,9 +2377,17 @@ fn classify_clan_gated(
                 .or_else(|| description.strip_prefix(&format!("After {tags}: ")))?,
         ),
     };
-    if !neutral_except_clan_gate(input) || input.position_requirement != PositionRequirementV1::Both
-    {
+    if input.position_requirement != PositionRequirementV1::Both {
         return None;
+    }
+    if !neutral_except_clan_gate(input) {
+        // The one other shape: a magnitude body under the owner-clan gate.
+        return match gate {
+            Gate::OwnerCard if source_kind == CombatStatEffectSourceV1::Ability => {
+                classify_clan_gated_magnitude(input, body).map(|effect| (effect, predicate))
+            }
+            Gate::OwnerCard | Gate::OpposingHand | Gate::PreviousCard => None,
+        };
     }
     if input.special_action == SpecialActionV1::StopBonus {
         return (!matches!(gate, Gate::OpposingHand)
@@ -2395,6 +2403,82 @@ fn classify_clan_gated(
     let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
         .then_some((effect, predicate))
+}
+
+/// A magnitude body under `[clan:A][clan:B]`: `Growth:`/`Degrowth:`, `Equalizer:` and
+/// `Brawl:` over the plain numeric text, and `+N Dam./ Life Lost Max. M`. Exactly one
+/// magnitude flag may be set, and the record must be `neutral_except_clan_gate` once it is
+/// cleared - so no existing gate is loosened and no second condition can ride along.
+fn classify_clan_gated_magnitude(
+    input: &StructuredEffectV1,
+    body: &str,
+) -> Option<SupportedEffectV1> {
+    let multiplier = match (
+        input.is_overdrive,
+        input.is_divide,
+        input.is_opponent_stars_linked,
+        input.is_anti_support,
+        input.is_lost_life_linked,
+    ) {
+        (true, false, false, false, false) => MagnitudeMultiplierV1::Growth,
+        (false, true, false, false, false) => MagnitudeMultiplierV1::Degrowth,
+        (false, false, true, false, false) => MagnitudeMultiplierV1::OpponentStars,
+        (false, false, false, true, false) => MagnitudeMultiplierV1::AntiSupport,
+        (false, false, false, false, true) => MagnitudeMultiplierV1::OwnerLifeLost,
+        _ => return None,
+    };
+    let mut neutral = input.clone();
+    neutral.is_overdrive = false;
+    neutral.is_divide = false;
+    neutral.is_opponent_stars_linked = false;
+    neutral.is_anti_support = false;
+    neutral.is_lost_life_linked = false;
+    if !neutral_except_clan_gate(&neutral) {
+        return None;
+    }
+    if multiplier == MagnitudeMultiplierV1::OwnerLifeLost {
+        return clan_gated_life_lost_effect(input, body);
+    }
+    let effect = numeric_effect(input, multiplier)?;
+    let matches = match multiplier {
+        MagnitudeMultiplierV1::Growth | MagnitudeMultiplierV1::Degrowth => {
+            round_scaled_description_matches(body, effect)
+        }
+        MagnitudeMultiplierV1::OpponentStars => equalizer_description_matches(body, effect),
+        MagnitudeMultiplierV1::AntiSupport => brawl_description_matches(body, effect),
+        _ => false,
+    };
+    matches.then_some(effect)
+}
+
+/// `+N Dam./ Life Lost Max. M` (`5113`): the owner's Damage rises by N per point of Life
+/// lost since the match began, and the final Damage is clamped to M, the `Per Life Left`
+/// Max rule. Only the Damage form is printed.
+fn clan_gated_life_lost_effect(
+    input: &StructuredEffectV1,
+    body: &str,
+) -> Option<SupportedEffectV1> {
+    if input.special_action != SpecialActionV1::None
+        || input.value == 0
+        || input.value_min != 0
+        || input.value_max == 0
+        || input.side_affected != AffectedSideV1::Player
+        || input.attribute_action != AttributeActionV1::Increase
+        || input.attribute_affected != AttributeAffectedV1::Damage
+    {
+        return None;
+    }
+    (body == format!("+{} Dam./ Life Lost Max. {}", input.value, input.value_max)).then_some(
+        SupportedEffectV1::ModifyCombatStat {
+            side: AffectedSideV1::Player,
+            stat: CombatStatV1::Damage,
+            operation: StatOperationV1::Increase,
+            value: input.value,
+            minimum: None,
+            maximum: Some(input.value_max),
+            multiplier: MagnitudeMultiplierV1::OwnerLifeLost,
+        },
+    )
 }
 
 fn neutral_except_clan_gate(input: &StructuredEffectV1) -> bool {
@@ -3473,7 +3557,8 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | MagnitudeMultiplierV1::OpponentDamage
         | MagnitudeMultiplierV1::OwnerLife
         | MagnitudeMultiplierV1::OwnerPillz
-        | MagnitudeMultiplierV1::OwnerPillzLost => return false,
+        | MagnitudeMultiplierV1::OwnerPillzLost
+        | MagnitudeMultiplierV1::OwnerLifeLost => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -3529,8 +3614,10 @@ fn numeric_description_body_matches(
             body == format!("Damage +{value}") || body == format!("Damage + {value}")
         }
         (AffectedSideV1::Player, CombatStatV1::Attack, StatOperationV1::Increase, None) => {
-            // `908` prints `Stop: Atk. +N`.
-            body == format!("Attack +{value}") || body == format!("Atk. +{value}")
+            // `908` prints `Stop: Atk. +N`, and Dark Majestic's `5606` `Equalizer: Att. +3`.
+            body == format!("Attack +{value}")
+                || body == format!("Atk. +{value}")
+                || body == format!("Att. +{value}")
         }
         (AffectedSideV1::Player, CombatStatV1::PowerAndDamage, StatOperationV1::Increase, None) => {
             body == format!("Power And Damage +{value}")
@@ -3607,6 +3694,7 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 MagnitudeMultiplierV1::OwnerLife => CombatStatMagnitudeV1::OwnerLife,
                 MagnitudeMultiplierV1::OwnerPillz => CombatStatMagnitudeV1::OwnerPillz,
                 MagnitudeMultiplierV1::OwnerPillzLost => CombatStatMagnitudeV1::OwnerPillzLost,
+                MagnitudeMultiplierV1::OwnerLifeLost => CombatStatMagnitudeV1::OwnerLifeLost,
             },
         }),
         SupportedEffectV1::StopOpponentAbility => Some(CombatStatEffectV1::StopOpponentAbility),
@@ -3847,6 +3935,119 @@ mod tests {
                     CombatStatEffectSourceV1::Ability
                 ),
                 None
+            );
+        }
+    }
+
+    #[test]
+    fn clan_gated_magnitudes_are_admitted_under_the_owner_clan_gate_only() {
+        let registry = registry();
+        for (id, expected) in [
+            (4672, MagnitudeMultiplierV1::Growth),
+            (5603, MagnitudeMultiplierV1::Growth),
+            (5604, MagnitudeMultiplierV1::Growth),
+            (5619, MagnitudeMultiplierV1::Degrowth),
+            (5606, MagnitudeMultiplierV1::OpponentStars),
+            (5906, MagnitudeMultiplierV1::OpponentStars),
+            (5908, MagnitudeMultiplierV1::OpponentStars),
+            (3666, MagnitudeMultiplierV1::AntiSupport),
+            (3667, MagnitudeMultiplierV1::AntiSupport),
+            (5113, MagnitudeMultiplierV1::OwnerLifeLost),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            let classified =
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability);
+            assert!(
+                matches!(
+                    classified,
+                    Some((
+                        SupportedEffectV1::ModifyCombatStat { multiplier, .. },
+                        CombatStatPredicateV1::OwnerClanIn(_),
+                    )) if multiplier == expected
+                ),
+                "{id}: {classified:?}"
+            );
+            // No clan bonus prints one.
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} as a bonus"
+            );
+        }
+        // `5113` is the one capped increase here, and its Max is the printed one.
+        assert!(matches!(
+            classify_combat_stat_effect(
+                registry.get(5113).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            Some((
+                SupportedEffectV1::ModifyCombatStat {
+                    stat: CombatStatV1::Damage,
+                    operation: StatOperationV1::Increase,
+                    value: 1,
+                    minimum: None,
+                    maximum: Some(6),
+                    ..
+                },
+                _,
+            ))
+        ));
+
+        // Two magnitudes at once, a second condition riding along, a Life Lost record whose
+        // numbers or stat disagree with its text, and a magnitude under `After` are refused.
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        let after_text = source["5604"]["description"]
+            .as_str()
+            .unwrap()
+            .replacen("[clan:", "After [clan:", 1)
+            .replacen("] Growth", "] : Growth", 1);
+        for (id, field, value) in [
+            ("5604", "isDivide", serde_json::json!(true)),
+            ("5604", "isOppStarsLinked", serde_json::json!(true)),
+            ("5604", "valueCondition", serde_json::json!(1)),
+            ("5113", "valueMax", serde_json::json!(7)),
+            ("5113", "attributeAffected", serde_json::json!("pwr")),
+            ("5113", "isLifeLinked", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value;
+            if let Ok(malformed) = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()) {
+                assert_eq!(
+                    classify_combat_stat_effect(
+                        malformed.get(id.parse().unwrap()).unwrap(),
+                        CombatStatEffectSourceV1::Ability
+                    ),
+                    None,
+                    "{id} {field}"
+                );
+            }
+        }
+        let mut after = source.clone();
+        after["5604"]["abilityData"]["previousClanRequirement"] =
+            after["5604"]["abilityData"]["clanRequirement"].clone();
+        after["5604"]["abilityData"]["clanRequirement"] = serde_json::json!("");
+        after["5604"]["description"] = serde_json::json!(after_text);
+        if let Ok(after) = EffectRegistryV1::from_reader(after.to_string().as_bytes()) {
+            assert_eq!(
+                classify_combat_stat_effect(
+                    after.get(5604).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None
+            );
+        }
+
+        // Clan-gated Courage and the post-round Equalizer forms are other grammars.
+        for id in [4680, 5299, 5165, 5616] {
+            assert_eq!(
+                classify_combat_stat_effect(
+                    registry.get(id).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id}"
             );
         }
     }

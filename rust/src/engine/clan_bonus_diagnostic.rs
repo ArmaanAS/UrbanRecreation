@@ -66,6 +66,8 @@ pub enum DiagnosticMagnitudeV1 {
     OwnerPillz,
     /// `Per Pillz Lost`. The owner's match-start Pillz less their round-start Pillz.
     OwnerPillzLost,
+    /// `/ Life Lost`. The owner's match-start Life less their round-start Life.
+    OwnerLifeLost,
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -507,7 +509,10 @@ fn validate_diagnostic_source_plan(
             InvalidDiagnosticPlanReasonV1::OwnerPillzMagnitude,
         ));
     }
-    if multiplier == DiagnosticMagnitudeV1::OwnerLife {
+    if matches!(
+        multiplier,
+        DiagnosticMagnitudeV1::OwnerLife | DiagnosticMagnitudeV1::OwnerLifeLost
+    ) {
         return Err(invalid_diagnostic_execute(
             player,
             hand_slot,
@@ -633,6 +638,7 @@ fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {
             owner_life: 0,
             owner_pillz: 0,
             owner_pillz_lost: 0,
+            owner_life_lost: 0,
             effect: executing_effect(plan.ability),
             post_round: None,
             support_count: 0,
@@ -642,6 +648,7 @@ fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {
             owner_life: 0,
             owner_pillz: 0,
             owner_pillz_lost: 0,
+            owner_life_lost: 0,
             effect: executing_effect(plan.bonus),
             post_round: None,
             support_count: plan.source_bonus_support_count,

@@ -21,7 +21,9 @@ use urban_recreation_rust::replay::{
 mod support;
 
 const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
-    (875032, 2),
+    // Four rounds since revision 55, whose Urbex `[clan:..] Growth: Attack +2` adds 8 in
+    // round 3 (40 + 8 = 48).
+    (875032, 4),
     (875155, 1),
     // Four rounds since revision 46, whose Unison reduction pays in round 3.
     (1088323, 4),
@@ -138,7 +140,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1090418, 2),
     // Four rounds since revision 54, whose `After` Stop Opp. Bonus decides round 2.
     (1090691, 4),
-    (1092066, 3),
+    // Four rounds since revision 55: Wachtmann's `+1 Dam./ Life Lost Max. 6` reads 12 - 7
+    // Life lost in round 3, 1 + 5 = 6.
+    (1092066, 4),
     (1130833, 4),
     (949750, 4),
     // Revision 25 Defeat opponent-Life. Waller pays 2 after losing in 925796/0, D. Carver
@@ -146,7 +150,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // pins the trigger rather than the magnitude.
     (874520, 4),
     (925796, 2),
-    (925999, 1),
+    // Three rounds since revision 55: Dark Dalhia's clan-gated `Growth: -3 Opp Attack, Min 4`
+    // takes Mou from 12 to 6 in round 1.
+    (925999, 3),
     (945989, 2),
     (1060052, 4),
     (1072715, 3),
@@ -182,8 +188,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // round 3 while Agnes knocks its owner out.
     (963039, 3),
     (926226, 2),
-    // Three rounds since revision 46: Tina 5 + 2 - 3 = 3 under the Unison reduction.
-    (1090531, 3),
+    // Three rounds since revision 46: Tina 5 + 2 - 3 = 3 under the Unison reduction. Four
+    // since revision 55, whose round 3 has Spidee's Reprisal stop Dark Carlos's clan-gated
+    // Equalizer.
+    (1090531, 4),
     (1091585, 3),
     (1091904, 2),
     (1092369, 4),
@@ -461,8 +469,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (877023, 2),
     (876516, 4),
     // Three rounds since revision 53: Bekum's `Growth: - 1 Opp. Life Min 4` takes
-    // 14 - 2 - 3 to 9 in round 2.
-    (876796, 3),
+    // 14 - 2 - 3 to 9 in round 2. Four since revision 55, whose round 3 has Calumma's
+    // `Cancel Opp. Attack Modif.` cancel Urbex's clan-gated Growth.
+    (876796, 4),
     // Revision 53 admits the `Growth:`/`Degrowth:` forms of the plain Victory grammars.
     // `Degrowth: +1 Pillz` pays its factor of four in 1093173/0: 12 - 8 + 4 = 8.
     (1093173, 1),
@@ -479,6 +488,21 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1090338, 4),
     (964008, 4),
     (876464, 2),
+    // Revision 55 admits the owner-clan gate over the Growth, Degrowth, Equalizer and Brawl
+    // magnitudes and over `/ Life Lost`. Oculus carriers pay under the clan they infiltrate:
+    // Dark Scar's `Brawl: Power +1` takes 5 to 9 in 957442/2 and 963931/1, Dark Dalhia's
+    // Growth takes Anita's 40 to 31 in 1081688/2, Dark Fridlia's Degrowth adds 12 in round 0
+    // of 1090096 and 9 in round 1 of 1131170, Dark Majestic's `Equalizer: Att. +3` adds 9
+    // against Callie in 1088008/0, and Wachtmann's Life Lost adds nothing in 1090269/0 and
+    // 4 in 925818/2.
+    (925818, 3),
+    (957442, 4),
+    (963931, 4),
+    (1081688, 4),
+    (1088008, 2),
+    (1090096, 2),
+    (1090269, 2),
+    (1131170, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =

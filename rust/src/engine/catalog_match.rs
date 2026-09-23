@@ -525,11 +525,15 @@ impl CatalogCombatStatMatchV1 {
 
         // Some sources are admitted only where their context is one the corpus has pinned:
         // a `Stop:` source where nothing opposite can stop its owner's ability, a resource
-        // canceller where nothing opposite has an effect whose cancellation is unpinned.
+        // canceller where nothing opposite has an effect whose cancellation is unpinned, a
+        // `/ Life Lost` magnitude where nothing can raise its owner's Life.
         // The engine refuses such a plan too; refusing it here, as the unsupported source it
         // is, keeps the coverage report counting it as a blocker.
         for player in PlayerId::ALL {
             let opponent = compact_cards[player.other()]
+                .each_ref()
+                .map(|card| card.expect("all eight compact cards were prepared"));
+            let own = compact_cards[player]
                 .each_ref()
                 .map(|card| card.expect("all eight compact cards were prepared"));
             for slot in HandSlot::ALL {
@@ -546,8 +550,10 @@ impl CatalogCombatStatMatchV1 {
                     ),
                     (CombatStatEffectSourceV1::Bonus, compact.bonus, &card.bonus),
                 ] {
-                    if super::combat_stat_diagnostic::unmodelled_source_context(plan, &opponent)
-                        .is_none()
+                    if super::combat_stat_diagnostic::unmodelled_source_context(
+                        plan, &own, &opponent,
+                    )
+                    .is_none()
                     {
                         continue;
                     }

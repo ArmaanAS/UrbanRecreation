@@ -6517,6 +6517,113 @@ fn round_scaled_victory_effects_scale_by_the_round_and_clamp_once() {
     assert_eq!(report.players[PlayerId::P2].life, 20);
 }
 
+/// `+N Dam./ Life Lost Max. M` (`5113`) reads its owner's match-start Life less their
+/// round-start Life: nothing in round 0, N per point lost after that, the final Damage
+/// clamped to M (924890/3 binds it at 6), and nothing when the owner's effective clan is not
+/// listed. Every captured round reads an owner whose Life has only fallen, which cannot tell
+/// the net shortfall from every point ever lost, so a match where the reader's Life could
+/// rise is refused: an own Life gain, an opposing one that an own Copy could adopt, or an
+/// opposing Copy that could adopt the source into a hand with a Life gain of its own.
+#[test]
+fn life_lost_damage_reads_the_owner_shortfall_and_refuses_a_life_that_can_rise() {
+    let set = |ids: &[u32]| ClanSetV1::from_ids(ids).unwrap();
+    let life_lost = |listed: u32| {
+        execute(
+            5113,
+            CombatStatPredicateV1::OwnerClanIn(set(&[listed])),
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Damage,
+                CombatStatOperationV1::Increase,
+                1,
+                None,
+                Some(8),
+                CombatStatMagnitudeV1::OwnerLifeLost,
+            ),
+        )
+    };
+    // P1 loses `losses` rounds on its plain cards (3 Life each), then plays the gated one.
+    for (losses, listed, damage) in [(0, 1, 3), (1, 1, 3 + 3), (2, 1, 8), (2, 2, 3)] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].ability = life_lost(listed);
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let mut first = PlayerId::P1;
+        let mut undo = Vec::new();
+        for round in 0..losses {
+            let (report, step) = diag
+                .make(input(first, (1 + round, 0, false), (round, 2, false)))
+                .unwrap();
+            assert!(!report.cards[PlayerId::P1].won);
+            undo.push(step);
+            first = first.other();
+        }
+        let (report, step) = diag
+            .make(input(first, (0, 0, false), (losses, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].damage,
+            damage,
+            "{losses} losses, listed {listed}"
+        );
+        undo.push(step);
+        for step in undo.into_iter().rev() {
+            diag.unmake(step);
+        }
+        assert_eq!(diag.position(), &start);
+    }
+
+    let gain = execute(
+        377,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 4497,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    let refused = |own_gain: bool, own_copy: bool, opposing_gain: bool, opposing_copy: bool| {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].ability = life_lost(1);
+        if own_gain {
+            cards[PlayerId::P1][3].ability = gain;
+        }
+        if own_copy {
+            cards[PlayerId::P1][2].ability = copy;
+            cards[PlayerId::P1][2].source_ability_support_count = 1;
+        }
+        if opposing_gain {
+            cards[PlayerId::P2][1].ability = gain;
+        }
+        if opposing_copy {
+            cards[PlayerId::P2][2].ability = copy;
+            cards[PlayerId::P2][2].source_ability_support_count = 1;
+        }
+        match CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }) {
+            Ok(_) => false,
+            Err(CombatStatPlanErrorV1::InvalidExecute {
+                reason: InvalidCombatStatPlanReasonV1::LifeLostOwnerLifeCanRise,
+                ..
+            }) => true,
+            Err(error) => panic!("unexpected {error:?}"),
+        }
+    };
+    assert!(refused(true, false, false, false));
+    assert!(refused(false, true, true, false));
+    // An opposing Copy adopting the source reads its own owner's Life, which that owner's
+    // own gain could raise.
+    assert!(refused(false, false, true, true));
+    // An opposing gain raises only its own owner, and a Copy with no gain to adopt raises
+    // nothing, so each alone is admitted.
+    assert!(!refused(false, false, true, false));
+    assert!(!refused(false, true, false, false));
+    assert!(!refused(false, false, false, true));
+}
+
 /// Hands whose canonical clans are 1..4 for P1 and 11..14 for P2, so a clan set can name
 /// them; effective clans start equal to the canonical ones.
 fn clan_gate_spec() -> (BaseRulesMatchSpec, ByPlayer<[CombatStatCardPlanV1; 4]>) {

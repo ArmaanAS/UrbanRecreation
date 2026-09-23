@@ -2110,6 +2110,55 @@ after on `deno task time-rust`'s round-2 exact decision: 116, 119 and 122 ms bef
 profile disagrees, the gates resolve to per-match constants and a slot mask at construction,
 at the price of refusing a Copy that could adopt a gated source.
 
+Semantic revision 55 puts revision 54's owner-clan gate over the combat-stat magnitudes the
+projection already executes - `[clan:..] Growth:`/`Degrowth:` (`4672`, `5603`, `5604`,
+`5619`), `Equalizer:` (`5606`, `5906`, `5908`) and `Brawl:` (`3666`, `3667`) - and over one
+new magnitude, `[clan:..] +1 Dam./ Life Lost Max. 6` (`5113`). The family lines read 12 and
+the slice unlocked exactly 9 - `875032`, `876796`, `925818`, `957442`, `963931`, `1081688`,
+`1090531`, `1092066` and `1131170` - taking eligibility from 164 to 173.
+
+**The missing three are a measurement lesson.** 924890, 925999 and 1090269 now stop at
+revision 54's refusal of an `After` or `Versus` gate that an infiltrating Oculus makes
+ambiguous (`5681`, `5847`, `2461`). The coverage report retires a blocking card with a
+neutral filler, and in each of those draws the blocking card *was* the infiltrating Oculus,
+so retiring it also removed the context the ambiguity refusal needs - the refusal was
+invisible until the magnitude it hid behind was admitted. A blocker that is also another
+source's context can hide that source's refusal; only a measurement after admitting finds
+it. The ambiguity rule checks both hands although `Versus` reads only the opposing one, so
+1090269 is probably recoverable by scoping it per predicate; that is left for a later slice.
+
+The price was one branch in `classify_clan_gated`: a record that is not neutral may carry
+exactly one magnitude flag, must be `neutral_except_clan_gate` with that flag cleared, and
+has its body checked by the same text matcher the ungated grammar uses, so no existing gate
+was loosened. The plan validator exempts `OwnerClanIn` over those magnitudes from the
+one-predicate-or-magnitude rule, Ability slot only. `OwnerLifeLost` is the owner's
+match-start Life less their round-start Life, never below zero, read in `make` beside
+`OwnerPillzLost`, and clamped by the `Per Life Left` Max rule. Dark Majestic prints `Att. +3`,
+one more Attack spelling. Clan-gated Courage and `Asymm.:` bodies would need two predicates
+and stay closed, and so do the clan-gated post-round Equalizers (`5165`, `5616`).
+
+Every carrier in the corpus is an Oculus paying under the clan it infiltrates, and every
+round checks by hand. Growth and Degrowth: Urbex adds 8 in round 3 of 875032, Dark Dalhia
+takes Mou from 12 to 6 in 925999/1 and Anita from 40 to 31 in 1081688/2, Dark Fridlia adds
+the Degrowth factor of four in 1090096/0 and three in 1131170/1, and Calumma's Cancel Opp.
+Attack Modif. removes Urbex's in 876796/3. Equalizer: Dark Carlos adds 12 against a level-4
+card in 1011016/2 and is stopped by Spidee's Reprisal in 1090531/3, Dark Majestic adds 9
+against a level-3 one in 1088008/0. Brawl: Dark Scar takes 5 to 9 in 957442/2 and 963931/1.
+Life Lost: Wachtmann adds nothing in 1090269/0, 4 at 8 Life in 925818/2 and 5 at 7 in
+1092066/3, and at 5 Life in 924890/3 his 1 + 7 is clamped to the Max of 6 - a round outside
+the gate, because that draw stays refused. No round shows these bodies with the gate false;
+that half rests on revision 54's numeric rounds (1022847/2).
+
+The corpus only ever shows an owner whose Life has fallen, and "Life lost" could as well
+mean every point ever lost as the net shortfall once Life has risen. So `/ Life Lost` is
+admitted only where the Life it reads can never rise: construction refuses it, through
+`unmodelled_source_context` (which now also sees the owner's own hand), when its owner has
+an own Life gain, an own Copy facing an opposing one, or when an opposing Copy could adopt
+the source into a hand where either holds. `PostRoundSourceEffect::life_beneficiary()` is
+exhaustive, so a new Life effect has to say whose Life it raises. The refusal costs no
+draw. The gate grows from 568 to 600 rounds: 875032, 876796, 925999, 1090531 and 1092066
+extended, and 925818, 957442, 963931, 1081688, 1088008, 1090096, 1090269 and 1131170 added.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

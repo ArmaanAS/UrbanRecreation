@@ -541,6 +541,74 @@ impl PostRoundSourceEffect {
             | Self::GainPillzOnVictoryPerRound { .. } => PostRoundResourceV1::Pillz,
         }
     }
+
+    pub(super) const fn life_beneficiary(self) -> LifeBeneficiaryV1 {
+        match self {
+            Self::Fixed(effect) => effect.life_beneficiary(),
+            Self::GainLifeOnVictoryPerRound { .. } => LifeBeneficiaryV1::Owner,
+            Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
+            | Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
+            | Self::GainPillzOnVictoryPerAntiSupport { .. }
+            | Self::ReduceOpponentPillzOnVictoryPerRound { .. }
+            | Self::GainPillzOnVictoryPerRound { .. } => LifeBeneficiaryV1::Nobody,
+        }
+    }
+}
+
+/// Whose Life a post-round effect can raise. `/ Life Lost` is pinned only for an owner
+/// whose Life has never risen during the match, so construction refuses one wherever
+/// anything could raise it; the match is exhaustive so that a new effect has to say.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LifeBeneficiaryV1 {
+    Nobody,
+    Owner,
+}
+
+impl PostRoundEffect {
+    pub(super) const fn life_beneficiary(self) -> LifeBeneficiaryV1 {
+        match self {
+            Self::GainOnePillzAndLifeOnVictory
+            | Self::GainLifeEqualToFinalDamageOnCourageVictory
+            | Self::GainLifeOnVictory(_)
+            | Self::GainLifePerFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifeOnDefeat(_)
+            | Self::ReanimateLife(_)
+            | Self::GainLifeOnVictoryOrDefeat { .. }
+            | Self::GainPillzAndLifeOnKillshot { .. }
+            | Self::GainPillzAndLifeOnDefeat(_)
+            | Self::LatchOnVictory(
+                LatchedEffectV1::HealLife { .. } | LatchedEffectV1::RegenLife { .. },
+            )
+            | Self::LatchOnDefeat(
+                LatchedEffectV1::HealLife { .. } | LatchedEffectV1::RegenLife { .. },
+            ) => LifeBeneficiaryV1::Owner,
+            Self::RecoverPaidPillzOnDefeat
+            | Self::GainOnePillzOnVictoryOrDefeat
+            | Self::GainTwoPillzOnDefeatMaxEleven
+            | Self::GainPillzOnVictory(_)
+            | Self::GainPillzOnVictoryMax { .. }
+            | Self::ReduceOpponentPillzOnVictory { .. }
+            | Self::ReduceOpponentPillzOnDefeat { .. }
+            | Self::GainPillzEqualToFinalDamageOnVictory
+            | Self::GainPillzOnDefeat(_)
+            | Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
+            | Self::ReduceOpponentLifeOnVictory { .. }
+            | Self::ReduceOpponentLifeOnDefeat { .. }
+            | Self::ReduceOpponentLifeOnKillshot { .. }
+            | Self::ReduceBothPlayersLife { .. }
+            | Self::LatchOnVictory(
+                LatchedEffectV1::PoisonOpponentLife { .. }
+                | LatchedEffectV1::ToxinOpponentLife { .. },
+            )
+            | Self::LatchOnDefeat(
+                LatchedEffectV1::PoisonOpponentLife { .. }
+                | LatchedEffectV1::ToxinOpponentLife { .. },
+            ) => LifeBeneficiaryV1::Nobody,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
