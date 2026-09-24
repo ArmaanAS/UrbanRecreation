@@ -117,6 +117,10 @@ pub enum CombatStatPredicateV1 {
     OwnerPillzUsedAbove(u8),
     /// `Bet < N Pillz: X`: the owner's `pillzUsed` for the round is below N.
     OwnerPillzUsedBelow(u8),
+    /// `Night: Confid.: X`: the match is at night and the owner won the previous round -
+    /// the conjunction of `MatchIsNight` and `OwnerWonPreviousRound`, both already resolved
+    /// before a round is prepared. Never holds in round 0 or by day.
+    OwnerWonPreviousRoundAtNight,
 }
 
 /// A set of clan ids below 64, as a bit mask so the predicate stays `Copy`.
@@ -190,6 +194,13 @@ pub enum CombatStatPostRoundEffectV1 {
     /// exact text and shape from the Ability slot.
     GainPillzOnVictory {
         pillz: u16,
+    },
+    /// `+N Pillz Max. M` and `Night: +N Pillz Max. M`: a living winner's own Pillz rise by
+    /// `pillz`, never past `maximum`, and an owner already at or above it gains nothing.
+    /// Admitted by exact text and shape from the Ability slot.
+    GainPillzOnVictoryMax {
+        pillz: u16,
+        maximum: u16,
     },
     /// Plain `-N Opp Pillz. Min M`: the winner takes `pillz` from the opposing player, never
     /// below `minimum`. Admitted by exact text and shape from the Ability slot.
@@ -513,6 +524,12 @@ pub enum CombatStatEffectV1 {
     /// slot. The hot plan retains its exact positive magnitude and nothing else.
     GainPillzOnVictory {
         pillz: u16,
+    },
+    /// Capped Victory Pillz, admitted only by the cold structured compiler from the Ability
+    /// slot: the winner gains `pillz`, never past `maximum`.
+    GainPillzOnVictoryMax {
+        pillz: u16,
+        maximum: u16,
     },
     /// Victory-only reduction of the opposing player's Pillz with a fixed magnitude and lower
     /// bound, admitted only by the cold structured compiler from the Ability slot.
@@ -882,6 +899,13 @@ pub enum InvalidCombatStatPlanReasonV1 {
     VictoryPillzSource,
     VictoryPillzMagnitude,
     VictoryPillzPredicate,
+    VictoryPillzMaxSource,
+    VictoryPillzMaxMagnitude,
+    VictoryPillzMaxPredicate,
+    /// Capped Victory Pillz beside an opposing effect that can write its owner's Pillz in
+    /// the round it pays, or an opposing Copy: the cap makes any cross-owner order
+    /// observable, and 1093173/1 shows the server's order is not the engine's.
+    CappedVictoryPillzAgainstUnpinnedEffect,
     VictoryOpponentPillzSource,
     VictoryOpponentPillzMagnitude,
     VictoryOpponentPillzPredicate,
@@ -1534,6 +1558,31 @@ pub(crate) fn unmodelled_source_context(
             }) =>
         {
             Some(InvalidCombatStatPlanReasonV1::OpponentPillzAndLifeAgainstUnpinnedEffect)
+        }
+        // Capped Victory Pillz pays on its owner's win, and its cap makes the order against
+        // any other write to its owner's Pillz observable: an opposing gain or floor landing
+        // first moves the value the cap reads. No round shows one beside such a write, and
+        // 1093173/1 shows the server's cross-owner order is not the engine's P1-then-P2, so a
+        // match is refused wherever an opposing effect can write the owner's Pillz in the
+        // owner's winning round - on the opposing loss, or every round for a permanent - or
+        // an opposing Copy could take the gain, or import an own write onto the owner's Pillz
+        // (`pillz_writes` reports nothing for a Copy). The owner's own writes are not refused:
+        // Argos (1093451) pins the owner's bonus before its ability.
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::GainPillzOnVictoryMax { .. },
+            ..
+        } if opposing_copy_can_take(plan, own, opponent)
+            || (hand_has_copy(opponent)
+                && source_plans(own).any(|own_plan| {
+                    let writes = pillz_writes(own_plan);
+                    writes.opposing_gain || writes.opposing_floor
+                }))
+            || source_plans(opponent).any(|opposing| {
+                let writes = pillz_writes(opposing);
+                write_outcomes(opposing).on_loss && (writes.opposing_gain || writes.opposing_floor)
+            }) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::CappedVictoryPillzAgainstUnpinnedEffect)
         }
         // The Victory Or Defeat own gains are uncapped and pay whatever the outcome, so an
         // opposing floor on their resource, an own cap on it, or a Copy meets them in an order
@@ -2593,9 +2642,13 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryOpponentLifeMagnitude,
             ));
         }
+        // `Night: -N Opp. Life Min M` (Lyra's `4750`) puts the match constant on it since
+        // revision 69.
         if !matches!(
             predicate,
-            CombatStatPredicateV1::Always | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+            CombatStatPredicateV1::Always
+                | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+                | CombatStatPredicateV1::MatchIsNight
         ) {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -2996,6 +3049,28 @@ fn validate_combat_stat_source_plan(
             ));
         }
         return Ok(());
+    }
+    // The capped Victory Pillz grammar: a card ability, a positive gain under a positive cap,
+    // unconditional or under the `Night:` match constant its night form prints.
+    if let CombatStatEffectV1::GainPillzOnVictoryMax { pillz, maximum } = effect {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::VictoryPillzMaxSource)
+        } else if pillz == 0 || maximum == 0 {
+            Some(InvalidCombatStatPlanReasonV1::VictoryPillzMaxMagnitude)
+        } else if !matches!(
+            predicate,
+            CombatStatPredicateV1::Always | CombatStatPredicateV1::MatchIsNight
+        ) {
+            Some(InvalidCombatStatPlanReasonV1::VictoryPillzMaxPredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
     }
     if let CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, .. } = effect {
         if source != CombatStatEffectSourceV1::Ability {
@@ -3570,6 +3645,7 @@ fn validate_combat_stat_source_plan(
                 | CombatStatPredicateV1::OpponentHandHasClan(_)
                 | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
                 | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
+                | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
         ) || (matches!(
             predicate,
             CombatStatPredicateV1::SelectedHandSlotsMatch
@@ -3765,6 +3841,9 @@ fn predicate_matches(
         CombatStatPredicateV1::SelectedHandSlotsDiffer => owner_slot != opponent_slot,
         CombatStatPredicateV1::MatchIsNight => night,
         CombatStatPredicateV1::MatchIsDay => !night,
+        CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => {
+            night && previous_round_winner == Some(owner)
+        }
         // Construction guarantees no opposing source can stop the owner's ability.
         CombatStatPredicateV1::OwnerAbilityStopped => false,
     }
@@ -4122,7 +4201,8 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainPillzAndLifeOnVictory { .. }
         | CombatStatEffectV1::GainPillzOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
-        | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. } => return None,
+        | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. }
+        | CombatStatEffectV1::GainPillzOnVictoryMax { .. } => return None,
     })
 }
 
@@ -4277,6 +4357,9 @@ pub(crate) fn shared_post_round_effect(
         ),
         CombatStatEffectV1::GainPillzOnVictoryOrDefeat { pillz } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzOnVictoryOrDefeat(pillz)),
+        ),
+        CombatStatEffectV1::GainPillzOnVictoryMax { pillz, maximum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzOnVictoryMax { pillz, maximum }),
         ),
         CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { life_per_damage } => {
             Some(PostRoundSourceEffect::Fixed(

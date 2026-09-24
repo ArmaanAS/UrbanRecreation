@@ -2597,6 +2597,119 @@ adopted plans in these draws - a copied `Defeat: +2 Life` in 1091770, and a copi
 opponent-Life reduction and Protection in the round-0 stub 963796 - rest on the pinned
 adopt-into-the-copier's-slot rule rather than a paying round of their own.
 
+Semantic revision 69 (catalog-context revision 5) admits the Night family's three ready
+grammars. The first is capped Victory Pillz, `+N Pillz Max. M` (Mandrak Cr's `1139`) and
+its `Night:` form (Nox Ld's night ability `4747`): a living winner gains N Pillz, never past
+M, and an owner already at or above M gains nothing. The second is `Night: -N Opp. Life Min
+M` (Lyra's night ability `4750`), a second printed form of the plain Victory opponent-Life
+grammar. The third is Schwarz's night ability `Night: Confid.: -2 Opp Pow. & Damage, Min 3`
+(`1643`), the plain numeric body under a new conjunctive predicate. Every one is a card
+ability, admitted by exact text over the complete shape. The cumulative lines read 3 for
+`4747` and 1 each for `1139`, `4750` and `1643`, and the slice unlocked exactly those 6 -
+`924740`, `924999`, `1025563`, `1145886`, `1093129` and `1024878` - taking eligibility
+from 249 to 255 of 383. The eligible-set diff adds those six and nothing else.
+
+The capped gain is a new `CombatStatEffectV1::GainPillzOnVictoryMax`, which lowers to the
+`PostRoundEffect::GainPillzOnVictoryMax` arm the admitted `Brawl: +N Pillz, Max. M` already
+binds to. So there is no new engine arithmetic, and `pillz_writes` already marks the arm as
+a capped own gain. Its record is the plain Victory Pillz record with `valueMax` read as the
+cap, which every other Victory Pillz grammar requires to be zero, so neither can pass for
+the other. `Night:` leaves no structured trace and is read from the text as `MatchIsNight`,
+as for the revision-44 Night numerics and the Night Stops. The opponent-Life form is the
+same thing: the unconditional record under a `Night: ` prefix, `MatchIsNight` on the plan,
+and the plan validator now allows that predicate for the grammar.
+
+The compound needed a predicate the projection did not have. `OwnerWonPreviousRoundAtNight`
+holds exactly when the match is at night and the owner won the previous round. Both halves
+are already resolved before a round is prepared, so it is one more arm in
+`predicate_matches` and in every exhaustive predicate match, where it is fail-closed. The
+classifier strips `Night: Confid.: `, requires the record's won-previous-round field and
+nothing else, and checks the body with the ordinary numeric matcher, which gains Schwarz's
+spelling `-N Opp Pow. & Damage, Min M`. It is refused from a Bonus slot and is not a
+conditional-Stop predicate.
+
+The catalog needed a bridge. `derive_catalog_hand` gives a selected night variant no catalog
+id, and every post-round route requires the catalog id to be a structural alias of the
+definition its text resolves to, so the Night numerics had only ever passed because they
+take the combat-stat route. `require_catalog_alias_or_night_variant` admits a source by its
+exact text alone only when all of these hold: it has no catalog id, the match is at night,
+its text starts with `Night: `, and the grammar resolved it to `MatchIsNight`. A missing
+catalog id alone is never enough, since a daylight card whose ability id is 0 has none
+either. Mandrak's `1139` still goes through its catalog alias. `prepare_catalog_source` now
+takes the match's night flag, and the catalog-context policy revision goes from 4 to 5.
+
+**This slice rests on one firing round per grammar, composed with pieces already pinned,
+and says so.**
+- 1025563/2 (night) is the capped gain. Nox Ld bets all 10 (`pillzUsed` 11) and wins 88
+  against 64: 10 - 10 + 2 = 2, the recorded value. The raw capture's post list is exactly
+  `pillz increase 2` and the Zenith `Bet > 3 Pillz: +3 Life` (12 to 15). The cap of 12
+  does not bind.
+- 949439/1 (night) is the opponent-Life form. Lyra wins 31 against 6 with 3 Damage, and
+  side 0 goes from 12 to 5: 12 - 3 - 2 (Lyra) - 2 (the Freaks `Poison 2, Min 3` that Olga
+  Cr latched in round 0). Neither floor binds.
+- 1024878/3 (night) is the compound. Schwarz's side won round 2 (36 against 24), so the
+  predicate holds. Jairin L4's 8/3 is 8/6 after the Paradox Asymmetry, and the reduction
+  takes it to 6/4, attacking 6 x 7 = 42 where 8 x 7 would be 56. So the server applies the
+  reduction after the increase.
+
+The rounds that select a source without it firing agree. Nox loses in 924740/0 and 924999/0,
+Mandrak loses a 56-56 tie in 1145886/0, and Lyra loses 8 against 24 in 1093129/1 and pays
+nothing (9 - 3 = 6). No round shows the cap binding on the Victory channel. The cap
+arithmetic is the existing arm's, pinned binding on the Defeat channel by Argos (1093451)
+and reached but never binding by Brawl's `Max. 9`. `1139` has no firing round of its own:
+it is admitted as the unconditional form of a grammar whose Night form fired once.
+
+One refusal is new, `CappedVictoryPillzAgainstUnpinnedEffect`. The cap makes the capped
+gain's order against any other write to its owner's Pillz observable, since an opposing gain
+or floor landing first moves the value the cap reads. 1093173/1 shows the server's
+cross-owner order is not the engine's P1-then-P2. So construction refuses a match in any of
+three cases:
+- an opposing effect can write the owner's Pillz in the owner's winning round, meaning it
+  writes on its own loss (`write_outcomes`) and raises or floors the opposing player's
+  Pillz (`pillz_writes`). A latched permanent writes on every outcome, so any opposing
+  Pillz permanent is covered too;
+- an opposing Copy could take the gain;
+- an opposing Copy faces an own writer onto the opposing player's Pillz, which it could
+  import. Revision 68 noted that `pillz_writes` reports nothing for a Copy, and this clause
+  is this refusal's answer to that.
+
+The owner's own writes are not refused, because Argos pins the owner's bonus before its
+ability. The refusal costs no draw: with it disabled the count is still 255. The Night
+opponent-Life form adds no refusal. It inherits the plain grammar's validation and its open
+cross-owner question, and 1093129's Riots hand writes no Life.
+
+In replay each grammar takes the two-sided boundary with it. The capped text over a Bonus
+slot or a wrong structure, and the complete capped shape under other text, now reject when
+selected; before, `1139` and `4747` were visible-but-disabled `CappedIncrease` sources.
+`Night: -N Opp. Life` text over a wrong structure rejects too. The gate grows from 788 to 795
+rounds, all by extending existing fixtures to the rounds this slice newly reaches:
+- 949439 from one round to two (Lyra pays);
+- 1093129 from one to four (Lyra's non-paying loss);
+- 1025563 from two to four (Nox pays);
+- 1024878 from three to four (Schwarz's reduction).
+
+No fixture shrinks. The pinned execute ids gain `1139`, `1643`, `4747` and `4750`, plus
+`5388` (Kubrat Cr's `Bet > 4 Pillz: -3 Opp. Life Min 0`, newly reached in 1025563/3). The
+disabled ids lose `1139` and `4747`, and the absent dispositions go from 64 to 65
+(Leonaparte, who has no ability, in 1025563/3).
+
+The rest of the family stays closed.
+- `Night: -4 Opp Power, Min 4` (`5391`, Djanghost Ld) carries a stray `valueMax` on a
+  decrease. It has good evidence (1025279/0, and 1025413/0 with the Min binding) but
+  unlocks nothing alone. Admitted by identity, it would come with the `Revenge: + 2 Attack
+  Per Opp. Power` (`1719`) slice.
+- `Day: Cancel Opp. Pillz & Life Modif.` (`2369`) is a description context. Its one draw,
+  1011351, would be refused again by the resource-cancellation refusal, because Ramak's
+  `Symmetry: +1 Pillz Per Damage` is an opposing Pillz writer there.
+- Several printed siblings own no registry definition and fail their lookup: Nox Ld L2/L3's
+  `Night: +1 Pillz Max. 12`, Poppy Mary Noel L3's `+2 Pillz Max. 9` (catalog 1530), and
+  the day abilities of Lyra (`4748`), Nox Ld L4 (`4751`) and Schwarz (`1642`).
+
+One question is left for the owner. The admitted Brawl capped gain lowers to the same
+engine arm, and its cap is just as order-sensitive, but it carries no such refusal. This
+slice leaves Brawl as it was. Extending the refusal to it measured at no cost in draws
+(still 255 of 383), but that would change an admitted grammar, which is the owner's call.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

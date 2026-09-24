@@ -2954,7 +2954,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 4);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 5);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -4248,4 +4248,145 @@ fn a_post_round_source_refused_by_its_context_is_an_unsupported_source() {
         ),
         "{result:?}"
     );
+}
+
+/// Revision 69 (catalog-context revision 5): a selected night variant has no catalog id, so
+/// the post-round grammars that print a `Night:` form admit it by its exact text - only in a
+/// night match, only under a `Night: ` prefix, and only as the `MatchIsNight` predicate. A
+/// missing catalog id alone never admits a source.
+#[test]
+fn strict_catalog_match_bridges_night_variants_of_post_round_grammars_by_text_at_night_only() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, p2) = fully_supported_hands();
+    let hand = [
+        CardKey::new(2578, 4), // Nox Ld: `Night: +2 Pillz Max. 12`
+        CardKey::new(2577, 3), // Lyra: `Night: -2 Opp. Life Min 0`
+        CardKey::new(1802, 3), // Schwarz: `Night: Confid.: -2 Opp Pow. & Damage, Min 3`
+        CardKey::new(1313, 3), // Mandrak Cr: `+3 Pillz Max. 9`, catalog 1139, day and night
+    ];
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(hand, p2, true), &catalog, &registry, PROJECTION)
+            .unwrap();
+    let cards = &prepared.preparation()[PlayerId::P1];
+    for (slot, description, registry_id, catalog_id, expected_effect, expected_predicate) in [
+        (
+            0,
+            "Night: +2 Pillz Max. 12",
+            4747,
+            None,
+            CombatStatPostRoundEffectV1::GainPillzOnVictoryMax {
+                pillz: 2,
+                maximum: 12,
+            },
+            CombatStatPredicateV1::MatchIsNight,
+        ),
+        (
+            1,
+            "Night: -2 Opp. Life Min 0",
+            4750,
+            None,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
+                life: 2,
+                minimum: 0,
+            },
+            CombatStatPredicateV1::MatchIsNight,
+        ),
+        (
+            3,
+            "+3 Pillz Max. 9",
+            1139,
+            Some(1139),
+            CombatStatPostRoundEffectV1::GainPillzOnVictoryMax {
+                pillz: 3,
+                maximum: 9,
+            },
+            CombatStatPredicateV1::Always,
+        ),
+    ] {
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate,
+        } = &cards[slot].ability
+        else {
+            panic!("slot {slot} was not an executable post-round source")
+        };
+        assert_eq!(identity.catalog_id, catalog_id, "slot {slot}");
+        assert_eq!(identity.description, description);
+        assert_eq!(identity.registry_definition_id, registry_id);
+        assert_eq!(*effect, expected_effect);
+        assert_eq!(*predicate, expected_predicate);
+    }
+    // Schwarz's compound is a combat stat under the conjunctive predicate, on the combat-stat
+    // route, where night text was already its identity.
+    let CatalogCombatStatSourceDispositionV1::Execute {
+        identity,
+        predicate,
+        ..
+    } = &cards[2].ability
+    else {
+        panic!("Schwarz's night ability was not executable")
+    };
+    assert_eq!(identity.catalog_id, None);
+    assert_eq!(identity.registry_definition_id, 1643);
+    assert_eq!(
+        *predicate,
+        CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+    );
+
+    // By day Mandrak's capped gain is still admitted by its catalog alias, and Nox and Lyra
+    // show day abilities the registry has never captured, so the draw stays fail-closed.
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [hand[3], p2[0], p2[1], p2[2]],
+                fully_supported_hands().0,
+                false
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Ok(_)
+    ));
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(input(hand, p2, false), &catalog, &registry, PROJECTION),
+        Err(CatalogCombatStatMatchErrorV1::Lookup {
+            player: PlayerId::P1,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            ..
+        })
+    ));
+
+    // A row with no catalog id is not admitted on that alone: not the night text shown in a
+    // daylight match, and not the plain capped text or the plain reduction at night.
+    let (filler, _) = fully_supported_hands();
+    let card = filler[0];
+    for (text, night) in [
+        ("Night: +2 Pillz Max. 12", false),
+        ("Night: -2 Opp. Life Min 0", false),
+        ("+3 Pillz Max. 9", true),
+        ("+3 Pillz Max. 9", false),
+    ] {
+        let catalog = catalog_with_ability_alias(card, 0, text);
+        assert!(
+            matches!(
+                CatalogCombatStatMatchV1::new(
+                    input(filler, p2, night),
+                    &catalog,
+                    &registry,
+                    PROJECTION
+                ),
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player: PlayerId::P1,
+                    source_kind: CombatStatEffectSourceV1::Ability,
+                    catalog_id: None,
+                    ref description,
+                    ..
+                }) if description == text
+            ),
+            "{text:?} at night = {night}"
+        );
+    }
 }

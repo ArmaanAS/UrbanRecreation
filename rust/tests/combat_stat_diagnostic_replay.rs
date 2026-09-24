@@ -102,7 +102,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Ability does not stop Andy Ld, whose "-20 Opp Attack, Min 5" takes Lumia Cr's own 36
     // to the reported 16, while the Skeelz bonus carrying the Protection is untouched.
     // 1091235/0 is the Bikini Joe Ld mirror for Protection: Bonus against Stop Opp. Bonus.
-    (949439, 1),
+    // Two rounds since revision 69: Lyra's night `Night: -2 Opp. Life Min 0` pays in round 1
+    // beside the Freaks Poison Olga latched in round 0, 12 - 3 - 2 - 2 = 5.
+    (949439, 2),
     (924320, 3),
     (942983, 3),
     (1069506, 3),
@@ -555,7 +557,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1011595, 1),
     (1070298, 4),
     (926292, 4),
-    (1093129, 1),
+    // Four rounds since revision 69, whose round 1 selects Lyra's `Night: -2 Opp. Life Min
+    // 0` on a loss (8 against 24) that pays nothing: 9 - 3 = 6.
+    (1093129, 4),
     // Two rounds since revision 67: round 2 selects Solykra's `-2 Opp. Pillz And Life, Min
     // 4`, refused beside AI-Lycs' Defeat Recover, which can land on the same round.
     (1130791, 2),
@@ -619,7 +623,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // 64: round 1 selects Segar's `Support: Dope`, which stays closed and rejects when
     // selected.
     (947010, 4),
-    (1025563, 2),
+    // Four rounds since revision 69: Nox Ld's night `Night: +2 Pillz Max. 12` pays in round
+    // 2, where he bets all 10 and wins 88 against 64: 10 - 10 + 2 = 2, the cap far away.
+    (1025563, 4),
     (946570, 2),
     (946810, 1),
     (1131463, 3),
@@ -636,8 +642,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // after each of rounds 0-2 of 1024878 (12 - 5 + 1 = 8, then 5 and 1), Raaz's `Max. 10`
     // one after each of rounds 1-3 of 1091521, and Shao Xue's `Defeat: Dope 1, Max. 13`
     // latches on a loss in 956902/0 (12 to 13, the Max) and pays in round 2 as the round
-    // ends its owner at 0 Life.
-    (1024878, 3),
+    // ends its owner at 0 Life. Four rounds since revision 69: Schwarz's night `Night:
+    // Confid.: -2 Opp Pow. & Damage, Min 3` holds in round 3 after his side won round 2 and
+    // takes Jairin from 8/6 to 6/4 (6 x 7 = 42, where 8 x 7 would be 56).
+    (1024878, 4),
     (1091521, 4),
     (956902, 3),
     // Revision 65 admits `Unison: Defeat: +N Life` and `Unison : +N Pillz And Life`, the
@@ -2741,30 +2749,94 @@ fn victory_pillz_compiler_admits_the_complete_ability_shape_and_near_misses_reje
         CombatStatSourcePlanV1::RejectIfSelected { source_id: ID }
     ));
 
-    // A capped sibling differs structurally and keeps the ordinary disabled record.
-    let mut capped = victory_pillz_entry(1139, 3);
-    capped["description"] = serde_json::json!("+3 Pillz Max. 9");
-    capped["abilityData"]["valueMax"] = serde_json::json!(9);
-    let registry = one_entry_registry(capped);
-    let mut source = replay(875032, &catalog);
-    clear_sources(&mut source);
-    source.players[0].hand[slot].source_ability = Some(SourceModifier {
-        id: 1139,
-        description: "+3 Pillz Max. 9".to_owned(),
-    });
-    let prepared =
-        CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
-    assert!(matches!(
-        prepared.preparation()[PlayerId::P1][slot].ability,
-        CombatStatProjectionDispositionV1::Disabled {
-            reason: CombatStatDisabledReasonV1::CappedIncrease { .. },
-            ..
+    // The capped sibling is its own grammar since revision 69, plain and under `Night:`, and
+    // executes on the arm Brawl's capped gain binds to.
+    for (id, text, value, maximum, predicate) in [
+        (1139, "+3 Pillz Max. 9", 3, 9, CombatStatPredicateV1::Always),
+        (
+            4747,
+            "Night: +2 Pillz Max. 12",
+            2,
+            12,
+            CombatStatPredicateV1::MatchIsNight,
+        ),
+    ] {
+        let mut capped = victory_pillz_entry(id, value);
+        capped["description"] = serde_json::json!(text);
+        capped["abilityData"]["valueMax"] = serde_json::json!(maximum);
+        let registry = one_entry_registry(capped);
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        source.players[0].hand[slot].source_ability = Some(SourceModifier {
+            id,
+            description: text.to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert!(
+            matches!(
+                prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
+                CombatStatSourcePlanV1::Execute {
+                    source_id,
+                    predicate: actual,
+                    effect: urban_recreation_rust::engine::CombatStatEffectV1::GainPillzOnVictoryMax {
+                        pillz,
+                        maximum: cap,
+                    },
+                } if source_id == id && actual == predicate && pillz == value && cap == maximum
+            ),
+            "{text}"
+        );
+    }
+    // And it takes the two-sided boundary with it: its text over the Bonus slot or a wrong
+    // structure, or the complete capped shape under other text, rejects when selected.
+    for (text, field, value, bonus) in [
+        ("+3 Pillz Max. 9", "valueMax", serde_json::json!(9), true),
+        (
+            "+3 Pillz Max. 9",
+            "currentRoundRequirement",
+            serde_json::json!("any"),
+            false,
+        ),
+        ("+3 Pillz Max 9", "valueMax", serde_json::json!(9), false),
+        (
+            "Day: +3 Pillz Max. 9",
+            "valueMax",
+            serde_json::json!(9),
+            false,
+        ),
+    ] {
+        let mut capped = victory_pillz_entry(1139, 3);
+        capped["description"] = serde_json::json!(text);
+        capped["abilityData"]["valueMax"] = serde_json::json!(9);
+        capped["abilityData"][field] = value.clone();
+        let registry = one_entry_registry(capped);
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let modifier = Some(SourceModifier {
+            id: 1139,
+            description: text.to_owned(),
+        });
+        if bonus {
+            source.players[0].hand[slot].source_bonus = modifier;
+        } else {
+            source.players[0].hand[slot].source_ability = modifier;
         }
-    ));
-    assert!(matches!(
-        prepared.new_game().card_plans()[PlayerId::P1][slot].ability,
-        CombatStatSourcePlanV1::Disabled { source_id: 1139 }
-    ));
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        let plan = if bonus {
+            prepared.new_game().card_plans()[PlayerId::P1][slot].bonus
+        } else {
+            prepared.new_game().card_plans()[PlayerId::P1][slot].ability
+        };
+        assert!(
+            matches!(
+                plan,
+                CombatStatSourcePlanV1::RejectIfSelected { source_id: 1139 }
+            ),
+            "{text:?} {field} = {value}, bonus {bonus}: {plan:?}"
+        );
+    }
 }
 
 #[test]
@@ -5438,4 +5510,81 @@ fn server_replays_pin_active_inactive_and_stopped_index_predicates() {
         }
     ));
     assert_eq!(stopped.rounds[1].round.cards[PlayerId::P1].damage, 4);
+}
+
+/// Revision 69: `Night: -N Opp. Life Min M` (Lyra's `4750`) is the plain Victory
+/// opponent-Life grammar under the `Night:` match constant. It executes from the Ability slot,
+/// and its text over the Bonus slot or a wrong structure rejects when selected.
+#[test]
+fn night_opponent_life_executes_under_the_match_constant_and_near_misses_reject() {
+    let catalog = catalog();
+    const TEXT: &str = "Night: -2 Opp. Life Min 0";
+    let night_entry = || {
+        let mut entry = victory_or_defeat_life_entry(4750, TEXT, 2, 0, false);
+        entry["abilityData"]["currentRoundRequirement"] = serde_json::json!("win");
+        entry
+    };
+    let prepare = |entry: serde_json::Value, bonus: bool| {
+        let registry = one_entry_registry(entry);
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let slot = usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        );
+        let modifier = Some(SourceModifier {
+            id: 4750,
+            description: TEXT.to_owned(),
+        });
+        if bonus {
+            source.players[0].hand[slot].source_bonus = modifier;
+        } else {
+            source.players[0].hand[slot].source_ability = modifier;
+        }
+        let game = CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION)
+            .unwrap()
+            .new_game();
+        let card = game.card_plans()[PlayerId::P1][slot];
+        if bonus {
+            card.bonus
+        } else {
+            card.ability
+        }
+    };
+    assert!(matches!(
+        prepare(night_entry(), false),
+        CombatStatSourcePlanV1::Execute {
+            source_id: 4750,
+            predicate: CombatStatPredicateV1::MatchIsNight,
+            effect:
+                urban_recreation_rust::engine::CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                    life: 2,
+                    minimum: 0,
+                },
+        }
+    ));
+    assert!(matches!(
+        prepare(night_entry(), true),
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 4750 }
+    ));
+    for (field, value) in [
+        ("valueMax", serde_json::json!(4)),
+        ("value", serde_json::json!(3)),
+        ("previousRoundRequirement", serde_json::json!("win")),
+    ] {
+        let mut malformed = night_entry();
+        malformed["abilityData"][field] = value.clone();
+        let plan = prepare(malformed, false);
+        assert!(
+            matches!(
+                plan,
+                CombatStatSourcePlanV1::RejectIfSelected { source_id: 4750 }
+            ),
+            "{field} = {value}: {plan:?}"
+        );
+    }
 }

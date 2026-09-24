@@ -32,7 +32,7 @@ use crate::engine::combat_stat_compiler::{
     classify_victory_opponent_pillz, classify_victory_opponent_pillz_and_life,
     classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
     classify_victory_or_defeat_life_per_damage, classify_victory_or_defeat_pillz,
-    classify_victory_or_defeat_pillz_amount, classify_victory_pillz,
+    classify_victory_or_defeat_pillz_amount, classify_victory_pillz, classify_victory_pillz_max,
     classify_victory_pillz_per_damage, compact_effect, has_bet_gated_post_round_shape,
     has_both_players_life_reduction_shape, has_brawl_post_round_shape,
     has_combust_opponent_life_and_pillz_on_victory_shape,
@@ -47,8 +47,9 @@ use crate::engine::combat_stat_compiler::{
     has_victory_opponent_pillz_and_life_shape, has_victory_opponent_pillz_shape,
     has_victory_or_defeat_both_players_gain_shape, has_victory_or_defeat_life_per_damage_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_or_defeat_pillz_amount_shape,
-    has_victory_pillz_per_damage_shape, has_victory_pillz_shape, BothPlayersGainV1,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    has_victory_pillz_max_shape, has_victory_pillz_per_damage_shape, has_victory_pillz_shape,
+    BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
     derive_effective_catalog_hand, effect_reads_support_count, unmodelled_source_context,
@@ -988,6 +989,17 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    // The capped form, plain or under `Night:`, pays through the arm Brawl's capped gain
+    // already binds to.
+    if let Some((pillz, maximum, predicate)) = classify_victory_pillz_max(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainPillzOnVictoryMax { pillz, maximum },
+            CombatStatEffectV1::GainPillzOnVictoryMax { pillz, maximum },
+            predicate,
+        ));
+    }
     if let Some((amount, minimum)) =
         classify_victory_opponent_pillz_and_life(definition, source_kind)
     {
@@ -1409,15 +1421,23 @@ fn prepare_combat_stat_source(
     // text, rejects when selected. Its `Confidence:` form joined the grammar in revision 36
     // and its `Courage:` form in revision 58, and each takes the boundary with it, so either
     // text over a wrong structure is a hazard too. The other prefixed forms (`Stop:`,
-    // `Growth:`, `Perfect:`, `Defeat:`, `Revenge:`) and the capped `+3 Pillz Max. 9` differ
-    // structurally and keep their visible-but-disabled records; `Brawl:`, `Support:`,
-    // `Equalizer:` and `Killshot:` have their own post-round boundaries.
+    // `Growth:`, `Perfect:`, `Defeat:`, `Revenge:`) differ structurally and keep their
+    // visible-but-disabled records; `Brawl:`, `Support:`, `Equalizer:` and `Killshot:` have
+    // their own post-round boundaries.
     let unadmitted_victory_pillz = ((source.description.starts_with('+')
         || source.description.starts_with("Confidence: +")
         || source.description.starts_with("Courage: +"))
         && source.description.ends_with(" Pillz")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
         || has_victory_pillz_shape(definition);
+    // The capped form, admitted in revision 69 plain and under `Night:`, has the same
+    // two-sided boundary: its text over a wrong slot or structure, or the complete capped
+    // shape under other text, rejects when selected.
+    let unadmitted_victory_pillz_max = ((source.description.starts_with('+')
+        || source.description.starts_with("Night: +"))
+        && source.description.contains(" Pillz Max. ")
+        && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
+        || has_victory_pillz_max_shape(definition);
     // The opposing reduction has the same two-sided boundary. `Stop:`, `Growth:`,
     // `Bet > N Pillz:` and clan-gated forms differ structurally and stay
     // visible-but-disabled, `Brawl:` is its own grammar below, and the dotted `Opp. Pillz`
@@ -1479,11 +1499,13 @@ fn prepare_combat_stat_source(
     // malformed record or a wrong source slot cannot quietly become an inert no-op.
     // The Courage members joined the identity table in semantic revision 39; Growth 1730
     // still differs in a structured field and keeps its existing Disabled record.
+    // Since revision 69 `Night: -2 Opp. Life Min 0` is the grammar's own night form, which
+    // takes the boundary with it: that text over a wrong slot or structure rejects too.
     let unadmitted_victory_opponent_life = matches!(
         source.id,
         680 | 3016 | 3314 | 4301 | 4531 | 4532 | 4533 | 4708
     ) || source.description == "-2 Opp. Life Min 2"
-        || (source.description.starts_with('-')
+        || ((source.description.starts_with('-') || source.description.starts_with("Night: -"))
             && source.description.contains("Opp. Life")
             && input.attribute_affected == AttributeAffectedV1::Life)
         || has_victory_opponent_life_shape(definition);
@@ -1641,6 +1663,7 @@ fn prepare_combat_stat_source(
         || unadmitted_equalizer_opponent_life
         || unadmitted_victory_life
         || unadmitted_victory_pillz
+        || unadmitted_victory_pillz_max
         || unadmitted_victory_opponent_pillz
         || unadmitted_defeat_opponent_pillz
         || unadmitted_victory_pillz_per_damage
@@ -1685,6 +1708,7 @@ fn prepare_combat_stat_source(
         || unadmitted_equalizer_opponent_life
         || unadmitted_victory_life
         || unadmitted_victory_pillz
+        || unadmitted_victory_pillz_max
         || unadmitted_victory_opponent_pillz
         || unadmitted_defeat_opponent_pillz
         || unadmitted_victory_pillz_per_damage

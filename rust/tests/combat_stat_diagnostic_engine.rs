@@ -8408,3 +8408,315 @@ mod post_round_gates {
         }
     }
 }
+
+const NOX_NIGHT_PILLZ: CombatStatEffectV1 = CombatStatEffectV1::GainPillzOnVictoryMax {
+    pillz: 2,
+    maximum: 12,
+};
+
+/// P1 holds Nox Ld's night ability `Night: +2 Pillz Max. 12` in slot 0; every other source
+/// is absent and both hands are 6/3.
+fn nox_spec(night: bool, p1_pillz: u16) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.night = night;
+    base.players[PlayerId::P1].initial_pillz = p1_pillz;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability =
+        execute(4747, CombatStatPredicateV1::MatchIsNight, NOX_NIGHT_PILLZ);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+/// Revision 69's capped Victory Pillz plan is a card ability, a positive gain under a positive
+/// cap, and unconditional or under the `Night:` match constant only.
+#[test]
+fn capped_victory_pillz_plan_is_ability_only_capped_and_plain_or_night() {
+    let refused = |spec: CombatStatDiagnosticMatchSpecV1| match CombatStatDiagnosticV1::new(spec) {
+        Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(reason),
+        _ => None,
+    };
+    let mut bonus = nox_spec(true, 10);
+    bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    bonus.cards[PlayerId::P1][0].bonus =
+        execute(4747, CombatStatPredicateV1::MatchIsNight, NOX_NIGHT_PILLZ);
+    bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert_eq!(
+        refused(bonus),
+        Some(InvalidCombatStatPlanReasonV1::VictoryPillzMaxSource)
+    );
+    for effect in [
+        CombatStatEffectV1::GainPillzOnVictoryMax {
+            pillz: 0,
+            maximum: 12,
+        },
+        CombatStatEffectV1::GainPillzOnVictoryMax {
+            pillz: 2,
+            maximum: 0,
+        },
+    ] {
+        let mut spec = nox_spec(true, 10);
+        spec.cards[PlayerId::P1][0].ability =
+            execute(4747, CombatStatPredicateV1::MatchIsNight, effect);
+        assert_eq!(
+            refused(spec),
+            Some(InvalidCombatStatPlanReasonV1::VictoryPillzMaxMagnitude),
+            "{effect:?}"
+        );
+    }
+    for predicate in [
+        CombatStatPredicateV1::MatchIsDay,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+        CombatStatPredicateV1::OwnerWonPreviousRoundAtNight,
+        CombatStatPredicateV1::OwnerMovesFirst,
+    ] {
+        let mut spec = nox_spec(true, 10);
+        spec.cards[PlayerId::P1][0].ability = execute(4747, predicate, NOX_NIGHT_PILLZ);
+        assert_eq!(
+            refused(spec),
+            Some(InvalidCombatStatPlanReasonV1::VictoryPillzMaxPredicate),
+            "{predicate:?}"
+        );
+    }
+    for predicate in [
+        CombatStatPredicateV1::Always,
+        CombatStatPredicateV1::MatchIsNight,
+    ] {
+        let mut spec = nox_spec(true, 10);
+        spec.cards[PlayerId::P1][0].ability = execute(1139, predicate, NOX_NIGHT_PILLZ);
+        assert!(CombatStatDiagnosticV1::new(spec).is_ok(), "{predicate:?}");
+    }
+}
+
+/// The capped gain pays a living winner after its bet, never past its cap and nothing to an
+/// owner already at or above it - the `GainPillzOnVictoryMax` arm Brawl binds to - and its
+/// `Night:` form only in a night match. 1025563/2 is the paying round: Nox Ld bets all 10 and
+/// wins at night, 10 - 10 + 2 = 2, the cap far away.
+#[test]
+fn capped_victory_pillz_pays_a_winner_up_to_its_cap_and_only_at_night() {
+    for (night, start, bet, p1_wins, expected) in [
+        (true, 10, 10, true, 2),  // 1025563/2
+        (true, 12, 1, true, 12),  // 11 + 2 clamps to 12
+        (true, 14, 1, true, 13),  // already past the cap: nothing, and never lowered
+        (true, 10, 0, false, 10), // a loss pays nothing
+        (false, 10, 10, true, 0), // by day the night form never fires
+    ] {
+        let spec = nox_spec(night, start);
+        let mut diag = game(spec.base_rules, spec.cards);
+        let before = diag.position().clone();
+        let round = if p1_wins {
+            input(PlayerId::P1, (0, bet, false), (0, 0, false))
+        } else {
+            input(PlayerId::P2, (0, bet, false), (0, 2, false))
+        };
+        let (report, undo) = diag.make(round).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].won, p1_wins);
+        assert_eq!(
+            report.players[PlayerId::P1].pillz,
+            expected,
+            "night {night}, start {start}, bet {bet}"
+        );
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &before);
+    }
+}
+
+/// The cap makes the capped gain's order against any other write to its owner's Pillz
+/// observable, and 1093173/1 shows the server's cross-owner order is not the engine's. So a
+/// match is refused wherever an opposing effect can write the owner's Pillz in the owner's
+/// winning round - on its own loss, or every round for a permanent - or an opposing Copy
+/// could take the gain. An opposing write that only pays on the opposing win, an opposing
+/// write to its own Pillz, and an own write are admitted.
+#[test]
+fn capped_victory_pillz_is_refused_beside_an_opposing_write_to_its_owners_pillz() {
+    let victory_floor = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let defeat_floor = execute(
+        912,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnDefeat {
+            pillz: 2,
+            minimum: 4,
+        },
+    );
+    let consume = execute(
+        5871,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 2,
+        },
+    );
+    let players_pillz = execute(
+        5511,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainBothPlayersPillzOnVictoryOrDefeat { pillz: 3 },
+    );
+    let own_recover = execute(
+        902,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+            numerator: 1,
+            denominator: 2,
+        },
+    );
+    let copy = |copied| CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    for (opposing, refused) in [
+        (victory_floor, false),
+        (defeat_floor, true),
+        (consume, true),
+        (players_pillz, true),
+        (own_recover, false),
+        (copy(CopiedSourceKindV1::Ability), true),
+        (copy(CopiedSourceKindV1::Bonus), false),
+    ] {
+        let mut spec = nox_spec(true, 10);
+        spec.cards[PlayerId::P2][2].ability = opposing;
+        if matches!(opposing, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+            spec.cards[PlayerId::P2][2].source_ability_support_count = 1;
+        }
+        let result = CombatStatDiagnosticV1::new(spec);
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason:
+                            InvalidCombatStatPlanReasonV1::CappedVictoryPillzAgainstUnpinnedEffect,
+                        ..
+                    })
+                ),
+                "against {opposing:?}"
+            );
+        } else {
+            assert!(result.is_ok(), "against {opposing:?}");
+        }
+    }
+    // An opposing Bonus Copy is admitted alone, but not once it could import an own write
+    // onto the owner's Pillz: the owner's own `-N Opp Pillz` taken to the other side.
+    let mut spec = nox_spec(true, 10);
+    spec.cards[PlayerId::P2][2].ability = copy(CopiedSourceKindV1::Bonus);
+    spec.cards[PlayerId::P2][2].source_ability_support_count = 1;
+    spec.cards[PlayerId::P1][1].ability = victory_floor;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(spec),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::CappedVictoryPillzAgainstUnpinnedEffect,
+            ..
+        })
+    ));
+    // The owner's own Pillz writers are not refused: Argos (1093451) pins the owner's bonus
+    // before its ability.
+    let mut spec = nox_spec(true, 10);
+    spec.cards[PlayerId::P1][1].ability = own_recover;
+    assert!(CombatStatDiagnosticV1::new(spec).is_ok());
+}
+
+/// Revision 69's `OwnerWonPreviousRoundAtNight` - Schwarz's `Night: Confid.: -2 Opp Pow. &
+/// Damage, Min 3` - holds exactly when the match is at night and the owner won the previous
+/// round: never in round 0, never by day, never after a lost round. 1024878/3 is the paying
+/// round: Jairin's 8/6 becomes 6/4 and attacks 6 x 7 = 42.
+#[test]
+fn night_confidence_holds_only_at_night_after_a_round_its_owner_won() {
+    let schwarz = reduction(CombatStatAttributeV1::PowerAndDamage, 2, 3);
+    for (night, p1_won_previous, fires) in [
+        (true, true, true),
+        (true, false, false),
+        (false, true, false),
+        (false, false, false),
+    ] {
+        let mut base = base_spec(8, 6);
+        base.night = night;
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(
+            1643,
+            CombatStatPredicateV1::OwnerWonPreviousRoundAtNight,
+            schwarz,
+        );
+        let mut diag = game(base, cards);
+        // Round 0 has no previous round, so the reduction never applies in it.
+        let round_zero = if p1_won_previous {
+            input(PlayerId::P1, (1, 2, false), (1, 0, false))
+        } else {
+            input(PlayerId::P1, (1, 0, false), (1, 2, false))
+        };
+        let (first, _) = diag.make(round_zero).unwrap();
+        assert_eq!(first.cards[PlayerId::P1].won, p1_won_previous);
+        assert_eq!(
+            (
+                first.cards[PlayerId::P2].power,
+                first.cards[PlayerId::P2].damage
+            ),
+            (8, 6),
+            "round 0, night {night}"
+        );
+        let before = diag.position().clone();
+        let (second, undo) = diag
+            .make(input(PlayerId::P2, (0, 0, false), (2, 6, false)))
+            .unwrap();
+        let expected = if fires { (6, 4, 42) } else { (8, 6, 56) };
+        assert_eq!(
+            (
+                second.cards[PlayerId::P2].power,
+                second.cards[PlayerId::P2].damage,
+                second.cards[PlayerId::P2].attack
+            ),
+            expected,
+            "night {night}, won previous {p1_won_previous}"
+        );
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &before);
+    }
+}
+
+/// The conjunctive predicate is a card ability's, a combat stat's and nothing else's: a clan
+/// bonus never prints it and no conditional Stop carries it.
+#[test]
+fn night_confidence_predicate_is_refused_on_a_bonus_and_on_a_stop() {
+    let mut base = base_spec(6, 3);
+    base.night = true;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].bonus = execute(
+        1643,
+        CombatStatPredicateV1::OwnerWonPreviousRoundAtNight,
+        reduction(CombatStatAttributeV1::PowerAndDamage, 2, 3),
+    );
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::ConditionalBonus,
+            ..
+        })
+    ));
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        1643,
+        CombatStatPredicateV1::OwnerWonPreviousRoundAtNight,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::ConditionalControl,
+            ..
+        })
+    ));
+}

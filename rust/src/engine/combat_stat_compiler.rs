@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 68;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 69;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -180,7 +180,8 @@ fn copy_opponent_source_shape_matches(
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
-        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => return false,
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => return false,
     };
     let unison = predicate == CombatStatPredicateV1::OwnerHandUnison;
     let bet_fields_match = if bet_gated {
@@ -560,6 +561,51 @@ pub(crate) fn classify_victory_pillz(
 pub(crate) fn has_victory_pillz_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
     input.value > 0 && victory_pillz_shape_matches(input)
+}
+
+/// Recognize the capped Victory Pillz grammar `+N Pillz Max. M` (Mandrak Cr's `1139`) and
+/// its `Night:` form (Nox Ld's night ability `4747`): a living winner's own Pillz rise by N,
+/// never past M, and an owner already at or above M gains nothing - the arithmetic the
+/// admitted `Brawl: +N Pillz, Max. M` already binds to. It is the plain grammar's record
+/// with `valueMax` read as the cap, which every other Victory Pillz grammar requires to be
+/// zero, so neither can pass for the other. `Night:` is a match constant with no structured
+/// trace and is read from the text, as for the Night numerics. Exact text rebuilt from the
+/// record, card abilities only. Returns `(pillz, maximum, predicate)`.
+pub(crate) fn classify_victory_pillz_max(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16, CombatStatPredicateV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability || !has_victory_pillz_max_shape(definition)
+    {
+        return None;
+    }
+    let input = definition.structured_input();
+    let body = format!("+{} Pillz Max. {}", input.value, input.value_max);
+    let description = definition.description();
+    let predicate = if description == body {
+        CombatStatPredicateV1::Always
+    } else if description.strip_prefix("Night: ") == Some(body.as_str()) {
+        CombatStatPredicateV1::MatchIsNight
+    } else {
+        return None;
+    };
+    Some((input.value, input.value_max, predicate))
+}
+
+/// Structural half of the capped Victory Pillz boundary: the unconditional Victory Pillz
+/// record with a positive cap.
+pub(crate) fn has_victory_pillz_max_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && input.value_max > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_max: ShapeFieldV1::Read,
+                attribute: AttributeAffectedV1::Pillz,
+                ..POST_ROUND_SHAPE
+            },
+        )
 }
 
 /// Recognize the plain `-N Opp Pillz. Min M` Victory grammar: the winner takes N Pillz
@@ -1271,10 +1317,14 @@ const VICTORY_OPPONENT_LIFE_IDENTITIES: [(
 /// a text that does not name it. The one clan Bonus that prints the reduction and the
 /// conditional forms, whose printed text differs record by record, stay identity-locked.
 ///
+/// Since revision 69 the grammar has a second printed form, `Night: -N Opp. Life Min M`
+/// (Lyra's night ability `4750`), under the `MatchIsNight` match constant. `Night:` leaves no
+/// structured trace, so the record is the unconditional one and the text alone names it -
+/// exactly how the Night numerics and the Night Stops are read.
+///
 /// Everything else remains fail-closed: the capped, compound and clan-gated neighbours, the
-/// complete shape under prefixed text such as `Night: -2 Opp. Life Min 0`, and the same-text
-/// catalog ids that have no registry definition at all (Rakhan `978`, Milovan `498`,
-/// Fraser `1289`).
+/// complete shape under other prefixed text, and the same-text catalog ids that have no
+/// registry definition at all (Rakhan `978`, Milovan `498`, Fraser `1289`).
 pub(crate) fn classify_victory_opponent_life(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -1298,11 +1348,19 @@ pub(crate) fn classify_victory_opponent_life(
     }
     let input = definition.structured_input();
     let (life, minimum) = (input.value, input.value_min);
+    let body = format!("-{life} Opp. Life Min {minimum}");
+    let description = definition.description();
+    let predicate = if description == body {
+        CombatStatPredicateV1::Always
+    } else if description.strip_prefix("Night: ") == Some(body.as_str()) {
+        CombatStatPredicateV1::MatchIsNight
+    } else {
+        return None;
+    };
     (source_kind == CombatStatEffectSourceV1::Ability
         && life > 0
-        && definition.description() == format!("-{life} Opp. Life Min {minimum}")
-        && victory_opponent_life_shape_matches(input, life, minimum, CombatStatPredicateV1::Always))
-    .then_some((life, minimum, CombatStatPredicateV1::Always))
+        && victory_opponent_life_shape_matches(input, life, minimum, predicate))
+    .then_some((life, minimum, predicate))
 }
 
 /// Structural half of the Victory opponent-Life boundary, so replay preparation can reject
@@ -1355,7 +1413,9 @@ fn victory_opponent_life_shape_matches(
     // Exactly one structured field carries the condition, and it must be the one the printed
     // text names. Every other context field stays neutral.
     let (position, previous_round, index) = match predicate {
-        CombatStatPredicateV1::Always => (
+        // `Night:` is a match constant with no structured trace, so its record is the
+        // unconditional one and the printed prefix is the only thing that names it.
+        CombatStatPredicateV1::Always | CombatStatPredicateV1::MatchIsNight => (
             PositionRequirementV1::Both,
             PreviousRoundRequirementV1::Any,
             IndexRequirementV1::Any,
@@ -1381,7 +1441,6 @@ fn victory_opponent_life_shape_matches(
         CombatStatPredicateV1::OwnerMovesSecond
         | CombatStatPredicateV1::OwnerLostPreviousRound
         | CombatStatPredicateV1::SelectedHandSlotsDiffer
-        | CombatStatPredicateV1::MatchIsNight
         | CombatStatPredicateV1::MatchIsDay
         | CombatStatPredicateV1::OwnerHandUnison
         | CombatStatPredicateV1::OwnerAbilityStopped
@@ -1389,7 +1448,8 @@ fn victory_opponent_life_shape_matches(
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
-        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => return false,
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => return false,
     };
     input.value == life
         && input.value_min == minimum
@@ -2812,6 +2872,7 @@ pub(crate) fn classify_combat_stat_effect(
     }
     if classify_victory_life(definition, source_kind).is_some()
         || classify_victory_pillz(definition, source_kind).is_some()
+        || classify_victory_pillz_max(definition, source_kind).is_some()
         || classify_victory_opponent_pillz(definition, source_kind).is_some()
         || classify_victory_pillz_per_damage(definition, source_kind).is_some()
         || classify_victory_life_per_damage(definition, source_kind).is_some()
@@ -2891,6 +2952,9 @@ pub(crate) fn classify_combat_stat_effect(
         return Some(classified);
     }
     if let Some(classified) = classify_index_numeric(definition) {
+        return Some(classified);
+    }
+    if let Some(classified) = classify_night_confidence_numeric(definition, source_kind) {
         return Some(classified);
     }
     if let Some(classified) = classify_day_night_numeric(definition) {
@@ -3127,6 +3191,30 @@ fn classify_day_night_numeric(
     let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
         .then_some((effect, predicate))
+}
+
+/// Recognize the compound `Night: Confid.: <numeric body>` (Schwarz's night ability `1643`,
+/// `Night: Confid.: -2 Opp Pow. & Damage, Min 3`): the plain fixed numeric grammar under
+/// both the `Night:` match constant and `Confidence`'s won previous round. The record
+/// carries the previous-round half in its one condition field, as every Confidence numeric
+/// does, and nothing of the night half, which is read from the text as for the Night
+/// numerics; the plan carries the conjunction as one predicate,
+/// `OwnerWonPreviousRoundAtNight`. Card abilities only: no clan bonus prints it.
+fn classify_night_confidence_numeric(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let body = definition.description().strip_prefix("Night: Confid.: ")?;
+    let input = definition.structured_input();
+    if source_kind != CombatStatEffectSourceV1::Ability
+        || input.previous_round_requirement != PreviousRoundRequirementV1::Win
+        || !neutral_except_previous_round(input)
+    {
+        return None;
+    }
+    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
+    numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
+        .then_some((effect, CombatStatPredicateV1::OwnerWonPreviousRoundAtNight))
 }
 
 /// Recognize the `Cards` grammar: one fixed change to a combat stat of *both* selected
@@ -4702,7 +4790,8 @@ fn position_description_matches(
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
-        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => return false,
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -4732,7 +4821,8 @@ fn index_description_matches(
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
-        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => return false,
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -4764,7 +4854,8 @@ fn previous_round_description_matches(
         | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
-        | CombatStatPredicateV1::OwnerPillzUsedBelow(_) => None,
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => None,
     };
     body.is_some_and(|body| {
         numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
@@ -4893,6 +4984,8 @@ fn numeric_description_body_matches(
                 || body == format!("-{value} Opp Pow. & Dmg,min {min}")
                 // Pistache `5681`: `After [clan:27][clan:29]: -2 Opp. Pow. & Dam., Min 2`.
                 || body == format!("-{value} Opp. Pow. & Dam., Min {min}")
+                // Schwarz `1643`: `Night: Confid.: -2 Opp Pow. & Damage, Min 3`.
+                || body == format!("-{value} Opp Pow. & Damage, Min {min}")
         }
         _ => false,
     }
@@ -6312,6 +6405,166 @@ mod tests {
         );
     }
 
+    /// Revision 69: the capped Victory Pillz grammar, plain (Mandrak Cr's `1139`) and under
+    /// the `Night:` match constant (Nox Ld's night ability `4747`), by exact text over the
+    /// unconditional Victory Pillz record with a positive `valueMax`, card abilities only.
+    #[test]
+    fn capped_victory_pillz_is_admitted_by_text_plain_and_under_night() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        for (id, expected) in [
+            (1139, (3, 9, CombatStatPredicateV1::Always)),
+            (4747, (2, 12, CombatStatPredicateV1::MatchIsNight)),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(has_victory_pillz_max_shape(definition), "{id}");
+            assert_eq!(
+                classify_victory_pillz_max(definition, ability),
+                Some(expected),
+                "{id}"
+            );
+            assert_eq!(
+                classify_victory_pillz_max(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} as a bonus"
+            );
+            // Post-round work, never a combat stat, and never the uncapped grammar.
+            assert_eq!(classify_combat_stat_effect(definition, ability), None);
+            assert_eq!(classify_victory_pillz(definition, ability), None);
+        }
+        // The Brawl capped gain, Argos' capped Defeat gain and the plain grammar are other
+        // grammars, and the capped shape is not theirs.
+        for id in [5822, 5844, 1158, 1150, 1451] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_victory_pillz_max(definition, ability),
+                None,
+                "{id}"
+            );
+            assert!(!has_victory_pillz_max_shape(definition), "{id}");
+        }
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("1139", "value", serde_json::json!(2)),
+            ("1139", "valueMax", serde_json::json!(0)),
+            ("1139", "valueMax", serde_json::json!(10)),
+            ("1139", "valueMin", serde_json::json!(1)),
+            ("4747", "currentRoundRequirement", serde_json::json!("lose")),
+            ("4747", "previousRoundRequirement", serde_json::json!("win")),
+            ("4747", "positionRequirement", serde_json::json!("attacker")),
+            ("4747", "isAntiSupport", serde_json::json!(true)),
+            ("4747", "isPermanent", serde_json::json!(true)),
+            ("4747", "sideAffected", serde_json::json!("opponent")),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_victory_pillz_max(definition, ability),
+                None,
+                "{id} {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            ("4747", "Day: +2 Pillz Max. 12"),
+            ("4747", "Night : +2 Pillz Max. 12"),
+            ("4747", "Night: +2 Pillz, Max. 12"),
+            ("1139", "+3 Pillz"),
+            ("1139", "Confidence: +3 Pillz Max. 9"),
+        ] {
+            let mut retexted = source.clone();
+            retexted[id]["description"] = serde_json::json!(text);
+            let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+            let definition = retexted.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_victory_pillz_max(definition, ability),
+                None,
+                "{id} as {text:?}"
+            );
+            assert_eq!(classify_victory_pillz(definition, ability), None);
+        }
+    }
+
+    /// Revision 69: Schwarz's night ability `Night: Confid.: -2 Opp Pow. & Damage, Min 3`
+    /// is the plain numeric body under both the match constant and a won previous round,
+    /// carried as one conjunctive predicate. Card abilities only.
+    #[test]
+    fn night_confidence_compound_is_admitted_under_its_conjunctive_predicate() {
+        let registry = registry();
+        let schwarz = registry.get(1643).expect("registry definition");
+        let expected = Some((
+            SupportedEffectV1::ModifyCombatStat {
+                side: AffectedSideV1::Opponent,
+                stat: CombatStatV1::PowerAndDamage,
+                operation: StatOperationV1::Decrease,
+                value: 2,
+                minimum: Some(3),
+                maximum: None,
+                multiplier: MagnitudeMultiplierV1::Fixed,
+            },
+            CombatStatPredicateV1::OwnerWonPreviousRoundAtNight,
+        ));
+        assert_eq!(
+            classify_combat_stat_effect(schwarz, CombatStatEffectSourceV1::Ability),
+            expected
+        );
+        assert_eq!(
+            classify_combat_stat_effect(schwarz, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        assert!(!conditional_stop_predicate_admitted(
+            CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+        ));
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        for (field, value) in [
+            ("previousRoundRequirement", serde_json::json!("any")),
+            ("previousRoundRequirement", serde_json::json!("lose")),
+            ("positionRequirement", serde_json::json!("attacker")),
+            ("indexRequirement", serde_json::json!("symmetry")),
+            ("value", serde_json::json!(3)),
+            ("valueMin", serde_json::json!(2)),
+            ("valueMax", serde_json::json!(3)),
+            ("isSupport", serde_json::json!(true)),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1643"]["abilityData"][field] = value.clone();
+            let malformed =
+                EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_combat_stat_effect(
+                    malformed.get(1643).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "1643 {field} = {value}"
+            );
+        }
+        for text in [
+            "Night: Confidence: -2 Opp Pow. & Damage, Min 3",
+            "Confid.: -2 Opp Pow. & Damage, Min 3",
+            "Day: Confid.: -2 Opp Pow. & Damage, Min 3",
+            "Night: Confid.: -2 Opp Pow. & Damage, Min 4",
+        ] {
+            let mut retexted = source.clone();
+            retexted["1643"]["description"] = serde_json::json!(text);
+            let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                classify_combat_stat_effect(
+                    retexted.get(1643).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "1643 as {text:?}"
+            );
+        }
+    }
+
     #[test]
     fn night_and_day_numeric_is_admitted_under_the_match_constant_predicate() {
         let registry = registry();
@@ -6343,10 +6596,12 @@ mod tests {
             }
         }
         // `5391` prints a Min but also carries a `valueMax` on a decrease, which no admitted
-        // grammar reads, and the compound `Night: Confid.:` form carries a second condition.
-        // Neither is admitted, nor is a Night post-round effect. The Night Stop `5564` is the
+        // grammar reads, and `Day: Cancel` is a description context. Neither is admitted. The
+        // Night post-round effects `4747` and `4750` are their post-round grammars' since
+        // revision 69, never a combat stat, and the compound `Night: Confid.:` `1643` has its
+        // own conjunctive predicate (tested below). The Night Stop `5564` is the
         // conditional-Stop grammar's, since revision 47.
-        for id in [5391, 1643, 4747, 4750, 2369] {
+        for id in [5391, 4747, 4750, 2369] {
             let definition = registry.get(id).expect("registry definition");
             assert_eq!(
                 classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
@@ -7627,16 +7882,69 @@ mod tests {
             );
         }
 
-        // `Night:` prints the complete Victory shape under text the grammar does not name,
-        // so it is refused here and reported as a structural near-miss instead.
+        // `Night:` prints the complete Victory shape under the match constant. Since revision
+        // 69 it is the grammar's night form, a card ability only; any other prefix over the
+        // same record stays refused and is reported as a structural near-miss instead.
         let night = registry
             .lookup_capture(4750, "Night: -2 Opp. Life Min 0")
             .unwrap();
         assert_eq!(
             classify_victory_opponent_life(night, CombatStatEffectSourceV1::Ability),
+            Some((2, 0, CombatStatPredicateV1::MatchIsNight)),
+        );
+        assert_eq!(
+            classify_victory_opponent_life(night, CombatStatEffectSourceV1::Bonus),
             None,
         );
         assert!(has_victory_opponent_life_shape(night));
+        {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+            let source: serde_json::Value =
+                serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+            for (field, value) in [
+                ("description", serde_json::json!("Day: -2 Opp. Life Min 0")),
+                (
+                    "description",
+                    serde_json::json!("Night : -2 Opp. Life Min 0"),
+                ),
+                (
+                    "description",
+                    serde_json::json!("Night: -3 Opp. Life Min 0"),
+                ),
+            ] {
+                let mut malformed = source.clone();
+                malformed["4750"][field] = value.clone();
+                let malformed =
+                    EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+                assert_eq!(
+                    classify_victory_opponent_life(
+                        malformed.get(4750).unwrap(),
+                        CombatStatEffectSourceV1::Ability
+                    ),
+                    None,
+                    "4750 {field} = {value}",
+                );
+            }
+            for (field, value) in [
+                ("value", serde_json::json!(3)),
+                ("valueMax", serde_json::json!(4)),
+                ("previousRoundRequirement", serde_json::json!("win")),
+                ("currentRoundRequirement", serde_json::json!("lose")),
+            ] {
+                let mut malformed = source.clone();
+                malformed["4750"]["abilityData"][field] = value.clone();
+                let malformed =
+                    EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+                assert_eq!(
+                    classify_victory_opponent_life(
+                        malformed.get(4750).unwrap(),
+                        CombatStatEffectSourceV1::Ability
+                    ),
+                    None,
+                    "4750 {field} = {value}",
+                );
+            }
+        }
 
         // The printed numbers are authority on both channels: a record whose text disagrees
         // with its own magnitude or bound is refused rather than trusted either way.

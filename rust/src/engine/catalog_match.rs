@@ -24,7 +24,7 @@ use super::combat_stat_compiler::{
     classify_victory_opponent_pillz, classify_victory_opponent_pillz_and_life,
     classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
     classify_victory_or_defeat_life_per_damage, classify_victory_or_defeat_pillz,
-    classify_victory_or_defeat_pillz_amount, classify_victory_pillz,
+    classify_victory_or_defeat_pillz_amount, classify_victory_pillz, classify_victory_pillz_max,
     classify_victory_pillz_per_damage, compact_effect, is_copy_opponent_source_description,
     BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
@@ -154,7 +154,10 @@ const OBLIVION_CLAN_ID: u32 = 57;
 const OBLIVION_CATALOG_BONUS_ID: u32 = 56;
 const OBLIVION_COPY_ABILITY_BONUS_REGISTRY_ID: u32 = 2918;
 const COPY_OPPONENT_ABILITY_DESCRIPTION: &str = "Copy: Opp. Ability";
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 4;
+/// Revision 5 (compiler revision 69) lets a selected night variant, which the catalog gives
+/// no numeric identity, reach the post-round grammars that print a `Night:` form - by its
+/// exact text in a night match only (`require_catalog_alias_or_night_variant`).
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 5;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -490,6 +493,7 @@ impl CatalogCombatStatMatchV1 {
                         card.key(),
                         CombatStatEffectSourceV1::Ability,
                         effective.effective_clan_id,
+                        input.night,
                         source.catalog_id,
                         &source.description,
                     )?
@@ -504,6 +508,7 @@ impl CatalogCombatStatMatchV1 {
                         card.key(),
                         CombatStatEffectSourceV1::Bonus,
                         effective.effective_clan_id,
+                        input.night,
                         source.catalog_id,
                         &source.description,
                     )?
@@ -930,6 +935,7 @@ fn prepare_catalog_source(
     card_key: CardKey,
     source_kind: CombatStatEffectSourceV1,
     effective_clan_id: u32,
+    night: bool,
     catalog_id: Option<u32>,
     description: &str,
 ) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
@@ -1554,9 +1560,13 @@ fn prepare_catalog_source(
         // outcome channels. Its identity-locked members - the Berzerk Bonus, the two
         // Confidence records, Doela Noel's Symmetry and Uuber's `1628` - never reach here:
         // their printed texts are intercepted above.
-        if classify_victory_opponent_life(definition, source_kind).is_some() {
-            require_catalog_alias(
+        // Since revision 69 its `Night:` form is admitted too, and a night variant has no
+        // catalog id: its exact text, selected in a night match, is its identity.
+        if let Some((_, _, predicate)) = classify_victory_opponent_life(definition, source_kind) {
+            require_catalog_alias_or_night_variant(
                 match_.alias_ids(),
+                night,
+                predicate,
                 player,
                 hand_slot,
                 source_kind,
@@ -1614,6 +1624,39 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
                 definition.id(),
+            );
+        }
+        // Its capped form follows the same rule, and its `Night:` form - Nox Ld's night
+        // ability - reaches it through the night-variant bridge.
+        if let Some((_, _, predicate)) = classify_victory_pillz_max(definition, source_kind) {
+            require_catalog_alias_or_night_variant(
+                match_.alias_ids(),
+                night,
+                predicate,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let (pillz, maximum, predicate) =
+                        classify_victory_pillz_max(definition, source_kind)?;
+                    Some((
+                        CombatStatPostRoundEffectV1::GainPillzOnVictoryMax { pillz, maximum },
+                        CombatStatEffectV1::GainPillzOnVictoryMax { pillz, maximum },
+                        predicate,
+                    ))
+                },
             );
         }
         // The opposing compound and the larger Victory Or Defeat own gains follow the same
@@ -2444,6 +2487,43 @@ fn require_catalog_alias(
             .to_vec()
             .into_boxed_slice(),
     })
+}
+
+/// The catalog gives a selected night variant no numeric identity (`derive_catalog_hand`),
+/// so a post-round grammar that prints a `Night:` form cannot meet `require_catalog_alias`.
+/// Such a source is admitted by its exact text alone, and only when all of these hold: it
+/// has no catalog id, the match is at night, its printed text starts with `Night: `, and the
+/// grammar resolved it to the `MatchIsNight` predicate. A missing catalog id alone is never
+/// enough - a daylight card whose ability id is 0 has none either - and every other source
+/// still has to be a structural alias of the definition its text resolves to. This is the
+/// rule the conditional Stops and the Night numerics already follow.
+fn require_catalog_alias_or_night_variant(
+    alias_ids: &[u32],
+    night: bool,
+    predicate: CombatStatPredicateV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    definition: &EffectDefinitionV1,
+) -> Result<(), CatalogCombatStatMatchErrorV1> {
+    if catalog_id.is_none()
+        && night
+        && description.starts_with("Night: ")
+        && predicate == CombatStatPredicateV1::MatchIsNight
+    {
+        return Ok(());
+    }
+    require_catalog_alias(
+        alias_ids,
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        definition,
+    )
 }
 
 fn prepare_post_round_source(
