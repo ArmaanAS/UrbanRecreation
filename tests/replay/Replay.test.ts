@@ -24,6 +24,8 @@ interface Testcase {
   night?: boolean;
   life: number;
   pillz: number;
+  /** Server-substituted ability per card (Hazard); null keeps the printed one. */
+  abilities?: (string | null)[];
   moves: {
     s1: [number, number, boolean];
     s2: [number, number, boolean];
@@ -61,6 +63,13 @@ for (const rec of records) {
     const lv = tc!.levels ?? [];
     const h1 = HandGenerator.handOf(tc!.cards.slice(0, 4) as HandOf<string>, lv.slice(0, 4) as HandOf<number | undefined>);
     const h2 = HandGenerator.handOf(tc!.cards.slice(4, 8) as HandOf<string>, lv.slice(4, 8) as HandOf<number | undefined>);
+    // Hazard fights with the abilities the server dealt, not the printed ones. Each such
+    // card gets a private base row, so neither the opponent nor a later test sees it.
+    tc!.abilities?.forEach((ability, i) => {
+      if (ability === null) return;
+      const hand = i < 4 ? h1 : h2;
+      hand[i % 4] = hand[i % 4].withAbility(ability);
+    });
     const p1 = new Player(tc!.life, tc!.pillz, 0);
     const p2 = new Player(tc!.life, tc!.pillz, 1);
     const g = new Game(p1, p2, h1, h2, Turn.PLAYER_1, false, tc!.night ?? false);

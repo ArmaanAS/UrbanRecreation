@@ -440,6 +440,16 @@
     "flip": false,
     "life": 12,
     "pillz": 12,
+    "abilities": [
+      null,
+      null,
+      null,
+      null,
+      "Courage: Power +4",
+      "Cancel Opp. Attack Modif.",
+      "-4 Opp Attack, Min 1",
+      null
+    ],
     "moves": [
       {
         "s1": [

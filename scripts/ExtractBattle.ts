@@ -84,6 +84,13 @@ export interface Testcase {
   flip: boolean;
   life: number;
   pillz: number;
+  /**
+   * The ability each card actually fought with, same order as `cards`, where the server
+   * replaced the printed one; null keeps the card's own. Present only when a hand holds a
+   * random-abilities Leader (Administrator's Hazard), which swaps the ability of each of its
+   * owner's three other cards for a random one before round 0, whatever the level prints.
+   */
+  abilities?: (string | null)[];
   moves: {
     s1: [number, number, boolean];
     s2: [number, number, boolean];
@@ -336,7 +343,17 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
       }
     }
   }
-  const testcase = levelMismatch ? null : buildTestcase(players, rounds, issues, night);
+  // Hazard: the substituted ability of each non-Leader card of a random-abilities owner.
+  // The hand comes from the last snapshot, whose static block carries the resolved text
+  // when the random ability was itself a Copy (the first block still shows the Copy).
+  const substituted = sides.map((k) => {
+    const characters = [...(last[k].characters as Character[])].sort((a, b) => a.index - b.index);
+    const hazard = characters.some((c) => c.ability?.abilityData?.specialAction === "random_abilities");
+    return characters.map((c) =>
+      hazard && c.ability?.abilityData?.specialAction !== "random_abilities" ? c.ability?.description ?? "No Ability" : null
+    );
+  });
+  const testcase = levelMismatch ? null : buildTestcase(players, rounds, issues, night, substituted);
 
   return {
     id,
@@ -358,11 +375,18 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
   };
 }
 
-function buildTestcase(players: ReturnType<typeof describePlayer>[], rounds: Round[], issues: string[], night: boolean): Testcase | null {
+function buildTestcase(
+  players: ReturnType<typeof describePlayer>[],
+  rounds: Round[],
+  issues: string[],
+  night: boolean,
+  substituted: (string | null)[][],
+): Testcase | null {
   const p1: Side | null = rounds[0]?.first ?? null;
   if (p1 === null) return null;
   const p2 = (1 - p1) as Side;
   if (players.some((p) => p.hand.some((c) => c.name === null))) return null;
+  const abilities = [...substituted[p1], ...substituted[p2]];
   const tc: Testcase = {
     cards: [...players[p1].hand.map((c) => c.name!), ...players[p2].hand.map((c) => c.name!)],
     levels: [...players[p1].hand.map((c) => c.level), ...players[p2].hand.map((c) => c.level)],
@@ -370,6 +394,8 @@ function buildTestcase(players: ReturnType<typeof describePlayer>[], rounds: Rou
     flip: false,
     life: players[p1].baseLife,
     pillz: players[p1].basePillz,
+    // Only in a Hazard battle, so every other record stays byte-identical.
+    ...(abilities.some((a) => a !== null) ? { abilities } : {}),
     moves: [],
   };
   for (const r of rounds) {

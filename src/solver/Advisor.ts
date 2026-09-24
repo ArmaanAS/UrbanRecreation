@@ -1016,6 +1016,18 @@ export function buildPosition(rec: Reconstructed): Built {
       why: issue ?? "no engine testcase for this battle yet",
     };
   }
+  // Hazard (a random_abilities Leader, Administrator) deals each of its owner's other cards
+  // a random ability before round 0. The extractor records the dealt text for replay, but
+  // the search and the Rust worker read the printed abilities, and a dealt Copy stays
+  // unresolved until its card is played: any advice would be for different cards.
+  if (tc.abilities !== undefined) {
+    return {
+      settled: false,
+      why:
+        "Hazard replaced a hand's abilities with random ones - advice withheld, " +
+        "the engine only searches printed abilities",
+    };
+  }
   if (rec.mySide === null) {
     return { settled: false, why: "cannot tell which side is yours yet" };
   }

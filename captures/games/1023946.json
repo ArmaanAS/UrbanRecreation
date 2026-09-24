@@ -392,6 +392,16 @@
     "flip": false,
     "life": 12,
     "pillz": 12,
+    "abilities": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      "Reprisal: Damage +4",
+      "Copy: Opp. Damage",
+      "Stop Opp. Ability"
+    ],
     "moves": [
       {
         "s1": [

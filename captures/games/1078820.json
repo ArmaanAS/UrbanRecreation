@@ -445,6 +445,16 @@
     "flip": false,
     "life": 12,
     "pillz": 12,
+    "abilities": [
+      null,
+      null,
+      null,
+      null,
+      "Protection: Power And Damage",
+      "+2 Life Per Damage",
+      "Support: Attack +3",
+      null
+    ],
     "moves": [
       {
         "s1": [

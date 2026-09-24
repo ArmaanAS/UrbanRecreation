@@ -344,6 +344,24 @@ Deno.test("live abilities missing from static card data suppress unsafe advice",
   assertEquals(built.why.includes("advice withheld"), true);
 });
 
+Deno.test("a Hazard battle suppresses advice instead of searching printed abilities", async () => {
+  // 874590: the opponent's Administrator dealt Diabolus, Karkass Cr and Nero Cr random
+  // abilities. Its testcase replays them, but the live search would use data.json's.
+  const captured = JSON.parse(
+    await Deno.readTextFile("captures/games/874590.json"),
+  ) as Parameters<typeof buildPosition>[0];
+  assertNotEquals(captured.testcase?.abilities, undefined);
+  const live = { ...captured, testcase: { ...captured.testcase!, moves: [] } };
+
+  const built = buildPosition(live);
+
+  assertEquals("game" in built, false);
+  if ("game" in built) return;
+  assertEquals(built.settled, false);
+  assertEquals(built.why.includes("Hazard"), true);
+  assertEquals(built.why.includes("advice withheld"), true);
+});
+
 Deno.test("a result ends the advisor even when a forfeited battle still says playing", async () => {
   const captured = JSON.parse(
     await Deno.readTextFile("captures/games/866431.json"),

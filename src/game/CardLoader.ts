@@ -53,6 +53,19 @@ export function registerCardJSON(j: CardJSON) {
   };
 }
 
+/**
+ * Rows that differ from their printed (id, level) row start above every getBaseKey value
+ * (16-bit id, stars 1-5 in bits 16-18), so a variant can never shadow a real card.
+ */
+let nextVariantKey = 1 << 19;
+
+/** Register a copy of the row at `key` with `patch` applied, under a key of its own. */
+export function registerVariant(key: number, patch: Partial<BaseCard>): number {
+  const variantKey = nextVariantKey++;
+  baseCards[variantKey] = { ...baseCards[key], ...patch };
+  return variantKey;
+}
+
 /** Max-level entry per card id / lower-cased name (the default when no level is given). */
 export const cardIds: Record<number, CardJSON> = {};
 export const cardNames: Record<string, CardJSON> = {};

@@ -9,6 +9,7 @@ import {
   cardYears,
   getBaseKey,
   registerCardJSON,
+  registerVariant,
 } from "./CardLoader.ts";
 import {
   AbilityStat,
@@ -56,6 +57,18 @@ export default class Card {
     c.played = this.played;
     c.night = this.night;
     c.data = { a: this.data.a, b: this.data.b } as BaseData;
+    return c;
+  }
+
+  /**
+   * A copy of this card that fights with `ability` by day and by night: the text the server
+   * substituted for the printed one (Administrator's Hazard). It gets a base row of its own,
+   * so the shared (id, level) row, and any opposing copy of the same card, keep theirs. Each
+   * call registers a new row; build hands with it, never call it from a search.
+   */
+  withAbility(ability: string): Card {
+    const c = this.clone();
+    c.key = registerVariant(this.key, { ability, nightAbility: undefined });
     return c;
   }
 

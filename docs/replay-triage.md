@@ -2,7 +2,7 @@
 
 Status from `deno test -A --no-check tests/replay/` against 383 captured battles
 (376 replay-ready; 7 ignored, 6 because they stopped mid-match and 1414087 because it deals
-card 2714, which the 2026-09-10 card data predates): 333 replay exactly and 43 mismatch. Each entry
+card 2714, which the 2026-09-10 card data predates): 338 replay exactly and 38 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -41,6 +41,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-20 | 316 | 42 | +3 Dojo Killshot and Backlash captures, all replay exactly |
 | 2026-09-24 | 331 | 45 | +19 live captures: 15 exact, 3 fresh mismatches, 1414087 unreplayable until a card refresh |
 | 2026-09-24 | 333 | 43 | Growth permanents keep their latch-round amount; a reduction naming no opponent hits its own card |
+| 2026-09-24 | 338 | 38 | Hazard games replay with the abilities the server dealt |
 
 ## Fixed
 
@@ -302,6 +303,39 @@ reduction that names no opponent, so the fix moves exactly one card-level. Fixed
 floor on the owner's card, and how the reduction orders against an own increase, are
 unobserved.
 
+### Hazard deals random abilities, and the testcase now records them
+Administrator (a Leader; ability `Hazard`, `abilityData.specialAction: "random_abilities"`)
+"replaces the abilities of the three cards present in the draw with random abilities that are
+already being used in the game". The server swaps the ability of each of its owner's three
+other cards before round 0 - even at a level that prints none - and leaves bonuses and the
+opponent's cards alone, then every dealt ability resolves by the ordinary rules. The battle's
+static block and every hand carry the dealt text. Across the six Hazard captures (874590,
+1023946, 1024821, 1078820, 1089830, 1414699) 18 of 18 owner cards differ from
+`data/data.json` and 0 of 24 opposing cards do. 874590 was filed here as unreproducible:
+Karkass Cr fought with `Brawl: Damage + 1` instead of its Sinister Symmetry, which had looked
+like a missing Brawl. 1414699 r0 is XU-Dr0ne's dealt `-4 Opp Attack, Min 1` taking Kephren's
+8 Attack to the server's 4.
+
+`ExtractBattle.ts` now writes an optional `abilities` array into the testcase, in card order,
+only when a hand holds a random-abilities card: the dealt text for that owner's non-Leader
+cards and null elsewhere, so every other record stays byte-identical. It reads the last
+snapshot, because a dealt `Copy: Opp. Bonus` shows as the Copy in the first static block
+and as the resolved ability once its card is played (874590 and 1078820 both end on
+`Support: Attack +3`). The replay gives each such card a private base row
+(`Card.withAbility`), so the opponent's copy of the same card and later tests keep the
+printed row. The live advisor refuses a Hazard battle outright, since its search and the Rust
+worker read printed abilities; the Rust projection already refuses every Leader hand
+structurally. Fixed 874590, 1023946, 1024821, 1089830 and 1414699; 1078820 now fails at
+round 2 on Protection (below). Test in `tests/solver/Advisor.test.ts` plus the replays.
+
+### Protection: Power And Damage does not refuse a reduction (TypeScript only)
+- 1078820 r2: Agent Brundel's dealt `Protection: Power And Damage` should keep Sue's `-1 Opp
+  Power And Damage, Min 3` off it; the server gives Brundel 8 Power and 24 Attack, the engine
+  7 and 21. The TypeScript `ProtectionModifier` only resists a Cancel. The Rust engine refuses
+  the reduction (semantic revision 23) on the evidence of 1069506 r0, 949439 r0, 924320 r1 and
+  942983 r2 - all four sit in the untriaged backlog below, so this is a TypeScript family
+  with five data points waiting for a fix.
+
 ## Previously triaged open rules
 
 ### End-of-round gain/reduction order — 1093173
@@ -355,16 +389,6 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   opponent-increase combat-stat definition in `captures/abilities.json` and this is its only
   selected round, so it is recorded rather than coded.
 
-### Not reproducible from a testcase
-- 874590 is a **Hazard** game and cannot be replayed as it stands. Administrator (Leader,
-  ability 4144) "replaces the abilities of the three cards present in the draw with random
-  abilities that are already being used in the game", so ReV_Next_'s Diabolus, Karkass Cr and
-  Nero Cr each fought with an ability their card does not own - Karkass Cr with "Brawl:
-  Damage + 1" instead of its real Sinister Symmetry, which is why this looked like a missing
-  Brawl. A testcase carrying only card names and levels cannot express that. Either teach
-  `ExtractBattle.ts` to record the server's per-card ability in the testcase and have the
-  replay use it, or skip games whose draw contains a Hazard leader.
-
 ## Fresh capture backlog
 
 The expanded corpus now has 39 additional mismatches that have not yet been
@@ -372,13 +396,14 @@ grouped or attributed to rules. They are recorded as regression targets only; in
 first failing round and group them by ability keyword before changing the engine:
 
 924320, 924573, 924615, 924669, 924740, 924853, 924890, 925818, 942983, 943111,
-943231, 946810, 947010, 947670, 948108, 948390, 949439, 956902, 1023946,
-1024592, 1024732, 1024821, 1025413, 1059149, 1060341, 1065308, 1066210,
-1069506, 1078555, 1078820, 1079078, 1089830, 1089974, 1090269,
+943231, 946810, 947010, 947670, 948108, 948390, 949439, 956902,
+1024592, 1024732, 1025413, 1059149, 1060341, 1065308, 1066210,
+1069506, 1078555, 1078820, 1079078, 1089974, 1090269,
 1091235, 1091381, 1092066, 1093569.
 
-The 2026-09-23 live session added three more: 1414168, 1414699 and 1414749, the first
-now fixed and the last with its first failure fixed (both above, as is 1088641). A fourth,
+The 2026-09-23 live session added three more: 1414168, 1414699 and 1414749. The first two
+are fixed and the last has had its first failure fixed (all above, as are 1088641 and the
+Hazard games 1023946, 1024821 and 1089830). A fourth,
 1414087, has no testcase at all: its opponent deals card 2714 (level 2, `Brawl: Damage + 1`),
 which is newer than the 2026-09-10 character dump, so the extractor has no name, clan or
 stats for it. Run `__ur.dumpCharacters()` and `deno task cards`, then `deno task extract`.
@@ -407,8 +432,8 @@ under Damage Exchange since the first triage pass.
   every captured hand against `data/data.json` gives 66 differences, and they are all one of
   four things: a Copy card, where the server reports the ability it resolved to rather than
   "Copy: Opp. Ability"; a bonus sent as "None" because the hand holds fewer than two cards of
-  that clan; a Day/Night card, where the DB row is the day variant; or a Hazard game (874590),
-  where the abilities are random. None of these are card-data bugs, but all of them will look
+  that clan; a Day/Night card, where the DB row is the day variant; or a Hazard game, where
+  the abilities are random and the testcase now carries them. None of these are card-data bugs, but all of them will look
   like engine bugs in a replay.
 - Brawl, Support, Growth, Degrowth and Equalizer are per-X multipliers (`Per` in
   `BasicModifier.ts`). Symmetry and Asymmetry are instead conditions that gate the complete

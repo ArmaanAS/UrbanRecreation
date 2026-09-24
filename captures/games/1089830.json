@@ -403,6 +403,16 @@
     "flip": false,
     "life": 12,
     "pillz": 12,
+    "abilities": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      "+1 Life Per Damage",
+      "Reprisal: Protect. Power And Damage",
+      "Brawl: Attack +5"
+    ],
     "moves": [
       {
         "s1": [
