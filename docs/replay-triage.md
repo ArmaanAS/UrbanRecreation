@@ -2,7 +2,7 @@
 
 Status from `deno test -A --no-check tests/replay/` against 383 captured battles
 (376 replay-ready; 7 ignored, 6 because they stopped mid-match and 1414087 because it deals
-card 2714, which the 2026-09-10 card data predates): 331 replay exactly and 45 mismatch. Each entry
+card 2714, which the 2026-09-10 card data predates): 333 replay exactly and 43 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -40,6 +40,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-20 | 313 | 42 | +1 Dojo Life-room capture, replays exactly |
 | 2026-09-20 | 316 | 42 | +3 Dojo Killshot and Backlash captures, all replay exactly |
 | 2026-09-24 | 331 | 45 | +19 live captures: 15 exact, 3 fresh mismatches, 1414087 unreplayable until a card refresh |
+| 2026-09-24 | 333 | 43 | Growth permanents keep their latch-round amount; a reduction naming no opponent hits its own card |
 
 ## Fixed
 
@@ -257,6 +258,50 @@ multipliers. The same parser fix covers the corresponding Life Lost and opponent
 cards, including Max/Min clauses after `Lost`. Fixed 1060510. Test in
 `tests/ability/LostResources.test.ts` plus the captured replay.
 
+### A Growth permanent keeps the amount it latched with
+Abby Salia's `Growth: Heal 1 Max. 12` wins round 1 (zero-based) of 1414168, and the server
+heals 2 in round 2 and 2 again in round 3 - the raw battle file carries the post-round
+entry with `quantity` 0 in the latching round (Heal is delayed), then 2 and 2. The engine
+re-read the Growth multiplier every time the permanent paid, so it healed the current
+round's 3 and then 4. The 2 is value x the 1-based round the card won in, which is what
+the server's text for every Growth permanent says ("multiplied by the number of the round
+in which <card> has won"). Wooly's ordinary `Growth: Power +1` in round 3 of the same battle
+still scales by the current round (6 + 4 + 2 = 12), so only a latched permanent freezes.
+
+`Ability.canApply` now multiplies a Growth/Degrowth permanent's change by the latch round
+once, when it latches, and drops the multiplier. Fixed 1414168. Tests in
+`tests/ability/GrowthPermanent.test.ts`. The evidence is one latch paid twice: it rules
+out every reading that rescales by the current round, the rounds since the latch or the
+round before, but only the printed text rules out a flat x2 or a count of the owner's lost
+rounds. A Growth permanent that latches in round 0 or 2 would settle it; the card data has
+20 of them (Growth Heal, Poison, Regen, Toxin and the clan-gated Dope) and no Degrowth one.
+The Rust projection refuses every Growth permanent, so nothing changes there; if it ever
+admits one, the latch-round factor has to be bound into the latched amount.
+
+The extracted record for 1414168 has `postRoundAbilities` empty in rounds 1 and 2 although
+the raw battle file carries the permanent's entries there, so read the raw file when a
+permanent's payments matter.
+
+### A reduction that names no opponent hits its own card
+Bugamon lv2 prints `Growth: -1 Power And Damage, Min 4`, a drawback on its own card
+(`abilityData` 1676, `sideAffected: "player"`). Normalising drops the `Opp` after a negative
+number, and the compiler then aimed every `-N <stat>` at the opposing card, so the engine
+lowered the opponent instead. Both selected rounds show Bugamon falling by exactly the round
+number while the opposing card is untouched: 1088641 r0, Bugamon 8/7 -> 7/6 (35 Attack)
+against Aurora at her printed 7/5 plus Support (61), and 1414749 r1, Bugamon 6/5 (18) against
+Sandro Cr at 6 + 4 Support - 2 from the opposing Dominion bonus = 8 (48). The Dominion bonus
+visibly applies in rounds 0 and 2 of the same match, so it cannot be the missing reduction.
+
+The compiler now reads from the raw text whether it names the opponent, and a Power,
+Damage or Attack reduction that does not - and is not a `Cards`/`Xantiax` both-sides form -
+lands on its owner's card in the own-stat phase. Life and Pillz reductions are unchanged,
+and Backlash still turns itself back in `Condition.compile`. Every ability and bonus text in
+the card data and in `captures/abilities.json` was scanned: this is the only combat-stat
+reduction that names no opponent, so the fix moves exactly one card-level. Fixed 1088641;
+1414749 now fails later (below). Test in `tests/ability/OwnReduction.test.ts`. The Min 4
+floor on the owner's card, and how the reduction orders against an own increase, are
+unobserved.
+
 ## Previously triaged open rules
 
 ### End-of-round gain/reduction order — 1093173
@@ -302,6 +347,14 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   `Copy` at PRE3. One round, so recorded rather than coded. A second round where an
   Exchange meets an own increase registered before it would settle it.
 
+### An increase to the opposing card - 1414749 (single point)
+- 1414749 r2: Pepo Brahms' `Growth: Opp. Attack +1` (`abilityData` 5210, `sideAffected:
+  "opponent"`, increase) raises the opposing Schredder's Attack: the server gives 6 x 3 + 3 =
+  21 in round 3, the engine 18. Normalised it reads `Opp +1 Attack`, which neither numeric
+  branch of `compileAbility` accepts, so it compiles to nothing. 5210 is the only
+  opponent-increase combat-stat definition in `captures/abilities.json` and this is its only
+  selected round, so it is recorded rather than coded.
+
 ### Not reproducible from a testcase
 - 874590 is a **Hazard** game and cannot be replayed as it stands. Administrator (Leader,
   ability 4144) "replaces the abilities of the three cards present in the draw with random
@@ -321,10 +374,11 @@ first failing round and group them by ability keyword before changing the engine
 924320, 924573, 924615, 924669, 924740, 924853, 924890, 925818, 942983, 943111,
 943231, 946810, 947010, 947670, 948108, 948390, 949439, 956902, 1023946,
 1024592, 1024732, 1024821, 1025413, 1059149, 1060341, 1065308, 1066210,
-1069506, 1078555, 1078820, 1079078, 1088641, 1089830, 1089974, 1090269,
+1069506, 1078555, 1078820, 1079078, 1089830, 1089974, 1090269,
 1091235, 1091381, 1092066, 1093569.
 
-The 2026-09-23 live session added three more: 1414168, 1414699 and 1414749. A fourth,
+The 2026-09-23 live session added three more: 1414168, 1414699 and 1414749, the first
+now fixed and the last with its first failure fixed (both above, as is 1088641). A fourth,
 1414087, has no testcase at all: its opponent deals card 2714 (level 2, `Brawl: Damage + 1`),
 which is newer than the 2026-09-10 character dump, so the extractor has no name, clan or
 stats for it. Run `__ur.dumpCharacters()` and `deno task cards`, then `deno task extract`.

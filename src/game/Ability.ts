@@ -36,7 +36,13 @@ export default class Ability {
   conditions: Condition[];
   delayed?: boolean = undefined;
   won?: boolean = undefined;
+  /**
+   * Whether the printed text names the opponent. Normalising drops the "Opp" after a
+   * negative number, so it has to be read from the raw text: only compile() uses it.
+   */
+  private namesOpp: boolean;
   constructor(s: string, type = AbilityType.UNDEFINED) {
+    this.namesOpp = /\bOpp/i.test(s);
     const conditions = Abilities.split(s);
     this.ability = conditions.pop()!;
     // const ability = conditions.pop()!;
@@ -136,6 +142,18 @@ export default class Ability {
         }
 
         this.won = true;
+
+        // A Growth permanent's amount is fixed by the round it latches in, not rescaled by
+        // every later round: Abby Salia's "Growth: Heal 1 Max. 12" wins round 2 of captured
+        // battle 1414168 and heals 2 in rounds 3 and 4 alike, as the server's own text says
+        // ("multiplied by the number of the round in which Abby Salia has won"). These mods
+        // are this entry's own copies (see `clone`), and unmake drops the entry that latched.
+        for (const mod of this.mods) {
+          if (mod instanceof BasicModifier && (mod.per?.type === 7 || mod.per?.type === 8)) {
+            mod.change *= mod.getMultiplier(data);
+            mod.per = undefined;
+          }
+        }
       }
 
       if (this.delayed) {
@@ -270,7 +288,14 @@ export default class Ability {
         // let mod = new BasicModifier(+tokens[0]);
         const mod = new BasicModifier();
         mod.change = +tokens[0];
-        mod.setOpp(true);
+        // A reduction hits the opposing card unless its text says otherwise. Bugamon's
+        // "Growth: -1 Power And Damage, Min 4" names no opponent and lowers Bugamon's own
+        // Power and Damage (captured 1414749 r1 and 1088641 r0, sideAffected "player"). It
+        // is the only such combat-stat text in the card data; Life and Pillz keep aiming at
+        // the opponent, and Backlash turns itself back to the owner in Condition.compile.
+        mod.setOpp(
+          dupe || this.namesOpp || !["Power", "Damage", "Attack"].includes(a),
+        );
         failed = false;
 
         if (["Power", "Damage", "Life", "Pillz", "Attack"].includes(a)) {
