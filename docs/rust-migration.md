@@ -2536,6 +2536,67 @@ them (`VictoryOrDefeatGainAgainstUnpinnedEffect`). Malformed compounds, and the 
 That shrinks two fixtures: 1130791 to two rounds and 878178 to three, where Galileo's closed
 `Revenge:` compound is selected. The gate grows from 768 to 783 rounds.
 
+On 2026-09-24 nineteen live captures took the corpus to 383 complete draws, and eight of them
+were eligible at revision 67 without any change, so the count stood at 242 before the next
+slice. `513`, `644` and `2194` joined the previous-round inventory without a code change.
+
+Semantic revision 68 admits two things together, because they share draws. The first is the
+Oblivion clan bonus `Copy: Opp. Ability`, which was never refused as a grammar. It is catalog
+bonus 56, in the clan-bonus namespace, and registry definition 56 is `-4 Opp Damage, Min 2`,
+so the Copy branch's `lookup_capture` failed and the report fell back to the first id of the
+Copy alias group - 2918, which is also the id every captured static block carries for the
+bonus. Catalog construction now bridges exactly the active effective Oblivion bonus (effective
+clan 57, Bonus slot, catalog 56, exact text) to 2918, the eighth clan-bonus bridge after
+Roots, GHEIST, Piranas, Jungo, Freaks, Komboka and Zenith, and the catalog-context policy
+revision goes from 3 to 4. The prepared identity keeps catalog id 56, and keying on the
+effective clan admits an Oculus infiltrating Oblivion. Nothing else changes: an adopted plan
+already runs in the copier's own slot and Support context, and revision 21's totality rule
+still closes a match in which some opposing ability has no concrete plan to adopt. The second
+is `Unison : Stop Opp. Ability` (`3839`, `5752`) and `Unison : Stop Opp. Bonus` (`5753`), the
+revision-47 conditional Stop with one more already-resolved predicate, `OwnerHandUnison`,
+which the structured record marks with its clan-mates flag rather than a condition field.
+Card abilities only; the other printed levels own no registry definition and stay closed. The
+lines read 2 and 2 alone and 8 together, and the admission alone unlocked exactly those 8.
+One of them does not survive the refusal below, so the slice unlocks 7 - `874712`, `877436`,
+`948390`, `956805`, `963796`, `1025470` and `1091770` - taking eligibility from 242 to 249 of
+383.
+
+The server pins the Oblivion Copy in sixteen rounds across 874712, 956805, 1025470, 1079813
+and 1091770: the copier adopts the opposing selected card's ability in its Bonus slot and
+judges it for itself. A stopped source is still copied (874712/2: Kassar copies Callie's
+reduction while his own `Stop Opp. Ability` stops the original), a copied Equalizer multiplies
+by the copier's opponent's level (956805/2: Latifa 8 + 5 = 13), a copied predicate is decided
+for the copier (1025470/0: Wez copies Aneta's Courage while moving second, and it does
+nothing), and a copied Stop can itself be stopped in the PRE4 graph (924669/3). The Unison
+Stop Bonus fires in 874712/0, where Aurora's Rescue Support is stopped (7 x 6 = 42, not 54),
+and in 1091770/3, where Zatapa's Power +2 is (6 x 2 = 12); it is inert in 1079813/3, where the
+hand is three Oblivion and a Riots. The Unison Stop Ability fires in 877436/3: Corvine's
+all-Montana hand stops Dave's `+2 Life` on his knockout win, and his owner stays on 3.
+
+The replay gate gains only the Unison rounds - 874712's first and 877436's fourth. The rest of
+these draws copy through the Oblivion bonus, which the replay sees as the server's resolved
+text with Copy provenance and still refuses. The gate grows from 783 to 788 rounds.
+
+Before this slice no catalog Copy sat in a Bonus slot, so the bridge would newly run adopted
+abilities from one, and two of them have nothing to stand on there. Anita's `274` conversion is
+identity-locked to her printed Ability, and a conditional Stop is admitted from the Ability
+slot only; no round shows either copied into a Bonus slot. Construction now refuses a match
+where an opposing Bonus-slot Copy could adopt either (`BonusSlotCopyOfUnpinnedSource`). That
+costs 1079813, where Anita faces three Oblivion copies - its only Anita round has the copier
+moving second, which pays nothing either way.
+
+Two gaps are left as they were, for the owner. An ability-slot Copy can already adopt Anita's
+`274` at resolution although `combat_stat_diagnostic.rs` says the conversion cannot be
+borrowed through Copy provenance; the already-eligible 874837, 875032 and 875155 face Anita
+with such a Copy, and closing it would cost all three. And `life_writes`, `pillz_writes` and
+`write_outcomes` report nothing for a Copy, so a cross-owner floor refusal without its own
+Copy clause cannot see what a Copy imports. No imported writer meets an opposing write on the
+same resource in these seven draws, but the Oblivion bonus puts a Copy in many more hands, so
+the next refusal that relies on those helpers should say what it does about one. Several
+adopted plans in these draws - a copied `Defeat: +2 Life` in 1091770, and a copied
+opponent-Life reduction and Protection in the round-0 stub 963796 - rest on the pinned
+adopt-into-the-copier's-slot rule rather than a paying round of their own.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

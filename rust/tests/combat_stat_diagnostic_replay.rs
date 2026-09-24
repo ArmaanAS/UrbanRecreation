@@ -661,6 +661,13 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1080264, 3),
     (1088123, 4),
     (1066589, 4),
+    // Revision 68 admits `Unison : Stop Opp. Ability` and `Unison : Stop Opp. Bonus` as the
+    // conditional Stop under the one-clan gate. Viperine's all-Oblivion hand stops Aurora's
+    // Rescue Support in 874712/0 (7 x 6 = 42, not 54); Corvine's all-Montana hand stops Dave's
+    // `+2 Life` in 877436/3, where Dave's knockout win leaves his owner on 3, not 5. The rest of
+    // 874712 has the Oblivion bonus copying, which the replay refuses as dynamic provenance.
+    (874712, 1),
+    (877436, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -2042,11 +2049,12 @@ fn selected_stop_ability_is_visible_and_rejected_fail_closed() {
             .unwrap()
             .hand_index,
     );
-    // Courage Stop Opp. Ability is admitted by grammar since revision 47; the Unison form
-    // is not, so it is the selected control that must still refuse the round.
+    // Courage Stop Opp. Ability is admitted by grammar since revision 47 and the Unison form
+    // since revision 68; the clan-gated `Asymm.:` form is not, so it is the selected control
+    // that must still refuse the round.
     source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
-        id: 3839,
-        description: "Unison : Stop Opp. Ability".to_owned(),
+        id: 4999,
+        description: "[clan:31][clan:46][clan:54][clan:49] Asymm.: Stop Opp. Ability".to_owned(),
     });
     let prepared =
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();

@@ -3187,7 +3187,8 @@ fn impossible_execute_plans_fail_at_construction() {
             InvalidCombatStatPlanReasonV1::CappedIncrease,
         ),
         // Since revision 47 a Stop may carry the predicates the conditional-Stop grammar
-        // admits; these are the ones it still may not.
+        // admits (and since revision 68 `OwnerHandUnison`); these are the ones it still may
+        // not.
         (
             execute(
                 3,
@@ -3199,7 +3200,7 @@ fn impossible_execute_plans_fail_at_construction() {
         (
             execute(
                 42,
-                CombatStatPredicateV1::OwnerHandUnison,
+                CombatStatPredicateV1::MatchIsDay,
                 CombatStatEffectV1::StopOpponentAbility,
             ),
             InvalidCombatStatPlanReasonV1::ConditionalControl,
@@ -7299,6 +7300,63 @@ fn dope_latches_pays_at_once_caps_at_its_max_and_pays_a_knocked_out_owner() {
         .unwrap();
     assert_eq!(report.players[PlayerId::P1].life, 0);
     assert_eq!(report.players[PlayerId::P1].pillz, 13 - 4 + 1);
+}
+
+/// The Oblivion clan bonus runs the ability it adopts from its own Bonus slot. A conditional
+/// Stop is admitted from the Ability slot only and no round shows one copied into a Bonus
+/// slot, so an opposing Bonus-slot Copy of Abilities refuses it; an unconditional Stop
+/// (924669/3) and an ability-slot Copy are admitted.
+#[test]
+fn a_bonus_slot_copy_refuses_a_conditional_stop_it_could_adopt() {
+    let conditional = execute(
+        490,
+        CombatStatPredicateV1::OwnerWonPreviousRound,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let unconditional = execute(
+        877,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    for (stop, copy_in_bonus, refused) in [
+        (conditional, true, true),
+        (conditional, false, false),
+        (unconditional, true, false),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = stop;
+        if copy_in_bonus {
+            cards[PlayerId::P2][2].bonus = copy;
+            cards[PlayerId::P2][2].source_bonus_support_count = 1;
+        } else {
+            cards[PlayerId::P2][2].ability = copy;
+            cards[PlayerId::P2][2].source_ability_support_count = 1;
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason: InvalidCombatStatPlanReasonV1::BonusSlotCopyOfUnpinnedSource,
+                        ..
+                    })
+                ),
+                "{stop:?} / bonus copy {copy_in_bonus}"
+            );
+        } else {
+            assert!(result.is_ok(), "{stop:?} / bonus copy {copy_in_bonus}");
+        }
+    }
 }
 
 /// No round shows a Dope beside another effect on its owner's Pillz, and its cap makes the

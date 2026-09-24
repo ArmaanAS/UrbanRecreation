@@ -2539,6 +2539,75 @@ fn strict_catalog_match_pins_the_active_piranas_stop_bonus_identity() {
     }
 }
 
+/// The Oblivion clan bonus `Copy: Opp. Ability` is catalog bonus 56, while registry
+/// definition 56 is `-4 Opp Damage, Min 2`; the captures carry it as 2918. Only the active
+/// effective clan is bridged, and the prepared identity keeps the catalog id.
+#[test]
+fn strict_catalog_match_bridges_only_the_active_oblivion_copy_bonus() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, rescue) = fully_supported_hands();
+    // The Oblivion hand of captured battle 1025470.
+    let oblivion = [
+        CardKey::new(2257, 3), // Alter Ld
+        CardKey::new(2248, 3), // Firmin
+        CardKey::new(2295, 3), // Pere Barali
+        CardKey::new(2273, 2), // Wez Cr
+    ];
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(oblivion, rescue, true),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    for slot in 0..4 {
+        let CatalogCombatStatSourceDispositionV1::CopyOpponentSource {
+            identity,
+            copied,
+            predicate,
+        } = &prepared.preparation()[PlayerId::P1][slot].bonus
+        else {
+            panic!("active Oblivion bonus in slot {slot} was not prepared as a Copy")
+        };
+        assert_eq!(identity.catalog_id, Some(56));
+        assert_eq!(identity.registry_definition_id, 2918);
+        assert!(identity.registry_alias_ids.contains(&2918));
+        assert_eq!(*copied, CopiedSourceKindV1::Ability);
+        assert_eq!(*predicate, CombatStatPredicateV1::Always);
+        assert!(matches!(
+            prepared.match_spec().cards[PlayerId::P1][slot].bonus,
+            CombatStatSourcePlanV1::CopyOpponentSource {
+                source_id: 2918,
+                copied: CopiedSourceKindV1::Ability,
+                predicate: CombatStatPredicateV1::Always,
+            }
+        ));
+    }
+
+    // A lone Oblivion card has no active bonus, so there is nothing to bridge.
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(2248, 3), // Firmin
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            rescue,
+            true,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert!(!matches!(
+        prepared.preparation()[PlayerId::P1][0].bonus,
+        CatalogCombatStatSourceDispositionV1::CopyOpponentSource { .. }
+    ));
+}
+
 #[test]
 fn strict_catalog_match_admits_unconditional_copy_and_rejects_conditional_variants() {
     let catalog = catalog();
@@ -2885,7 +2954,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 3);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 4);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -2966,20 +3035,36 @@ fn strict_constructor_derives_oculus_and_night_and_rejects_dynamic_sources() {
         }) if description == "Day: Power And Damage + 1"
     ));
 
+    // The Oblivion bonus copies the opposing selected card's ability. Since revision 68 its
+    // catalog id is bridged to the captured definition, so it is prepared like any other
+    // unconditional Copy - and, like one, it closes the match at construction when some
+    // opposing ability it could face has no concrete plan to adopt: here Saki's own Copy.
     let oblivion = [
         CardKey::new(2243, 1),
         CardKey::new(2244, 1),
         CardKey::new(123, 1),
         CardKey::new(138, 1),
     ];
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(oblivion, p2, false), &catalog, &registry, PROJECTION)
+            .unwrap();
     assert!(matches!(
-        CatalogCombatStatMatchV1::new(input(oblivion, p2, false), &catalog, &registry, PROJECTION),
-        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-            player: PlayerId::P1,
-            source_kind: CombatStatEffectSourceV1::Bonus,
-            ref description,
+        prepared.preparation()[PlayerId::P1][0].bonus,
+        CatalogCombatStatSourceDispositionV1::CopyOpponentSource {
+            copied: CopiedSourceKindV1::Ability,
             ..
-        }) if description == "Copy: Opp. Ability"
+        }
+    ));
+    let mut copying = p2;
+    copying[0] = CardKey::new(1020, 3); // Saki: `Copy: Opp. Bonus`
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(oblivion, copying, false),
+            &catalog,
+            &registry,
+            PROJECTION
+        ),
+        Err(CatalogCombatStatMatchErrorV1::EnginePlan(_))
     ));
 }
 

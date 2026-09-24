@@ -95,7 +95,7 @@ use crate::effect_registry::{
     StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 67;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 68;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -309,7 +309,9 @@ fn reprisal_stop_opponent_ability_shape_matches(input: &StructuredEffectV1) -> b
 
 /// Recognize `Stop Opp. Ability` and `Stop Opp. Bonus` under the condition prefixes whose
 /// predicate the projection already resolves: `Courage:`, `Confidence:`, `Revenge:`,
-/// `Asymmetry:`, `Symmetry:` and `Night:`. Every one of those predicates is decided before
+/// `Asymmetry:`, `Symmetry:`, `Night:` and, since revision 68, `Unison :` - the owner's whole
+/// hand sharing the selected card's effective clan, which the structured record marks with
+/// its clan-mates flag rather than a condition field. Every one of those predicates is decided before
 /// the Stop graph, so a Stop whose condition fails is simply not live there - which is the
 /// reference's `Events.executeCancels` order and already how `active_effect` and
 /// `source_liveness` treat Reprisal. Reprisal keeps its identity lock and is not admitted
@@ -348,6 +350,13 @@ pub(crate) fn classify_conditional_stop(
         (
             CombatStatPredicateV1::MatchIsNight,
             "Night: ",
+            PositionRequirementV1::Both,
+            UNCONDITIONAL,
+        )
+    } else if input.is_clanmates_count_linked {
+        (
+            CombatStatPredicateV1::OwnerHandUnison,
+            "Unison : ",
             PositionRequirementV1::Both,
             UNCONDITIONAL,
         )
@@ -418,6 +427,7 @@ pub(crate) fn classify_conditional_stop(
         attribute: AttributeAffectedV1::None,
         action: AttributeActionV1::None,
         special: input.special_action,
+        clanmates_count: predicate == CombatStatPredicateV1::OwnerHandUnison,
         ..POST_ROUND_SHAPE
     };
     (shape_matches(input, shape) && description == format!("{prefix}Stop Opp. {target}"))
@@ -435,6 +445,7 @@ pub(crate) fn conditional_stop_predicate_admitted(predicate: CombatStatPredicate
             | CombatStatPredicateV1::SelectedHandSlotsMatch
             | CombatStatPredicateV1::SelectedHandSlotsDiffer
             | CombatStatPredicateV1::MatchIsNight
+            | CombatStatPredicateV1::OwnerHandUnison
             | CombatStatPredicateV1::OwnerClanIn(_)
             | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
             | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
@@ -6067,9 +6078,9 @@ mod tests {
             None
         );
         // `3953`, the Unison Damage Exchange, is the conditional stat-Copy grammar's since
-        // revision 50, and `4119`, the Unison Pillz-Left Attack, the Pillz magnitude's since
-        // revision 51.
-        for id in [3839, 3973, 4015, 4033, 4695] {
+        // revision 50, `4119`, the Unison Pillz-Left Attack, the Pillz magnitude's since
+        // revision 51, and `3839`, the Unison Stop, the conditional Stop's since revision 68.
+        for id in [3973, 4015, 4033, 4695] {
             assert_eq!(
                 classify_combat_stat_effect(
                     registry.get(id).unwrap(),
@@ -7850,6 +7861,21 @@ mod tests {
                 SupportedEffectV1::StopOpponentAbility,
                 CombatStatPredicateV1::MatchIsNight,
             ),
+            (
+                3839,
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::OwnerHandUnison,
+            ),
+            (
+                5752,
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::OwnerHandUnison,
+            ),
+            (
+                5753,
+                SupportedEffectV1::StopOpponentBonus,
+                CombatStatPredicateV1::OwnerHandUnison,
+            ),
         ] {
             let definition = registry.get(id).expect("registry definition");
             assert_eq!(
@@ -7863,9 +7889,9 @@ mod tests {
                 "definition {id} as a bonus",
             );
         }
-        // Reprisal keeps its identity lock, and the Unison, `Bet >` and clan-gated forms are
-        // other grammars.
-        for id in [3839, 5752, 5753, 4860, 4949, 4999, 5738] {
+        // Reprisal keeps its identity lock, and the `Bet >` and clan-gated forms are other
+        // grammars.
+        for id in [4860, 4949, 4999, 5738] {
             let definition = registry.get(id).expect("registry definition");
             assert_eq!(
                 classify_conditional_stop(definition, CombatStatEffectSourceV1::Ability),
@@ -7886,6 +7912,11 @@ mod tests {
             ("589", "value", serde_json::json!(1)),
             ("2320", "indexRequirement", serde_json::json!("symmetry")),
             ("5564", "positionRequirement", serde_json::json!("attacker")),
+            // The clan-mates flag is the only structured trace of `Unison :`: without it the
+            // text is refused, and under another condition the record is a compound.
+            ("5753", "isClanmatesCountLinked", serde_json::json!(false)),
+            ("5753", "previousRoundRequirement", serde_json::json!("win")),
+            ("3839", "isSupport", serde_json::json!(true)),
         ] {
             let mut malformed = source.clone();
             malformed[id]["abilityData"][field] = value.clone();
@@ -7900,6 +7931,17 @@ mod tests {
                 "malformed {id} {field} = {value}",
             );
         }
+        // And the flag under the plain text is not a plain Stop either.
+        let mut retexted = source.clone();
+        retexted["3839"]["description"] = serde_json::json!("Stop Opp. Ability");
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_combat_stat_effect(
+                retexted.get(3839).unwrap(),
+                CombatStatEffectSourceV1::Ability
+            ),
+            None
+        );
     }
 
     #[test]

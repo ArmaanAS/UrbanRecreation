@@ -147,7 +147,14 @@ const PIRANAS_CLAN_ID: u32 = 42;
 const PIRANAS_CATALOG_BONUS_ID: u32 = 40;
 const PIRANAS_STOP_BONUS_REGISTRY_ID: u32 = 333;
 const STOP_OPPONENT_BONUS_DESCRIPTION: &str = "Stop Opp. Bonus";
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 3;
+/// The Oblivion clan bonus `Copy: Opp. Ability` is catalog bonus 56 - registry definition 56
+/// is `-4 Opp Damage, Min 2` - and capture-registry definition 2918, the id every captured
+/// static block carries for it.
+const OBLIVION_CLAN_ID: u32 = 57;
+const OBLIVION_CATALOG_BONUS_ID: u32 = 56;
+const OBLIVION_COPY_ABILITY_BONUS_REGISTRY_ID: u32 = 2918;
+const COPY_OPPONENT_ABILITY_DESCRIPTION: &str = "Copy: Opp. Ability";
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 4;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -934,7 +941,19 @@ fn prepare_catalog_source(
     // id that is not a definition of this exact text and shape stays fail-closed, and
     // description alone never admits.
     if is_copy_opponent_source_description(description) {
-        let definition = catalog_id
+        // Clan bonus ids are a separate namespace: bridge only the active effective Oblivion
+        // bonus, like the Stop bridges below. Its identity keeps the catalog id.
+        let registry_id = match (source_kind, effective_clan_id, catalog_id) {
+            (
+                CombatStatEffectSourceV1::Bonus,
+                OBLIVION_CLAN_ID,
+                Some(OBLIVION_CATALOG_BONUS_ID),
+            ) if description == COPY_OPPONENT_ABILITY_DESCRIPTION => {
+                Some(OBLIVION_COPY_ABILITY_BONUS_REGISTRY_ID)
+            }
+            _ => catalog_id,
+        };
+        let definition = registry_id
             .and_then(|id| registry.lookup_capture(id, description).ok())
             .filter(|definition| classify_copy_opponent_source(definition).is_some());
         let Some(definition) = definition else {

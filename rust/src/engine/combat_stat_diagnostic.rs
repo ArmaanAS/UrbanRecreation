@@ -967,6 +967,10 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// land in the same round, or an opposing Copy: 1093173/1 shows the engine's order is not
     /// the server's for exactly this compound.
     OpponentPillzAndLifeAgainstUnpinnedEffect,
+    /// A source an opposing Bonus-slot Copy - the Oblivion clan bonus - could run from its
+    /// Bonus slot where no round shows it there: Anita's identity-locked conversion, or a
+    /// conditional Stop, which the validator admits from the Ability slot only.
+    BonusSlotCopyOfUnpinnedSource,
     KillshotPillzAndLifeSource,
     DefeatPillzSource,
     BothPlayersGainSource,
@@ -1413,6 +1417,24 @@ pub(crate) fn unmodelled_source_context(
     opponent: &[CombatStatCardPlanV1; HAND_SIZE],
 ) -> Option<InvalidCombatStatPlanReasonV1> {
     match plan {
+        // The Oblivion clan bonus adopts the opposing selected card's ability and runs it from
+        // its own Bonus slot. That is pinned for plain effects and for an unconditional Stop
+        // (924669/3), but no round shows Anita's conversion there - its identity lock names
+        // the printed Ability - or a conditional Stop, which the validator admits from the
+        // Ability slot only. An ability-slot Copy of Anita is older and left as it was.
+        CombatStatSourcePlanV1::Execute {
+            source_id,
+            predicate,
+            effect,
+        } if opposing_bonus_copy_can_take(plan, own, opponent)
+            && (source_id == 274
+                || (matches!(
+                    effect,
+                    CombatStatEffectV1::StopOpponentAbility | CombatStatEffectV1::StopOpponentBonus
+                ) && predicate != CombatStatPredicateV1::Always)) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::BonusSlotCopyOfUnpinnedSource)
+        }
         CombatStatSourcePlanV1::Execute {
             effect:
                 CombatStatEffectV1::ModifyCombatStat {
@@ -1702,6 +1724,26 @@ fn opposing_copy_can_take(
         source_plans(opponent).any(|opposing| {
             matches!(
                 opposing,
+                CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } if copied == kind
+            )
+        })
+    };
+    own.iter().any(|card| {
+        (card.ability == plan && copies(CopiedSourceKindV1::Ability))
+            || (card.bonus == plan && copies(CopiedSourceKindV1::Bonus))
+    })
+}
+
+/// Whether an opposing Bonus-slot Copy could take `plan` and run it from its Bonus slot.
+fn opposing_bonus_copy_can_take(
+    plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let copies = |kind| {
+        opponent.iter().any(|opposing| {
+            matches!(
+                opposing.bonus,
                 CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } if copied == kind
             )
         })
