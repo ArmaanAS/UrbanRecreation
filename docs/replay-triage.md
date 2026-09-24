@@ -1,8 +1,8 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 361 captured battles
-(355 replay-ready, 6 ignored because they stopped mid-match): 313 replay exactly and 42
-mismatch. Each entry
+Status from `deno test -A --no-check tests/replay/` against 383 captured battles
+(376 replay-ready; 7 ignored, 6 because they stopped mid-match and 1414087 because it deals
+card 2714, which the 2026-09-10 card data predates): 331 replay exactly and 45 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -38,6 +38,8 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-17 | 310 | 42 | Bet > N Pillz gates its effect; Fury settles with the Damage dealt; a gift of Opp. Pillz needs no pool |
 | 2026-09-19 | 312 | 42 | Dojo battles extracted and replayed like any other room (+1 capture) |
 | 2026-09-20 | 313 | 42 | +1 Dojo Life-room capture, replays exactly |
+| 2026-09-20 | 316 | 42 | +3 Dojo Killshot and Backlash captures, all replay exactly |
+| 2026-09-24 | 331 | 45 | +19 live captures: 15 exact, 3 fresh mismatches, 1414087 unreplayable until a card refresh |
 
 ## Fixed
 
@@ -321,6 +323,11 @@ first failing round and group them by ability keyword before changing the engine
 1024592, 1024732, 1024821, 1025413, 1059149, 1060341, 1065308, 1066210,
 1069506, 1078555, 1078820, 1079078, 1088641, 1089830, 1089974, 1090269,
 1091235, 1091381, 1092066, 1093569.
+
+The 2026-09-23 live session added three more: 1414168, 1414699 and 1414749. A fourth,
+1414087, has no testcase at all: its opponent deals card 2714 (level 2, `Brawl: Damage + 1`),
+which is newer than the 2026-09-10 character dump, so the extractor has no name, clan or
+stats for it. Run `__ur.dumpCharacters()` and `deno task cards`, then `deno task extract`.
 
 The five that arrived with the 2026-09-17 captures are no longer here: 1130425, 1130726,
 1131144, 1207064 and 1093129 are all fixed above, and so is 901004, which had been filed

@@ -304,12 +304,19 @@ fn normalize_card(
             format!("is null for card {} level {}", key.id, key.level),
         )
     })?;
+    let source_clan = card.clan.ok_or_else(|| {
+        invalid(
+            battle_id,
+            "players[].hand[].clan",
+            format!("is null for card {} level {}", key.id, key.level),
+        )
+    })?;
 
     Ok(ReplayCard {
         key,
         hand_index,
         source_name,
-        source_clan: card.clan,
+        source_clan,
         in_battle_id: card.in_battle_id,
         state: card.state,
         source_ability: card.ability.map(source_modifier),

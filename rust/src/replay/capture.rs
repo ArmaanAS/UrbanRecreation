@@ -69,7 +69,7 @@ pub(crate) struct CapturedClub {
 pub(crate) struct CapturedCard {
     pub(crate) id: u32,
     pub(crate) name: Option<String>,
-    pub(crate) clan: String,
+    pub(crate) clan: Option<String>,
     pub(crate) level: i64,
     pub(crate) index: i64,
     pub(crate) in_battle_id: u32,
