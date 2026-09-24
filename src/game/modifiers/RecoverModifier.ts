@@ -36,21 +36,30 @@ export default class RecoverModifier extends Modifier {
     this.outOf = outOf;
     this.both = both;
     this.eventTime = et;
+    // The plain and Unison forms pay only when their card wins (abilityData
+    // currentRoundRequirement "win" for 3459/3752/4050/4610/5651, "If Costello wins the
+    // fight..."): Costello's "Recover 1 Pillz Out Of 3" loses in 946810 r0 and the server
+    // posts no pillz increase. Condition.compile clears this for Defeat and Victory Or
+    // Defeat, whose own conditions decide the outcome instead.
+    this.win = true;
   }
 
   apply(data: BattleData) {
+    if (this.win && data.card.won !== true) return;
     if (this.rec === Recover.PILLZ) {
       if (!data.card.pillz.blocked) {
-        // Rounding is always up, and a triggered Recover never gives nothing: captured
-        // battle 877983 r1 has Eebiza "Defeat: Recover 1 Pillz Out Of 2" lose on a bet of 0
-        // and still recover 1, where the proportion alone would be 0. 901400 r1 pins the
-        // proportional half - D-aleq "Recover 2 Pillz Out Of 3" loses on a bet of 3 and
-        // recovers 2, so the free pill is not part of the count.
+        // The server returns the stated share of the Pillz placed on the card - the bet,
+        // the free pill and Fury's three - rounded down, with a minimum of 1 (the long
+        // description of every Recover in captures/abilities.json). Kyrioz Ld bets 7 on
+        // "Recover 1 Pillz Out Of 3" in 947010 r0 and recovers floor(8 / 3) = 2, not
+        // ceil(7 / 3) = 3; 877983 r1 has Eebiza "Defeat: Recover 1 Pillz Out Of 2" lose on
+        // a bet of 0 and still recover 1; 1024592 r1 pins the Fury term, floor(8 x 2/3) = 5
+        // on a bet of 4 with Fury. For 1/2 and 2/3 this equals the old ceil(bet x N / M).
         const gain = Math.max(
           1,
-          Math.ceil(data.playerPillzUsed * (this.n / this.outOf)),
+          Math.floor((data.playerPillzUsed + 1) * this.n / this.outOf),
         );
-        if (DEBUG) console.log(`Player recovered ${gain} pillz / ${data.playerPillzUsed}`);
+        if (DEBUG) console.log(`Player recovered ${gain} pillz / ${data.playerPillzUsed + 1}`);
         data.player.pillz += gain;
 
         if (this.both) {

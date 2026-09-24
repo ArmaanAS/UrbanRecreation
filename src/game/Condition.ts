@@ -2,6 +2,7 @@ import Ability, { AbilityType } from "./Ability.ts";
 import BattleData from "./battle/BattleData.ts";
 import CachedBattleData from "./battle/CachedBattleData.ts";
 import BasicModifier from "./modifiers/BasicModifier.ts";
+import RecoverModifier from "./modifiers/RecoverModifier.ts";
 import { type Clan, type ClanId, ClanIdMap } from "@/game/types/CardTypes.ts";
 import { DEBUG } from "../utils/Debug.ts";
 
@@ -14,6 +15,13 @@ const VICTORY_OR_DEFEAT_ONE_PILLZ = "Victory Or Defeat : +1 Pillz";
 const BET_MORE_PILLZ = /^Bet > (\d+) Pillz$/i;
 const PR_HIDE_ID = 1568;
 const PR_HIDE_LEVEL = 3;
+/**
+ * Naja Ld prints the same "+3 Players Pillz" at every level (captures/abilities.json 5511).
+ * The server pays her owner's half in the round that knocks that owner out: 5 -> 8 in
+ * 1024592 r2 and 0 -> 3 in 1024732 r3, with a pillz increase posted for both players.
+ */
+const NAJA_LD_ID = 959;
+const VICTORY_OR_DEFEAT_THREE_PLAYERS_PILLZ = "Victory Or Defeat : +3 Players Pillz";
 
 export enum ConditionType {
   UNDEFINED = 0,
@@ -201,7 +209,7 @@ export default class Condition {
 
       case ConditionType.DEFEAT:
         for (const mod of ability.mods) {
-          if (mod instanceof BasicModifier) {
+          if (mod instanceof BasicModifier || mod instanceof RecoverModifier) {
             mod.win = false;
           }
         }
@@ -209,10 +217,12 @@ export default class Condition {
 
       case ConditionType["VICTORY OR DEFEAT"]:
         for (const mod of ability.mods) {
+          if (mod instanceof RecoverModifier) mod.win = false;
           if (mod instanceof BasicModifier) {
             mod.win = false;
             // Riots' bonus is paid after a lethal loss in multiple captures. Pr Hide's
-            // printed ability does the same in 1092909 r3. Keep both exceptions locked to
+            // printed ability does the same in 1092909 r3, and Naja Ld's owner half of
+            // "+3 Players Pillz" in 1024592 r2 and 1024732 r3. Keep these exceptions locked to
             // concrete printed card state: copied text must not inherit post-KO execution.
             const exactRiotsBonus = ability.type === AbilityType.BONUS &&
               data.card.clan === "Riots" &&
@@ -221,10 +231,14 @@ export default class Condition {
               data.card.id === PR_HIDE_ID &&
               data.card.stars === PR_HIDE_LEVEL &&
               data.card.abilityString === VICTORY_OR_DEFEAT_ONE_PILLZ;
+            const exactNajaAbility = ability.type === AbilityType.ABILITY &&
+              data.card.id === NAJA_LD_ID &&
+              data.card.abilityString === VICTORY_OR_DEFEAT_THREE_PLAYERS_PILLZ &&
+              ability.ability === "+3 Players Pillz";
             if (
-              (exactRiotsBonus || exactPrHideAbility) &&
-              ability.ability === "+1 Pillz" && !mod.opp &&
-              mod.type?.name === "PILLZ"
+              (((exactRiotsBonus || exactPrHideAbility) &&
+                ability.ability === "+1 Pillz") || exactNajaAbility) &&
+              !mod.opp && mod.type?.name === "PILLZ"
             ) {
               mod.postKoPillz = true;
             }

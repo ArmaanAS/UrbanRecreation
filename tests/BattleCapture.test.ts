@@ -118,3 +118,49 @@ Deno.test("a result finishes a forfeited battle without a done snapshot", async 
   assertEquals(captured.rounds.at(-1)?.life, [8, 12]);
   assertEquals(captured.rounds.at(-1)?.pillz, [2, 6]);
 });
+
+const STALE = "final round life/pillz may be stale: result could not be attributed to a side";
+const loadCapture = async (id: number) => {
+  const raw = await Deno.readTextFile(`captures/battles/${id}.jsonl`);
+  return expandEntries(
+    raw.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line)),
+    await loadAbilities(),
+  );
+};
+
+Deno.test("an unattributed result is placed by the final round's own arithmetic", async () => {
+  // 924740 was captured without my id, and its "done" snapshot predates round 2's damage.
+  // Side 0 bets 3 of 7 and takes Lumia Cr's 6 on 4 Life; side 1 bets 4 of 4. Only
+  // player = side 1 fits battles.result (player 12/0, opponent 0/4).
+  const captured = reconstruct(924740, await loadCapture(924740));
+
+  assertEquals(captured.mySide, null);
+  assertEquals(captured.rounds.at(-1)?.life, [0, 12]);
+  assertEquals(captured.rounds.at(-1)?.pillz, [4, 0]);
+  assertEquals(captured.issues.includes(STALE), false);
+});
+
+Deno.test("an unattributed result credits post-round abilities to their player", async () => {
+  // 924669 r3: Ashara wins for side 0, which then gains 2 Life (Versus) and 1 (a latched
+  // Heal): 13 + 3 = 16, while side 1 falls from 2 to 0.
+  const captured = reconstruct(924669, await loadCapture(924669));
+
+  assertEquals(captured.rounds.at(-1)?.life, [16, 0]);
+  assertEquals(captured.rounds.at(-1)?.pillz, [0, 0]);
+  assertEquals(captured.issues.includes(STALE), false);
+});
+
+Deno.test("a result that fits neither side stays flagged", async () => {
+  const entries = (await loadCapture(924740)).map((entry) =>
+    entry.kind === "result"
+      ? {
+        ...entry,
+        result: { ...entry.result, player: { ...entry.result.player, life: 11 } },
+      } as CaptureEntry
+      : entry
+  );
+  const captured = reconstruct(924740, entries);
+
+  assertEquals(captured.rounds.at(-1)?.life, [4, 12]);
+  assertEquals(captured.issues.includes(STALE), true);
+});

@@ -379,11 +379,11 @@
       ],
       "life": [
         12,
-        8
+        3
       ],
       "pillz": [
-        6,
-        4
+        0,
+        0
       ],
       "postRoundAbilities": [],
       "durationMs": 23636
@@ -422,9 +422,7 @@
   },
   "finalStatus": "done",
   "snapshots": 33,
-  "issues": [
-    "final round life/pillz may be stale: result could not be attributed to a side"
-  ],
+  "issues": [],
   "testcase": {
     "cards": [
       "Deebler",
@@ -547,9 +545,9 @@
           false
         ],
         "p1life": 12,
-        "p2life": 8,
-        "p1pillz": 6,
-        "p2pillz": 4,
+        "p2life": 3,
+        "p1pillz": 0,
+        "p2pillz": 0,
         "r1": {
           "power": 8,
           "damage": 5,

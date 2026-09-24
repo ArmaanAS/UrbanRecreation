@@ -373,12 +373,12 @@
         }
       ],
       "life": [
-        5,
+        3,
         9
       ],
       "pillz": [
-        5,
-        6
+        0,
+        0
       ],
       "postRoundAbilities": [],
       "durationMs": 17789
@@ -417,9 +417,7 @@
   },
   "finalStatus": "done",
   "snapshots": 31,
-  "issues": [
-    "final round life/pillz may be stale: result could not be attributed to a side"
-  ],
+  "issues": [],
   "testcase": {
     "cards": [
       "Lumia Cr",
@@ -541,10 +539,10 @@
           5,
           false
         ],
-        "p1life": 5,
+        "p1life": 3,
         "p2life": 9,
-        "p1pillz": 5,
-        "p2pillz": 6,
+        "p1pillz": 0,
+        "p2pillz": 0,
         "r1": {
           "power": 6,
           "damage": 6,

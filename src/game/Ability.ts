@@ -388,8 +388,7 @@ export default class Ability {
           return;
         }
         if (DEBUG) console.log("Copying", data.oppCard.bonusString);
-        // new Ability(data.oppCard.bonus.string, this.type).compile(data);
-        new Ability(data.oppCard.bonusString, this.type).compile(data);
+        this.compileCopy(data.oppCard.bonusString, data);
 
         return;
       } else if (tokens[1] == "Ability") {
@@ -404,7 +403,7 @@ export default class Ability {
           return;
         }
         if (DEBUG) console.log("Copying", data.oppCard.abilityString);
-        new Ability(data.oppCard.abilityString, this.type).compile(data);
+        this.compileCopy(data.oppCard.abilityString, data);
 
         return;
       } else {
@@ -524,6 +523,14 @@ export default class Ability {
         this.delayed = true;
       }
 
+      // A latched Dope still pays its owner in the round that knocks that owner out:
+      // Talhia's "Dope 3, Max. 4" takes nikilik from 0 to 3 at 0 Life in 924853 r3, and
+      // Shao Xue's "Defeat: Dope 1, Max. 13" pays 6 -> 7 at a knockout in 956902 r2, each
+      // with a permanent pillz increase posted. Heal and Regen keep the knockout guard.
+      if (type == "Dope") {
+        mod.postKoPillz = true;
+      }
+
       if (tokens[2] == "Min") {
         mod.setMin(+tokens[3]);
       } else if (tokens[2] == "Max") {
@@ -612,6 +619,20 @@ export default class Ability {
     } else {
       if (DEBUG) console.log(`[Failed] ${this.ability}`.red);
     }
+  }
+
+  /**
+   * Adopt the opposing card's text for "Copy: Opp. Ability" / "Copy Opp. Bonus". A prefix
+   * printed in front of the Copy gates the adoption itself, so the copied text carries the
+   * copier's conditions ahead of its own: Dr Van Wesel Ld's "Reprisal: Copy Opp. Bonus"
+   * copies nothing when its owner moves first (1060341/3, 1091381/3), and Madlocks'
+   * "Bet > 3 Pillz: Copy: Opp. Ability" copies nothing at pillzUsed 3 (943231/1). Every
+   * prefix printed over a source Copy is a pure predicate, so compiling it again is inert.
+   */
+  private compileCopy(text: string, data: BattleData | CachedBattleData) {
+    const copied = new Ability(text, this.type);
+    copied.conditions = [...this.conditions, ...copied.conditions];
+    copied.compile(data);
   }
 
   compile(data: BattleData | CachedBattleData) {

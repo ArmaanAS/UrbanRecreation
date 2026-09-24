@@ -323,12 +323,12 @@
         }
       ],
       "life": [
-        4,
+        0,
         12
       ],
       "pillz": [
-        7,
-        4
+        4,
+        0
       ],
       "postRoundAbilities": [],
       "durationMs": 18918
@@ -367,9 +367,7 @@
   },
   "finalStatus": "done",
   "snapshots": 23,
-  "issues": [
-    "final round life/pillz may be stale: result could not be attributed to a side"
-  ],
+  "issues": [],
   "testcase": {
     "cards": [
       "Goran",
@@ -463,10 +461,10 @@
           4,
           false
         ],
-        "p1life": 4,
+        "p1life": 0,
         "p2life": 12,
-        "p1pillz": 7,
-        "p2pillz": 4,
+        "p1pillz": 4,
+        "p2pillz": 0,
         "r1": {
           "power": 7,
           "damage": 4,

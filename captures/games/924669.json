@@ -370,12 +370,12 @@
         }
       ],
       "life": [
-        13,
-        2
+        16,
+        0
       ],
       "pillz": [
-        6,
-        6
+        0,
+        0
       ],
       "postRoundAbilities": [
         {
@@ -429,9 +429,7 @@
   },
   "finalStatus": "done",
   "snapshots": 32,
-  "issues": [
-    "final round life/pillz may be stale: result could not be attributed to a side"
-  ],
+  "issues": [],
   "testcase": {
     "cards": [
       "Aegis Cr",
@@ -553,10 +551,10 @@
           6,
           false
         ],
-        "p1life": 2,
-        "p2life": 13,
-        "p1pillz": 6,
-        "p2pillz": 6,
+        "p1life": 0,
+        "p2life": 16,
+        "p1pillz": 0,
+        "p2pillz": 0,
         "r1": {
           "power": 6,
           "damage": 5,

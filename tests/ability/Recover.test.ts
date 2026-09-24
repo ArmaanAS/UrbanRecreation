@@ -1,9 +1,11 @@
-// Recover N Pillz Out Of M — on a Defeat trigger the owner gets back
-// max(1, ceil(bet × N / M)) pillz. The bet is the engine's, i.e. without the free pill:
-// captured battle 901400 r1 has D-aleq "Defeat: Recover 2 Pillz Out Of 3" lose on a bet of
-// 3 and recover 2, where counting the free pill would give ceil(4 × 2/3) = 3. Rounding is
-// always up, and a triggered Recover never gives nothing — 877983 r1 has Eebiza "Defeat:
-// Recover 1 Pillz Out Of 2" lose on a bet of 0 and still recover 1.
+// Recover N Pillz Out Of M — when it triggers, the owner gets back
+// max(1, floor(placed × N / M)) pillz, where placed is the bet plus the free pill plus
+// Fury's three, as the server's long description says ("of the Pillz placed on him, rounded
+// down ... with a minimum of 1"). Captured battle 901400 r1 has D-aleq "Defeat: Recover 2
+// Pillz Out Of 3" lose on a bet of 3 and recover floor(4 × 2/3) = 2; 877983 r1 has Eebiza
+// "Defeat: Recover 1 Pillz Out Of 2" lose on a bet of 0 and still recover 1. For 1/2 and 2/3
+// this equals ceil(bet × N / M); only 1/3 separates them (947010 r0, below).
+// The plain form pays only when its card wins, and "Defeat:" only when it loses.
 import { HandGenerator } from "@/game/Hand.ts";
 import Player from "@/game/Player.ts";
 import Game from "@/game/Game.ts";
@@ -23,14 +25,14 @@ const game = () =>
     Turn.PLAYER_1,
   );
 
-Deno.test("Recover rounds up", () => {
+Deno.test("Defeat: Recover pays two thirds of the placed pillz", () => {
   const g = game();
 
   g.select(2, 3, false, false); // p1 Sasl Lovelace, 3 pillz — loses
   g.select(0, 5, false, false); // p2 Buck, 5 pillz
 
   assertEquals(g.h1[2].won, false);
-  assertEquals(g.p1.pillz, 11); // 12 - 3 spent, + ceil(3 × 2/3) = 2
+  assertEquals(g.p1.pillz, 11); // 12 - 3 spent, + floor(4 × 2/3) = 2
 });
 
 Deno.test("Recover gives at least one pillz on a zero bet", () => {
@@ -40,7 +42,7 @@ Deno.test("Recover gives at least one pillz on a zero bet", () => {
   g.select(0, 5, false, false); // p2 Buck, 5 pillz
 
   assertEquals(g.h1[1].won, false);
-  assertEquals(g.p1.pillz, 13); // nothing spent, and ceil(0 × 1/2) = 0 is floored up to 1
+  assertEquals(g.p1.pillz, 13); // nothing spent, and floor(1 × 1/2) = 0 is raised to 1
 });
 
 Deno.test("Recover does nothing on a win", () => {
@@ -51,4 +53,45 @@ Deno.test("Recover does nothing on a win", () => {
 
   assertEquals(g.h1[2].won, true);
   assertEquals(g.p1.pillz, 9); // 12 - 3 spent, nothing back
+});
+
+// Captured battle 946810 r0: Costello lv3, "Recover 1 Pillz Out Of 3", bets 5 and loses to
+// Uuber. The server posts no pillz increase: 12 - 5 = 7.
+Deno.test("Plain Recover pays nothing on a loss", () => {
+  const g = new Game(
+    new Player(12, 12, 0),
+    new Player(12, 12, 1),
+    HandGenerator.handOf(["AI-Lycs", "Lumia Cr", "Miyo", "Uuber"] as HandOf<string>, [3, 4, 3, 2] as HandOf<number | undefined>),
+    HandGenerator.handOf(["Costello", "Frau Vanda", "Maelt Riv", "Tør"] as HandOf<string>, [3, 2, 3, 3] as HandOf<number | undefined>),
+    Turn.PLAYER_1,
+    false,
+    true,
+  );
+
+  g.select(3, 4, false, false); // p1 Uuber
+  g.select(0, 5, false, false); // p2 Costello
+
+  assertEquals(g.h2[0].won, false);
+  assertEquals(g.p2.pillz, 7);
+});
+
+// Captured battle 947010 r0: Kyrioz Ld lv2, "Recover 1 Pillz Out Of 3", bets 7 and wins.
+// The server recovers floor(8 / 3) = 2 of the 8 placed pillz (ceil(7 / 3) would be 3), and
+// Kyrioz's Bet > 3 bonus and Uuber's -1 Life move nothing else: 12 - 7 + 2 = 7.
+Deno.test("Plain Recover rounds the placed pillz down on a win", () => {
+  const g = new Game(
+    new Player(12, 12, 0),
+    new Player(12, 12, 1),
+    HandGenerator.handOf(["Aegis Cr", "Hal Gladius", "Lumia Cr", "Uuber"] as HandOf<string>, [5, 2, 4, 2] as HandOf<number | undefined>),
+    HandGenerator.handOf(["Dayo", "Kyrioz Ld", "Omurtag", "Phelemon"] as HandOf<string>, [4, 2, 3, 4] as HandOf<number | undefined>),
+    Turn.PLAYER_1,
+    false,
+    true,
+  );
+
+  g.select(3, 4, false, false); // p1 Uuber
+  g.select(1, 7, false, false); // p2 Kyrioz Ld
+
+  assertEquals(g.h2[1].won, true);
+  assertEquals(g.p2.pillz, 7);
 });

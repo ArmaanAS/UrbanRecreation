@@ -379,7 +379,7 @@
       ],
       "life": [
         8,
-        5
+        0
       ],
       "pillz": [
         1,
@@ -430,9 +430,7 @@
   },
   "finalStatus": "done",
   "snapshots": 44,
-  "issues": [
-    "final round life/pillz may be stale: result could not be attributed to a side"
-  ],
+  "issues": [],
   "testcase": {
     "cards": [
       "Aegis Cr",
@@ -554,7 +552,7 @@
           0,
           false
         ],
-        "p1life": 5,
+        "p1life": 0,
         "p2life": 8,
         "p1pillz": 0,
         "p2pillz": 1,

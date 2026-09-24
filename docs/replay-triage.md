@@ -2,7 +2,7 @@
 
 Status from `deno test -A --no-check tests/replay/` against 383 captured battles
 (376 replay-ready; 7 ignored, 6 because they stopped mid-match and 1414087 because it deals
-card 2714, which the 2026-09-10 card data predates): 347 replay exactly and 29 mismatch. Each entry
+card 2714, which the 2026-09-10 card data predates): 368 replay exactly and 8 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -44,18 +44,23 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-24 | 338 | 38 | Hazard games replay with the abilities the server dealt |
 | 2026-09-24 | 345 | 31 | Protection: Power And Damage refuses an opposing reduction |
 | 2026-09-24 | 347 | 29 | Corrupt implemented; abbreviated condition prefixes parse |
+| 2026-09-25 | 368 | 8 | `/ Life Lost` is Per; conditional Copy gated; Naja and Dope pay after KO; Recover win + floor; stale final rounds attributed |
 
 ## Fixed
 
-### 924615's last round is a stale capture, not an engine bug
-The extractor could not attribute the closing `battles.result` to a side (`mySide` is null),
-so the final round's life and pillz stayed at the pre-damage snapshot the server sends before
-applying the last hit: Vektor wins round 3 for 2 Damage and the record still says the loser
-is on 5. Nothing is wrong with the engine here and nothing can be fixed by changing it - the
-round's ground truth was never captured. The Rust combat-stat gate carries 924615 for three
-rounds for the same reason. Two other entries carry the same issue string (948108, 948390),
-and since the Protection fix below so do 942983 and 943111: every card result in their last
-round now matches, and only the final life/pillz, which the capture flags as stale, differ.
+### A stale final round is attributed from the result block
+When the extractor cannot tell which side is the recorder's (`mySide` is null), it could not
+attribute the closing `battles.result`, so the final round kept the pre-damage snapshot the
+server sends before applying the last hit: in 924615 Vektor wins round 3 for 2 Damage and the
+record still said the loser was on 5. Nothing was wrong with the engine. `ExtractBattle.ts`
+now tries both assignments of `result.player`/`result.opponent`: it takes the previous round's
+life and pillz, charges each side its bet (plus Fury), gives the loser the winner's damage and
+credits the round's `postRoundAbilities` to their players, and fills the final round only
+when exactly one assignment matches the result on both sides; otherwise the stale issue stays.
+All eight flagged games fit exactly one way - 924573, 924615, 924669, 924740, 942983, 943111,
+948108 and 948390 - and now replay exactly; 943231 and 945585, whose values already matched,
+only lose the issue line. Test in `tests/BattleCapture.test.ts`. The Rust combat-stat gate
+still carries 924615 for three rounds, as it was fixed before this.
 
 
 ### Dojo (battle rule 6) is not a different rule set
@@ -387,6 +392,56 @@ copier's conditions, so the conditional Copies (`Asy. :`, Reprisal, Revenge) sta
 unconditional in TypeScript; that predates this fix. The remaining unknown conditions are not
 abbreviations: Perfect, Disunion, `Bet < N Pillz`, and the Day/Reprisal/Unison Impose forms.
 
+### `/ Life Lost` is Per Life Lost
+Wachtmann level 3 prints `[clan...] +1 Dam./ Life Lost Max. 6` (5113). `Abilities.normalise`
+read every `/` as `And`, so it compiled as a flat +1 Damage and a flat +1 Life, where the
+server adds 1 per point of Life its owner has lost since the match began, capping the final
+stat at 6. All four selected Wachtmann rounds agree: nothing at full Life (1090269 r0, 1
+Damage), 1 + 4 at 8 Life (925818 r2), 1 + 5 at 7 (1092066 r3), and 1 + 7 clamped to 6 at 5
+(924890 r3 - Max caps the final stat, not the addition). A `/` before `Life Lost` now reads
+as `Per`, which the existing lost-Life multiplier handles; `Cancel Opp. Pow/dam Mod.`, the
+only other slash in the card data, is unchanged. Fixed 1090269, 1092066, 924890 and 925818.
+Test in `tests/ability/PerLifeLostSlash.test.ts`. The Rust engine has pinned the same rule
+since semantic revision 55.
+
+### A conditional Copy copies only when its condition holds
+The Copy branch compiled the opposing text as a fresh ability without the copier's own
+condition, so every Reprisal, Revenge, Asymmetry, Unison, `Bet > N` or clan-gated Copy adopted
+unconditionally. Dr Van Wesel Ld's `Reprisal: Copy Opp. Bonus` copies nothing when its owner
+moves first (1060341 r3: 8 x 9 = 72, not 84 with Sue's copied Support; 1091381 r3: Mou keeps
+18 without the copied Equalizer), and Madlocks' `Bet > 3 Pillz: Copy: Opp. Ability` copies
+nothing at `pillzUsed` 3 (943231 r1), while the moved-second Reprisal adoptions and the
+`Bet > 3` adoption at 4 (878093 r0) still happen. The copied ability now carries the copier's
+conditions ahead of its own. Fixed 1060341, 1091381 and 943231. Test in
+`tests/ability/ConditionalCopy.test.ts`. The Rust engine has gated conditional Copy this way
+since semantic revision 50.
+
+### Naja Ld's Players Pillz and a latched Dope pay a knocked-out owner
+The KO guard in `BasicModifier.canApply` stops an owner the round knocks out from gaining,
+with identity-locked exceptions for the Riots bonus and Pr Hide. The server also pays Naja
+Ld's own half of `Victory Or Defeat : +3 Players Pillz` (5511) through the knockout: 1024592
+r2 (5 - 0 + 3 = 8 with two +3 post entries) and 1024732 r3 (0 - 0 + 3 = 3). It is now a third
+exception, locked to the card, the Ability slot and the exact text; only level 1 is captured,
+and levels 2 and 3 print identical text, so they share it by that text. A latched Dope pays a
+knocked-out owner too: Talhia's `Dope 3, Max. 4` (924853 r3, 0 + 3) and Shao Xue's `Defeat:
+Dope 1, Max. 13` (956902 r2, 6 + 1), so the Dope modifier now carries the same exemption.
+Heal, Regen, Consume and Repair keep the guard. Fixed 1024592, 1024732, 924853 and 956902.
+Tests in `tests/ability/PlayersPillzAfterKo.test.ts` and `tests/ability/DopeAfterKo.test.ts`.
+
+### Recover pays on a win and rounds the placed pillz down
+`RecoverModifier` never checked the outcome and paid ceil(bet x N / M). Plain `Recover N Pillz
+Out Of M` pays only when its card wins: Costello's `Recover 1 Pillz Out Of 3` loses in 946810
+r0 and its owner stays on 12 - 5 = 7, and `abilityData` gives `currentRoundRequirement: win`
+for every plain form (3459, 3752, 4050, 4610, 5651); six winning rounds pay. `Defeat: Recover`
+still pays on a loss. And the amount is max(1, floor((bet + 1 + 3 x Fury) x N / M)) - the
+placed pillz including the free one, rounded down, as every Recover long description says:
+Kyrioz Ld bets 7 and wins in 947010 r0, and recovers 2 (12 - 7 + 2 = 7), where the old rule
+gave 3. The two formulas agree for every 1/2 and 2/3 ratio, so 947010 r0 is the only round
+that separates them; a second winning 1/3 Recover would pin it. The uncaptured `Recover 1
+Players Pillz Out Of 2` (Radden Cr) gets the same win gate by analogy, not evidence. Fixed
+946810 and 947010. Tests in `tests/ability/Recover.test.ts`. The Rust engine has used both
+rules since semantic revision 63.
+
 ## Previously triaged open rules
 
 ### End-of-round gain/reduction order — 1093173
@@ -432,6 +487,22 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   `Copy` at PRE3. One round, so recorded rather than coded. A second round where an
   Exchange meets an own increase registered before it would settle it.
 
+### Single points waiting for a second capture
+- 1079078 r3: Rajesh's `-2 Cards Damage, Min 4` puts its own half in the opposing-reduction
+  phase, because an ability is queued as a whole at its first modifier's phase; the server
+  resolves the owner's half with the owner's own modifiers, before the opposing reductions.
+- 1089974 r2: Dookor's own `Cancel Opp. Power And Damage Modif.` suppresses Dookor's own
+  active Dominion `Growth: -1 Opp Power, Min 4`, because an opposing reduction is refused when
+  the target's stat is cancelled; the server only cancels modifiers whose source is the
+  cancelled card.
+- 947670 r3: Akirale's `Perfect: +2 Pillz` pays on a win with more pillz than it needed.
+  `Perfect` is an unknown condition, so it is met unconditionally; `abilityData` names the
+  exact winning bet. This is a negative observation, and the three other selected Perfect
+  rounds are losses.
+- 1025413 r1: Dark Kaizerin (Oculus) infiltrates GhosTown at night and fights with the night
+  bonus `Night: -1 Opp Pow. And Damage, Min 1` (1442); the hand stores the host's day bonus
+  before the game switches to night. It is the only such round.
+
 ### An increase to the opposing card - 1414749 (single point)
 - 1414749 r2: Pepo Brahms' `Growth: Opp. Attack +1` (`abilityData` 5210, `sideAffected:
   "opponent"`, increase) raises the opposing Schredder's Attack: the server gives 6 x 3 + 3 =
@@ -442,19 +513,12 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
 
 ## Fresh capture backlog
 
-The expanded corpus now has 39 additional mismatches that have not yet been
-grouped or attributed to rules. They are recorded as regression targets only; inspect the
-first failing round and group them by ability keyword before changing the engine:
-
-924573, 924615, 924669, 924740, 924853, 924890, 925818, 942983, 943111,
-943231, 946810, 947010, 947670, 948108, 948390, 956902,
-1024592, 1024732, 1025413, 1059149, 1060341,
-1079078, 1089974, 1090269, 1091381, 1092066.
-
-The 2026-09-23 live session added three more: 1414168, 1414699 and 1414749. The first two
-are fixed and the last has had its first failure fixed (all above, as are 1088641, the
-Hazard games 1023946, 1024821 and 1089830, and the Protection games 924320, 949439, 1069506,
-1078555, 1078820, 1091235 and 1093569, and the Corrupt games 1065308 and 1066210). A fourth,
+Nothing is untriaged. The eight remaining mismatches each have an entry above and wait on
+a second capture or an open question: 874712 (Revenge / Damage Impose), 1093173 (end-of-round
+order), 1059149 (Exchange, TypeScript only), 1414749 (an increase to the opposing card), and
+the single points 1079078, 1089974, 947670 and 1025413. The backlog of 39 that the expanded
+corpus brought on 2026-09-14 and 2026-09-17, and the three from the 2026-09-23 session, are
+fixed above or among those eight. A fourth 2026-09-23 capture,
 1414087, has no testcase at all: its opponent deals card 2714 (level 2, `Brawl: Damage + 1`),
 which is newer than the 2026-09-10 character dump, so the extractor has no name, clan or
 stats for it. Run `__ur.dumpCharacters()` and `deno task cards`, then `deno task extract`.

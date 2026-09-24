@@ -322,9 +322,7 @@
   },
   "finalStatus": "timeout",
   "snapshots": 28,
-  "issues": [
-    "final round life/pillz may be stale: result could not be attributed to a side"
-  ],
+  "issues": [],
   "testcase": {
     "cards": [
       "Aegis Cr",

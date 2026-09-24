@@ -373,11 +373,11 @@
       ],
       "life": [
         7,
-        10
+        6
       ],
       "pillz": [
-        5,
-        4
+        0,
+        0
       ],
       "postRoundAbilities": [],
       "durationMs": 16215
@@ -416,9 +416,7 @@
   },
   "finalStatus": "done",
   "snapshots": 33,
-  "issues": [
-    "final round life/pillz may be stale: result could not be attributed to a side"
-  ],
+  "issues": [],
   "testcase": {
     "cards": [
       "Hal Gladius",
@@ -541,9 +539,9 @@
           false
         ],
         "p1life": 7,
-        "p2life": 10,
-        "p1pillz": 5,
-        "p2pillz": 4,
+        "p2life": 6,
+        "p1pillz": 0,
+        "p2pillz": 0,
         "r1": {
           "power": 7,
           "damage": 4,

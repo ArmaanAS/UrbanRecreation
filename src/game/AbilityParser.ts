@@ -30,6 +30,10 @@ export class Abilities {
       .replace(/Rec\w*/gi, "Recover")
       // Abbreviated condition names ("Asymm.", "Asy.", "Repris.") lose their "." above and
       // are expanded by Condition.normalise once the conditions are split off.
+      // Wachtmann prints "+1 Dam./ Life Lost Max. 6": the slash there means "per", not
+      // "and" (1090269/0, 925818/2, 1092066/3, and 924890/3 where Max caps the stat).
+      // Every other slash in the card list ("Cancel Opp. Pow/dam Mod.") is still "and".
+      .replace(/ ?\/ ?(?=Life Lost)/gi, " Per ")
       .replace(/ ?[&/] ?/g, " And ")
       .replace(/(?<=(Copy|Cancel|Stop).*) (Opp|Mod|Left)\w*/gi, "")
       .replace(/(?<=Per.*) Left\w*/gi, "")

@@ -312,11 +312,18 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
   // The final "done" snapshot is taken before the last round's damage is applied, so
   // use battles.result (which is from my point of view) for the closing life totals.
   if (result && lastRound && finished) {
-    if (mySide !== null) {
-      const opp = (1 - mySide) as Side;
-      lastRound.life[mySide] = result.result.player.life;
+    // Without my id, the result can still be attributed when exactly one way round is what
+    // the final round itself produces (see attributeResult).
+    const before = nRounds > 1 ? rounds[nRounds - 2] : {
+      life: [players[0].baseLife, players[1].baseLife] as [number, number],
+      pillz: [players[0].basePillz, players[1].basePillz] as [number, number],
+    };
+    const resultSide = mySide ?? attributeResult(lastRound, before, sideOf, result.result);
+    if (resultSide !== null) {
+      const opp = (1 - resultSide) as Side;
+      lastRound.life[resultSide] = result.result.player.life;
       lastRound.life[opp] = result.result.opponent.life;
-      lastRound.pillz[mySide] = result.result.player.pillz;
+      lastRound.pillz[resultSide] = result.result.player.pillz;
       lastRound.pillz[opp] = result.result.opponent.pillz;
     } else {
       issues.push("final round life/pillz may be stale: result could not be attributed to a side");
@@ -373,6 +380,53 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
     issues,
     testcase,
   };
+}
+
+interface PostRoundAbility {
+  playerId: number;
+  attributeAffected: string;
+  attributeAction: string;
+  quantity: number;
+}
+
+/**
+ * Which side battles.result's `player` is, for a capture that never learned my id. The
+ * result is attributed only when exactly one assignment is what the final round produces
+ * from the round before it: each side pays its bet (pillzUsed less the free pill, plus 3
+ * for Fury), the loser takes the winner's damage, the round's post-round abilities are
+ * credited to their playerId, and neither total drops below 0. Anything else - no unique
+ * fit, an incomplete round, a post-round effect the arithmetic cannot see - returns null
+ * and leaves the stale snapshot flagged. 924740 is typical: only player = side 1 fits,
+ * since side 0 paid 3 of its 7 pillz and took Lumia Cr's 6 damage on 4 Life.
+ */
+export function attributeResult(
+  round: Round,
+  before: { life: [number, number]; pillz: [number, number] },
+  sideOf: (playerId: number) => Side | null,
+  result: { player: { life: number; pillz: number }; opponent: { life: number; pillz: number } },
+): Side | null {
+  if (round.moves.length !== 2 || before.life.some(Number.isNaN) || before.pillz.some(Number.isNaN)) return null;
+  const [r0, r1] = round.resolution;
+  if (!r0 || !r1 || r0.won === r1.won) return null;
+  const expected = { life: [...before.life], pillz: [...before.pillz] };
+  for (const m of round.moves) expected.pillz[m.side] -= m.pillzUsed - 1 + (m.fury ? 3 : 0);
+  expected.life[r0.won ? 1 : 0] -= (r0.won ? r0 : r1).damage;
+  for (const a of round.postRoundAbilities as PostRoundAbility[]) {
+    const side = sideOf(a.playerId);
+    const sign = a.attributeAction === "increase" ? 1 : a.attributeAction === "decrease" ? -1 : NaN;
+    if (side === null || Number.isNaN(sign) || !(a.attributeAffected === "life" || a.attributeAffected === "pillz")) {
+      return null;
+    }
+    expected[a.attributeAffected][side] += sign * a.quantity;
+  }
+  const fits = ([0, 1] as Side[]).filter((side) => {
+    const opp = 1 - side;
+    return Math.max(0, expected.life[side]) === result.player.life &&
+      Math.max(0, expected.pillz[side]) === result.player.pillz &&
+      Math.max(0, expected.life[opp]) === result.opponent.life &&
+      Math.max(0, expected.pillz[opp]) === result.opponent.pillz;
+  });
+  return fits.length === 1 ? fits[0] : null;
 }
 
 function buildTestcase(
