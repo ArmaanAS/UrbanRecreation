@@ -2,7 +2,7 @@
 
 Status from `deno test -A --no-check tests/replay/` against 383 captured battles
 (376 replay-ready; 7 ignored, 6 because they stopped mid-match and 1414087 because it deals
-card 2714, which the 2026-09-10 card data predates): 338 replay exactly and 38 mismatch. Each entry
+card 2714, which the 2026-09-10 card data predates): 345 replay exactly and 31 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -42,6 +42,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-24 | 331 | 45 | +19 live captures: 15 exact, 3 fresh mismatches, 1414087 unreplayable until a card refresh |
 | 2026-09-24 | 333 | 43 | Growth permanents keep their latch-round amount; a reduction naming no opponent hits its own card |
 | 2026-09-24 | 338 | 38 | Hazard games replay with the abilities the server dealt |
+| 2026-09-24 | 345 | 31 | Protection: Power And Damage refuses an opposing reduction |
 
 ## Fixed
 
@@ -51,7 +52,9 @@ so the final round's life and pillz stayed at the pre-damage snapshot the server
 applying the last hit: Vektor wins round 3 for 2 Damage and the record still says the loser
 is on 5. Nothing is wrong with the engine here and nothing can be fixed by changing it - the
 round's ground truth was never captured. The Rust combat-stat gate carries 924615 for three
-rounds for the same reason. Two other entries carry the same issue string (948108, 948390).
+rounds for the same reason. Two other entries carry the same issue string (948108, 948390),
+and since the Protection fix below so do 942983 and 943111: every card result in their last
+round now matches, and only the final life/pillz, which the capture flags as stale, differ.
 
 
 ### Dojo (battle rule 6) is not a different rule set
@@ -328,13 +331,40 @@ worker read printed abilities; the Rust projection already refuses every Leader 
 structurally. Fixed 874590, 1023946, 1024821, 1089830 and 1414699; 1078820 now fails at
 round 2 on Protection (below). Test in `tests/solver/Advisor.test.ts` plus the replays.
 
-### Protection: Power And Damage does not refuse a reduction (TypeScript only)
-- 1078820 r2: Agent Brundel's dealt `Protection: Power And Damage` should keep Sue's `-1 Opp
-  Power And Damage, Min 3` off it; the server gives Brundel 8 Power and 24 Attack, the engine
-  7 and 21. The TypeScript `ProtectionModifier` only resists a Cancel. The Rust engine refuses
-  the reduction (semantic revision 23) on the evidence of 1069506 r0, 949439 r0, 924320 r1 and
-  942983 r2 - all four sit in the untriaged backlog below, so this is a TypeScript family
-  with five data points waiting for a fix.
+### Protection: Power And Damage refuses an opposing reduction
+The TypeScript `ProtectionModifier` only resisted a Cancel, so an opposing reduction of a
+protected card's Power or Damage still landed. The server keeps both stats at the card's own
+values. Power refusal is pinned by seven rounds - 1069506 r0 (Miss Pandora stays 7/4 against
+Sue's `-1 Opp Power And Damage, Min 3`, 7 x 5 = 35), 949439 r0 (Nebula keeps 7 Power against
+Olga Cr's `-2 Opp Power, Min 5`), 1078820 r2 (Agent Brundel's Hazard-dealt Protection, 8 x 3 =
+24), 1078555 r2, 1091235 r3, 943111 r3 and 1093569 r1 (a live `Confidence :` reduction) -
+and Damage refusal by three: 1069506 r0, 924320 r1 (Donald's `-3 Opp Damage, Min 2` leaves
+Nebula on 4) and 942983 r2 (Henry's Support reduction). An opposing Attack reduction still
+lands (956805 r2), as do an Exchange, an Impose and Tune Out, none of which is a reduction
+modifier, and the Reprisal form refuses nothing when its condition is off (1089830 r1).
+
+Only the plain, unconditional `Protection: Power And Damage` gets the new behaviour: a
+per-card guard bit on its Power and Damage, set at PRE3, which an opposing reduction checks
+at PRE1. `Protection: Power`, `Protection : Damage`, `Protection: Attack`, the Reprisal,
+Revenge and Courage forms and the clan-gated ones have no round showing them meet a
+reduction of the stat they name, so they stay Cancel-only; the first two print "cannot be
+reduced by an opposing character" and are the likely next candidates once a capture shows
+one. Fixed 924320, 949439, 1069506, 1078555, 1078820, 1091235 and 1093569; 942983 and 943111
+now fail only on their stale last round (above). Tests in `tests/ability/Protection.test.ts`.
+The Rust engine has refused these reductions since semantic revision 23.
+
+### Abbreviated condition prefixes parse as no condition (TypeScript only)
+`Abilities.normalise` deletes every `.` before its `/Asymm\.:?/` replacement runs, so that
+replacement never matches, and `Repris.` and `Asy. :` have no mapping at all. The prefixes
+become `Asymm`, `Repris` and `Asy`, which `Condition` does not know, and an unknown condition
+is met unconditionally - so `[clan] Asymm.: Stop Opp. Ability` (4999), `[clan] Asy. : -3 Opp
+Dam., Min 1` (5072), `[clan] Asy. : Copy: Opp. Ability` (5073) and `[clan] Repris.: Consume
+1, Min 4` (5275) all run without their condition. No replay mismatches because of it: the
+only selected rounds (1065673 r1 moves second, 1091381 r0 is asymmetric and stopped) happen to
+satisfy the condition anyway. `abilityData` names the condition exactly (`indexRequirement:
+asymmetry`, `positionRequirement: defender`), so the fix is a parse one, not a rule guess; it
+is also a prerequisite for the Rust engine admitting those four without disagreeing with the
+reference under `--rust=compare`.
 
 ## Previously triaged open rules
 
@@ -395,15 +425,15 @@ The expanded corpus now has 39 additional mismatches that have not yet been
 grouped or attributed to rules. They are recorded as regression targets only; inspect the
 first failing round and group them by ability keyword before changing the engine:
 
-924320, 924573, 924615, 924669, 924740, 924853, 924890, 925818, 942983, 943111,
-943231, 946810, 947010, 947670, 948108, 948390, 949439, 956902,
+924573, 924615, 924669, 924740, 924853, 924890, 925818, 942983, 943111,
+943231, 946810, 947010, 947670, 948108, 948390, 956902,
 1024592, 1024732, 1025413, 1059149, 1060341, 1065308, 1066210,
-1069506, 1078555, 1078820, 1079078, 1089974, 1090269,
-1091235, 1091381, 1092066, 1093569.
+1079078, 1089974, 1090269, 1091381, 1092066.
 
 The 2026-09-23 live session added three more: 1414168, 1414699 and 1414749. The first two
-are fixed and the last has had its first failure fixed (all above, as are 1088641 and the
-Hazard games 1023946, 1024821 and 1089830). A fourth,
+are fixed and the last has had its first failure fixed (all above, as are 1088641, the
+Hazard games 1023946, 1024821 and 1089830, and the Protection games 924320, 949439, 1069506,
+1078555, 1078820, 1091235 and 1093569). A fourth,
 1414087, has no testcase at all: its opponent deals card 2714 (level 2, `Brawl: Damage + 1`),
 which is newer than the 2026-09-10 character dump, so the extractor has no name, clan or
 stats for it. Run `__ur.dumpCharacters()` and `deno task cards`, then `deno task extract`.

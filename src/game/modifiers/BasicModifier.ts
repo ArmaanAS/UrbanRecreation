@@ -195,10 +195,14 @@ export default class BasicModifier extends Modifier {
         // case Type.ATTACK: return !data.oppCard.attack.prot;
         // case Type.LIFE: return !data.oppCard.life.prot;
         // case Type.PILLZ: return !data.oppCard.pillz.prot;
+        // `Protection: Power And Damage` refuses an opposing reduction outright (guard,
+        // set at PRE3, before these run at PRE1); an opposing increase still lands.
         case Type.POWER:
-          return !data.oppCard.power.blocked && !data.card.power.blocked;
+          return !data.oppCard.power.blocked && !data.card.power.blocked &&
+            !(this.change < 0 && data.oppCard.power.guard);
         case Type.DAMAGE:
-          return !data.oppCard.damage.blocked && !data.card.damage.blocked;
+          return !data.oppCard.damage.blocked && !data.card.damage.blocked &&
+            !(this.change < 0 && data.oppCard.damage.guard);
         case Type.ATTACK:
           return !data.oppCard.attack.blocked && !data.card.attack.blocked;
         case Type.LIFE:

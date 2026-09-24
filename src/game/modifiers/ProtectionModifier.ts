@@ -14,6 +14,20 @@ enum Prot {
 export default class ProtectionModifier extends Modifier {
   prot: Prot;
   both: boolean;
+  /**
+   * Also refuse the opposing card's reductions of the protected Power or Damage, not only
+   * a Cancel. Set for exactly `Protection: Power And Damage`, which the server shows
+   * keeping both stats at their own values against an opposing ability, bonus or Support
+   * reduction: Miss Pandora stays 7/4 against Sue's "-1 Opp Power And Damage, Min 3"
+   * (1069506 r0, 7 x 5 = 35), Nebula keeps 7 Power against Olga Cr's "-2 Opp Power, Min 5"
+   * (949439 r0, 7 x 5 = 35) and 4 Damage against Henry's "Support: -1 Opp Damage, Min 2"
+   * (942983 r2). Only reductions: an opposing Attack reduction still lands (956805 r2), as
+   * do an Exchange (948108 r3), an Impose (1091314 r3) and Tune Out (925868 r3), none of
+   * which is a BasicModifier reduction. No capture shows the single-stat Protections, the
+   * Reprisal form or the clan-gated `Protection : Damage` refusing a reduction of the stat
+   * they name, so they keep the Cancel-only behaviour.
+   */
+  guard = false;
   constructor(prot: Prot | string, both = false, et = EventTime.PRE3) {
     super();
 
@@ -65,9 +79,11 @@ export default class ProtectionModifier extends Modifier {
       switch (this.prot) {
         case Prot.POWER:
           data.card.power.prot = true;
+          if (this.guard) data.card.power.guard = true;
           break;
         case Prot.DAMAGE:
           data.card.damage.prot = true;
+          if (this.guard) data.card.damage.guard = true;
           break;
         case Prot.ATTACK:
           data.card.attack.prot = true;

@@ -354,8 +354,15 @@ export default class Ability {
       }
 
       if (tokens[i].includes("&")) {
+        // Only the plain, unconditional "Protection: Power And Damage" refuses opposing
+        // reductions (see ProtectionModifier.guard); the Reprisal, Revenge, Courage and
+        // Cards forms have no captured round showing it and stay Cancel-only.
+        const guard = !both && tokens[i] === "Power&Damage" &&
+          this.conditions.length === 0;
         for (const prot of tokens[i].split("&")) {
-          this.mods.push(new ProtectionModifier(prot, both));
+          const mod = new ProtectionModifier(prot, both);
+          mod.guard = guard;
+          this.mods.push(mod);
         }
       } else {
         this.mods.push(new ProtectionModifier(tokens[i], both));
