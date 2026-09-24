@@ -2,7 +2,7 @@
 
 Status from `deno test -A --no-check tests/replay/` against 383 captured battles
 (376 replay-ready; 7 ignored, 6 because they stopped mid-match and 1414087 because it deals
-card 2714, which the 2026-09-10 card data predates): 345 replay exactly and 31 mismatch. Each entry
+card 2714, which the 2026-09-10 card data predates): 347 replay exactly and 29 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -43,6 +43,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-24 | 333 | 43 | Growth permanents keep their latch-round amount; a reduction naming no opponent hits its own card |
 | 2026-09-24 | 338 | 38 | Hazard games replay with the abilities the server dealt |
 | 2026-09-24 | 345 | 31 | Protection: Power And Damage refuses an opposing reduction |
+| 2026-09-24 | 347 | 29 | Corrupt implemented; abbreviated condition prefixes parse |
 
 ## Fixed
 
@@ -353,18 +354,38 @@ one. Fixed 924320, 949439, 1069506, 1078555, 1078820, 1091235 and 1093569; 94298
 now fail only on their stale last round (above). Tests in `tests/ability/Protection.test.ts`.
 The Rust engine has refused these reductions since semantic revision 23.
 
-### Abbreviated condition prefixes parse as no condition (TypeScript only)
-`Abilities.normalise` deletes every `.` before its `/Asymm\.:?/` replacement runs, so that
-replacement never matches, and `Repris.` and `Asy. :` have no mapping at all. The prefixes
-become `Asymm`, `Repris` and `Asy`, which `Condition` does not know, and an unknown condition
-is met unconditionally - so `[clan] Asymm.: Stop Opp. Ability` (4999), `[clan] Asy. : -3 Opp
-Dam., Min 1` (5072), `[clan] Asy. : Copy: Opp. Ability` (5073) and `[clan] Repris.: Consume
-1, Min 4` (5275) all run without their condition. No replay mismatches because of it: the
-only selected rounds (1065673 r1 moves second, 1091381 r0 is asymmetric and stopped) happen to
-satisfy the condition anyway. `abilityData` names the condition exactly (`indexRequirement:
-asymmetry`, `positionRequirement: defender`), so the fix is a parse one, not a rule guess; it
-is also a prerequisite for the Rust engine admitting those four without disagreeing with the
-reference under `--rust=compare`.
+### Corrupt lowers its owner's own Life
+The TypeScript engine did not implement `Corrupt N Min. M` at all, so Nega D Ld's `Corrupt 2
+Min. 5` (`abilityData` 5286: own Life, decrease, `currentRoundRequirement: any`, not
+permanent) did nothing. Both selected rounds have Nega winning a knockout with its owner on
+6, and the raw battle file reporting a Life decrease of exactly 1 for that owner (6 -> 5, the
+Min binding): 1065308 r2 (48 against 44) and 1066210 r2 (64 against 37). It now compiles as
+Xantiax's own half on its own - an own Life reduction at the end of the round, floored at
+Min, win or lose, not latched - and Stop Opp. Ability still cancels it. Fixed 1065308 and
+1066210. Test in `tests/ability/Corrupt.test.ts`.
+
+Both rounds come from the same player and deck, so what is pinned is the owner's side, the
+win, the Min floor and paying while the opponent is knocked out. The losing side, the
+unclamped amount of 2 and the order against other end-of-round effects follow the printed
+text, as Xantiax's own half does; a Nega round that loses, or wins with its owner above 7,
+would pin them.
+
+### Abbreviated condition prefixes parse as their conditions
+`Abilities.normalise` deletes every `.` before its old `/Asymm\.:?/` replacement ran, so that
+replacement never matched, and `Repris.` and `Asy. :` had no mapping at all. The prefixes
+reached `Condition` as `Asymm`, `Repris` and `Asy`, which it did not know, and an unknown
+condition is met unconditionally - so `[clan] Asymm.: Stop Opp. Ability` (4999), `[clan] Asy.
+: -3 Opp Dam., Min 1` (5072), `[clan] Asy. : Copy: Opp. Ability` (5073) and `[clan] Repris.:
+Consume 1, Min 4` (5275) all ran without their condition. `Condition.normalise` now expands
+`Asymm`/`Asym`/`Asy` to Asymmetry and `Repris` to Reprisal, as `abilityData` names them
+(`indexRequirement: asymmetry`, `positionRequirement: defender`), and `Rev`/`Brwl` - printed in
+the card data without captured `abilityData` - to Revenge and Brawl, the only conditions their
+letters can abbreviate. No replay changes: the four captured games with these texts pass or
+fail exactly as before, their selected rounds having satisfied the condition anyway. Test in
+`tests/ability/AbbreviatedConditions.test.ts`. A copied ability still compiles without the
+copier's conditions, so the conditional Copies (`Asy. :`, Reprisal, Revenge) stay
+unconditional in TypeScript; that predates this fix. The remaining unknown conditions are not
+abbreviations: Perfect, Disunion, `Bet < N Pillz`, and the Day/Reprisal/Unison Impose forms.
 
 ## Previously triaged open rules
 
@@ -427,13 +448,13 @@ first failing round and group them by ability keyword before changing the engine
 
 924573, 924615, 924669, 924740, 924853, 924890, 925818, 942983, 943111,
 943231, 946810, 947010, 947670, 948108, 948390, 956902,
-1024592, 1024732, 1025413, 1059149, 1060341, 1065308, 1066210,
+1024592, 1024732, 1025413, 1059149, 1060341,
 1079078, 1089974, 1090269, 1091381, 1092066.
 
 The 2026-09-23 live session added three more: 1414168, 1414699 and 1414749. The first two
 are fixed and the last has had its first failure fixed (all above, as are 1088641, the
 Hazard games 1023946, 1024821 and 1089830, and the Protection games 924320, 949439, 1069506,
-1078555, 1078820, 1091235 and 1093569). A fourth,
+1078555, 1078820, 1091235 and 1093569, and the Corrupt games 1065308 and 1066210). A fourth,
 1414087, has no testcase at all: its opponent deals card 2714 (level 2, `Brawl: Damage + 1`),
 which is newer than the 2026-09-10 character dump, so the extractor has no name, clan or
 stats for it. Run `__ur.dumpCharacters()` and `deno task cards`, then `deno task extract`.

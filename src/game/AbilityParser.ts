@@ -28,7 +28,8 @@ export class Abilities {
       .replace(/Can\w*/gi, "Cancel")
       .replace(/Prot\w*/gi, "Protection")
       .replace(/Rec\w*/gi, "Recover")
-      .replace(/Asymm\.:?/gi, "Asymmetry")
+      // Abbreviated condition names ("Asymm.", "Asy.", "Repris.") lose their "." above and
+      // are expanded by Condition.normalise once the conditions are split off.
       .replace(/ ?[&/] ?/g, " And ")
       .replace(/(?<=(Copy|Cancel|Stop).*) (Opp|Mod|Left)\w*/gi, "")
       .replace(/(?<=Per.*) Left\w*/gi, "")

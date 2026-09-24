@@ -252,9 +252,23 @@ export default class Condition {
     }
   }
 
+  /**
+   * Expand the abbreviated condition names the card data prints. Normalising the ability
+   * text has already dropped every "." (and the space before a colon), so "Asymm.:",
+   * "Asy. :" and "Repris.:" arrive here as "Asymm", "Asy" and "Repris". An unknown name
+   * would be met unconditionally, so each one is mapped to the condition its abilityData
+   * names: indexRequirement "asymmetry" for 4999 "Asymm." and 5072/5073 "Asy.",
+   * positionRequirement "defender" for 5275 "Repris.". "Asym." (data.json 2615), "Rev."
+   * and "Brwl." (2598, 2611) have no captured abilityData; each is the only condition its
+   * letters can abbreviate. Matched on the whole name, so full names pass through.
+   */
   static normalise(c: string) {
     return c
       .replace(/vic.*/gi, "Victory Or Defeat")
-      .replace(/conf.*/gi, "Confidence");
+      .replace(/conf.*/gi, "Confidence")
+      .replace(/^Asy(?:m|mm)?$/i, "Asymmetry")
+      .replace(/^Repris$/i, "Reprisal")
+      .replace(/^Rev$/i, "Revenge")
+      .replace(/^Brwl$/i, "Brawl");
   }
 }

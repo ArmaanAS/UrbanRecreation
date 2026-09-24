@@ -468,6 +468,25 @@ export default class Ability {
 
       this.mods.push(mod);
       this.conditions.push(new Condition("Symmetry"));
+    } else if (tokens[1] == "Corrupt") {
+      // "Corrupt 2 Min. 5" normalises to "2 Corrupt Min 5": whether its card wins or loses,
+      // the owner's own Life drops by N at the end of the round, never below M
+      // (captures/abilities.json 5286, Nega D Ld: sideAffected "player", Life decrease,
+      // currentRoundRequirement "any", not permanent). It is Xantiax's own half on its own.
+      // Captured battles 1065308 r2 and 1066210 r2 both have Nega winning a knockout round
+      // with its owner on 6, and the server reporting a Life decrease of exactly 1 for that
+      // owner (6 -> 5, the Min binds). The unclamped amount and the losing side have not
+      // been seen; they follow the printed text, as Xantiax's own half does.
+      failed = false;
+
+      const mod = new BasicModifier();
+      mod.setType("Life");
+      mod.setOpp(false);
+      mod.change = -+tokens[0];
+      mod.win = false;
+      AbilityParser.minmax(tokens, 2, mod);
+
+      this.mods.push(mod);
     } else if (
       ["Poison", "Toxin", "Consume", "Regen", "Heal", "Dope"].includes(
         tokens[1],
