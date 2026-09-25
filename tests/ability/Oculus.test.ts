@@ -12,6 +12,7 @@ import { HandGenerator } from "@/game/Hand.ts";
 import Player from "@/game/Player.ts";
 import Game from "@/game/Game.ts";
 import { assertEquals } from "@std/assert";
+import { CardGenerator } from "@/game/Card.ts";
 import { Turn } from "@/game/types/Types.ts";
 
 const stats = (
@@ -126,4 +127,81 @@ Deno.test("No Infiltrated", () => {
   assertEquals(g.p2.life, 12);
   assertEquals(g.p1.pillz, 12);
   assertEquals(g.p2.pillz, 12);
+});
+
+// Infiltration belongs to the card in its hand, not to the shared (id, level) row: it used
+// to be written onto the process-global base row, so it outlived its game and one player's
+// Oculus could overwrite an opposing copy of the same card.
+Deno.test("Infiltration does not outlive its game", () => {
+  const infiltrating = HandGenerator.generate(
+    "Alekperov",
+    "Eugene",
+    "Hikiyousan",
+    "Zatapa",
+  );
+  assertEquals(infiltrating[0].clan, "Ulu Watu");
+  assertEquals(infiltrating[0].bonusString, "Power +2");
+
+  // Three other clans: no infiltration, so Alekperov is Oculus with its own bonus, and his
+  // clan-gated "-2 Opp Power, Min 5" does not fire (Tamakuchi keeps 7 x 1 + 3 = 10).
+  const h1 = HandGenerator.generate(
+    "Alekperov",
+    "Agnes",
+    "Hikiyousan",
+    "Iris Morana",
+  );
+  const h2 = HandGenerator.generate(
+    "Betelgeuse",
+    "Candy Jack",
+    "Incubus",
+    "Tamakuchi",
+  );
+  assertEquals(h1[0].clan, "Oculus");
+  assertEquals(h1[0].bonusString, "Infiltrated");
+  assertEquals(CardGenerator.get("Alekperov")!.clan, "Oculus");
+  assertEquals(CardGenerator.get("Alekperov")!.bonusString, "Infiltrated");
+
+  const g = new Game(
+    new Player(12, 12, 0),
+    new Player(12, 12, 1),
+    h1,
+    h2,
+    Turn.PLAYER_1,
+  );
+  g.select(0, 0); // Alekperov
+  g.select(3, 0); // Tamakuchi
+  assertEquals(stats(g.h1[0]), [6, 5, 6]);
+  assertEquals(stats(g.h2[3]), [7, 5, 10]);
+  // Clones (the solver's copies) keep their own card's infiltration.
+  assertEquals(infiltrating.clone()[0].clan, "Ulu Watu");
+  assertEquals(g.clone().h1[0].clan, "Oculus");
+});
+
+Deno.test("Two copies of one Oculus infiltrate independently", () => {
+  const h1 = HandGenerator.generate(
+    "Alekperov",
+    "Eugene",
+    "Hikiyousan",
+    "Zatapa",
+  );
+  // Two Ulu Watu and a Riots: this copy joins the lone Riots.
+  const h2 = HandGenerator.generate(
+    "Alekperov",
+    "Agnes",
+    "Hikiyousan",
+    "Zatapa",
+  );
+  const g = new Game(
+    new Player(12, 12, 0),
+    new Player(12, 12, 1),
+    h1,
+    h2,
+    Turn.PLAYER_1,
+  );
+  assertEquals(g.h1[0].clan, "Ulu Watu");
+  assertEquals(g.h1[0].bonusString, "Power +2");
+  assertEquals(g.h2[0].clan, "Riots");
+  assertEquals(g.h2[0].bonusString, "Victory Or Defeat : +1 Pillz");
+  assertEquals(g.h1[0].baseClan, "Oculus");
+  assertEquals(g.h2[0].baseClan, "Oculus");
 });

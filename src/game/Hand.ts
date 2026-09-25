@@ -51,6 +51,12 @@ export default class Hand extends Array<Card> {
     // If only one other clan is present in the draw, the Oculus card is considered to be a card of that clan.
     // If two other clans are present, the Oculus card will belong to the clan of the sole card, thus activating its bonus.
     // If three other clans are present in the draw, or if you have more than one Oculus in your hand, the Infiltrated bonus has no effect.
+    // Recomputed from scratch every time: a card reused in another hand must not keep the
+    // clan it joined in the last one.
+    hand[0].infiltrate(undefined);
+    hand[1].infiltrate(undefined);
+    hand[2].infiltrate(undefined);
+    hand[3].infiltrate(undefined);
     let oculus: Card | undefined;
     let oculusIndex: number | undefined;
     for (let i = 0; i < 4; i++) {
@@ -91,8 +97,10 @@ export default class Hand extends Array<Card> {
       // console.log({ clan });
 
       if (clan) {
-        oculus.clan = clan;
-        oculus.bonusString = hand.find((c) => c.baseClan === clan)!.bonusString;
+        oculus.infiltrate(
+          clan,
+          hand.find((c) => c.baseClan === clan)!.bonusString,
+        );
       }
     }
 

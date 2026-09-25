@@ -28,12 +28,24 @@ import {
   PowerStat,
 } from "./types/CardTypes.ts";
 
+interface Infiltration {
+  readonly clan: Clan;
+  readonly bonus: string;
+}
+
 export default class Card {
   private key: number;
   played = false;
   /** Set by Game when Clint City is at night: use the night ability / bonus variant. */
   night = false;
   private data: BaseData;
+  /**
+   * The clan this card joined and the bonus it took with it (Oculus "Infiltrated"), set by
+   * Hand.from for this copy only. It lived on the shared (id, level) base row once, so it
+   * outlived its game and an opposing copy of the same card overwrote it. Always assigned,
+   * and never mutated once set, so clone() shares the reference and keeps one map.
+   */
+  private infiltration: Infiltration | undefined = undefined;
   constructor(json: CardJSON) {
     this.key = getBaseKey(json.id, json.level);
 
@@ -57,6 +69,7 @@ export default class Card {
     c.played = this.played;
     c.night = this.night;
     c.data = { a: this.data.a, b: this.data.b } as BaseData;
+    c.infiltration = this.infiltration;
     return c;
   }
 
@@ -85,10 +98,13 @@ export default class Card {
   }
 
   get clan() {
-    return this.base.infiltratedClan ?? this.base.clan;
+    return this.infiltration?.clan ?? this.base.clan;
   }
-  set clan(clan: Clan) {
-    this.base.infiltratedClan = clan;
+  /** Join `clan` with its `bonus` (Oculus), or leave with `undefined`: this copy only. */
+  infiltrate(clan: Clan | undefined, bonus?: string) {
+    this.infiltration = clan === undefined
+      ? undefined
+      : { clan, bonus: bonus! };
   }
   get baseClan() {
     return this.base.clan;
@@ -128,13 +144,8 @@ export default class Card {
   }
   get bonusString(): string {
     if (this.bonus.string !== AbilityString.DEFAULT) return "No Bonus";
-    if (this.base.infiltratedBonus !== undefined) {
-      return this.base.infiltratedBonus;
-    }
+    if (this.infiltration !== undefined) return this.infiltration.bonus;
     return (this.night ? this.base.nightBonus : undefined) ?? this.base.bonus;
-  }
-  set bonusString(text: string) {
-    this.base.infiltratedBonus = text;
   }
 
   get ability(): AbilityStat {

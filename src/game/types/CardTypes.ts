@@ -129,13 +129,11 @@ export interface BaseCard {
   maxStars: MaxStars;
   release_date: number;
   clan: Clan;
-  infiltratedClan?: Clan;
   rarity: Rarity;
   ability: string;
   bonus: string;
   nightAbility?: string;
   nightBonus?: string;
-  infiltratedBonus?: string;
   // ability: CardString; // 3 bits
   // bonus: CardString; // 3 bits
   // power: CardStat;  // 18 bits
