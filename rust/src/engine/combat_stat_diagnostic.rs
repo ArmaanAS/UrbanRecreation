@@ -367,6 +367,19 @@ pub enum CombatStatPostRoundEffectV1 {
         per_round: u16,
         scale: RoundScaleV1,
     },
+    /// Revision 74: `Growth: Heal N Max. M` (Abby Salia's `4959`). A won round latches the
+    /// plain Heal with `per_round` times the one-based number of that round, and every later
+    /// round pays that frozen amount under the printed cap. Ability slot only.
+    HealLifeOnVictoryPerRound {
+        per_round: u16,
+        maximum: u16,
+    },
+    /// Revision 74: `Growth: Poison N, Min M` (Sarah's `1282`, Hachi's `1266`): the plain
+    /// Poison latch with the same frozen amount; the Min does not scale. Ability slot only.
+    PoisonOpponentLifeOnVictoryPerRound {
+        per_round: u16,
+        minimum: u16,
+    },
     /// The two reviewed unconditional Victory opponent-Life reductions.
     ReduceOpponentLifeOnVictory {
         life: u16,
@@ -717,6 +730,16 @@ pub enum CombatStatEffectV1 {
         per_round: u16,
         scale: RoundScaleV1,
     },
+    /// The `Growth:` permanents, Ability slot only: the latched amount is `per_round` times
+    /// the one-based round that latches it, frozen from then on.
+    HealLifeOnVictoryPerRound {
+        per_round: u16,
+        maximum: u16,
+    },
+    PoisonOpponentLifeOnVictoryPerRound {
+        per_round: u16,
+        minimum: u16,
+    },
     /// Unconditional Victory-only opponent-Life reduction with a fixed magnitude and
     /// lower bound, admitted solely for the two reviewed identities.
     ReduceOpponentLifeOnVictory {
@@ -996,6 +1019,21 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// could target the same player. The server prints that a second latch replaces the
     /// first while the engine stacks them, and which it is remains an open decision.
     UnisonLatchAgainstSameFamilyLatch,
+    /// A revision-74 `Growth:` permanent beside another latch of its family that could target
+    /// the same player (Heal or Regen for the Heal, Poison or Toxin for the Poison), or an
+    /// opposing Copy of its slot: the same open replacement question as revision 73's.
+    GrowthLatchAgainstSameFamilyLatch,
+    /// A revision-74 `Growth:` permanent beside another write to the Life it moves that can
+    /// land in a round it pays - the target's own write for the Poison, any opposing write or
+    /// another own gain for the capped Heal - or beside an opposing Copy. The latch pays every
+    /// round, so it meets such a write on some outcome, and 1093173/1 shows the server's
+    /// cross-owner order is not the engine's.
+    GrowthLatchAgainstUnpinnedEffect,
+    /// Revision 74's own `Growth:` decrease (Bugamon's `1676`) beside an effect no round shows
+    /// meeting it: another change to its own Power or Damage, or a Protection, from the card's
+    /// other slot (or a Copy there that could import one), an opposing cancel of Power or
+    /// Damage modifiers, or an opposing Copy that could take it.
+    OwnCombatStatDecreaseAgainstUnpinnedEffect,
     VictoryOpponentPillzSource,
     VictoryOpponentPillzMagnitude,
     VictoryOpponentPillzPredicate,
@@ -1834,6 +1872,71 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::UnisonLatchAgainstSameFamilyLatch)
         }
+        // Revision 74's `Growth:` permanents keep the same replacement question out: no second
+        // latch of their family - Heal or Regen for the Heal, Poison or Toxin for the Poison -
+        // elsewhere in the owner's hand or importable by an own Copy, and no opposing Copy of
+        // the slot.
+        CombatStatSourcePlanV1::Execute {
+            effect:
+                effect @ (CombatStatEffectV1::HealLifeOnVictoryPerRound { .. }
+                | CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound { .. }),
+            ..
+        } if opposing_copy_can_take(plan, own, opponent)
+            || source_plans(own)
+                .filter(|&own_plan| same_latch_family(own_plan, effect))
+                .count()
+                > 1
+            || (hand_has_copy(own)
+                && source_plans(opponent).any(|opposing| same_latch_family(opposing, effect))) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::GrowthLatchAgainstSameFamilyLatch)
+        }
+        // They are newly admitted writes, so they carry the 1093173/1 order rule as revision
+        // 61's Consume and revision 64's Dope do: a latch pays every round, so any other write
+        // to the Life it moves meets it on some outcome, and which lands first shows exactly
+        // when the floor or the cap binds. The Poison is refused wherever its target can write
+        // its own Life (a gain, a cap, a revival, an own floor - a latch included), and the
+        // Heal, whose cap reads the value, wherever the opposing hand can write the owner's
+        // Life (a floor, or a both-players gain) or another own source can raise it (or an own
+        // Copy could import one). Either is refused beside any opposing Copy, which could take
+        // the latch or import a writer (`life_writes` reports nothing for a Copy).
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound { .. },
+            ..
+        } if hand_has_copy(opponent) || source_plans(opponent).any(writes_own_life) => {
+            Some(InvalidCombatStatPlanReasonV1::GrowthLatchAgainstUnpinnedEffect)
+        }
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::HealLifeOnVictoryPerRound { .. },
+            ..
+        } if hand_has_copy(opponent)
+            || source_plans(opponent).any(|opposing| {
+                life_writes(opposing).opposing_floor
+                    || life_beneficiary(opposing) == Some(LifeBeneficiaryV1::Both)
+            })
+            || source_plans(own).any(|own_plan| own_plan != plan && writes_own_life(own_plan))
+            || (hand_has_copy(own) && source_plans(opponent).any(writes_own_life)) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::GrowthLatchAgainstUnpinnedEffect)
+        }
+        // Revision 74's own decrease lands on its owner's card with the owner's own modifiers,
+        // before the opposing reductions (the order `Cards` pins for its own half, 1079078/3).
+        // No round shows it beside another change to the same card's Power or Damage, whose
+        // order within the own phase would show when a floor binds, beside a Protection on
+        // that card, facing an opposing cancel of those modifiers (1089974/2 shows a canceller
+        // sparing its own card's reduction, not what an opposing one does to a drawback), or
+        // adopted by an opposing Copy. Any of those refuses the match.
+        CombatStatSourcePlanV1::Execute {
+            effect:
+                CombatStatEffectV1::ModifyCombatStat {
+                    side: CombatStatAffectedSideV1::Player,
+                    operation: CombatStatOperationV1::Decrease,
+                    ..
+                },
+            ..
+        } if own_decrease_meets_unpinned_effect(plan, own, opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::OwnCombatStatDecreaseAgainstUnpinnedEffect)
+        }
         // The Victory Or Defeat own gains are uncapped and pay whatever the outcome, so an
         // opposing floor on their resource, an own cap on it, or a Copy meets them in an order
         // no round pins.
@@ -2101,22 +2204,21 @@ fn own_write_meets(
 /// Toxin, which the server's replacement note names together, and Consume for a Consume.
 /// Combust, which also floors the opposing Pillz, is counted with Consume to stay on the
 /// safe side of the open question.
+/// Since revision 74 also for a `Growth:` latch: Heal or Regen for the Heal, which the server's
+/// note names together, and Poison or Toxin for the Poison.
 fn same_latch_family(plan: CombatStatSourcePlanV1, latch: CombatStatEffectV1) -> bool {
-    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
-        return false;
-    };
-    let Some(PostRoundSourceEffect::Fixed(
-        PostRoundEffect::LatchOnVictory(latched)
-        | PostRoundEffect::LatchOnDefeat(latched)
-        | PostRoundEffect::LatchOnKillshot(latched),
-    )) = shared_post_round_effect(effect)
-    else {
+    let Some(latched) = latched_effect(plan) else {
         return false;
     };
     match latch {
-        CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. } => matches!(
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. }
+        | CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound { .. } => matches!(
             latched,
             LatchedEffectV1::PoisonOpponentLife { .. } | LatchedEffectV1::ToxinOpponentLife { .. }
+        ),
+        CombatStatEffectV1::HealLifeOnVictoryPerRound { .. } => matches!(
+            latched,
+            LatchedEffectV1::HealLife { .. } | LatchedEffectV1::RegenLife { .. }
         ),
         CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. } => matches!(
             latched,
@@ -2238,17 +2340,72 @@ fn writes_own_life(plan: CombatStatSourcePlanV1) -> bool {
 
 /// A permanent: its owner latches it and it pays every later round.
 fn is_latch(plan: CombatStatSourcePlanV1) -> bool {
+    latched_effect(plan).is_some()
+}
+
+/// The permanent `plan` latches, if it is one - the `Growth:` latch included, whose amount
+/// is only bound when it latches.
+fn latched_effect(plan: CombatStatSourcePlanV1) -> Option<LatchedEffectV1> {
     let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
-        return false;
+        return None;
     };
-    matches!(
-        shared_post_round_effect(effect),
-        Some(PostRoundSourceEffect::Fixed(
-            PostRoundEffect::LatchOnVictory(_)
-                | PostRoundEffect::LatchOnDefeat(_)
-                | PostRoundEffect::LatchOnKillshot(_)
-        ))
-    )
+    match shared_post_round_effect(effect)? {
+        PostRoundSourceEffect::Fixed(
+            PostRoundEffect::LatchOnVictory(latched)
+            | PostRoundEffect::LatchOnDefeat(latched)
+            | PostRoundEffect::LatchOnKillshot(latched),
+        )
+        | PostRoundSourceEffect::LatchOnVictoryPerRound(latched) => Some(latched),
+        _ => None,
+    }
+}
+
+/// Whether revision 74's own decrease `plan` meets an effect no round shows beside it: from
+/// the other slot of its card, a change to that card's own Power or Damage (an own increase or
+/// decrease, or the own half of `Cards`), a Protection, or a Copy that could import any of
+/// them; from the opposing hand, a cancel of Power or Damage modifiers under any condition, or
+/// a Copy that could take the decrease.
+fn own_decrease_meets_unpinned_effect(
+    plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let touches_power_or_damage = |stat| {
+        matches!(
+            stat,
+            CombatStatAttributeV1::Power
+                | CombatStatAttributeV1::Damage
+                | CombatStatAttributeV1::PowerAndDamage
+        )
+    };
+    let meets_on_card = |other: CombatStatSourcePlanV1| match other {
+        CombatStatSourcePlanV1::CopyOpponentSource { .. } => true,
+        CombatStatSourcePlanV1::Execute { effect, .. } => match effect {
+            CombatStatEffectV1::ModifyCombatStat { side, stat, .. } => {
+                side != CombatStatAffectedSideV1::Opponent && touches_power_or_damage(stat)
+            }
+            CombatStatEffectV1::ProtectOwnCombatStat { .. }
+            | CombatStatEffectV1::ProtectOwnAbility
+            | CombatStatEffectV1::ProtectOwnBonus => true,
+            _ => false,
+        },
+        CombatStatSourcePlanV1::Absent
+        | CombatStatSourcePlanV1::Disabled { .. }
+        | CombatStatSourcePlanV1::RejectIfSelected { .. } => false,
+    };
+    own.iter().any(|card| {
+        (card.ability == plan && meets_on_card(card.bonus))
+            || (card.bonus == plan && meets_on_card(card.ability))
+    }) || opposing_copy_can_take(plan, own, opponent)
+        || source_plans(opponent).any(|opposing| {
+            matches!(
+                opposing,
+                CombatStatSourcePlanV1::Execute {
+                    effect: CombatStatEffectV1::CancelOpponentCombatStatModifiers { stat },
+                    ..
+                } if touches_power_or_damage(stat)
+            )
+        })
 }
 
 /// Whose Life an end-of-round `plan` can raise, if it is end-of-round work at all.
@@ -3006,6 +3163,35 @@ fn validate_combat_stat_source_plan(
         };
     }
     match effect {
+        // Revision 74's `Growth:` permanents: card abilities, no condition beside the win that
+        // latches them, a positive amount, Heal's amount below its cap and Poison's floor at
+        // least 1 - no printed `Growth: Poison` with Min 0 has a registry record, and a Min 0
+        // latch whose amount grows with the round would be a new way to knock a player out.
+        CombatStatEffectV1::HealLifeOnVictoryPerRound {
+            per_round,
+            maximum: bound,
+        }
+        | CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+            per_round,
+            minimum: bound,
+        } => {
+            let heal = matches!(effect, CombatStatEffectV1::HealLifeOnVictoryPerRound { .. });
+            let reason = if source != CombatStatEffectSourceV1::Ability {
+                Some(InvalidCombatStatPlanReasonV1::PermanentLifeSource)
+            } else if per_round == 0 || (heal && bound <= per_round) || (!heal && bound == 0) {
+                Some(InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude)
+            } else if predicate != CombatStatPredicateV1::Always {
+                Some(InvalidCombatStatPlanReasonV1::PermanentLifePredicate)
+            } else {
+                None
+            };
+            return match reason {
+                Some(reason) => Err(invalid_combat_stat_execute(
+                    player, hand_slot, source, source_id, reason,
+                )),
+                None => Ok(()),
+            };
+        }
         // Dope is Regen on the owner's Pillz, from either outcome channel, with no prefix.
         CombatStatEffectV1::DopePillzOnVictory { pillz, maximum }
         | CombatStatEffectV1::DopePillzOnDefeat { pillz, maximum } => {
@@ -4354,16 +4540,34 @@ fn validate_combat_stat_source_plan(
             InvalidCombatStatPlanReasonV1::ZeroMagnitude,
         ));
     }
-    if !matches!(
-        (side, operation),
-        (
-            CombatStatAffectedSideV1::Player,
-            CombatStatOperationV1::Increase
-        ) | (
-            CombatStatAffectedSideV1::Opponent,
-            CombatStatOperationV1::Decrease
+    // Revision 74: Bugamon's `Growth: -1 Power And Damage, Min 4` (`1676`) is the one printed
+    // combat-stat reduction that names no opponent, and it lowers its own card. Only that
+    // shape is admitted: a card ability, round-scaled, unconditional, floored, on Power or
+    // Damage - never Attack, whose own phase no round shows a decrease in.
+    let own_growth_decrease = side == CombatStatAffectedSideV1::Player
+        && operation == CombatStatOperationV1::Decrease
+        && multiplier == CombatStatMagnitudeV1::Growth
+        && source == CombatStatEffectSourceV1::Ability
+        && predicate == CombatStatPredicateV1::Always
+        && minimum.is_some()
+        && matches!(
+            stat,
+            CombatStatAttributeV1::Power
+                | CombatStatAttributeV1::Damage
+                | CombatStatAttributeV1::PowerAndDamage
+        );
+    if !own_growth_decrease
+        && !matches!(
+            (side, operation),
+            (
+                CombatStatAffectedSideV1::Player,
+                CombatStatOperationV1::Increase
+            ) | (
+                CombatStatAffectedSideV1::Opponent,
+                CombatStatOperationV1::Decrease
+            )
         )
-    ) {
+    {
         return Err(invalid_combat_stat_execute(
             player,
             hand_slot,
@@ -4886,7 +5090,9 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOwnLifeOnVictory { .. }
         | CombatStatEffectV1::ReduceOwnLife { .. }
         | CombatStatEffectV1::GainLifeOnDefeatMax { .. }
-        | CombatStatEffectV1::GainOpponentPillzOnDefeat { .. } => return None,
+        | CombatStatEffectV1::GainOpponentPillzOnDefeat { .. }
+        | CombatStatEffectV1::HealLifeOnVictoryPerRound { .. }
+        | CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound { .. } => return None,
     })
 }
 
@@ -5020,6 +5226,18 @@ pub(crate) fn shared_post_round_effect(
             PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnDefeat(
                 LatchedEffectV1::PoisonOpponentLife { life, minimum },
             )),
+        ),
+        CombatStatEffectV1::HealLifeOnVictoryPerRound { per_round, maximum } => Some(
+            PostRoundSourceEffect::LatchOnVictoryPerRound(LatchedEffectV1::HealLife {
+                life: per_round,
+                maximum,
+            }),
+        ),
+        CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound { per_round, minimum } => Some(
+            PostRoundSourceEffect::LatchOnVictoryPerRound(LatchedEffectV1::PoisonOpponentLife {
+                life: per_round,
+                minimum,
+            }),
         ),
         CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, minimum } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::LatchOnVictory(

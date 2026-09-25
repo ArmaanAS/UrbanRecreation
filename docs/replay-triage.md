@@ -285,8 +285,10 @@ out every reading that rescales by the current round, the rounds since the latch
 round before, but only the printed text rules out a flat x2 or a count of the owner's lost
 rounds. A Growth permanent that latches in round 0 or 2 would settle it; the card data has
 20 of them (Growth Heal, Poison, Regen, Toxin and the clan-gated Dope) and no Degrowth one.
-The Rust projection refuses every Growth permanent, so nothing changes there; if it ever
-admits one, the latch-round factor has to be bound into the latched amount.
+Rust semantic revision 74 admits the two Growth permanents with a registry record
+(`Growth: Heal` `4959`, `Growth: Poison` `1266`/`1282`) and binds the latch-round factor into
+the latched amount when it latches, so the repeat never reads the round again; 1414168 is in
+its gate.
 
 The extracted record for 1414168 has `postRoundAbilities` empty in rounds 1 and 2 although
 the raw battle file carries the permanent's entries there, so read the raw file when a
@@ -310,7 +312,10 @@ the card data and in `captures/abilities.json` was scanned: this is the only com
 reduction that names no opponent, so the fix moves exactly one card-level. Fixed 1088641;
 1414749 now fails later (below). Test in `tests/ability/OwnReduction.test.ts`. The Min 4
 floor on the owner's card, and how the reduction orders against an own increase, are
-unobserved.
+unobserved. Rust semantic revision 74 admits `1676` in the owner's own phase, before the
+opposing reductions (the order 1079078/3 pins for the own half of `Cards`), and refuses it
+beside another own change to the same card, a Protection there, an opposing cancel of Power
+or Damage modifiers, or an opposing Copy; 1088641 is in its gate.
 
 ### Hazard deals random abilities, and the testcase now records them
 Administrator (a Leader; ability `Hazard`, `abilityData.specialAction: "random_abilities"`)
@@ -493,6 +498,9 @@ Rust semantic revision 73 admits `Unison : Toxin` and `Unison : Consume` without
 question: construction refuses either one wherever a second latch of its family could target
 the same player (`UnisonLatchAgainstSameFamilyLatch`), which costs no draw. Unison Poison
 (`4033`) stays closed, since its only draw, 926226, is exactly the replacement case.
+Revision 74 admits the `Growth:` Heal and Poison under the same refusal
+(`GrowthLatchAgainstSameFamilyLatch`, Heal or Regen for the Heal, Poison or Toxin for the
+Poison), which also costs no draw.
 
 ### Inactive clan bonuses — nothing to do
 Across the captures there are 23 played rounds where the server sends no clan bonus, and in

@@ -3350,6 +3350,159 @@ Three questions are left for the owner:
   at target Life 1, where a Min 0 Toxin meets the unpinned knockout-and-gain question. Refusing
   it for the new form would cost 1078555.
 
+Semantic revision 74 takes two things from card abilities only, each by exact text over the
+complete structured shape. The first is the `Growth:` permanents the registry prints, whose
+latched amount is frozen in the round that latches them. The second is Bugamon's own
+`Growth:` decrease. The family lines read 4 for the Growth Heal and Poison (925169, 1009386,
+1089001, 1414168), 1 for Bugamon (1088641) and 5 together. The slice took eligibility from
+289 to 293 of 383. The eligible-set diff adds four draws and removes none:
+- `925169` and `1009386` (Sarah's `Growth: Poison 1, Min 1`, never selected in either);
+- `1414168` (Abby Salia's `Growth: Heal 1 Max. 12`);
+- `1088641` (Bugamon).
+
+The fifth draw the lines name, 1089001, stays closed by the new cross-owner refusal below.
+Disabling that one arm measures 294.
+
+**The Growth permanents.** The registry marks Growth with `isOverdrive`, and nothing else
+about the record changes. `growth_permanent` clears that one flag and requires the rest to be
+the plain unconditional permanent. `classify_growth_permanent` then asks the plain shape
+(delayed, as both plain forms are) and the exact printed text:
+- `Growth: Heal N Max. M` (Abby Salia L5's `4959`);
+- `Growth: Poison N, Min M` (Sarah L3's `1282`, Hachi L2's `1266`), with a Min of at least 1.
+
+These are the only Growth permanents with a registry record. The card data also prints
+Growth Regen (`1353`, `1511`, `5272`), a Growth Toxin (`1455`), a Min 0 Growth Poison
+(`1133`), `Day: Growth: Poison` (`5565`, `5566`) and a clan-gated Growth Dope (`5621`). None of
+them is admitted, and no text is guessed for them. The catalog routes the two grammars through
+`require_catalog_alias`, so a same-text level with no captured definition stays closed:
+Oogway's `1296` and Litchxxt's `1813` beside `4959`, and Sarah L2's `4773` beside `1282`. A text
+with no record at all, such as the Max. 11 Heals (`1137`, `4958`, `5271`), never resolves.
+
+The engine change is one binding. `PostRoundSourceEffect` gains `LatchOnVictoryPerRound`, whose
+write kinds, outcomes and resource are the plain latch's by delegation. `bind_post_round_effect`
+turns it into the plain `LatchOnVictory` with the amount multiplied by the one-based round, in
+the round the card wins. The latched effect stores that amount, and the repeat loop pays it
+unchanged, so `rounds_played` is never read again. Undo needs nothing new: the position
+snapshot already holds the latch. The cap and the floor are printed values and do not scale,
+which is what the TypeScript reference does since fcc5408. The plain latch's context rules
+come with it by delegation: a resource canceller still refuses a permanent, and `/ Life Lost`
+still sees the Heal as a gain.
+
+**Bugamon's own decrease.** `Growth: -1 Power And Damage, Min 4` (`1676`, Bugamon L2) is the one
+printed combat-stat reduction that names no opponent (`sideAffected: player`).
+`classify_own_growth_decrease` admits exactly that text over the round-scaled shape, as an own
+`Decrease` with a floor. The plan validator admits `(Player, Decrease)` only for that shape: a
+card ability, the Growth magnitude, unconditional, floored, on Power or Damage. An own Attack
+decrease, a fixed one and an unfloored one stay `InvalidModifierDirection`. In the engine
+`modifier_target` routes an own decrease into the owner's own phase, with the owner's own
+modifiers and before the opposing reductions. That is the order the server pins for the own
+half of `Cards` (1079078/3). The opposing-reduction phase never picks it up, because it is not
+aimed at the opponent.
+
+**Evidence strength, stated per sub-grammar.**
+- `Growth: Heal` has one latch and two payments, all in 1414168, read from the raw battle file
+  because the extracted record's `postRoundAbilities` is empty in rounds 1 and 2:
+  - round 1: Abby Salia wins (factor 2), and the permanent posts quantity 0;
+  - round 2: 9 - 6 (Dwan) + 2 = 5, raw quantity 2;
+  - round 3: 5 + 2 = 7, raw quantity 2. The Max 12 never binds.
+
+  A Heal that rescaled by the current round would have paid 3 and 4. This rules out every
+  reading that rescales by the current round, by the rounds since the latch or by the round
+  before. Only the server's text ("multiplied by the number of the round in which Abby Salia
+  has won") rules out a flat x2. A latch in round 0 or 2 would settle it, and none is captured.
+  Wooly's ordinary `Growth: Power +1` in round 3 of the same battle still scales by the current
+  round (6 + 4 + 2 = 12).
+- `Growth: Poison` is composition only: the plain Poison latch (revision 28), the freeze
+  (pinned on the Heal above) and the printed text. No round shows one latch. Hachi's only
+  selected round, 1089001/2, is a loss, and Sarah is never selected in 925169 or 1009386, so
+  both draws unlock with the effect never firing.
+- Bugamon has two selected rounds, and both show the card falling by the round number while
+  the opposing card is untouched:
+  - 1088641/0: 8/7 to 7/6 (Attack 7 x 5 = 35), against Aurora at her printed 7/5 plus Support
+    (7 x 7 + 12 = 61);
+  - 1414749/1: 8/7 to 6/5 (Attack 18), while Sandro Cr fights at 6 + 4 Support - 2 from
+    Bugamon's own Dominion bonus = 8. That draw stays blocked by 5210, 5575 and 5708.
+
+  The Min 4 never binds in either round. It would bind on Bugamon's Damage in round 3 (7 - 4 =
+  3, floored to 4), which the engine applies as every printed floor is applied. That is
+  unobserved. So is the order against an own increase on the same card, which is refused below.
+
+**Refusals.** Three refusals are new. None changes the plain permanents.
+- `GrowthLatchAgainstSameFamilyLatch`. This is revision 73's rule for the open replacement
+  question (docs/replay-triage.md, "Same-family permanents"), and stacking is not changed. The
+  Heal is admitted only where no Heal or Regen, and the Poison only where no Poison or Toxin:
+  - is elsewhere in the owner's hand;
+  - could be imported by an own Copy from the opposing hand;
+  - and no opposing Copy of the slot could take the latch.
+
+  It costs nothing.
+- `GrowthLatchAgainstUnpinnedEffect`. These are newly admitted writes, so they carry the
+  1093173/1 order rule as revision 61's Consume and revision 64's Dope do. A latch pays every
+  round, so any other write to the Life it moves meets it on some outcome. Which one lands
+  first shows exactly when the floor or the cap binds, and the engine's order there depends on
+  which seat the target holds. So:
+  - the Poison is refused wherever its target can write its own Life - a gain, a cap, a
+    revival or an own floor, a latch included;
+  - the Heal, whose cap reads the value, is refused wherever the opposing hand can write the
+    owner's Life (a floor, or a both-players gain), and wherever another own source writes that
+    Life or an own Copy could import one that does;
+  - either is refused beside any opposing Copy.
+
+  It costs 1089001, measured by disabling the arm. There, Anita's `Courage: +1 Life Per Dmg`
+  raises the Poison's target on the rounds Anita wins, and the Growth Poison would pay in those
+  rounds too. The small-families pricing had proposed this refusal for the Poison.
+- `OwnCombatStatDecreaseAgainstUnpinnedEffect`. No round shows Bugamon's decrease beside any
+  of these, so each refuses the match:
+  - from the card's other slot: another change to the same card's Power or Damage (whose order
+    within the own phase would show when a floor binds), a Protection, or a Copy that could
+    import either;
+  - from the opposing hand: a cancel of Power or Damage modifiers under any condition. 1089974/2
+    shows a canceller sparing its own card's reduction, not what an opposing one does to a
+    drawback;
+  - an opposing Copy that could take the decrease.
+
+  An opposing reduction is admitted: it lands after the decrease, as the `Cards` order says. In
+  1088641, Lothar's and Sue's reductions meet Bugamon there in search. This costs nothing.
+  Bugamon's Dominion bonus in 1414749 reduces the opposing card and is not refused.
+
+The replay hazard clause for `Unison :` and `Growth:` permanents is kept as the boundary.
+`Growth: Heal` and `Growth: Poison` now execute ahead of it, so it rejects only a Growth
+permanent the grammar refuses: a wrong slot or structure, numbers the text disagrees with, or
+a Growth Regen, Toxin or Dope. It also gains `has_growth_permanent_shape`, so the complete
+Growth permanent shape under other text rejects when selected. Before, it was an inert
+disabled source unless its text happened to start with `Growth`, `Unison` or a plain
+permanent's name. The
+catalog-context policy revision stays at 5. Only the compiler revision moves.
+
+The gate grows from 874 to 882 rounds, by the rounds the slice newly reaches in the throwaway
+prefix scan:
+- 1414168 is added at four (Abby Salia's latch and both payments; its first round was
+  already reachable);
+- 1088641 is added at four (Bugamon's round 0, then three rounds without it).
+
+No fixture shrinks. The absent dispositions rise from 66 to 68: H4rp3r in 1414168/0 and
+Bugamon in 1088641/0 carry no bonus. The pinned execute ids gain the two slice ids first
+reached (`1676`, `4959`) and five ordinary ids first reached in the new rounds:
+- `246`, Nistarok's `-5 Opp Damage, Min 3` (1088641/1);
+- `513`, Stanly's `Confidence: Attack +12` (1414168/2);
+- `534`, Dwan's `-4 Opp Damage, Min 1` (1414168/2);
+- `1153`, Wooly's `Growth: Power +1` (1414168/3);
+- `3525`, Bapho Ld's `-4 Opp Power And Damage, Min 3` (1088641/3).
+
+The disabled ids are unchanged. `1266` and `1282` are admitted but not executed by the gate:
+Hachi's round is past 1089001's refused prefix, and Sarah is never selected.
+
+Left closed, as priced:
+- every Growth permanent without a registry record (listed above);
+- Growth Poison with Min 0.
+
+Two questions are left for the owner:
+- The Poison's cross-owner refusal could be dropped for 1089001, as revision 73 left the
+  Unison Toxin's exposure to its target's own gains unrefused. Unlike that Min 0 case, a Min 2
+  floor makes the two orders differ at an ordinary Life total (the target on 2 gaining).
+- A Growth permanent latched in round 0 or 2 would separate the latch-round factor from a flat
+  doubling, and one latched in round 1 of a second capture would confirm 1414168.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

@@ -759,6 +759,16 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1078555, 4),
     (1130381, 4),
     (1023495, 4),
+    // Revision 74 admits the `Growth:` permanents, whose latched amount is frozen at the
+    // round that latches them, and Bugamon's own `Growth:` decrease. Abby Salia's `Growth:
+    // Heal 1 Max. 12` wins round 1 of 1414168 (factor 2) and pays nothing that round, then
+    // heals 2 after round 2 (9 - 6 Dwan + 2 = 5) and 2 after round 3 (5 + 2 = 7); a
+    // rescaling Heal would have paid 3 and 4. Wooly's ordinary `Growth: Power +1` in round 3
+    // still scales by the current round (6 + 4 + 2 = 12). Bugamon lowers its own card by the
+    // round in 1088641/0, 8/7 to 7/6 (Attack 7 x 5 = 35), while Aurora keeps her printed
+    // 7/5 (7 x 7 + 12 Support = 61); the Min 4 is far away. Each is the complete match.
+    (1414168, 4),
+    (1088641, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -6323,6 +6333,174 @@ fn revision_73_sources_execute_and_take_the_two_sided_boundary() {
             plan(&retexted, id, text, false),
             CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
             "{id} as {text:?}"
+        );
+    }
+}
+
+/// Revision 74: the two `Growth:` permanents and Bugamon's own `Growth:` decrease execute in
+/// replay from the Ability slot and nowhere else. A Growth permanent the grammar refuses - the
+/// printed text over a wrong structure, numbers the text disagrees with, a `Min 0` Poison -
+/// and the complete Growth permanent shape under other text reject when selected.
+#[test]
+fn revision_74_growth_sources_execute_and_take_the_two_sided_boundary() {
+    use urban_recreation_rust::engine::{
+        CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatEffectV1, CombatStatMagnitudeV1,
+        CombatStatOperationV1,
+    };
+    let catalog = catalog();
+    let registry = registry();
+    let selected_slot = {
+        let source = replay(875032, &catalog);
+        usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        )
+    };
+    let plan = |registry: &EffectRegistryV1, id: u32, text: &str, bonus: bool| {
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let modifier = Some(SourceModifier {
+            id,
+            description: text.to_owned(),
+        });
+        if bonus {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, registry, PROJECTION).unwrap();
+        let plans = prepared.new_game().card_plans()[PlayerId::P1][selected_slot];
+        if bonus {
+            plans.bonus
+        } else {
+            plans.ability
+        }
+    };
+    for (id, text, effect) in [
+        (
+            4959,
+            "Growth: Heal 1 Max. 12",
+            CombatStatEffectV1::HealLifeOnVictoryPerRound {
+                per_round: 1,
+                maximum: 12,
+            },
+        ),
+        (
+            1282,
+            "Growth: Poison 1, Min 1",
+            CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                per_round: 1,
+                minimum: 1,
+            },
+        ),
+        (
+            1266,
+            "Growth: Poison 1, Min 2",
+            CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                per_round: 1,
+                minimum: 2,
+            },
+        ),
+        (
+            1676,
+            "Growth: -1 Power And Damage, Min 4",
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Player,
+                stat: CombatStatAttributeV1::PowerAndDamage,
+                operation: CombatStatOperationV1::Decrease,
+                value: 1,
+                minimum: Some(4),
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Growth,
+            },
+        ),
+    ] {
+        assert_eq!(
+            plan(&registry, id, text, false),
+            CombatStatSourcePlanV1::Execute {
+                source_id: id,
+                predicate: CombatStatPredicateV1::Always,
+                effect,
+            },
+            "{text}"
+        );
+        assert!(
+            !matches!(
+                plan(&registry, id, text, true),
+                CombatStatSourcePlanV1::Execute { .. }
+            ),
+            "{text} as a bonus"
+        );
+    }
+    let source: serde_json::Value =
+        serde_json::from_reader(File::open(root_path("captures/abilities.json")).unwrap()).unwrap();
+    // A Growth permanent over a wrong structure, or with its number moved under the text.
+    for (id, field, value) in [
+        ("4959", "isImmediatePermanent", serde_json::json!(true)),
+        ("4959", "valueMax", serde_json::json!(13)),
+        ("4959", "previousRoundRequirement", serde_json::json!("win")),
+        ("1282", "valueMin", serde_json::json!(0)),
+        ("1282", "isDivide", serde_json::json!(true)),
+        ("1266", "currentRoundRequirement", serde_json::json!("lose")),
+        ("1266", "isClanmatesCountLinked", serde_json::json!(true)),
+    ] {
+        let mut malformed = source.clone();
+        malformed[id]["abilityData"][field] = value.clone();
+        let text = malformed[id]["description"].as_str().unwrap().to_owned();
+        let malformed = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&malformed, id, &text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{id} {field} = {value}"
+        );
+    }
+    // The complete Growth permanent shape under other text, a Growth Toxin among them, which no
+    // record prints.
+    for (id, text) in [
+        ("4959", "Growth: Regen 1, Max. 12"),
+        ("4959", "Heal 1 Max. 12"),
+        ("1282", "Growth: Toxin 1, Min 1"),
+        ("1282", "Poison 1, Min 1"),
+        ("1266", "Surge: Poison 1, Min 2"),
+    ] {
+        let mut retexted = source.clone();
+        retexted[id]["description"] = serde_json::json!(text);
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&retexted, id, text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{id} as {text:?}"
+        );
+    }
+    // Bugamon's decrease is locked to its shape: another stat, an opposing side, a missing
+    // floor or another prefix never executes.
+    for (field, value) in [
+        ("attributeAffected", serde_json::json!("pwr")),
+        ("sideAffected", serde_json::json!("opponent")),
+        ("valueMin", serde_json::json!(0)),
+        ("isOverdrive", serde_json::json!(false)),
+    ] {
+        let mut malformed = source.clone();
+        malformed["1676"]["abilityData"][field] = value.clone();
+        let malformed = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+        assert!(
+            !matches!(
+                plan(
+                    &malformed,
+                    1676,
+                    "Growth: -1 Power And Damage, Min 4",
+                    false
+                ),
+                CombatStatSourcePlanV1::Execute { .. }
+            ),
+            "1676 {field} = {value}"
         );
     }
 }

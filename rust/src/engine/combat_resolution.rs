@@ -796,6 +796,17 @@ fn bind_post_round_effect(
     };
     match effect {
         PostRoundSourceEffect::Fixed(effect) => Ok(effect),
+        // The `Growth:` permanents freeze their amount here, in the round that latches them:
+        // the printed amount times the one-based round, bound into the latched effect, which
+        // the repeat loop then pays unchanged (1414168). The bound effect is built on every
+        // live source and only a won round stores it.
+        PostRoundSourceEffect::LatchOnVictoryPerRound(latched) => latched
+            .scaled(u16::from(rounds_played) + 1)
+            .map(PostRoundEffect::LatchOnVictory)
+            .ok_or(CombatResolutionError {
+                player,
+                stage: CombatResolutionArithmeticStage::EffectMagnitude,
+            }),
         PostRoundSourceEffect::ReduceOpponentLifeOnVictoryPerAntiSupport { per_count, minimum } => {
             Ok(PostRoundEffect::ReduceOpponentLifeOnVictory {
                 life: per_anti_support(per_count)?,
@@ -1087,6 +1098,16 @@ fn modifier_target(
             Some(origin.other())
         }
         (DiagnosticAffectedSideV1::Both, DiagnosticAffectedSideV1::Both) => None,
+        // An own decrease - Bugamon's `Growth: -1 Power And Damage, Min 4`, the one printed
+        // combat-stat reduction that names no opponent - lands on its owner's card with the
+        // owner's own modifiers, before the opposing reductions, as the own half of `Cards`
+        // does (1079078/3). 1088641/0 and 1414749/1 show it on Bugamon alone.
+        (DiagnosticAffectedSideV1::Player, DiagnosticAffectedSideV1::Player)
+            if operation == DiagnosticStatOperationV1::Decrease
+                && expected_operation == DiagnosticStatOperationV1::Increase =>
+        {
+            Some(origin)
+        }
         _ if side != expected_side || operation != expected_operation => None,
         (DiagnosticAffectedSideV1::Player, _) => Some(origin),
         (DiagnosticAffectedSideV1::Opponent, _) => Some(origin.other()),

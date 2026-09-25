@@ -1512,23 +1512,38 @@ fn strict_catalog_match_bridges_the_active_freaks_poison_bonus_and_admits_toxin_
         assert_eq!(*effect, expected);
     }
 
-    // The round-scaled prefix stays closed: Hachi's Growth Poison.
-    for (key, catalog_id) in [(CardKey::new(1449, 2), 1266)] {
-        assert!(matches!(
-            CatalogCombatStatMatchV1::new(
-                input([key, CardKey::new(123, 1), CardKey::new(124, 1), CardKey::new(138, 1)], opponent, false),
-                &catalog,
-                &registry,
-                PROJECTION,
-            ),
-            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
-                player: PlayerId::P1,
-                source_kind: CombatStatEffectSourceV1::Ability,
-                catalog_id: Some(actual),
-                ..
-            }) if actual == catalog_id
-        ));
-    }
+    // Since revision 74 the round-scaled prefix is admitted over the two printed Growth
+    // permanents: Hachi's Growth Poison prepares as the per-round latch, not the plain one.
+    let prepared = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(1449, 2),
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            opponent,
+            false,
+        ),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap_or_else(|error| panic!("Hachi: {error}"));
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity, effect, ..
+    } = &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Hachi was not prepared as a latching permanent")
+    };
+    assert_eq!(identity.catalog_id, Some(1266));
+    assert_eq!(
+        *effect,
+        CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+            per_round: 1,
+            minimum: 2,
+        }
+    );
 }
 
 #[test]
@@ -5181,5 +5196,152 @@ fn strict_catalog_match_refuses_revision_73_sources_in_unpinned_contexts() {
                 if description == "Versus [clan:36][clan:56] : Power +2"
         ),
         "Zlatar Cr in Aurora's place: {result:?}"
+    );
+}
+
+/// Revision 74: every draw the slice unlocks prepares from its captured hands. Abby Salia's
+/// `Growth: Heal 1 Max. 12` (1414168) and Sarah's `Growth: Poison 1, Min 1` (925169, 1009386)
+/// are end-of-round latches whose amount the engine freezes when they latch, and Bugamon's
+/// `Growth: -1 Power And Damage, Min 4` (1088641) is an own round-scaled decrease.
+#[test]
+fn strict_catalog_match_admits_revision_74_growth_permanents_and_own_decrease() {
+    use urban_recreation_rust::effect_registry::{AffectedSideV1, CombatStatV1, StatOperationV1};
+    let catalog = catalog();
+    let registry = registry();
+    let abilities = |capture: u64| {
+        let prepared =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+                .unwrap_or_else(|error| panic!("{capture}: {error:?}"));
+        [PlayerId::P1, PlayerId::P2]
+            .into_iter()
+            .flat_map(|player| prepared.preparation()[player].iter())
+            .map(|card| card.ability.clone())
+            .collect::<Vec<_>>()
+    };
+    for (capture, id, expected) in [
+        (
+            1414168,
+            4959,
+            CombatStatPostRoundEffectV1::HealLifeOnVictoryPerRound {
+                per_round: 1,
+                maximum: 12,
+            },
+        ),
+        (
+            925169,
+            1282,
+            CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                per_round: 1,
+                minimum: 1,
+            },
+        ),
+        (
+            1009386,
+            1282,
+            CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                per_round: 1,
+                minimum: 1,
+            },
+        ),
+    ] {
+        let found = abilities(capture)
+            .into_iter()
+            .filter_map(|ability| match ability {
+                CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                    identity,
+                    effect,
+                    predicate,
+                } if identity.registry_definition_id == id => {
+                    assert_eq!(identity.catalog_id, Some(id), "{capture}");
+                    Some((effect, predicate))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            found,
+            vec![(expected, CombatStatPredicateV1::Always)],
+            "{capture} {id}"
+        );
+    }
+    let found = abilities(1088641)
+        .into_iter()
+        .filter_map(|ability| match ability {
+            CatalogCombatStatSourceDispositionV1::Execute {
+                identity,
+                effect,
+                predicate,
+            } if identity.registry_definition_id == 1676 => {
+                assert_eq!(identity.catalog_id, Some(1676));
+                Some((effect, predicate))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        found,
+        vec![(
+            SupportedEffectV1::ModifyCombatStat {
+                side: AffectedSideV1::Player,
+                stat: CombatStatV1::PowerAndDamage,
+                operation: StatOperationV1::Decrease,
+                value: 1,
+                minimum: Some(4),
+                maximum: None,
+                multiplier: MagnitudeMultiplierV1::Growth,
+            },
+            CombatStatPredicateV1::Always,
+        )]
+    );
+}
+
+/// The contexts revision 74 refuses rather than guesses. Hachi's `Growth: Poison 1, Min 2`
+/// faces Anita's Courage conversion, which raises the Poison's target's own Life in rounds the
+/// latch pays (1089001) - the 1093173/1 order question. Sarah's Poison beside H4rp3r's plain
+/// `Poison 1, Min 2` in her own hand is the open same-family replacement question. Abby
+/// Salia's capped Heal facing that plain Poison in the opposing hand meets a floor on its own
+/// owner's Life. And Bugamon's decrease facing Zlatar Cr's `Copy: Opp. Ability` could be
+/// adopted onto the copier's card, which no round shows.
+#[test]
+fn strict_catalog_match_refuses_revision_74_sources_in_unpinned_contexts() {
+    let catalog = catalog();
+    let registry = registry();
+    let refused = |input: CatalogCombatStatMatchInputV1, text: &str, label: &str| {
+        let result = CatalogCombatStatMatchV1::new(input, &catalog, &registry, PROJECTION);
+        assert!(
+            matches!(
+                &result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { description, .. })
+                    if description == text
+            ),
+            "{label}: {result:?}"
+        );
+    };
+    refused(
+        captured_input(1089001),
+        "Growth: Poison 1, Min 2",
+        "1089001",
+    );
+
+    let mut sarah = captured_input(925169);
+    assert_eq!(sarah.players[PlayerId::P2].hand[3], CardKey::new(1466, 3));
+    assert_eq!(sarah.players[PlayerId::P2].hand[1], CardKey::new(1725, 3));
+    sarah.players[PlayerId::P2].hand[1] = CardKey::new(2709, 1);
+    refused(sarah, "Growth: Poison 1, Min 1", "H4rp3r beside Sarah");
+
+    let mut abby = captured_input(1414168);
+    assert_eq!(abby.players[PlayerId::P2].hand[1], CardKey::new(2603, 5));
+    assert_eq!(abby.players[PlayerId::P1].hand[3], CardKey::new(1522, 3));
+    abby.players[PlayerId::P1].hand[3] = CardKey::new(2709, 1);
+    refused(abby, "Growth: Heal 1 Max. 12", "H4rp3r against Abby Salia");
+
+    let mut bugamon = captured_input(1088641);
+    assert_eq!(bugamon.players[PlayerId::P1].hand[0], CardKey::new(1833, 2));
+    assert_eq!(bugamon.players[PlayerId::P2].hand[0], CardKey::new(559, 5));
+    bugamon.players[PlayerId::P2].hand[0] = CardKey::new(167, 4);
+    refused(
+        bugamon,
+        "Growth: -1 Power And Damage, Min 4",
+        "Zlatar Cr against Bugamon",
     );
 }

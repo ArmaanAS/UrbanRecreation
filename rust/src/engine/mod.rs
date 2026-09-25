@@ -197,6 +197,43 @@ pub enum LatchedEffectV1 {
 }
 
 impl LatchedEffectV1 {
+    /// The same permanent with its per-round amount multiplied by `factor`: the latch-round
+    /// freeze of a `Growth:` permanent. Caps and floors are printed values and do not scale.
+    pub(super) fn scaled(self, factor: u16) -> Option<Self> {
+        Some(match self {
+            Self::HealLife { life, maximum } => Self::HealLife {
+                life: life.checked_mul(factor)?,
+                maximum,
+            },
+            Self::RegenLife { life, maximum } => Self::RegenLife {
+                life: life.checked_mul(factor)?,
+                maximum,
+            },
+            Self::PoisonOpponentLife { life, minimum } => Self::PoisonOpponentLife {
+                life: life.checked_mul(factor)?,
+                minimum,
+            },
+            Self::ToxinOpponentLife { life, minimum } => Self::ToxinOpponentLife {
+                life: life.checked_mul(factor)?,
+                minimum,
+            },
+            Self::ConsumeOpponentPillz { pillz, minimum } => Self::ConsumeOpponentPillz {
+                pillz: pillz.checked_mul(factor)?,
+                minimum,
+            },
+            Self::CombustOpponentLifeAndPillz { amount, minimum } => {
+                Self::CombustOpponentLifeAndPillz {
+                    amount: amount.checked_mul(factor)?,
+                    minimum,
+                }
+            }
+            Self::DopePillz { pillz, maximum } => Self::DopePillz {
+                pillz: pillz.checked_mul(factor)?,
+                maximum,
+            },
+        })
+    }
+
     /// Whether the round that latches this effect also pays it.
     pub const fn pays_in_latching_round(self) -> bool {
         match self {
@@ -636,6 +673,13 @@ pub(super) enum PostRoundSourceEffect {
         per_round: u16,
         scale: RoundScaleV1,
     },
+    /// The `Growth:` permanents (revision 74): a won round latches the plain permanent with
+    /// its printed amount multiplied by the one-based number of that round, and the latched
+    /// effect keeps that amount for every later payment (1414168: Abby Salia's `Growth: Heal
+    /// 1 Max. 12` wins round 1 and heals 2 after rounds 2 and 3). The factor is bound into
+    /// the latched effect once, here, and never read again. Everything else - the write
+    /// kinds, the outcomes, the repeat - is the plain latch's.
+    LatchOnVictoryPerRound(LatchedEffectV1),
 }
 
 /// Which end-of-round resource a post-round effect writes, for `Cancel Opp. ... Modif.`.
@@ -705,6 +749,9 @@ impl PostRoundSourceEffect {
     pub(super) const fn resource(self) -> PostRoundResourceV1 {
         match self {
             Self::Fixed(effect) => effect.resource(),
+            Self::LatchOnVictoryPerRound(latched) => {
+                PostRoundEffect::LatchOnVictory(latched).resource()
+            }
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
             | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
@@ -724,6 +771,9 @@ impl PostRoundSourceEffect {
     pub(super) const fn life_beneficiary(self) -> LifeBeneficiaryV1 {
         match self {
             Self::Fixed(effect) => effect.life_beneficiary(),
+            Self::LatchOnVictoryPerRound(latched) => {
+                PostRoundEffect::LatchOnVictory(latched).life_beneficiary()
+            }
             Self::GainLifeOnVictoryPerRound { .. }
             | Self::GainLifeOnVictoryPerSupport { .. }
             | Self::GainLifeOnVictoryPerOpponentStars { .. } => LifeBeneficiaryV1::Owner,
@@ -746,6 +796,9 @@ impl PostRoundSourceEffect {
     pub(super) const fn reads_final_attacks(self) -> bool {
         match self {
             Self::Fixed(effect) => effect.reads_final_attacks(),
+            Self::LatchOnVictoryPerRound(latched) => {
+                PostRoundEffect::LatchOnVictory(latched).reads_final_attacks()
+            }
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
             | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
@@ -814,6 +867,9 @@ impl PostRoundSourceEffect {
     pub(super) const fn pillz_writes(self) -> PillzWritesV1 {
         match self {
             Self::Fixed(effect) => effect.pillz_writes(),
+            Self::LatchOnVictoryPerRound(latched) => {
+                PostRoundEffect::LatchOnVictory(latched).pillz_writes()
+            }
             Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentPillzOnVictoryPerRound { .. } => PillzWritesV1::OPPOSING_FLOOR,
             Self::GainPillzOnVictoryPerAntiSupport { .. } => PillzWritesV1::OWN_CAPPED_GAIN,
@@ -883,6 +939,9 @@ impl PostRoundSourceEffect {
     pub(super) const fn life_writes(self) -> LifeWritesV1 {
         match self {
             Self::Fixed(effect) => effect.life_writes(),
+            Self::LatchOnVictoryPerRound(latched) => {
+                PostRoundEffect::LatchOnVictory(latched).life_writes()
+            }
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
             | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentLifeOnVictoryPerRound { .. }
@@ -982,6 +1041,9 @@ impl PostRoundSourceEffect {
     pub(super) const fn write_outcomes(self) -> WriteOutcomesV1 {
         match self {
             Self::Fixed(effect) => effect.write_outcomes(),
+            Self::LatchOnVictoryPerRound(latched) => {
+                PostRoundEffect::LatchOnVictory(latched).write_outcomes()
+            }
             Self::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
             | Self::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
             | Self::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }

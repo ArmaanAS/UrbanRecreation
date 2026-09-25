@@ -23,7 +23,7 @@ use crate::engine::combat_stat_compiler::{
     classify_defeat_opponent_pillz, classify_defeat_opponent_pillz_gain, classify_defeat_pillz,
     classify_defeat_pillz_and_life, classify_dope_pillz,
     classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
-    classify_hand_clan_gated_post_round, classify_heal_life_on_victory,
+    classify_growth_permanent, classify_hand_clan_gated_post_round, classify_heal_life_on_victory,
     classify_killshot_opponent_life, classify_killshot_pillz_and_life,
     classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
     classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
@@ -43,11 +43,11 @@ use crate::engine::combat_stat_compiler::{
     has_consume_opponent_pillz_on_victory_shape, has_corrupt_own_life_shape,
     has_defeat_capped_life_shape, has_defeat_life_shape, has_defeat_opponent_pillz_gain_shape,
     has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_dope_pillz_shape,
-    has_equalizer_post_round_shape, has_hand_clan_gated_post_round_shape,
-    has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
-    has_killshot_post_round_shape, has_poison_opponent_life_on_defeat_shape,
-    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
-    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    has_equalizer_post_round_shape, has_growth_permanent_shape,
+    has_hand_clan_gated_post_round_shape, has_heal_life_on_victory_shape,
+    has_killshot_opponent_life_shape, has_killshot_post_round_shape,
+    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape,
     has_unison_pillz_and_life_shape, has_victory_life_shape, has_victory_opponent_life_shape,
     has_victory_opponent_pillz_and_life_shape, has_victory_opponent_pillz_shape,
@@ -1269,6 +1269,17 @@ fn prepare_combat_stat_source(
             });
         }
     }
+    // Revision 74: the `Growth:` permanents, admitted by exact text over the plain shape with
+    // `isOverdrive`. The engine binds the latching round's factor into the latched amount.
+    if let Some((effect, compact_effect)) = classify_growth_permanent(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            effect,
+            compact_effect,
+            CombatStatPredicateV1::Always,
+        ));
+    }
     // The four admitted permanent grammars. Each plan is ordinary post-round work at the
     // source; the engine position carries the latch from the round it wins onward.
     if let Some((life, maximum, predicate)) = classify_heal_life_on_victory(definition, source_kind)
@@ -1795,7 +1806,12 @@ fn prepare_combat_stat_source(
         // beside the plain permanent structure, so none of the shapes above reach them;
         // without this they would be inert disabled sources whose latch replay drops. Since
         // revision 73 the Pillz permanents are covered too, so a malformed `Unison : Consume`
-        // or a `Unison :` Combust is a hazard rather than inert.
+        // or a `Unison :` Combust is a hazard rather than inert. Since revision 74 the exact
+        // `Growth: Heal` and `Growth: Poison` execute above, so this rejects only a Growth
+        // permanent the grammar refuses - a wrong slot or structure, numbers the text
+        // disagrees with, a Growth Regen, Toxin or Dope - and the complete Growth permanent
+        // shape under other text.
+        || has_growth_permanent_shape(definition)
         || ((source.description.starts_with("Unison") || source.description.starts_with("Growth"))
             && input.is_permanent
             && matches!(

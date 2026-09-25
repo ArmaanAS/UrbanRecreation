@@ -10539,3 +10539,601 @@ fn unison_latches_are_refused_beside_a_second_latch_of_their_family() {
         );
     }
 }
+
+const GROWTH_HEAL: CombatStatEffectV1 = CombatStatEffectV1::HealLifeOnVictoryPerRound {
+    per_round: 1,
+    maximum: 20,
+};
+const GROWTH_POISON: CombatStatEffectV1 = CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+    per_round: 1,
+    minimum: 1,
+};
+
+/// P1 wins all four rounds (6/3 against 6/3, bet 2 against 0) and plays the `Growth:` latch in
+/// round `latch_round`; the other rounds use cards with no ability.
+fn growth_latch_run(
+    source_id: u32,
+    effect: CombatStatEffectV1,
+    latch_round: u8,
+) -> (
+    Vec<urban_recreation_rust::engine::BaseRulesRoundReport>,
+    Vec<Vec<urban_recreation_rust::engine::LatchedEffectV1>>,
+) {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_life = 10;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][usize::from(latch_round)].ability =
+        execute(source_id, CombatStatPredicateV1::Always, effect);
+    let mut diag = game(base, cards);
+    let start = diag.position().clone();
+    let start_hash = position_hash(&start);
+    let mut reports = Vec::new();
+    let mut latched = Vec::new();
+    let mut undos = Vec::new();
+    let mut positions = Vec::new();
+    for round in 0..4_u8 {
+        positions.push(diag.position().clone());
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (round, 2, false), (round, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        latched.push(diag.position().latched[PlayerId::P1].iter().collect());
+        reports.push(report);
+        undos.push(undo);
+    }
+    // Undo walks each round back out, the frozen latch with it.
+    while let Some(undo) = undos.pop() {
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &positions[undos.len()]);
+    }
+    assert_eq!(diag.position(), &start);
+    assert_eq!(position_hash(diag.position()), start_hash);
+    (reports, latched)
+}
+
+/// Revision 74: a `Growth:` permanent latches with its printed amount times the one-based
+/// round it wins, and every later round pays that frozen amount - never the current round's
+/// factor (1414168: Abby Salia wins round 1 and heals 2 after rounds 2 and 3). Heal and
+/// Poison stay delayed, as their plain forms are, and make/unmake restores every position.
+#[test]
+fn growth_permanents_freeze_the_latch_rounds_factor_and_unmake_exactly() {
+    use urban_recreation_rust::engine::LatchedEffectV1;
+    for latch_round in 0..4_u8 {
+        let factor = u16::from(latch_round) + 1;
+        let later = 3 - u16::from(latch_round);
+
+        let (reports, latched) = growth_latch_run(4959, GROWTH_HEAL, latch_round);
+        for (round, report) in reports.iter().enumerate() {
+            let paid_rounds = (round as u16).saturating_sub(u16::from(latch_round));
+            assert_eq!(
+                report.players[PlayerId::P1].life,
+                10 + factor * paid_rounds,
+                "Heal latched in round {latch_round}, after round {round}"
+            );
+            let expected: Vec<LatchedEffectV1> = if round >= usize::from(latch_round) {
+                vec![LatchedEffectV1::HealLife {
+                    life: factor,
+                    maximum: 20,
+                }]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(latched[round], expected, "Heal latch after round {round}");
+        }
+        assert_eq!(reports[3].players[PlayerId::P1].life, 10 + factor * later);
+
+        let (reports, latched) = growth_latch_run(1282, GROWTH_POISON, latch_round);
+        for (round, report) in reports.iter().enumerate() {
+            let paid_rounds = (round as u16).saturating_sub(u16::from(latch_round));
+            assert_eq!(
+                report.players[PlayerId::P2].life,
+                20 - 3 * (round as u16 + 1) - factor * paid_rounds,
+                "Poison latched in round {latch_round}, after round {round}"
+            );
+            if round >= usize::from(latch_round) {
+                assert_eq!(
+                    latched[round],
+                    vec![LatchedEffectV1::PoisonOpponentLife {
+                        life: factor,
+                        minimum: 1,
+                    }]
+                );
+            }
+        }
+    }
+    // The cap and the floor are printed and do not scale. A Heal latched in round 2 pays 3,
+    // but stops at its Max; a Poison latched in round 1 takes 2, but never below its Min.
+    let (reports, _) = growth_latch_run(
+        4959,
+        CombatStatEffectV1::HealLifeOnVictoryPerRound {
+            per_round: 1,
+            maximum: 12,
+        },
+        2,
+    );
+    assert_eq!(reports[3].players[PlayerId::P1].life, 12);
+    let (reports, _) = growth_latch_run(
+        1266,
+        CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+            per_round: 1,
+            minimum: 9,
+        },
+        1,
+    );
+    // 20 - 3 - 3 = 14 after the latch round; 14 - 3 - 2 = 9; then 9 - 3 = 6 sits below Min 9.
+    assert_eq!(reports[2].players[PlayerId::P2].life, 9);
+    assert_eq!(reports[3].players[PlayerId::P2].life, 6);
+
+    // A losing or stopped Growth permanent never latches.
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_life = 10;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(4959, CombatStatPredicateV1::Always, GROWTH_HEAL);
+    cards[PlayerId::P2][0].ability = execute(
+        1341,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut diag = game(base.clone(), cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert!(diag.position().latched[PlayerId::P1].is_empty());
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(4959, CombatStatPredicateV1::Always, GROWTH_HEAL);
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 2, false)))
+        .unwrap();
+    assert!(!report.cards[PlayerId::P1].won);
+    assert!(diag.position().latched[PlayerId::P1].is_empty());
+}
+
+/// Revision 74: the `Growth:` plans are card abilities, unconditional and positive; Heal's
+/// amount sits below its cap and Poison's floor is at least 1.
+#[test]
+fn growth_permanent_plans_are_ability_only_unconditional_and_bounded() {
+    let refused = |effect: CombatStatEffectV1,
+                   predicate: CombatStatPredicateV1,
+                   bonus: bool|
+     -> Option<InvalidCombatStatPlanReasonV1> {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        let plan = execute(4959, predicate, effect);
+        if bonus {
+            cards[PlayerId::P1][0].bonus = plan;
+        } else {
+            cards[PlayerId::P1][0].ability = plan;
+        }
+        match CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }) {
+            Ok(_) => None,
+            Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(reason),
+            Err(error) => panic!("{error:?}"),
+        }
+    };
+    let always = CombatStatPredicateV1::Always;
+    assert_eq!(refused(GROWTH_HEAL, always, false), None);
+    assert_eq!(refused(GROWTH_POISON, always, false), None);
+    for (effect, predicate, bonus, reason) in [
+        (
+            GROWTH_HEAL,
+            always,
+            true,
+            InvalidCombatStatPlanReasonV1::PermanentLifeSource,
+        ),
+        (
+            GROWTH_POISON,
+            always,
+            true,
+            InvalidCombatStatPlanReasonV1::PermanentLifeSource,
+        ),
+        (
+            GROWTH_HEAL,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            false,
+            InvalidCombatStatPlanReasonV1::PermanentLifePredicate,
+        ),
+        (
+            GROWTH_POISON,
+            CombatStatPredicateV1::OwnerHandUnison,
+            false,
+            InvalidCombatStatPlanReasonV1::PermanentLifePredicate,
+        ),
+        (
+            CombatStatEffectV1::HealLifeOnVictoryPerRound {
+                per_round: 0,
+                maximum: 12,
+            },
+            always,
+            false,
+            InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
+        ),
+        (
+            CombatStatEffectV1::HealLifeOnVictoryPerRound {
+                per_round: 12,
+                maximum: 12,
+            },
+            always,
+            false,
+            InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
+        ),
+        (
+            CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                per_round: 1,
+                minimum: 0,
+            },
+            always,
+            false,
+            InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
+        ),
+    ] {
+        assert_eq!(
+            refused(effect, predicate, bonus),
+            Some(reason),
+            "{effect:?} {predicate:?} bonus {bonus}"
+        );
+    }
+}
+
+/// Revision 74: a `Growth:` permanent is admitted only where no second latch of its family
+/// could target the same player, and only where no other write meets the Life it moves in an
+/// order no round pins - the target's own writes for the Poison, any opposing write or another
+/// own gain for the capped Heal - and no opposing Copy is in the hand.
+#[test]
+fn growth_permanents_are_refused_beside_a_same_family_latch_or_an_unpinned_writer() {
+    let same = Some(InvalidCombatStatPlanReasonV1::GrowthLatchAgainstSameFamilyLatch);
+    let unpinned = Some(InvalidCombatStatPlanReasonV1::GrowthLatchAgainstUnpinnedEffect);
+    let heal = execute(4959, CombatStatPredicateV1::Always, GROWTH_HEAL);
+    let poison = execute(1282, CombatStatPredicateV1::Always, GROWTH_POISON);
+    let plain_heal = execute(
+        3118,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 18,
+        },
+    );
+    let regen = execute(
+        1458,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::RegenLifeOnVictory {
+            life: 1,
+            maximum: 12,
+        },
+    );
+    let plain_poison = execute(
+        5901,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+            life: 1,
+            minimum: 2,
+        },
+    );
+    let toxin = execute(
+        1508,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+            life: 1,
+            minimum: 0,
+        },
+    );
+    let gain = execute(
+        377,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    let floor = execute(
+        1399,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 5,
+            minimum: 5,
+        },
+    );
+    let consume = execute(
+        5871,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 2,
+        },
+    );
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    // (Growth latch, own other card, own Copy, opposing plan, refusal)
+    for (source, own, own_copy, opposing, reason) in [
+        (heal, None, false, None, None),
+        (heal, Some(plain_heal), false, None, same),
+        (heal, Some(regen), false, None, same),
+        (heal, None, true, Some(plain_heal), same),
+        (heal, None, false, Some(copy), same),
+        (heal, Some(plain_poison), false, None, None),
+        (heal, Some(gain), false, None, unpinned),
+        (heal, None, true, Some(gain), unpinned),
+        (heal, None, false, Some(plain_poison), unpinned),
+        (heal, None, false, Some(floor), unpinned),
+        (heal, None, false, Some(gain), None),
+        (poison, None, false, None, None),
+        (poison, Some(plain_poison), false, None, same),
+        (poison, Some(toxin), false, None, same),
+        (poison, None, true, Some(toxin), same),
+        (poison, None, false, Some(copy), same),
+        (poison, Some(plain_heal), false, None, None),
+        (poison, Some(floor), false, None, None),
+        (poison, Some(consume), false, None, None),
+        (poison, None, false, Some(gain), unpinned),
+        (poison, None, false, Some(plain_heal), unpinned),
+        (poison, None, false, Some(plain_poison), None),
+        (poison, None, false, Some(floor), None),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = source;
+        if let Some(plan) = own {
+            cards[PlayerId::P1][1].ability = plan;
+        }
+        if own_copy {
+            cards[PlayerId::P1][2].ability = copy;
+            cards[PlayerId::P1][2].source_ability_support_count = 1;
+        }
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][2].ability = plan;
+            if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+                cards[PlayerId::P2][2].source_ability_support_count = 1;
+            }
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        let actual = match &result {
+            Ok(_) => None,
+            Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(*reason),
+            Err(error) => panic!("{error:?}"),
+        };
+        assert_eq!(
+            actual, reason,
+            "{source:?} / {own:?} / copy {own_copy} / {opposing:?}"
+        );
+    }
+}
+
+const BUGAMON_DECREASE: CombatStatEffectV1 = CombatStatEffectV1::ModifyCombatStat {
+    side: CombatStatAffectedSideV1::Player,
+    stat: CombatStatAttributeV1::PowerAndDamage,
+    operation: CombatStatOperationV1::Decrease,
+    value: 1,
+    minimum: Some(4),
+    maximum: None,
+    multiplier: CombatStatMagnitudeV1::Growth,
+};
+
+/// Revision 74: Bugamon's `Growth: -1 Power And Damage, Min 4` lowers its own card by the
+/// one-based round, never below 4, and leaves the opposing card alone (1088641/0: 8/7 to 7/6;
+/// 1414749/1: 8/7 to 6/5). It lands with the owner's own modifiers, before an opposing
+/// reduction: in round 4 the card goes 8/7 to 4/4 (Damage floored), and only then does an
+/// opposing `-1 Opp Power And Damage, Min 3` take it to 3/3. The other order would leave 4/4.
+#[test]
+fn own_growth_decrease_lowers_its_own_card_by_the_round_before_opposing_reductions() {
+    let mut base = base_spec(8, 7);
+    base.players[PlayerId::P2].hand = std::array::from_fn(|index| card(200 + index as u32, 7, 5));
+    let mut cards = plans(&base);
+    for slot in 0..4 {
+        cards[PlayerId::P1][slot].ability =
+            execute(1676, CombatStatPredicateV1::Always, BUGAMON_DECREASE);
+    }
+    cards[PlayerId::P2][3].ability = execute(
+        916,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::PowerAndDamage, 1, 3),
+    );
+    // Four Bugamon copies would be duplicate characters in a real draw; the engine does not
+    // care, and each round reads its own factor.
+    let mut diag = game(base, cards);
+    let start = diag.position().clone();
+    let mut undos = Vec::new();
+    for (round, expected, opposing) in [
+        (0_u8, (7, 6), (7, 5)),
+        (1, (6, 5), (7, 5)),
+        (2, (5, 4), (7, 5)),
+        (3, (3, 3), (7, 5)),
+    ] {
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (round, 0, false), (round, 0, false)))
+            .unwrap();
+        assert_eq!(
+            (
+                report.cards[PlayerId::P1].power,
+                report.cards[PlayerId::P1].damage
+            ),
+            expected,
+            "round {round}"
+        );
+        assert_eq!(
+            (
+                report.cards[PlayerId::P2].power,
+                report.cards[PlayerId::P2].damage
+            ),
+            opposing,
+            "round {round}"
+        );
+        undos.push(undo);
+    }
+    while let Some(undo) = undos.pop() {
+        diag.unmake(undo);
+    }
+    assert_eq!(diag.position(), &start);
+
+    // A stopped Bugamon keeps its printed stats.
+    let base = base_spec(8, 7);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(1676, CombatStatPredicateV1::Always, BUGAMON_DECREASE);
+    cards[PlayerId::P2][0].ability = execute(
+        1341,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(
+        (
+            report.cards[PlayerId::P1].power,
+            report.cards[PlayerId::P1].damage
+        ),
+        (8, 7)
+    );
+}
+
+/// Revision 74: only the one printed own-decrease shape is admitted - a card ability,
+/// round-scaled, unconditional, floored, on Power or Damage - and only where nothing no round
+/// shows meets it: another own change or a Protection on the card, an opposing cancel of
+/// Power or Damage modifiers, or an opposing Copy that could take it.
+#[test]
+fn own_growth_decrease_is_shape_locked_and_refused_beside_unpinned_effects() {
+    let build = |slot_ability: CombatStatSourcePlanV1,
+                 slot_bonus: CombatStatSourcePlanV1,
+                 opposing: CombatStatSourcePlanV1|
+     -> Option<InvalidCombatStatPlanReasonV1> {
+        let base = base_spec(8, 7);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = slot_ability;
+        cards[PlayerId::P1][0].bonus = slot_bonus;
+        cards[PlayerId::P1][0].source_bonus_support_count =
+            u16::from(!matches!(slot_bonus, CombatStatSourcePlanV1::Absent));
+        cards[PlayerId::P2][1].ability = opposing;
+        if matches!(opposing, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+            cards[PlayerId::P2][1].source_ability_support_count = 1;
+        }
+        match CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }) {
+            Ok(_) => None,
+            Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(reason),
+            Err(error) => panic!("{error:?}"),
+        }
+    };
+    let bugamon = execute(1676, CombatStatPredicateV1::Always, BUGAMON_DECREASE);
+    let none = CombatStatSourcePlanV1::Absent;
+    let refused = Some(InvalidCombatStatPlanReasonV1::OwnCombatStatDecreaseAgainstUnpinnedEffect);
+    let direction = Some(InvalidCombatStatPlanReasonV1::InvalidModifierDirection);
+    assert_eq!(build(bugamon, none, none), None);
+    // An opposing reduction is the order the engine runs and `Cards` pins.
+    assert_eq!(
+        build(
+            bugamon,
+            none,
+            execute(
+                916,
+                CombatStatPredicateV1::Always,
+                reduction(CombatStatAttributeV1::PowerAndDamage, 1, 3)
+            )
+        ),
+        None
+    );
+    for (bonus, opposing) in [
+        (
+            execute(
+                39,
+                CombatStatPredicateV1::Always,
+                own(CombatStatAttributeV1::Power, 2),
+            ),
+            none,
+        ),
+        (
+            execute(
+                23,
+                CombatStatPredicateV1::Always,
+                CombatStatEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatAttributeV1::PowerAndDamage,
+                },
+            ),
+            none,
+        ),
+        (
+            none,
+            execute(
+                2294,
+                CombatStatPredicateV1::Always,
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatAttributeV1::Damage,
+                },
+            ),
+        ),
+        (
+            none,
+            CombatStatSourcePlanV1::CopyOpponentSource {
+                source_id: 2918,
+                copied: CopiedSourceKindV1::Ability,
+                predicate: CombatStatPredicateV1::Always,
+            },
+        ),
+    ] {
+        assert_eq!(
+            build(bugamon, bonus, opposing),
+            refused,
+            "{bonus:?} / {opposing:?}"
+        );
+    }
+    // An own Attack increase on the card does not touch Power or Damage.
+    assert_eq!(
+        build(
+            bugamon,
+            execute(
+                266,
+                CombatStatPredicateV1::Always,
+                own(CombatStatAttributeV1::Attack, 3)
+            ),
+            none
+        ),
+        None
+    );
+    // Shape: never from the Bonus slot, never fixed, never on Attack, never unfloored.
+    let shaped = |side, stat, minimum, multiplier| {
+        execute(
+            1676,
+            CombatStatPredicateV1::Always,
+            modifier(
+                side,
+                stat,
+                CombatStatOperationV1::Decrease,
+                1,
+                minimum,
+                None,
+                multiplier,
+            ),
+        )
+    };
+    for plan in [
+        shaped(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::PowerAndDamage,
+            Some(4),
+            CombatStatMagnitudeV1::Fixed,
+        ),
+        shaped(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::Attack,
+            Some(4),
+            CombatStatMagnitudeV1::Growth,
+        ),
+        shaped(
+            CombatStatAffectedSideV1::Player,
+            CombatStatAttributeV1::PowerAndDamage,
+            None,
+            CombatStatMagnitudeV1::Growth,
+        ),
+    ] {
+        assert_eq!(build(plan, none, none), direction, "{plan:?}");
+    }
+    assert!(build(none, bugamon, none).is_some());
+}

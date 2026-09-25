@@ -235,7 +235,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 73;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 74;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -3364,6 +3364,126 @@ pub(crate) fn has_toxin_opponent_life_on_victory_shape(definition: &EffectDefini
     permanent_opponent_life_shape_matches(definition.structured_input(), true)
 }
 
+/// The `Growth:` gate over a latch (revision 74): the record is the plain unconditional
+/// permanent with only `isOverdrive` set, which is how the registry marks Growth. The returned
+/// copy has the flag cleared, so the ungated shape judges everything else - including
+/// `isImmediatePermanent`, which keeps a Growth Heal delayed and a Growth Poison delayed, as
+/// their plain forms are.
+fn growth_permanent(input: &StructuredEffectV1) -> Option<StructuredEffectV1> {
+    if !input.is_overdrive || input.is_divide {
+        return None;
+    }
+    let mut plain = input.clone();
+    plain.is_overdrive = false;
+    (permanent_condition(&plain) == Some((CombatStatPredicateV1::Always, ""))).then_some(plain)
+}
+
+/// Revision 74: the two `Growth:` permanents the registry prints, each by its exact text over
+/// the plain permanent's complete shape once `isOverdrive` is cleared:
+/// - `Growth: Heal N Max. M` (Abby Salia's `4959`);
+/// - `Growth: Poison N, Min M` (Sarah's `1282`, Hachi's `1266`).
+///
+/// A won round latches the plain permanent with the printed amount times the one-based number
+/// of that round, and every later round pays that frozen amount (1414168: Abby Salia wins
+/// round 1 and heals 2 after rounds 2 and 3, not 3 and 4). The cap and the floor are printed
+/// values and do not scale. Card abilities only; no registry record prints a Growth Regen or
+/// Toxin, so no text for either is guessed. Returns the public and compact effects.
+pub(crate) fn classify_growth_permanent(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(CombatStatPostRoundEffectV1, CombatStatEffectV1)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    let plain = growth_permanent(input)?;
+    let (value, minimum, maximum) = (input.value, input.value_min, input.value_max);
+    if heal_life_on_victory_shape_matches(&plain)
+        && definition.description() == format!("Growth: Heal {value} Max. {maximum}")
+    {
+        return Some((
+            CombatStatPostRoundEffectV1::HealLifeOnVictoryPerRound {
+                per_round: value,
+                maximum,
+            },
+            CombatStatEffectV1::HealLifeOnVictoryPerRound {
+                per_round: value,
+                maximum,
+            },
+        ));
+    }
+    (minimum > 0
+        && permanent_opponent_life_shape_matches(&plain, false)
+        && definition.description() == format!("Growth: Poison {value}, Min {minimum}"))
+    .then_some((
+        CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+            per_round: value,
+            minimum,
+        },
+        CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+            per_round: value,
+            minimum,
+        },
+    ))
+}
+
+/// Structural half of the `Growth:` permanent boundary: any plain permanent Life shape - Heal,
+/// Regen, Poison or Toxin - carrying `isOverdrive`. Replay rejects such a record when selected
+/// unless its text is one `classify_growth_permanent` admits.
+pub(crate) fn has_growth_permanent_shape(definition: &EffectDefinitionV1) -> bool {
+    growth_permanent(definition.structured_input()).is_some_and(|plain| {
+        permanent_own_life_shape_matches(&plain, false)
+            || permanent_own_life_shape_matches(&plain, true)
+            || permanent_opponent_life_shape_matches(&plain, false)
+            || permanent_opponent_life_shape_matches(&plain, true)
+    })
+}
+
+/// Revision 74: Bugamon's `Growth: -1 Power And Damage, Min 4` (`1676`), the one printed
+/// combat-stat reduction that names no opponent (`sideAffected: player`). It lowers its own
+/// card's Power and Damage by the printed amount times the one-based round, never below the
+/// floor, with the owner's own modifiers - before the opposing reductions, the order `Cards`
+/// pins for its own half (1079078/3). 1088641/0 (8/7 to 7/6) and 1414749/1 (8/7 to 6/5, the
+/// opposing Sandro Cr untouched) pin the target and the factor; neither reaches the floor.
+/// Exact text over the complete round-scaled shape, card abilities only.
+fn classify_own_growth_decrease(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    if source_kind != CombatStatEffectSourceV1::Ability
+        || !input.is_overdrive
+        || input.is_divide
+        || !neutral_except_round_scaled_magnitude(input)
+        || input.special_action != SpecialActionV1::None
+        || input.side_affected != AffectedSideV1::Player
+        || input.attribute_action != AttributeActionV1::Decrease
+        || input.attribute_affected != AttributeAffectedV1::PowerAndDamage
+        || input.value == 0
+        || input.value_min == 0
+        || input.value_max != 0
+        || definition.description()
+            != format!(
+                "Growth: -{} Power And Damage, Min {}",
+                input.value, input.value_min
+            )
+    {
+        return None;
+    }
+    Some((
+        SupportedEffectV1::ModifyCombatStat {
+            side: AffectedSideV1::Player,
+            stat: CombatStatV1::PowerAndDamage,
+            operation: StatOperationV1::Decrease,
+            value: input.value,
+            minimum: Some(input.value_min),
+            maximum: None,
+            multiplier: MagnitudeMultiplierV1::Growth,
+        },
+        CombatStatPredicateV1::Always,
+    ))
+}
+
 /// `Consume N, Min M`: the first Pillz permanent. A won round latches it and pays at once;
 /// every later round then takes `pillz` from the opposing player's Pillz while above
 /// `minimum`. Card abilities only: no clan prints it as a bonus. The `Unison :` and
@@ -3522,6 +3642,7 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_consume_opponent_pillz_on_victory(definition, source_kind).is_some()
         || classify_combust_opponent_life_and_pillz_on_victory(definition, source_kind).is_some()
         || classify_dope_pillz(definition, source_kind).is_some()
+        || classify_growth_permanent(definition, source_kind).is_some()
     {
         return None;
     }
@@ -3632,6 +3753,9 @@ pub(crate) fn classify_combat_stat_effect(
         return Some(classified);
     }
     if let Some(classified) = classify_round_scaled_numeric(definition) {
+        return Some(classified);
+    }
+    if let Some(classified) = classify_own_growth_decrease(definition, source_kind) {
         return Some(classified);
     }
     if let Some(classified) = classify_unison_numeric(definition, source_kind) {
@@ -11305,6 +11429,198 @@ mod tests {
                 classify_consume_opponent_pillz_on_victory(definition, ability),
                 None,
                 "{id} as {text:?}"
+            );
+        }
+    }
+
+    /// Revision 74: `Growth: Heal N Max. M` (`4959`) and `Growth: Poison N, Min M` (`1266`,
+    /// `1282`) are the plain delayed latches with only `isOverdrive` set, card abilities only,
+    /// and never ordinary combat-stat work. The plain classifiers still refuse them.
+    #[test]
+    fn growth_heal_and_poison_are_the_plain_latches_with_the_round_flag() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        for (id, public, compact) in [
+            (
+                4959,
+                CombatStatPostRoundEffectV1::HealLifeOnVictoryPerRound {
+                    per_round: 1,
+                    maximum: 12,
+                },
+                CombatStatEffectV1::HealLifeOnVictoryPerRound {
+                    per_round: 1,
+                    maximum: 12,
+                },
+            ),
+            (
+                1282,
+                CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                    per_round: 1,
+                    minimum: 1,
+                },
+                CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                    per_round: 1,
+                    minimum: 1,
+                },
+            ),
+            (
+                1266,
+                CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                    per_round: 1,
+                    minimum: 2,
+                },
+                CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound {
+                    per_round: 1,
+                    minimum: 2,
+                },
+            ),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_growth_permanent(definition, ability),
+                Some((public, compact)),
+                "{id}"
+            );
+            assert!(has_growth_permanent_shape(definition), "{id}");
+            assert_eq!(
+                classify_growth_permanent(definition, CombatStatEffectSourceV1::Bonus),
+                None
+            );
+            assert_eq!(classify_combat_stat_effect(definition, ability), None);
+            assert_eq!(classify_heal_life_on_victory(definition, ability), None);
+            assert_eq!(
+                classify_poison_opponent_life_on_victory(definition, ability),
+                None
+            );
+            assert_eq!(classify_round_scaled_post_round(definition, ability), None);
+        }
+        // The plain permanents are not Growth ones.
+        for id in [3118, 5901, 1508, 1458] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(classify_growth_permanent(definition, ability), None, "{id}");
+            assert!(!has_growth_permanent_shape(definition), "{id}");
+        }
+        for (id, field, value) in [
+            ("4959", "isImmediatePermanent", serde_json::json!(true)),
+            ("4959", "isDivide", serde_json::json!(true)),
+            ("4959", "valueMax", serde_json::json!(11)),
+            ("4959", "valueMin", serde_json::json!(0)),
+            ("4959", "indexRequirement", serde_json::json!("symmetry")),
+            ("4959", "currentRoundRequirement", serde_json::json!("lose")),
+            ("4959", "isClanmatesCountLinked", serde_json::json!(true)),
+            ("1282", "valueMin", serde_json::json!(0)),
+            ("1282", "valueMin", serde_json::json!(2)),
+            ("1282", "isImmediatePermanent", serde_json::json!(true)),
+            ("1282", "previousRoundRequirement", serde_json::json!("win")),
+            ("1266", "valueMax", serde_json::json!(4)),
+            ("1266", "sideAffected", serde_json::json!("player")),
+            ("1266", "positionRequirement", serde_json::json!("attacker")),
+        ] {
+            let malformed = with_field(id, field, value.clone());
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_growth_permanent(definition, ability),
+                None,
+                "{id} {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            ("4959", "Growth: Heal 1 Max 12"),
+            ("4959", "Growth: Regen 1, Max. 12"),
+            ("4959", "Growth : Heal 1 Max. 12"),
+            ("4959", "Heal 1 Max. 12"),
+            ("1282", "Growth: Toxin 1, Min 1"),
+            ("1282", "Growth: Poison 1, Min 2"),
+            ("1266", "Growth: Poison 1 Min 2"),
+        ] {
+            let retexted = with_text(id, text);
+            let definition = retexted.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_growth_permanent(definition, ability),
+                None,
+                "{id} as {text:?}"
+            );
+            // The complete Growth shape stays visible to replay's boundary.
+            assert!(has_growth_permanent_shape(definition), "{id} as {text:?}");
+        }
+    }
+
+    /// Revision 74: Bugamon's `Growth: -1 Power And Damage, Min 4` (`1676`) compiles as an own
+    /// round-scaled floored decrease from the Ability slot and nowhere else; nothing else with
+    /// an own decrease compiles.
+    #[test]
+    fn bugamon_own_growth_decrease_compiles_by_exact_text_and_shape() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        let expected = SupportedEffectV1::ModifyCombatStat {
+            side: AffectedSideV1::Player,
+            stat: CombatStatV1::PowerAndDamage,
+            operation: StatOperationV1::Decrease,
+            value: 1,
+            minimum: Some(4),
+            maximum: None,
+            multiplier: MagnitudeMultiplierV1::Growth,
+        };
+        let bugamon = registry.get(1676).expect("registry definition");
+        assert_eq!(
+            classify_combat_stat_effect(bugamon, ability),
+            Some((expected, CombatStatPredicateV1::Always))
+        );
+        assert_eq!(
+            compact_effect(expected),
+            Some(CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Player,
+                stat: CombatStatAttributeV1::PowerAndDamage,
+                operation: CombatStatOperationV1::Decrease,
+                value: 1,
+                minimum: Some(4),
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Growth,
+            })
+        );
+        assert_eq!(
+            classify_combat_stat_effect(bugamon, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        for (field, value) in [
+            ("attributeAffected", serde_json::json!("pwr")),
+            ("attributeAffected", serde_json::json!("atk")),
+            ("valueMin", serde_json::json!(0)),
+            ("valueMin", serde_json::json!(3)),
+            ("valueMax", serde_json::json!(8)),
+            ("isOverdrive", serde_json::json!(false)),
+            ("isDivide", serde_json::json!(true)),
+            ("previousRoundRequirement", serde_json::json!("lose")),
+            ("isPermanent", serde_json::json!(true)),
+        ] {
+            let malformed = with_field("1676", field, value.clone());
+            let definition = malformed.get(1676).unwrap();
+            assert!(
+                !matches!(
+                    classify_combat_stat_effect(definition, ability),
+                    Some((
+                        SupportedEffectV1::ModifyCombatStat {
+                            side: AffectedSideV1::Player,
+                            operation: StatOperationV1::Decrease,
+                            ..
+                        },
+                        _
+                    ))
+                ),
+                "1676 {field} = {value}"
+            );
+        }
+        for text in [
+            "Growth: -1 Power And Damage Min 4",
+            "Growth: -1 Opp Power And Damage, Min 4",
+            "Degrowth: -1 Power And Damage, Min 4",
+            "-1 Power And Damage, Min 4",
+        ] {
+            let retexted = with_text("1676", text);
+            assert_eq!(
+                classify_combat_stat_effect(retexted.get(1676).unwrap(), ability),
+                None,
+                "{text:?}"
             );
         }
     }

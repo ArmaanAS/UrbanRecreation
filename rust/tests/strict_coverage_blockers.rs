@@ -467,6 +467,14 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             5723,
         ],
     ),
+    // Revision 74: the `Growth:` permanents the registry prints (Abby Salia's Heal, Sarah's
+    // and Hachi's Poison), with the latch-round amount freeze, and Bugamon's own decrease.
+    (
+        "revision 74 Growth: Heal and Poison permanents",
+        &[1266, 1282, 4959],
+    ),
+    ("revision 74 Bugamon's own Growth decrease", &[1676]),
+    ("revision 74 union", &[1266, 1282, 1676, 4959]),
 ];
 
 fn root_path(path: &str) -> PathBuf {
