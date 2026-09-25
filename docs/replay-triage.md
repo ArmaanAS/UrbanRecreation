@@ -459,6 +459,36 @@ the server's completed-round totals before solving the next decision. Therefore 
 correctly starts with 3 pillz and cannot offer the impossible fourth pill, while the replay
 continues to fail and keeps the engine bug visible.
 
+### Same-family permanents: the server text says replace, both engines stack
+The server prints "If two poisons or toxins are applied, the second will replace the first as
+soon as the latter takes effect" on every Toxin, and the same note for two Heal or Regen, two
+Dope and two Consume (Combust, Mindwipe and Repair print none; Consume 5275 carries the
+poison note, apparently a copy error). Both engines stack instead: TypeScript pays every entry
+in `Events.repeat`, and Rust every entry in `LatchedEffectsV1`.
+
+A corpus-wide scan of every permanent post entry in the 383 raw battle files, adversarially
+re-checked, finds **no round that tells the two apart**. Every round where one target holds
+two latches of a family either has the second still in its delayed latching round, or has the
+target at or below Min or knocked out - and a floored Poison posts no entry at all (1060510
+r2, 963847 r2, 1059648 r3, 1087712 r3, 1089742 r3), so a single entry proves nothing. What
+is pinned: a delayed newcomer (Poison, Heal) lets the old latch pay once more in its own
+latching round - 1131208 r2, 1092369 r2 and 926420 r3 each post the permanent entries [2, 0]
+and the Life drops by the old latch's 2. Every current replay and every Rust gate round comes
+out the same under either model.
+
+It still matters for the solver: 12 draws eligible in Rust can reach two live latches of one
+family in search - ten Freaks decks carrying bonus 206 on two to four cards (963847, 1023274,
+1025181, 1025525, 1060510, 1073010, 1087712, 1089742, 1092369, 1131208) and two with Poisons of
+different sizes (1092294, 1092454), where replacement also changes the amount. Open for the
+owner: model replacement as printed (free in eligibility and gate rounds; in Rust the undo is
+a whole-position snapshot already), refuse those draws (12), or keep stacking. **To settle it,
+win two rounds with a Freaks deck (or a Toxin card and then a Freaks win) while the target
+stays at 8 Life or more going into the next round's end**: stacking posts two entries and
+takes 4, replacement posts one and takes 2. The immediate-newcomer case (a Toxin, Regen, Dope
+or Consume latching over an older one, which the text says stops the old one paying that very
+round), cross-kind replacement (Toxin over Poison) and a weaker newcomer replacing a stronger
+latch are all unobserved.
+
 ### Inactive clan bonuses — nothing to do
 Across the captures there are 23 played rounds where the server sends no clan bonus, and in
 every one the card is the only member of its clan in the hand. Most of those games already
