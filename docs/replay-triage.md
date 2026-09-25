@@ -564,6 +564,16 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   opponent-increase combat-stat definition in `captures/abilities.json` and this is its only
   selected round, so it is recorded rather than coded.
 
+### Two Oculus in one hand - no capture yet
+The rules text quoted in `Hand.from` says a hand holding more than one Oculus gets no
+Infiltrated effect, and the Rust catalog (`derive_effective_catalog_hand`) infiltrates only
+when exactly one Oculus is in the hand. The TypeScript scan `break`s at the first Oculus,
+so its `if (oculus !== undefined) return hand` guard can never fire: with two Oculus the
+first one still infiltrates, counting only the non-Oculus cards. No captured hand holds two
+Oculus cards (0 of 766 hands on 2026-09-25), so neither reading is evidenced and the code is
+left as it is. The two engines would disagree on such a draw, and `--rust=compare` would
+report it. A hand with two Oculus cards and a lone clan-mate for the first would settle it.
+
 ## Fresh capture backlog
 
 Nothing is untriaged. The eight remaining mismatches each have an entry above and wait on
