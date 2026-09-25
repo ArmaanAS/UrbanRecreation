@@ -574,6 +574,18 @@ Oculus cards (0 of 766 hands on 2026-09-25), so neither reading is evidenced and
 left as it is. The two engines would disagree on such a draw, and `--rust=compare` would
 report it. A hand with two Oculus cards and a lone clan-mate for the first would settle it.
 
+### Two Leaders and Counter-attack - no capture yet
+The `Game` constructor builds its turn-order table, which is where a Counter-attack Leader
+changes who moves first, before it cancels the ability of a Leader that shares its hand with
+another Leader. `Game.from`, which rebuilds a `Game` inside a search worker, builds the same
+table after that cancellation. So in a hand with two Leaders, one of them Counter-attack, the
+host counts the Counter-attack and a worker does not, and a multi-worker search could rank
+from a different turn order than the position on screen. Which reading the server uses is
+unknown: no captured hand holds two Leaders (11 hands hold one) and none holds a
+Counter-attack Leader. The Rust catalog refuses every Leader, so only TypeScript is exposed.
+A hand with two Leaders, one of them Counter-attack, would settle it; until then the
+constructor and `Game.from` should at least be made to agree.
+
 ## Fresh capture backlog
 
 Nothing is untriaged. The eight remaining mismatches each have an entry above and wait on
