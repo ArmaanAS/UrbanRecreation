@@ -45,6 +45,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-24 | 345 | 31 | Protection: Power And Damage refuses an opposing reduction |
 | 2026-09-24 | 347 | 29 | Corrupt implemented; abbreviated condition prefixes parse |
 | 2026-09-25 | 368 | 8 | `/ Life Lost` is Per; conditional Copy gated; Naja and Dope pay after KO; Recover win + floor; stale final rounds attributed |
+| 2026-09-25 | 368 | 8 | A conditional `Protection: Power And Damage` refuses reductions while its condition holds (no replay moves) |
 
 ## Fixed
 
@@ -354,15 +355,24 @@ Nebula on 4) and 942983 r2 (Henry's Support reduction). An opposing Attack reduc
 lands (956805 r2), as do an Exchange, an Impose and Tune Out, none of which is a reduction
 modifier, and the Reprisal form refuses nothing when its condition is off (1089830 r1).
 
-Only the plain, unconditional `Protection: Power And Damage` gets the new behaviour: a
-per-card guard bit on its Power and Damage, set at PRE3, which an opposing reduction checks
-at PRE1. `Protection: Power`, `Protection : Damage`, `Protection: Attack`, the Reprisal,
-Revenge and Courage forms and the clan-gated ones have no round showing them meet a
-reduction of the stat they name, so they stay Cancel-only; the first two print "cannot be
-reduced by an opposing character" and are the likely next candidates once a capture shows
-one. Fixed 924320, 949439, 1069506, 1078555, 1078820, 1091235 and 1093569; 942983 and 943111
-now fail only on their stale last round (above). Tests in `tests/ability/Protection.test.ts`.
-The Rust engine has refused these reductions since semantic revision 23.
+At first only the plain, unconditional `Protection: Power And Damage` got the new behaviour:
+a per-card guard bit on its Power and Damage, set at PRE3, which an opposing reduction checks
+at PRE1. Since 2026-09-25 the guard is set whenever a Power And Damage Protection applies at
+all, because the ability's conditions (Reprisal, Revenge, Courage) already gate the modifier:
+the conditional forms refuse a reduction while their condition holds, by composition with the
+plain form's refusal. No captured round shows one live against a reduction - Forjoten Ld's
+`Reprisal: Protect. Power And Damage` is live with nothing to refuse in 1131114 r2 - and the
+Reprisal form lets Callie's cut land when its condition is off (1089830 r1). The replays are
+unchanged, 368 exact and 8 mismatches before and after; the Rust engine admits the Reprisal
+form under the same rule since semantic revision 75. The Cards (both sides) form stays
+Cancel-only. `Protection: Power`, `Protection : Damage`, `Protection: Attack` and the
+clan-gated ones have no round showing them meet a reduction of the stat they name, so they
+stay Cancel-only; the first two print "cannot be reduced by an opposing character" and are
+the likely next candidates once a capture shows one. Fixed 924320, 949439, 1069506, 1078555, 1078820, 1091235 and 1093569; 942983 and 943111
+now fail only on their stale last round (above). Tests in `tests/ability/Protection.test.ts`,
+including a constructed Forjoten Ld that keeps 8/5 against Sue's cut when it moves second and
+falls to 7/4 when it moves first. The Rust engine has refused these reductions since semantic
+revision 23.
 
 ### Corrupt lowers its owner's own Life
 The TypeScript engine did not implement `Corrupt N Min. M` at all, so Nega D Ld's `Corrupt 2

@@ -235,7 +235,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 74;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 75;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -400,11 +400,19 @@ fn anita_courage_damage_to_life_shape_matches(input: &StructuredEffectV1) -> boo
 /// Recognize Komboka's exact clan-bonus composite Victory effect.  This remains outside
 /// the ordinary numeric compiler because its two checked post-round mutations must stay
 /// coupled, ordered, and identity-locked.
+///
+/// Revision 75 lets the same record through from a card's Ability slot: Carnibox L2 prints
+/// `+1 Pillz And Life` as its ability (`3356`, a structural alias of `1714`), and 1089974/1
+/// pays it exactly as the bonus pays (11 - 7 + 1 = 5 Pillz, 7 + 1 = 8 Life). The text and the
+/// complete shape are the grammar here; the catalog still requires the printed ability id to
+/// be a structural alias of the definition, and the plan validator pins the ability ids. The
+/// Bonus slot keeps its identity and its effective Komboka clan.
 pub(crate) fn classify_komboka_victory_pillz_and_life(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> bool {
-    komboka_victory_pillz_and_life_identity_matches(source_kind, definition.id())
+    (komboka_victory_pillz_and_life_identity_matches(source_kind, definition.id())
+        || source_kind == CombatStatEffectSourceV1::Ability)
         && definition.description() == "+1 Pillz And Life"
         && komboka_victory_pillz_and_life_shape_matches(definition.structured_input())
 }
@@ -450,6 +458,155 @@ fn reprisal_stop_opponent_ability_shape_matches(input: &StructuredEffectV1) -> b
             ..POST_ROUND_SHAPE
         },
     )
+}
+
+/// Revision 75: Angelo L2's `Stop Opp. Ability` (`877`), admitted by identity. The record is
+/// the unconditional Stop every other same-text definition prints except for one field,
+/// `value: 2`, which the registry refuses as a non-zero control value. 1065231/0 shows it
+/// firing: Aurora wins from 12 Life and her `+3 Life` is not paid, where every unstopped
+/// Aurora win from 12 goes to 15 (1059030/0, 1059454/0, 1066077/0, 1066589/0). The value has
+/// no visible effect. Only this id, the exact text and that one differing field, from the
+/// Ability slot; the registry keeps refusing the record, and no other non-zero control value
+/// is admitted.
+pub(crate) fn classify_angelo_stop_opponent_ability(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> bool {
+    source_kind == CombatStatEffectSourceV1::Ability
+        && definition.id() == ANGELO_STOP_OPPONENT_ABILITY_ID
+        && definition.description() == "Stop Opp. Ability"
+        && shape_matches(
+            definition.structured_input(),
+            PostRoundShapeV1 {
+                value: ShapeFieldV1::Exact(2),
+                current_round: CurrentRoundRequirementV1::Any,
+                attribute: AttributeAffectedV1::None,
+                action: AttributeActionV1::None,
+                special: SpecialActionV1::StopAbility,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
+/// Angelo L2's one printed record; see `classify_angelo_stop_opponent_ability`.
+pub(crate) const ANGELO_STOP_OPPONENT_ABILITY_ID: u32 = 877;
+
+/// Revision 75, composition only: three conditional controls, each by its exact printed text
+/// over its complete record, card abilities only. Each puts a predicate the projection already
+/// resolves before the Stop graph on a control it already executes unconditionally:
+/// - `Reprisal: Cancel Opp Pow & Dam Mod` (Cusaghi's `3103`): the Power And Damage cancel
+///   under Reprisal's second move;
+/// - `Asymmetry: Cancel Opp. Power Mod.` (Gregor Ld's `5805`): the Power cancel under differing
+///   hand slots;
+/// - `Reprisal: Protect. Power And Damage` (`2434`, with `5082` its structural alias): the
+///   revision-23 Protection under Reprisal's second move.
+///
+/// No captured round shows any of them live against a modifier or reduction it would refuse
+/// (926584/3, 1088008/2, 1131114/2 are live no-ops; 1089830/1 shows the Protection's false
+/// predicate letting a cut land). Returns the control and its predicate.
+pub(crate) fn classify_conditional_control(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    const SLOTS_DIFFER: &[(PreviousRoundRequirementV1, IndexRequirementV1)] = &[(
+        PreviousRoundRequirementV1::Any,
+        IndexRequirementV1::Asymmetry,
+    )];
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let (position, conditions, side, attribute, action, effect, predicate) =
+        match definition.description() {
+            "Reprisal: Cancel Opp Pow & Dam Mod" => (
+                PositionRequirementV1::Defender,
+                UNCONDITIONAL,
+                AffectedSideV1::Opponent,
+                AttributeAffectedV1::PowerAndDamage,
+                AttributeActionV1::StopModifier,
+                SupportedEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatV1::PowerAndDamage,
+                },
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ),
+            "Asymmetry: Cancel Opp. Power Mod." => (
+                PositionRequirementV1::Both,
+                SLOTS_DIFFER,
+                AffectedSideV1::Opponent,
+                AttributeAffectedV1::Power,
+                AttributeActionV1::StopModifier,
+                SupportedEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatV1::Power,
+                },
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ),
+            "Reprisal: Protect. Power And Damage" => (
+                PositionRequirementV1::Defender,
+                UNCONDITIONAL,
+                AffectedSideV1::Player,
+                AttributeAffectedV1::PowerAndDamage,
+                AttributeActionV1::Protect,
+                SupportedEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatV1::PowerAndDamage,
+                },
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ),
+            _ => return None,
+        };
+    shape_matches(
+        definition.structured_input(),
+        PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(0),
+            position,
+            conditions,
+            current_round: CurrentRoundRequirementV1::Any,
+            side,
+            attribute,
+            action,
+            special: SpecialActionV1::None,
+            ..POST_ROUND_SHAPE
+        },
+    )
+    .then_some((effect, predicate))
+}
+
+/// Revision 75: `Power +N, Max. M` (Jochar's `2968` at level 3 and `2969` at level 4), the one
+/// plain fixed increase the registry prints with a cap. It is revision 45's clamp over a fixed
+/// magnitude: an own Power increase applied with the owner's own modifiers that leaves a
+/// Power already at or above M alone and otherwise stops at M. 1093569/0 binds it (6 + 6 = 12
+/// shown as 8) and 1414237/3 lands on it (5 + 3 = 8). Exact text over the neutral fixed shape
+/// with `M > N`, Power only, card abilities only.
+fn classify_capped_fixed_power_increase(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    if source_kind != CombatStatEffectSourceV1::Ability
+        || input.position_requirement != PositionRequirementV1::Both
+        || !neutral_except_position(input)
+        || input.is_support
+        || input.special_action != SpecialActionV1::None
+        || input.side_affected != AffectedSideV1::Player
+        || input.attribute_action != AttributeActionV1::Increase
+        || input.attribute_affected != AttributeAffectedV1::Power
+        || input.value == 0
+        || input.value_min != 0
+        || input.value_max <= input.value
+        || definition.description() != format!("Power +{}, Max. {}", input.value, input.value_max)
+    {
+        return None;
+    }
+    Some((
+        SupportedEffectV1::ModifyCombatStat {
+            side: AffectedSideV1::Player,
+            stat: CombatStatV1::Power,
+            operation: StatOperationV1::Increase,
+            value: input.value,
+            minimum: None,
+            maximum: Some(input.value_max),
+            multiplier: MagnitudeMultiplierV1::Fixed,
+        },
+        CombatStatPredicateV1::Always,
+    ))
 }
 
 /// Recognize `Stop Opp. Ability` and `Stop Opp. Bonus` under the condition prefixes whose
@@ -789,6 +946,38 @@ pub(crate) fn classify_victory_opponent_pillz(
         && definition.description()
             == format!("-{} Opp Pillz. Min {}", input.value, input.value_min))
     .then_some((input.value, input.value_min))
+}
+
+/// Revision 75, composition only: `Stop: -N Pillz Opp. Min M` (Izsobahd's `646`). The record
+/// is the plain Victory opponent-Pillz reduction with `isInverted`, which is how the registry
+/// marks the `Stop:` trigger (revision 48). It maps to that reduction under the
+/// `OwnerAbilityStopped` predicate, which the projection models as never holding and which
+/// construction refuses wherever an opposing source could stop the owner's ability - so an
+/// admitted match never executes the payload. The one selected round, 1058005/1, is a loss
+/// with nothing opposite that could stop Izsobahd, and pays nothing. Exact text over the
+/// complete inverted shape, card abilities only. Returns `(pillz, minimum)`.
+pub(crate) fn classify_stop_triggered_opponent_pillz(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_stop_triggered_opponent_pillz_shape(definition)
+        && definition.description()
+            == format!("Stop: -{} Pillz Opp. Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min))
+}
+
+/// Structural half of the `Stop:` opposing Pillz boundary: the Victory opponent-Pillz shape
+/// once `isInverted` is cleared.
+pub(crate) fn has_stop_triggered_opponent_pillz_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    if !input.is_inverted || input.value == 0 {
+        return false;
+    }
+    let mut plain = input.clone();
+    plain.is_inverted = false;
+    victory_opponent_pillz_shape_matches(&plain)
 }
 
 /// Recognize the opposing compound `-N Opp. Pillz And Life, Min M`: the round winner takes
@@ -1960,6 +2149,9 @@ pub(crate) enum KillshotPostRoundEffectV1 {
     GainLife { life: u16, maximum: u16 },
     /// `Killshot: Toxin N, Min M`: the plain Toxin permanent, latched by the ratio.
     ToxinOpponentLife { life: u16, minimum: u16 },
+    /// `Killshot: -N Opp. Pillz And Life, Min M` (revision 75): the plain opposing compound,
+    /// each resource floored on its own, paid on the ratio instead of the win.
+    ReduceOpponentPillzAndLife { amount: u16, minimum: u16 },
 }
 
 impl KillshotPostRoundEffectV1 {
@@ -1979,6 +2171,13 @@ impl KillshotPostRoundEffectV1 {
                 CombatStatPostRoundEffectV1::ToxinOpponentLifeOnKillshot { life, minimum },
                 CombatStatEffectV1::ToxinOpponentLifeOnKillshot { life, minimum },
             ),
+            Self::ReduceOpponentPillzAndLife { amount, minimum } => (
+                CombatStatPostRoundEffectV1::ReduceOpponentPillzAndLifeOnKillshot {
+                    amount,
+                    minimum,
+                },
+                CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { amount, minimum },
+            ),
         }
     }
 }
@@ -1993,9 +2192,13 @@ impl KillshotPostRoundEffectV1 {
 /// carries the clan-mates link, which is the gate and not a magnitude. Exact text rebuilt
 /// from the record's own numbers, card abilities only: no clan bonus prints a Killshot.
 ///
-/// The opposing `Killshot: -N Opp. Pillz And Life, Min M` compound, a capped or gated Pillz
-/// form, a capped Unison form and a Killshot on any other permanent have no shape here and
-/// stay closed. Returns the effect and the one predicate the printed prefix names.
+/// Since revision 75 it also takes the opposing `Killshot: -N Opp. Pillz And Life, Min M`
+/// compound (`5575`, with `5775` its alias, and the `Min 0` sibling `5776`): the plain
+/// revision-67 compound on the Killshot trigger. One round pays it, 1414749/0 (Kephren's owner
+/// 12 - 2 - 2 = 8 Life and 12 - 2 = 10 Pillz); the `Min 0` form rests on composition alone.
+/// A capped or gated Pillz form, a capped Unison form and a Killshot on any other permanent
+/// have no shape here and stay closed. Returns the effect and the one predicate the printed
+/// prefix names.
 pub(crate) fn classify_killshot_post_round(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -2041,6 +2244,18 @@ pub(crate) fn classify_killshot_post_round(
             CombatStatPredicateV1::Always,
             format!("Killshot: Toxin {}, Min {}", input.value, input.value_min),
         )
+    } else if killshot_opponent_pillz_and_life_shape_matches(input) {
+        (
+            KillshotPostRoundEffectV1::ReduceOpponentPillzAndLife {
+                amount: input.value,
+                minimum: input.value_min,
+            },
+            CombatStatPredicateV1::Always,
+            format!(
+                "Killshot: -{} Opp. Pillz And Life, Min {}",
+                input.value, input.value_min
+            ),
+        )
     } else {
         return None;
     };
@@ -2055,7 +2270,23 @@ pub(crate) fn has_killshot_post_round_shape(definition: &EffectDefinitionV1) -> 
         && (killshot_own_pillz_shape_matches(input)
             || killshot_own_life_shape_matches(input, false)
             || killshot_own_life_shape_matches(input, true)
-            || killshot_toxin_shape_matches(input))
+            || killshot_toxin_shape_matches(input)
+            || killshot_opponent_pillz_and_life_shape_matches(input))
+}
+
+/// The plain opposing compound's structure on the `sureshot` channel.
+fn killshot_opponent_pillz_and_life_shape_matches(input: &StructuredEffectV1) -> bool {
+    shape_matches(
+        input,
+        PostRoundShapeV1 {
+            value_min: ShapeFieldV1::Read,
+            current_round: CurrentRoundRequirementV1::Sureshot,
+            side: AffectedSideV1::Opponent,
+            attribute: AttributeAffectedV1::LifeAndPillz,
+            action: AttributeActionV1::Decrease,
+            ..POST_ROUND_SHAPE
+        },
+    )
 }
 
 fn killshot_own_pillz_shape_matches(input: &StructuredEffectV1) -> bool {
@@ -3681,6 +3912,7 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_victory_pillz(definition, source_kind).is_some()
         || classify_victory_pillz_max(definition, source_kind).is_some()
         || classify_victory_opponent_pillz(definition, source_kind).is_some()
+        || classify_stop_triggered_opponent_pillz(definition, source_kind).is_some()
         || classify_victory_pillz_per_damage(definition, source_kind).is_some()
         || classify_victory_life_per_damage(definition, source_kind).is_some()
         || classify_victory_life_per_opponent_damage(definition, source_kind).is_some()
@@ -3731,7 +3963,16 @@ pub(crate) fn classify_combat_stat_effect(
             CombatStatPredicateV1::OwnerMovesSecond,
         ));
     }
+    if classify_angelo_stop_opponent_ability(definition, source_kind) {
+        return Some((
+            SupportedEffectV1::StopOpponentAbility,
+            CombatStatPredicateV1::Always,
+        ));
+    }
     if let Some(classified) = classify_conditional_stop(definition, source_kind) {
+        return Some(classified);
+    }
+    if let Some(classified) = classify_conditional_control(definition, source_kind) {
         return Some(classified);
     }
     // Model-specific conditions take precedence over the registry's model-neutral output.
@@ -3789,6 +4030,9 @@ pub(crate) fn classify_combat_stat_effect(
         return Some(classified);
     }
     if let Some(classified) = classify_cards_numeric(definition, source_kind) {
+        return Some(classified);
+    }
+    if let Some(classified) = classify_capped_fixed_power_increase(definition, source_kind) {
         return Some(classified);
     }
     let input = definition.structured_input();
@@ -7191,14 +7435,22 @@ mod tests {
                 "malformed {field} = {value}",
             );
         }
-        assert_eq!(
+        // Revision 75 admits the ordinary capped increase as its own fixed grammar, never as
+        // a Per Life Left magnitude.
+        assert!(matches!(
             classify_combat_stat_effect(
                 registry.get(2969).unwrap(),
                 CombatStatEffectSourceV1::Ability
             ),
-            None,
-            "an ordinary capped increase is not a Per Life Left grammar",
-        );
+            Some((
+                SupportedEffectV1::ModifyCombatStat {
+                    multiplier: MagnitudeMultiplierV1::Fixed,
+                    maximum: Some(8),
+                    ..
+                },
+                CombatStatPredicateV1::Always,
+            ))
+        ));
     }
 
     #[test]
@@ -8782,14 +9034,13 @@ mod tests {
             assert_eq!(classify_unison_numeric(definition, ability), None);
         }
 
-        // The rest of the channel stays closed: the admitted opposing reduction and the
-        // compound have their own grammars, the opposing Pillz-and-Life compound and the
-        // whole-hand `Team:` form have none.
+        // The rest of the channel stays closed here: the admitted opposing reduction and the
+        // compound have their own grammars, and the whole-hand `Team:` form has none. The
+        // opposing Pillz-and-Life compound joined this grammar in revision 75 and has its own
+        // test.
         for (id, description) in [
             (1204, "Killshot: -6 Opp. Life Min 0"),
             (1768, "Killshot: +2 Pillz And Life"),
-            (5775, "Killshot: -2 Opp. Pillz And Life, Min 2"),
-            (5776, "Killshot: -2 Opp. Pillz And Life, Min 0"),
             (3480, "Team: Killshot: -2 Opp. Life Min 2"),
         ] {
             let definition = registry.lookup_capture(id, description).unwrap();
@@ -10667,7 +10918,9 @@ mod tests {
             komboka,
             CombatStatEffectSourceV1::Bonus,
         ));
-        assert!(!classify_komboka_victory_pillz_and_life(
+        // Revision 75: the exact text and shape also pass from a card's Ability slot, where the
+        // catalog and the plan validator pin the ability ids.
+        assert!(classify_komboka_victory_pillz_and_life(
             komboka,
             CombatStatEffectSourceV1::Ability,
         ));
@@ -11622,6 +11875,375 @@ mod tests {
                 None,
                 "{text:?}"
             );
+        }
+    }
+
+    /// Revision 75: Angelo L2's `Stop Opp. Ability` (`877`) compiles by identity - the id, the
+    /// exact text and its one differing field, `value: 2` - from the Ability slot. The registry
+    /// still refuses the record, and the same value under another id, text or slot does not
+    /// compile.
+    #[test]
+    fn angelo_stop_opponent_ability_is_admitted_by_identity_only() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        let angelo = registry.get(877).expect("registry definition");
+        assert!(matches!(
+            angelo.compiled(),
+            CompiledEffectV1::Unsupported(reasons)
+                if reasons.contains(&crate::effect_registry::UnsupportedReasonV1::NonZeroControlValues)
+        ));
+        assert!(classify_angelo_stop_opponent_ability(angelo, ability));
+        assert_eq!(
+            classify_combat_stat_effect(angelo, ability),
+            Some((
+                SupportedEffectV1::StopOpponentAbility,
+                CombatStatPredicateV1::Always
+            ))
+        );
+        assert!(!classify_angelo_stop_opponent_ability(
+            angelo,
+            CombatStatEffectSourceV1::Bonus
+        ));
+        assert_eq!(
+            classify_combat_stat_effect(angelo, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        for (field, value) in [
+            ("value", serde_json::json!(3)),
+            ("value", serde_json::json!(0)),
+            ("valueMin", serde_json::json!(1)),
+            ("positionRequirement", serde_json::json!("defender")),
+            ("sideAffected", serde_json::json!("opponent")),
+            ("isInverted", serde_json::json!(true)),
+        ] {
+            let malformed = with_field("877", field, value.clone());
+            assert!(
+                !classify_angelo_stop_opponent_ability(malformed.get(877).unwrap(), ability),
+                "877 {field} = {value}"
+            );
+        }
+        let retexted = with_text("877", "Stop Opp. Bonus");
+        assert!(!classify_angelo_stop_opponent_ability(
+            retexted.get(877).unwrap(),
+            ability
+        ));
+        // The same value on another same-text id is still a malformed control.
+        let lumia = with_field("1341", "value", serde_json::json!(2));
+        assert_eq!(
+            classify_combat_stat_effect(lumia.get(1341).unwrap(), ability),
+            None
+        );
+    }
+
+    /// Revision 75: `Power +N, Max. M` (`2968`, `2969`) compiles as a fixed capped Power
+    /// increase from the Ability slot, by exact text over the neutral shape with a cap above
+    /// the amount; nothing else with a cap does.
+    #[test]
+    fn capped_fixed_power_increase_compiles_by_exact_text_and_shape() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        for (id, value) in [(2968, 3), (2969, 6)] {
+            let expected = SupportedEffectV1::ModifyCombatStat {
+                side: AffectedSideV1::Player,
+                stat: CombatStatV1::Power,
+                operation: StatOperationV1::Increase,
+                value,
+                minimum: None,
+                maximum: Some(8),
+                multiplier: MagnitudeMultiplierV1::Fixed,
+            };
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_combat_stat_effect(definition, ability),
+                Some((expected, CombatStatPredicateV1::Always)),
+                "{id}"
+            );
+            assert_eq!(
+                compact_effect(expected),
+                Some(CombatStatEffectV1::ModifyCombatStat {
+                    side: CombatStatAffectedSideV1::Player,
+                    stat: CombatStatAttributeV1::Power,
+                    operation: CombatStatOperationV1::Increase,
+                    value,
+                    minimum: None,
+                    maximum: Some(8),
+                    multiplier: CombatStatMagnitudeV1::Fixed,
+                })
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} as a bonus"
+            );
+        }
+        for (field, value) in [
+            ("valueMax", serde_json::json!(6)),
+            ("valueMax", serde_json::json!(3)),
+            ("valueMin", serde_json::json!(1)),
+            ("attributeAffected", serde_json::json!("dmg")),
+            ("attributeAffected", serde_json::json!("pwr&dmg")),
+            ("positionRequirement", serde_json::json!("attacker")),
+            ("previousRoundRequirement", serde_json::json!("win")),
+            ("isSupport", serde_json::json!(true)),
+            ("isOverdrive", serde_json::json!(true)),
+            ("isLifeLinked", serde_json::json!(true)),
+        ] {
+            let malformed = with_field("2968", field, value.clone());
+            assert!(
+                !matches!(
+                    classify_combat_stat_effect(malformed.get(2968).unwrap(), ability),
+                    Some((
+                        SupportedEffectV1::ModifyCombatStat {
+                            maximum: Some(_),
+                            multiplier: MagnitudeMultiplierV1::Fixed,
+                            ..
+                        },
+                        _
+                    ))
+                ),
+                "2968 {field} = {value}"
+            );
+        }
+        for text in [
+            "Power +3 Max. 8",
+            "Power +3, Max 8",
+            "Power +3, Max. 9",
+            "Damage +3, Max. 8",
+            "Courage: Power +3, Max. 8",
+        ] {
+            let retexted = with_text("2968", text);
+            assert_eq!(
+                classify_combat_stat_effect(retexted.get(2968).unwrap(), ability),
+                None,
+                "{text:?}"
+            );
+        }
+    }
+
+    /// Revision 75, composition only: `Stop: -N Pillz Opp. Min M` (`646`) is the Victory
+    /// opponent-Pillz shape with `isInverted`, card abilities only, and never ordinary
+    /// combat-stat work. The plain classifier still refuses it, and `Stop: +3 Pillz` is not it.
+    #[test]
+    fn stop_triggered_opponent_pillz_compiles_by_exact_text_over_the_inverted_shape() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        let izsobahd = registry.get(646).expect("registry definition");
+        assert_eq!(
+            classify_stop_triggered_opponent_pillz(izsobahd, ability),
+            Some((3, 1))
+        );
+        assert!(has_stop_triggered_opponent_pillz_shape(izsobahd));
+        assert_eq!(
+            classify_stop_triggered_opponent_pillz(izsobahd, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        assert_eq!(classify_victory_opponent_pillz(izsobahd, ability), None);
+        assert_eq!(classify_combat_stat_effect(izsobahd, ability), None);
+        let stop_gain = registry.get(918).expect("registry definition");
+        assert_eq!(
+            classify_stop_triggered_opponent_pillz(stop_gain, ability),
+            None
+        );
+        assert!(!has_stop_triggered_opponent_pillz_shape(stop_gain));
+        for (field, value) in [
+            ("isInverted", serde_json::json!(false)),
+            ("currentRoundRequirement", serde_json::json!("lose")),
+            ("sideAffected", serde_json::json!("player")),
+            ("attributeAffected", serde_json::json!("life")),
+            ("valueMax", serde_json::json!(4)),
+            ("positionRequirement", serde_json::json!("attacker")),
+        ] {
+            let malformed = with_field("646", field, value.clone());
+            assert_eq!(
+                classify_stop_triggered_opponent_pillz(malformed.get(646).unwrap(), ability),
+                None,
+                "646 {field} = {value}"
+            );
+        }
+        for text in [
+            "Stop: -3 Pillz Opp. Min 2",
+            "Stop: -3 Opp Pillz. Min 1",
+            "-3 Pillz Opp. Min 1",
+        ] {
+            let retexted = with_text("646", text);
+            let definition = retexted.get(646).unwrap();
+            assert_eq!(
+                classify_stop_triggered_opponent_pillz(definition, ability),
+                None,
+                "{text:?}"
+            );
+            assert!(
+                has_stop_triggered_opponent_pillz_shape(definition),
+                "{text:?}"
+            );
+        }
+    }
+
+    /// Revision 75, composition only: the Reprisal and Asymmetry cancels and the Reprisal
+    /// Protection compile by exact text over their complete records, each under the one
+    /// predicate its prefix names, from the Ability slot only.
+    #[test]
+    fn conditional_cancels_and_protection_compile_by_exact_text_and_shape() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        for (id, effect, predicate) in [
+            (
+                3103,
+                SupportedEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatV1::PowerAndDamage,
+                },
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ),
+            (
+                5805,
+                SupportedEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatV1::Power,
+                },
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            ),
+            (
+                2434,
+                SupportedEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatV1::PowerAndDamage,
+                },
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ),
+            (
+                5082,
+                SupportedEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatV1::PowerAndDamage,
+                },
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(
+                matches!(definition.compiled(), CompiledEffectV1::Unsupported(_)),
+                "{id}"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, ability),
+                Some((effect, predicate)),
+                "{id}"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} as a bonus"
+            );
+        }
+        for (id, field, value) in [
+            ("3103", "positionRequirement", serde_json::json!("both")),
+            ("3103", "positionRequirement", serde_json::json!("attacker")),
+            ("3103", "attributeAffected", serde_json::json!("pwr")),
+            ("3103", "indexRequirement", serde_json::json!("asymmetry")),
+            ("5805", "indexRequirement", serde_json::json!("symmetry")),
+            ("5805", "positionRequirement", serde_json::json!("defender")),
+            ("5805", "attributeAffected", serde_json::json!("dmg")),
+            ("5805", "sideAffected", serde_json::json!("player")),
+            ("2434", "sideAffected", serde_json::json!("opponent")),
+            ("2434", "attributeAffected", serde_json::json!("pwr")),
+            (
+                "2434",
+                "previousRoundRequirement",
+                serde_json::json!("lose"),
+            ),
+            ("2434", "isClanmatesCountLinked", serde_json::json!(true)),
+        ] {
+            let malformed = with_field(id, field, value.clone());
+            assert_eq!(
+                classify_conditional_control(malformed.get(id.parse().unwrap()).unwrap(), ability),
+                None,
+                "{id} {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            ("3103", "Reprisal: Cancel Opp. Power And Damage Modif."),
+            ("3103", "Revenge: Cancel Opp Pow & Dam Mod"),
+            ("5805", "Asymmetry: Cancel Opp. Power Modif."),
+            ("5805", "Symmetry: Cancel Opp. Power Mod."),
+            ("2434", "Reprisal: Protection: Power And Damage"),
+            ("2434", "Courage: Protect. Power And Damage"),
+        ] {
+            let retexted = with_text(id, text);
+            assert_eq!(
+                classify_combat_stat_effect(retexted.get(id.parse().unwrap()).unwrap(), ability),
+                None,
+                "{id} as {text:?}"
+            );
+        }
+    }
+
+    /// Revision 75: `Killshot: -N Opp. Pillz And Life, Min M` (`5575`, its alias `5775`, and
+    /// the `Min 0` sibling `5776`) joins the Killshot post-round grammar, card abilities only,
+    /// and never ordinary combat-stat or Victory-compound work.
+    #[test]
+    fn killshot_opponent_pillz_and_life_joins_the_killshot_grammar() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        for (id, minimum) in [(5575, 2), (5775, 2), (5776, 0)] {
+            let definition = registry.get(id).expect("registry definition");
+            let effect =
+                KillshotPostRoundEffectV1::ReduceOpponentPillzAndLife { amount: 2, minimum };
+            assert_eq!(
+                classify_killshot_post_round(definition, ability),
+                Some((effect, CombatStatPredicateV1::Always)),
+                "{id}"
+            );
+            assert_eq!(
+                effect.effects(),
+                (
+                    CombatStatPostRoundEffectV1::ReduceOpponentPillzAndLifeOnKillshot {
+                        amount: 2,
+                        minimum
+                    },
+                    CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { amount: 2, minimum },
+                )
+            );
+            assert!(has_killshot_post_round_shape(definition), "{id}");
+            assert_eq!(
+                classify_killshot_post_round(definition, CombatStatEffectSourceV1::Bonus),
+                None
+            );
+            assert_eq!(classify_combat_stat_effect(definition, ability), None);
+            assert_eq!(
+                classify_victory_opponent_pillz_and_life(definition, ability),
+                None
+            );
+        }
+        for (field, value) in [
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("sideAffected", serde_json::json!("player")),
+            ("attributeAffected", serde_json::json!("life")),
+            ("attributeAction", serde_json::json!("increase")),
+            ("valueMax", serde_json::json!(4)),
+            ("isClanmatesCountLinked", serde_json::json!(true)),
+        ] {
+            let malformed = with_field("5575", field, value.clone());
+            assert!(
+                !matches!(
+                    classify_killshot_post_round(malformed.get(5575).unwrap(), ability),
+                    Some((
+                        KillshotPostRoundEffectV1::ReduceOpponentPillzAndLife { .. },
+                        _
+                    ))
+                ),
+                "5575 {field} = {value}"
+            );
+        }
+        for text in [
+            "Killshot: -2 Opp. Pillz And Life, Min 3",
+            "Killshot: -2 Opp Pillz And Life, Min 2",
+            "-2 Opp. Pillz And Life, Min 2",
+        ] {
+            let retexted = with_text("5575", text);
+            let definition = retexted.get(5575).unwrap();
+            assert_eq!(
+                classify_killshot_post_round(definition, ability),
+                None,
+                "{text:?}"
+            );
+            assert!(has_killshot_post_round_shape(definition), "{text:?}");
         }
     }
 }

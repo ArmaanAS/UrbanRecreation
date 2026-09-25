@@ -28,18 +28,18 @@ use crate::engine::combat_stat_compiler::{
     classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
     classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
     classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
-    classify_round_scaled_post_round, classify_support_post_round,
-    classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
-    classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
-    classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
-    classify_victory_opponent_pillz, classify_victory_opponent_pillz_and_life,
-    classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_life_per_damage, classify_victory_or_defeat_pillz,
-    classify_victory_or_defeat_pillz_amount, classify_victory_pillz, classify_victory_pillz_max,
-    classify_victory_pillz_per_damage, compact_effect, has_backlash_life_shape,
-    has_bet_gated_post_round_shape, has_both_players_life_reduction_shape,
-    has_brawl_post_round_shape, has_clan_gated_post_round_shape,
-    has_combust_opponent_life_and_pillz_on_victory_shape,
+    classify_round_scaled_post_round, classify_stop_triggered_opponent_pillz,
+    classify_support_post_round, classify_toxin_opponent_life_on_victory,
+    classify_unison_defeat_life, classify_unison_pillz_and_life, classify_victory_life,
+    classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
+    classify_victory_opponent_life, classify_victory_opponent_pillz,
+    classify_victory_opponent_pillz_and_life, classify_victory_or_defeat_both_players_gain,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_life_per_damage,
+    classify_victory_or_defeat_pillz, classify_victory_or_defeat_pillz_amount,
+    classify_victory_pillz, classify_victory_pillz_max, classify_victory_pillz_per_damage,
+    compact_effect, has_backlash_life_shape, has_bet_gated_post_round_shape,
+    has_both_players_life_reduction_shape, has_brawl_post_round_shape,
+    has_clan_gated_post_round_shape, has_combust_opponent_life_and_pillz_on_victory_shape,
     has_consume_opponent_pillz_on_victory_shape, has_corrupt_own_life_shape,
     has_defeat_capped_life_shape, has_defeat_life_shape, has_defeat_opponent_pillz_gain_shape,
     has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_dope_pillz_shape,
@@ -1072,6 +1072,19 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    // Revision 75's `Stop:` form of the opposing Pillz cut carries the never-holding `Stop:`
+    // trigger as its predicate. Where something opposite could stop the owner's ability, the
+    // context downgrade turns it into a selected hazard like every other `Stop:` source.
+    if let Some((pillz, minimum)) = classify_stop_triggered_opponent_pillz(definition, source_kind)
+    {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+            CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+            CombatStatPredicateV1::OwnerAbilityStopped,
+        ));
+    }
     if let Some(brawl) = classify_brawl_post_round(definition, source_kind) {
         let (post_round_effect, compact_effect) = brawl.effects();
         return Ok(executes_post_round(
@@ -1631,10 +1644,10 @@ fn prepare_combat_stat_source(
     // Killshot's boundary is its own: the plain Victory clause above cannot reach it,
     // because the printed text does not start with `-` and the reviewed Victory shape
     // demands a won round where this one asks `sureshot`. Since revision 55 every Killshot
-    // grammar the registry holds is admitted except the opposing Pillz-and-Life compound and
-    // the whole-hand `Team:` form, so the boundary is the channel itself: any `Killshot`
-    // text that reached here - a wrong slot, a wrong structure, numbers the text disagrees
-    // with, that opposing compound - the complete admitted shape under other text, and any
+    // grammar the registry holds is admitted except the whole-hand `Team:` form (the opposing
+    // Pillz-and-Life compound joined in revision 75), so the boundary is the channel itself:
+    // any `Killshot` text that reached here - a wrong slot, a wrong structure, numbers the
+    // text disagrees with - the complete admitted shape under other text, and any
     // other record asking `sureshot` reject when selected. Before revision 55 the own gains,
     // the Toxin latch and the compound were inert disabled sources in replay, which let a
     // capture replay past a Killshot round it could not pay.
@@ -1687,9 +1700,10 @@ fn prepare_combat_stat_source(
         ))
         || has_support_post_round_shape(definition);
     // `Stop:` fires on the owner's own ability being stopped, which the projection admits
-    // only over a numeric body and only where nothing opposite can stop it. Any other
-    // `Stop:` record - the Pillz forms, a malformed body, the inverted flag under other
-    // text - rejects when selected rather than acting as an inert disabled source.
+    // only over a numeric body and, since revision 75, the exact `Stop: -N Pillz Opp. Min M`,
+    // and only where nothing opposite can stop it. Any other `Stop:` record - `Stop: +3
+    // Pillz`, a malformed body, the inverted flag under other text - rejects when selected
+    // rather than acting as an inert disabled source.
     let unadmitted_stop_triggered =
         source.description.starts_with("Stop: ") || definition.structured_input().is_inverted;
     // `Defeat: +N Pillz` over a wrong slot or structure, or its complete shape under other
@@ -1751,6 +1765,10 @@ fn prepare_combat_stat_source(
                 | AttributeAffectedV1::LifeAndPillz
         ))
         || has_hand_clan_gated_post_round_shape(definition);
+    // `+1 Pillz And Life` executes above from the Komboka Bonus and, since revision 75, from
+    // any Ability slot carrying the exact text and shape (Carnibox L2's `3356`). What reaches
+    // here is a near miss: the text on another clan's Bonus or over a malformed record, or a
+    // same-owner compound gain under other text.
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player

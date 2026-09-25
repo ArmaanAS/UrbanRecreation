@@ -2389,13 +2389,52 @@ fn strict_catalog_match_bridges_only_the_active_komboka_victory_pillz_and_life_b
         CatalogCombatStatSourceDispositionV1::Absent
     ));
 
-    // The same text and structural alias carried by Carnibox's Ability:3356 must stay
-    // outside the bonus-only clan bridge.
+    // Revision 75: Carnibox L2's Ability:3356 is a structural alias of the definition, so the
+    // same text executes from its Ability slot, with no clan requirement and under the
+    // definition's identity; the Bonus bridge above is unchanged.
+    let carnibox = CatalogCombatStatMatchV1::new(
+        input(
+            [
+                CardKey::new(2344, 2), // Carnibox Ability:3356
+                CardKey::new(123, 1),
+                CardKey::new(124, 1),
+                CardKey::new(138, 1),
+            ],
+            rescue,
+            false,
+        ),
+        &base_catalog,
+        &base_registry,
+        PROJECTION,
+    )
+    .unwrap();
+    let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+        identity,
+        effect: CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+        predicate: CombatStatPredicateV1::Always,
+    } = &carnibox.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Carnibox's Ability:3356 was not executable")
+    };
+    assert_eq!(identity.catalog_id, Some(3356));
+    assert_eq!(identity.registry_definition_id, 1714);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [1714, 3356]);
+    assert!(matches!(
+        carnibox.match_spec().cards[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::Execute {
+            source_id: 1714,
+            predicate: CombatStatPredicateV1::Always,
+            effect: urban_recreation_rust::engine::CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
+        }
+    ));
+
+    // A same-text ability with no registry record of its own - Chasey L2's `1519` - is not an
+    // alias and stays closed.
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(
                 [
-                    CardKey::new(2344, 2), // Carnibox Ability:3356
+                    CardKey::new(1692, 2), // Chasey Ability:1519
                     CardKey::new(123, 1),
                     CardKey::new(124, 1),
                     CardKey::new(138, 1),
@@ -2411,7 +2450,7 @@ fn strict_catalog_match_bridges_only_the_active_komboka_victory_pillz_and_life_b
             player: PlayerId::P1,
             hand_slot,
             source_kind: CombatStatEffectSourceV1::Ability,
-            catalog_id: Some(3356),
+            catalog_id: Some(1519),
             ref description,
             registry_definition_id: 1714,
             ..
@@ -2969,7 +3008,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 5);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 6);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -3125,20 +3164,27 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
         })
     ));
 
+    // Revision 75 admits Angelo L2's non-zero SOA control value (`877`) by identity only. The
+    // same value on Lumia Cr L4's `1341` is still a malformed control.
     let mut malformed_control = p1;
-    malformed_control[0] = CardKey::new(1051, 2); // Angelo: non-zero SOA control value.
+    malformed_control[0] = CardKey::new(1535, 4); // Lumia Cr L4, Ability:1341.
+    let mut effects: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path("captures/abilities.json")).unwrap()).unwrap();
+    effects["1341"]["abilityData"]["value"] = serde_json::json!(2);
+    let malformed_registry =
+        EffectRegistryV1::from_reader(serde_json::to_vec(&effects).unwrap().as_slice()).unwrap();
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(malformed_control, p2, false),
             &catalog,
-            &registry,
+            &malformed_registry,
             PROJECTION
         ),
         Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player: PlayerId::P1,
             hand_slot,
             source_kind: CombatStatEffectSourceV1::Ability,
-            registry_definition_id: 877,
+            registry_definition_id: 1341,
             ..
         }) if hand_slot.get() == 0
     ));
@@ -5343,5 +5389,201 @@ fn strict_catalog_match_refuses_revision_74_sources_in_unpinned_contexts() {
         bugamon,
         "Growth: -1 Power And Damage, Min 4",
         "Zlatar Cr against Bugamon",
+    );
+}
+
+/// Revision 75: every draw the slice unlocks prepares from its captured hands, and each slice
+/// source carries the effect and the predicate its printed text names, under the identity the
+/// catalog row claims.
+#[test]
+fn strict_catalog_match_admits_revision_75_tail_sources() {
+    use urban_recreation_rust::effect_registry::{AffectedSideV1, CombatStatV1, StatOperationV1};
+    let catalog = catalog();
+    let registry = registry();
+    let sources = |capture: u64, id: u32| {
+        let prepared =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+                .unwrap_or_else(|error| panic!("{capture}: {error:?}"));
+        [PlayerId::P1, PlayerId::P2]
+            .into_iter()
+            .flat_map(|player| prepared.preparation()[player].clone())
+            .flat_map(|card| [card.ability, card.bonus])
+            .filter(|disposition| match disposition {
+                CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
+                | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => {
+                    identity.registry_definition_id == id
+                }
+                _ => false,
+            })
+            .collect::<Vec<_>>()
+    };
+    let combat = |capture: u64, id: u32, catalog_id: u32| {
+        let found = sources(capture, id);
+        assert_eq!(found.len(), 1, "{capture} {id}: {found:?}");
+        let CatalogCombatStatSourceDispositionV1::Execute {
+            identity,
+            effect,
+            predicate,
+        } = &found[0]
+        else {
+            panic!("{capture} {id} is not a combat source: {found:?}")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id), "{capture} {id}");
+        (*effect, *predicate)
+    };
+    let post_round = |capture: u64, id: u32, catalog_id: u32| {
+        let found = sources(capture, id);
+        assert_eq!(found.len(), 1, "{capture} {id}: {found:?}");
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate,
+        } = &found[0]
+        else {
+            panic!("{capture} {id} is not a post-round source: {found:?}")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id), "{capture} {id}");
+        (*effect, *predicate)
+    };
+
+    assert_eq!(
+        combat(1065231, 877, 877),
+        (
+            SupportedEffectV1::StopOpponentAbility,
+            CombatStatPredicateV1::Always
+        )
+    );
+    assert_eq!(
+        combat(1414237, 2968, 2968),
+        (
+            SupportedEffectV1::ModifyCombatStat {
+                side: AffectedSideV1::Player,
+                stat: CombatStatV1::Power,
+                operation: StatOperationV1::Increase,
+                value: 3,
+                minimum: None,
+                maximum: Some(8),
+                multiplier: MagnitudeMultiplierV1::Fixed,
+            },
+            CombatStatPredicateV1::Always
+        )
+    );
+    assert_eq!(
+        post_round(1089974, 1714, 3356),
+        (
+            CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
+            CombatStatPredicateV1::Always
+        )
+    );
+    assert_eq!(
+        post_round(1058005, 646, 646),
+        (
+            CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory {
+                pillz: 3,
+                minimum: 1
+            },
+            CombatStatPredicateV1::OwnerAbilityStopped
+        )
+    );
+    assert_eq!(
+        combat(926584, 3103, 3103),
+        (
+            SupportedEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatV1::PowerAndDamage
+            },
+            CombatStatPredicateV1::OwnerMovesSecond
+        )
+    );
+    assert_eq!(
+        combat(1088008, 5805, 5805),
+        (
+            SupportedEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatV1::Power
+            },
+            CombatStatPredicateV1::SelectedHandSlotsDiffer
+        )
+    );
+    for capture in [1059269, 1131114] {
+        assert_eq!(
+            combat(capture, 2434, 5082),
+            (
+                SupportedEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatV1::PowerAndDamage
+                },
+                CombatStatPredicateV1::OwnerMovesSecond
+            ),
+            "{capture}"
+        );
+    }
+    assert_eq!(
+        post_round(1011102, 5575, 5775),
+        (
+            CombatStatPostRoundEffectV1::ReduceOpponentPillzAndLifeOnKillshot {
+                amount: 2,
+                minimum: 2
+            },
+            CombatStatPredicateV1::Always
+        )
+    );
+}
+
+/// The contexts revision 75 refuses rather than guesses, and the printed levels it leaves
+/// closed:
+/// - Jochar L4's capped increase in 1093569, whose own `Copy: Opp. Ability` bonus could import
+///   Tina's `Revenge: Power And Damage +2` onto the same card, in an order no round pins;
+/// - Izsobahd's `Stop:` Pillz cut facing Angelo L2's Stop Opp. Ability, which could fire it;
+/// - Molch's Killshot compound facing Eugene's `Defeat: +2 Life`, which writes the target's
+///   own Life on the round the compound floors it (the 1093173/1 order question);
+/// - Magnar L5's `Reprisal: Protect. Power And Damage` under catalog id `1018`, which is not a
+///   structural alias of `2434`.
+#[test]
+fn strict_catalog_match_refuses_revision_75_sources_in_unpinned_contexts() {
+    let catalog = catalog();
+    let registry = registry();
+    let refused = |input: CatalogCombatStatMatchInputV1, text: &str, label: &str| {
+        let result = CatalogCombatStatMatchV1::new(input, &catalog, &registry, PROJECTION);
+        assert!(
+            matches!(
+                &result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { description, .. })
+                    if description == text
+            ),
+            "{label}: {result:?}"
+        );
+    };
+    refused(captured_input(1093569), "Power +6, Max. 8", "1093569");
+    // Without Tina the copy imports nothing that raises Power, and the draw prepares.
+    let mut no_tina = captured_input(1093569);
+    assert_eq!(no_tina.players[PlayerId::P1].hand[2], CardKey::new(1057, 3));
+    no_tina.players[PlayerId::P1].hand[2] = CardKey::new(441, 1);
+    assert!(
+        CatalogCombatStatMatchV1::new(no_tina, &catalog, &registry, PROJECTION).is_ok(),
+        "1093569 without Tina"
+    );
+
+    let mut izsobahd = captured_input(1058005);
+    assert_eq!(izsobahd.players[PlayerId::P1].hand[1], CardKey::new(826, 3));
+    izsobahd.players[PlayerId::P2].hand[3] = CardKey::new(1051, 2);
+    refused(
+        izsobahd,
+        "Stop: -3 Pillz Opp. Min 1",
+        "Angelo L2 against Izsobahd",
+    );
+
+    let mut molch = captured_input(1011102);
+    assert_eq!(molch.players[PlayerId::P1].hand[0], CardKey::new(2690, 2));
+    molch.players[PlayerId::P2].hand[0] = CardKey::new(1035, 3);
+    refused(
+        molch,
+        "Killshot: -2 Opp. Pillz And Life, Min 2",
+        "Eugene against Molch",
+    );
+
+    let (mut magnar, rescue) = fully_supported_hands();
+    magnar[0] = CardKey::new(1194, 5);
+    refused(
+        input(magnar, rescue, false),
+        "Reprisal: Protect. Power And Damage",
+        "Magnar L5",
     );
 }

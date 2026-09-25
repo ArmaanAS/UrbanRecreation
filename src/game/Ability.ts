@@ -354,11 +354,14 @@ export default class Ability {
       }
 
       if (tokens[i].includes("&")) {
-        // Only the plain, unconditional "Protection: Power And Damage" refuses opposing
-        // reductions (see ProtectionModifier.guard); the Reprisal, Revenge, Courage and
-        // Cards forms have no captured round showing it and stay Cancel-only.
-        const guard = !both && tokens[i] === "Power&Damage" &&
-          this.conditions.length === 0;
+        // "Protection: Power And Damage" refuses opposing reductions (see
+        // ProtectionModifier.guard) whenever the modifier itself applies: a condition such as
+        // Reprisal's already gates the whole ability, so the guard is set exactly when the
+        // Protection is live. No captured round shows a conditional form meeting a reduction
+        // (1131114 r2 is a live no-op); this composes the plain form's refusal with the
+        // condition, as the Rust engine does since semantic revision 75. The Cards (both
+        // sides) form stays Cancel-only.
+        const guard = !both && tokens[i] === "Power&Damage";
         for (const prot of tokens[i].split("&")) {
           const mod = new ProtectionModifier(prot, both);
           mod.guard = guard;

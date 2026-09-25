@@ -476,6 +476,12 @@ pub enum CombatStatPostRoundEffectV1 {
         amount: u16,
         minimum: u16,
     },
+    /// `Killshot: -N Opp. Pillz And Life, Min M`: the same compound paid when the owner's final
+    /// attack at least doubles the opposing one. Ability slot only.
+    ReduceOpponentPillzAndLifeOnKillshot {
+        amount: u16,
+        minimum: u16,
+    },
     /// `Defeat: Dope N, Max. M`: the same permanent latched by a loss. Ability slot only.
     DopePillzOnDefeat {
         pillz: u16,
@@ -838,6 +844,11 @@ pub enum CombatStatEffectV1 {
         amount: u16,
         minimum: u16,
     },
+    /// The same compound on the Killshot trigger. Ability slot only, unconditional.
+    ReduceOpponentPillzAndLifeOnKillshot {
+        amount: u16,
+        minimum: u16,
+    },
     DopePillzOnDefeat {
         pillz: u16,
         maximum: u16,
@@ -1183,6 +1194,11 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// owner whose Life has only fallen, which cannot tell the net shortfall from the sum
     /// of every point lost.
     LifeLostOwnerLifeCanRise,
+    /// Revision 75: a capped fixed Power increase (`Power +N, Max. M`) that another own
+    /// increase of the same card's Power could meet - from the card's other slot, a Copy there
+    /// that could import one, or an opposing Copy that could take the capped increase. The
+    /// clamp makes the order of the two observable and no round pins it.
+    CappedPowerIncreaseAgainstOwnPowerIncrease,
     ReprisalStopOpponentAbilityCard,
     ReprisalStopOpponentAbilityEffect,
     ReprisalStopOpponentAbilityIdentity,
@@ -1703,8 +1719,13 @@ pub(crate) fn unmodelled_source_context(
         // or every round for a permanent - meet it in an order the server has shown the
         // engine getting wrong for this very compound (1093173/1), so the match is refused,
         // as it is beside an opposing Copy.
+        // Revision 75's Killshot form pays on the attack ratio rather than the win, which in
+        // an admitted match is a win (the 0-0 tie is refused below), so the same order rule
+        // applies to it unchanged.
         CombatStatSourcePlanV1::Execute {
-            effect: CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. },
+            effect:
+                CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. }
+                | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { .. },
             ..
         } if opposing_copy_can_take(plan, own, opponent)
             || source_plans(opponent).any(|opposing| {
@@ -1936,6 +1957,24 @@ pub(crate) fn unmodelled_source_context(
             ..
         } if own_decrease_meets_unpinned_effect(plan, own, opponent) => {
             Some(InvalidCombatStatPlanReasonV1::OwnCombatStatDecreaseAgainstUnpinnedEffect)
+        }
+        // Revision 75's capped fixed Power increase applies revision 45's clamp with the
+        // owner's own modifiers, and the clamp makes its order against any other own increase
+        // of the same card's Power observable: ability then bonus gives 6 + 6 -> 8 and then
+        // +2 = 10, the other order 8. No round pins that order, so the match is refused
+        // wherever such an increase could meet it (`capped_power_meets_own_power_increase`).
+        CombatStatSourcePlanV1::Execute {
+            effect:
+                CombatStatEffectV1::ModifyCombatStat {
+                    side: CombatStatAffectedSideV1::Player,
+                    operation: CombatStatOperationV1::Increase,
+                    maximum: Some(_),
+                    multiplier: CombatStatMagnitudeV1::Fixed,
+                    ..
+                },
+            ..
+        } if capped_power_meets_own_power_increase(plan, own, opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::CappedPowerIncreaseAgainstOwnPowerIncrease)
         }
         // The Victory Or Defeat own gains are uncapped and pay whatever the outcome, so an
         // opposing floor on their resource, an own cap on it, or a Copy meets them in an order
@@ -2406,6 +2445,45 @@ fn own_decrease_meets_unpinned_effect(
                 } if touches_power_or_damage(stat)
             )
         })
+}
+
+/// Whether revision 75's capped fixed Power increase `plan` could meet another increase of
+/// the same card's Power: the other slot of its card raising its own Power (alone or with
+/// Damage, under any magnitude or predicate), a Copy there that could import such an increase
+/// from the opposing hand's copied slot, or an opposing Copy that could take the capped
+/// increase to a card of its own.
+fn capped_power_meets_own_power_increase(
+    plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let raises_power = |other: CombatStatSourcePlanV1| {
+        matches!(
+            other,
+            CombatStatSourcePlanV1::Execute {
+                effect: CombatStatEffectV1::ModifyCombatStat {
+                    side: CombatStatAffectedSideV1::Player | CombatStatAffectedSideV1::Both,
+                    stat: CombatStatAttributeV1::Power | CombatStatAttributeV1::PowerAndDamage,
+                    operation: CombatStatOperationV1::Increase,
+                    ..
+                },
+                ..
+            }
+        )
+    };
+    let meets_on_card = |other: CombatStatSourcePlanV1| match other {
+        CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } => opponent.iter().any(|card| {
+            raises_power(match copied {
+                CopiedSourceKindV1::Ability => card.ability,
+                CopiedSourceKindV1::Bonus => card.bonus,
+            })
+        }),
+        other => raises_power(other),
+    };
+    own.iter().any(|card| {
+        (card.ability == plan && meets_on_card(card.bonus))
+            || (card.bonus == plan && meets_on_card(card.ability))
+    }) || opposing_copy_can_take(plan, own, opponent)
 }
 
 /// Whose Life an end-of-round `plan` can raise, if it is end-of-round work at all.
@@ -3144,7 +3222,8 @@ fn validate_combat_stat_source_plan(
         };
     }
     // The Unison Victory compound: a card ability, positive, and only under its gate - the
-    // unconditional `+1 Pillz And Life` is Komboka's identity-locked bonus above.
+    // unconditional `+1 Pillz And Life` is Komboka's identity-locked composite above (the
+    // Bonus, or since revision 75 an Ability-slot alias).
     if let CombatStatEffectV1::GainPillzAndLifeOnVictory { amount } = effect {
         let reason = if source != CombatStatEffectSourceV1::Ability {
             Some(InvalidCombatStatPlanReasonV1::UnisonPillzAndLifeSource)
@@ -3569,11 +3648,13 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
-    // Komboka's registry id is likewise reserved independently of the claimed source.
-    // It denotes one composite Bonus-only Victory operation, never a generic numeric or
-    // ordinary Life/Pillz provenance tag.
+    // Komboka's registry ids are likewise reserved independently of the claimed source.
+    // They denote one composite Victory operation, never a generic numeric or ordinary
+    // Life/Pillz provenance tag. The Bonus slot is `1714` on an effective Komboka card; since
+    // revision 75 the Ability slot is either structural alias (`3356`, Carnibox L2's printed
+    // ability, or `1714`, which the catalog resolves it to).
     if komboka_victory_pillz_and_life_id_is_reserved(source_id) {
-        if source != CombatStatEffectSourceV1::Bonus {
+        if source == CombatStatEffectSourceV1::Bonus && source_id != 1714 {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -3600,7 +3681,9 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifePredicate,
             ));
         }
-        if effective_clan_id != KOMBOKA_EFFECTIVE_CLAN_ID {
+        if source == CombatStatEffectSourceV1::Bonus
+            && effective_clan_id != KOMBOKA_EFFECTIVE_CLAN_ID
+        {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -3851,12 +3934,14 @@ fn validate_combat_stat_source_plan(
             ));
         }
         // Dark Kaizerin's `[clan:..] -2 Opp Pillz. Min 2` (`4037`, `4038`) puts the
-        // owner-clan gate on it since revision 70.
+        // owner-clan gate on it since revision 70, and Izsobahd's `Stop: -3 Pillz Opp. Min 1`
+        // (`646`) the never-holding `Stop:` trigger since revision 75.
         if !matches!(
             predicate,
             CombatStatPredicateV1::Always
                 | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
                 | CombatStatPredicateV1::OwnerClanIn(_)
+                | CombatStatPredicateV1::OwnerAbilityStopped
         ) {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -3975,7 +4060,8 @@ fn validate_combat_stat_source_plan(
     // uncapped Life gain; a capped or Pillz form under a gate has never been printed.
     if let CombatStatEffectV1::GainPillzOnKillshot { pillz: amount }
     | CombatStatEffectV1::GainLifeOnKillshot { life: amount, .. }
-    | CombatStatEffectV1::ToxinOpponentLifeOnKillshot { life: amount, .. } = effect
+    | CombatStatEffectV1::ToxinOpponentLifeOnKillshot { life: amount, .. }
+    | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { amount, .. } = effect
     {
         let unison_life = matches!(
             effect,
@@ -4382,10 +4468,31 @@ fn validate_combat_stat_source_plan(
             CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. }
         ) && source == CombatStatEffectSourceV1::Ability
             && matches!(predicate, CombatStatPredicateV1::OpponentHandHasClan(_)));
+    // Revision 75's three conditional controls, each under the one predicate its printed
+    // prefix names: the Reprisal Power And Damage cancel, the Asymmetry Power cancel and the
+    // Reprisal Protection.
+    let conditional_control = source == CombatStatEffectSourceV1::Ability
+        && matches!(
+            (effect, predicate),
+            (
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatAttributeV1::PowerAndDamage,
+                } | CombatStatEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatAttributeV1::PowerAndDamage,
+                },
+                CombatStatPredicateV1::OwnerMovesSecond,
+            ) | (
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatAttributeV1::Power,
+                },
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            )
+        );
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
         && !conditional_stop
         && !conditional_stat_copy
+        && !conditional_control
     {
         return Err(invalid_combat_stat_execute(
             player,
@@ -4513,8 +4620,17 @@ fn validate_combat_stat_source_plan(
             InvalidCombatStatPlanReasonV1::ConditionalBonus,
         ));
     }
+    // Revision 75 adds `Power +N, Max. M`: a fixed Power increase from a card ability,
+    // unconditional, whose cap lies above its amount.
+    let capped_fixed_power = multiplier == CombatStatMagnitudeV1::Fixed
+        && stat == CombatStatAttributeV1::Power
+        && side == CombatStatAffectedSideV1::Player
+        && source == CombatStatEffectSourceV1::Ability
+        && predicate == CombatStatPredicateV1::Always
+        && maximum.is_some_and(|maximum| maximum > value);
     if operation == CombatStatOperationV1::Increase
         && maximum.is_some()
+        && !capped_fixed_power
         && !(matches!(
             multiplier,
             CombatStatMagnitudeV1::OwnerLife | CombatStatMagnitudeV1::OwnerLifeLost
@@ -4595,7 +4711,7 @@ const fn reprisal_stop_opponent_ability_id_is_reserved(source_id: u32) -> bool {
 }
 
 const fn komboka_victory_pillz_and_life_id_is_reserved(source_id: u32) -> bool {
-    source_id == 1714
+    matches!(source_id, 1714 | 3356)
 }
 
 const KOMBOKA_EFFECTIVE_CLAN_ID: u32 = 54;
@@ -5086,6 +5202,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainPillzOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. }
+        | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { .. }
         | CombatStatEffectV1::GainPillzOnVictoryMax { .. }
         | CombatStatEffectV1::ReduceOwnLifeOnVictory { .. }
         | CombatStatEffectV1::ReduceOwnLife { .. }
@@ -5339,6 +5456,11 @@ pub(crate) fn shared_post_round_effect(
                 LatchedEffectV1::ToxinOpponentLife { life, minimum },
             )),
         ),
+        CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { amount, minimum } => {
+            Some(PostRoundSourceEffect::Fixed(
+                PostRoundEffect::ReduceOpponentPillzAndLifeOnKillshot { amount, minimum },
+            ))
+        }
         CombatStatEffectV1::GainPillzOnDefeat { pillz } => Some(PostRoundSourceEffect::Fixed(
             PostRoundEffect::GainPillzOnDefeat(pillz),
         )),
@@ -6364,15 +6486,42 @@ mod tests {
                 })
             ));
         }
-        assert!(matches!(
-            CombatStatDiagnosticV1::new(spec_with_p1(
+        // Revision 75: the Ability slot takes either structural alias, `1714` as the catalog
+        // resolves it and `3356` as replay captures Carnibox L2, with no clan requirement. The
+        // Bonus slot is `1714` alone, and any other id stays an identity error in either slot.
+        for id in [1714, 3356] {
+            assert!(CombatStatDiagnosticV1::new(spec_with_p1(
                 CombatStatEffectSourceV1::Ability,
-                1714,
+                id,
                 komboka,
                 3,
-            )),
+            ))
+            .is_ok());
+        }
+        for (source, id) in [
+            (CombatStatEffectSourceV1::Bonus, 3356),
+            (CombatStatEffectSourceV1::Ability, 1),
+            (CombatStatEffectSourceV1::Ability, 1715),
+        ] {
+            assert!(matches!(
+                CombatStatDiagnosticV1::new(spec_with_p1(source, id, komboka, 3)),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeIdentity,
+                    ..
+                })
+            ));
+        }
+        let mut wrong_ability_predicate =
+            spec_with_p1(CombatStatEffectSourceV1::Ability, 3356, komboka, 3);
+        wrong_ability_predicate.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Execute {
+            source_id: 3356,
+            predicate: CombatStatPredicateV1::OwnerMovesFirst,
+            effect: komboka,
+        };
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(wrong_ability_predicate),
             Err(CombatStatPlanErrorV1::InvalidExecute {
-                reason: InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifeIdentity,
+                reason: InvalidCombatStatPlanReasonV1::KombokaVictoryPillzAndLifePredicate,
                 ..
             })
         ));

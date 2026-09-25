@@ -128,3 +128,28 @@ Deno.test("Protection: Attack does not refuse a Power And Damage reduction", () 
   assertEquals(stats(sue), [6, 3, 18]);
   assertEquals(matriochka.won, true);
 });
+
+Deno.test("Reprisal: Protect. Power And Damage refuses an opposing reduction when it moves second", () => {
+  // No captured round shows the Reprisal form live against a reduction: 1131114 r2 is live
+  // with nothing to refuse, and 1089830 r1 lets Callie's cut land on a first-moving Fiend.
+  // The guard composes the plain form's refusal (1069506 r0) with Reprisal's second move.
+  // Sue's "-1 Opp Power And Damage, Min 3" would take Forjoten Ld from 8/5 to 7/4.
+  const hands = () => [
+    hand(["Spidee", "Sue", "Tina", "Wesley"], [4, 2, 3, 3]),
+    hand(["Forjoten Ld", "Tiwi Ld", "Milla", "Pavam Cr"], [4, 3, 3, 4]),
+  ];
+
+  // Forjoten moves second: the Reprisal holds and the reduction is refused, 8 x 5 = 40.
+  const [h1, h2] = hands();
+  const second = new Game(new Player(17, 12, 0), new Player(17, 12, 1), h1, h2, Turn.PLAYER_1, false);
+  second.select(1, 5, false, false); // P1 Sue lv2, 6/3
+  second.select(0, 4, false, false); // P2 Forjoten Ld lv4, 8/5
+  assertEquals(stats(second.h2[0]), [8, 5, 40]);
+
+  // Forjoten moves first: the Reprisal fails and the reduction lands, 7 x 5 = 35.
+  const [g1, g2] = hands();
+  const first = new Game(new Player(17, 12, 0), new Player(17, 12, 1), g1, g2, Turn.PLAYER_2, false);
+  first.select(0, 4, false, false); // P2 Forjoten Ld lv4, 8/5
+  first.select(1, 5, false, false); // P1 Sue lv2, 6/3
+  assertEquals(stats(first.h2[0]), [7, 4, 35]);
+});

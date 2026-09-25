@@ -3170,13 +3170,15 @@ fn soa_and_sob_resolve_by_source_dependency_and_cycles_restore_exactly() {
 fn impossible_execute_plans_fail_at_construction() {
     let base = base_spec(6, 2);
     let cases = [
+        // Revision 75 admits a capped fixed Power increase from the Ability slot (`Power +N,
+        // Max. M`); a capped fixed Damage increase has no printed record and stays refused.
         (
             execute(
                 2,
                 CombatStatPredicateV1::Always,
                 modifier(
                     CombatStatAffectedSideV1::Player,
-                    CombatStatAttributeV1::Power,
+                    CombatStatAttributeV1::Damage,
                     CombatStatOperationV1::Increase,
                     6,
                     None,
@@ -11136,4 +11138,541 @@ fn own_growth_decrease_is_shape_locked_and_refused_beside_unpinned_effects() {
         assert_eq!(build(plan, none, none), direction, "{plan:?}");
     }
     assert!(build(none, bugamon, none).is_some());
+}
+
+fn capped_power(value: u16, maximum: u16) -> CombatStatEffectV1 {
+    modifier(
+        CombatStatAffectedSideV1::Player,
+        CombatStatAttributeV1::Power,
+        CombatStatOperationV1::Increase,
+        value,
+        None,
+        Some(maximum),
+        CombatStatMagnitudeV1::Fixed,
+    )
+}
+
+/// Revision 75: `Power +N, Max. M` is revision 45's clamp over a fixed magnitude. It binds
+/// (1093569/0: Jochar L4 6 + 6 shown as 8), lands exactly on the cap (1414237/3: Jochar L3
+/// 5 + 3 = 8), leaves a Power already above the cap alone, and an opposing reduction lands
+/// after it (8, then -2 = 6), as revision 45 pins for its capped magnitudes.
+#[test]
+fn capped_fixed_power_increase_clamps_before_opposing_reductions() {
+    for (power, value, opposing, expected) in [
+        (6, 6, None, 8),
+        (5, 3, None, 8),
+        (9, 3, None, 9),
+        (6, 6, Some(reduction(CombatStatAttributeV1::Power, 2, 3)), 6),
+    ] {
+        let mut base = base_spec(4, 2);
+        base.players[PlayerId::P1].hand[0] = card(100, power, 2);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability =
+            execute(2969, CombatStatPredicateV1::Always, capped_power(value, 8));
+        if let Some(effect) = opposing {
+            cards[PlayerId::P2][0].ability = execute(1, CombatStatPredicateV1::Always, effect);
+        }
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].power,
+            expected,
+            "{power} + {value}, Max. 8 against {opposing:?}"
+        );
+        assert_eq!(report.cards[PlayerId::P1].attack, u32::from(expected));
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+    }
+}
+
+/// Revision 75: only the printed shape is admitted - a fixed Power increase from a card
+/// ability, unconditional, capped above its amount - and only where no other increase of the
+/// same card's Power could meet the clamp: from the card's other slot, from a Copy there that
+/// could import one (1093569: Jochar's `Copy: Opp. Ability` facing Tina's `Revenge: Power And
+/// Damage +2`), or through an opposing Copy that could take the capped increase.
+#[test]
+fn capped_fixed_power_increase_is_shape_locked_and_refused_beside_another_power_increase() {
+    let base = base_spec(6, 2);
+    let construct = |cards: ByPlayer<[CombatStatCardPlanV1; 4]>| match CombatStatDiagnosticV1::new(
+        CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards,
+        },
+    ) {
+        Ok(_) => None,
+        Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(reason),
+        Err(error) => panic!("{error:?}"),
+    };
+    for (effect, predicate) in [
+        (
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Damage,
+                CombatStatOperationV1::Increase,
+                3,
+                None,
+                Some(8),
+                CombatStatMagnitudeV1::Fixed,
+            ),
+            CombatStatPredicateV1::Always,
+        ),
+        (capped_power(8, 8), CombatStatPredicateV1::Always),
+        (capped_power(3, 8), CombatStatPredicateV1::OwnerMovesFirst),
+    ] {
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(2968, predicate, effect);
+        assert_eq!(
+            construct(cards),
+            Some(InvalidCombatStatPlanReasonV1::CappedIncrease),
+            "{effect:?} / {predicate:?}"
+        );
+    }
+
+    let capped = execute(2969, CombatStatPredicateV1::Always, capped_power(6, 8));
+    let refused = Some(InvalidCombatStatPlanReasonV1::CappedPowerIncreaseAgainstOwnPowerIncrease);
+    let support_power = modifier(
+        CombatStatAffectedSideV1::Player,
+        CombatStatAttributeV1::PowerAndDamage,
+        CombatStatOperationV1::Increase,
+        1,
+        None,
+        None,
+        CombatStatMagnitudeV1::SourceBonusSupport,
+    );
+    for (bonus, opposing, reason) in [
+        (None, None, None),
+        (
+            Some(execute(
+                2,
+                CombatStatPredicateV1::Always,
+                own(CombatStatAttributeV1::Power, 2),
+            )),
+            None,
+            refused,
+        ),
+        (
+            Some(execute(3, CombatStatPredicateV1::Always, support_power)),
+            None,
+            refused,
+        ),
+        (
+            Some(execute(
+                4,
+                CombatStatPredicateV1::OwnerLostPreviousRound,
+                own(CombatStatAttributeV1::PowerAndDamage, 2),
+            )),
+            None,
+            refused,
+        ),
+        // An increase of another stat never meets the clamp.
+        (
+            Some(execute(
+                5,
+                CombatStatPredicateV1::Always,
+                own(CombatStatAttributeV1::Damage, 2),
+            )),
+            None,
+            None,
+        ),
+        // A Copy in the other slot is judged by what it could import.
+        (
+            Some(copy(6, CopiedSourceKindV1::Ability)),
+            Some(execute(
+                883,
+                CombatStatPredicateV1::OwnerLostPreviousRound,
+                own(CombatStatAttributeV1::PowerAndDamage, 2),
+            )),
+            refused,
+        ),
+        (
+            Some(copy(6, CopiedSourceKindV1::Ability)),
+            Some(execute(
+                7,
+                CombatStatPredicateV1::Always,
+                own(CombatStatAttributeV1::Damage, 2),
+            )),
+            None,
+        ),
+    ] {
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = capped;
+        if let Some(plan) = bonus {
+            cards[PlayerId::P1][0].bonus = plan;
+            cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        }
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][2].ability = plan;
+        }
+        assert_eq!(construct(cards), reason, "{bonus:?} / {opposing:?}");
+    }
+
+    // An opposing Copy of the Ability slot could take the capped increase.
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = capped;
+    cards[PlayerId::P2][1].ability = copy(8, CopiedSourceKindV1::Ability);
+    cards[PlayerId::P2][1].source_ability_support_count = 1;
+    assert_eq!(construct(cards), refused);
+}
+
+/// Revision 75: `+1 Pillz And Life` from a card's Ability slot (Carnibox L2's `3356`) pays a
+/// living winner Pillz then Life exactly as the Komboka bonus does (1089974/1: 11 - 7 + 1 = 5,
+/// 7 + 1 = 8). By composition, the plan carrying its slot kind, an opposing Stop Opp. Ability -
+/// Angelo L2's identity-admitted `877` among them - stops it and a Stop Opp. Bonus does not.
+#[test]
+fn ability_slot_pillz_and_life_follows_ability_liveness() {
+    let komboka = CombatStatEffectV1::GainOnePillzAndLifeOnVictory;
+    let run = |stopper: Option<CombatStatEffectV1>| {
+        let mut base = base_spec(4, 2);
+        base.players[PlayerId::P1].hand[0] = card(100, 9, 2);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(3356, CombatStatPredicateV1::Always, komboka);
+        if let Some(effect) = stopper {
+            cards[PlayerId::P2][0].ability = execute(877, CombatStatPredicateV1::Always, effect);
+        }
+        let mut diag = game(base, cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 7, false), (0, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        (
+            report.players[PlayerId::P1].pillz,
+            report.players[PlayerId::P1].life,
+        )
+    };
+    assert_eq!(run(None), (14, 21));
+    assert_eq!(run(Some(CombatStatEffectV1::StopOpponentAbility)), (13, 20));
+    assert_eq!(run(Some(CombatStatEffectV1::StopOpponentBonus)), (14, 21));
+}
+
+/// Revision 75, composition only: `Stop: -3 Pillz Opp. Min 1` is the Victory opponent-Pillz
+/// reduction under the never-holding `Stop:` trigger, so a win pays nothing (1058005/1 is a
+/// loss that pays nothing), and construction refuses it wherever an opposing source could stop
+/// its owner's ability - a Stop Opp. Ability or a Copy that could adopt one.
+#[test]
+fn stop_triggered_opponent_pillz_never_fires_and_is_refused_facing_a_stopper() {
+    let stop_pillz = execute(
+        646,
+        CombatStatPredicateV1::OwnerAbilityStopped,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 1,
+        },
+    );
+    let mut base = base_spec(4, 2);
+    base.players[PlayerId::P1].hand[0] = card(100, 9, 2);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = stop_pillz;
+    let mut diag = game(base.clone(), cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 1, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P2].pillz, 19);
+
+    for (opposing, reason) in [
+        (
+            execute(
+                877,
+                CombatStatPredicateV1::Always,
+                CombatStatEffectV1::StopOpponentAbility,
+            ),
+            InvalidCombatStatPlanReasonV1::StopTriggeredAgainstStopAbility,
+        ),
+        (
+            copy(9, CopiedSourceKindV1::Ability),
+            InvalidCombatStatPlanReasonV1::StopTriggeredAgainstStopAbility,
+        ),
+    ] {
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = stop_pillz;
+        cards[PlayerId::P2][1].ability = opposing;
+        cards[PlayerId::P2][1].source_ability_support_count = u16::from(matches!(
+            opposing,
+            CombatStatSourcePlanV1::CopyOpponentSource { .. }
+        ));
+        assert!(matches!(
+            CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base.clone(),
+                cards,
+            }),
+            Err(CombatStatPlanErrorV1::InvalidExecute { reason: actual, .. }) if actual == reason
+        ));
+    }
+
+    // The `Stop:` trigger is admitted on this effect from the Ability slot only.
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].bonus = stop_pillz;
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards,
+        }),
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            reason: InvalidCombatStatPlanReasonV1::VictoryOpponentPillzSource,
+            ..
+        })
+    ));
+}
+
+/// Revision 75, composition only: the Reprisal and Asymmetry cancels and the Reprisal
+/// Protection are the unconditional controls under a predicate the projection resolves before
+/// the Stop graph. Live, the cancel drops the opposing card's own increase and the Protection
+/// refuses the opposing reduction; with the predicate false both land (1089830/1 shows a cut
+/// landing on a first-moving Fiend).
+#[test]
+fn conditional_cancels_and_protection_act_only_under_their_predicate() {
+    let run = |control: CombatStatSourcePlanV1,
+               opposing: CombatStatEffectV1,
+               first: PlayerId,
+               p1_slot: u8| {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        for slot in 0..4 {
+            cards[PlayerId::P1][slot].ability = control;
+            cards[PlayerId::P2][slot].ability = execute(1, CombatStatPredicateV1::Always, opposing);
+        }
+        let mut diag = game(base, cards);
+        let (report, _) = diag
+            .make(input(first, (p1_slot, 0, false), (1, 0, false)))
+            .unwrap();
+        (
+            (
+                report.cards[PlayerId::P1].power,
+                report.cards[PlayerId::P1].damage,
+            ),
+            (
+                report.cards[PlayerId::P2].power,
+                report.cards[PlayerId::P2].damage,
+            ),
+        )
+    };
+    let reprisal_cancel = execute(
+        3103,
+        CombatStatPredicateV1::OwnerMovesSecond,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::PowerAndDamage,
+        },
+    );
+    let raise = own(CombatStatAttributeV1::PowerAndDamage, 2);
+    assert_eq!(run(reprisal_cancel, raise, PlayerId::P2, 0).1, (6, 3));
+    assert_eq!(run(reprisal_cancel, raise, PlayerId::P1, 0).1, (8, 5));
+
+    let asymmetry_cancel = execute(
+        5805,
+        CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::Power,
+        },
+    );
+    // A Power cancel drops only the Power half of an opposing Power And Damage increase.
+    assert_eq!(run(asymmetry_cancel, raise, PlayerId::P1, 0).1, (6, 5));
+    assert_eq!(run(asymmetry_cancel, raise, PlayerId::P1, 1).1, (8, 5));
+
+    let reprisal_protection = execute(
+        2434,
+        CombatStatPredicateV1::OwnerMovesSecond,
+        CombatStatEffectV1::ProtectOwnCombatStat {
+            stat: CombatStatAttributeV1::PowerAndDamage,
+        },
+    );
+    let cut = reduction(CombatStatAttributeV1::PowerAndDamage, 1, 1);
+    assert_eq!(run(reprisal_protection, cut, PlayerId::P2, 0).0, (6, 3));
+    assert_eq!(run(reprisal_protection, cut, PlayerId::P1, 0).0, (5, 2));
+
+    // Each is a card ability under its own printed predicate only.
+    let base = base_spec(6, 3);
+    for (plan, bonus) in [
+        (reprisal_cancel, true),
+        (
+            execute(
+                3103,
+                CombatStatPredicateV1::OwnerMovesFirst,
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatAttributeV1::PowerAndDamage,
+                },
+            ),
+            false,
+        ),
+        (
+            execute(
+                5805,
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatAttributeV1::Damage,
+                },
+            ),
+            false,
+        ),
+        (
+            execute(
+                2434,
+                CombatStatPredicateV1::SelectedHandSlotsDiffer,
+                CombatStatEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatAttributeV1::PowerAndDamage,
+                },
+            ),
+            false,
+        ),
+        (reprisal_protection, true),
+    ] {
+        let mut cards = plans(&base);
+        if bonus {
+            cards[PlayerId::P1][0].bonus = plan;
+            cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        } else {
+            cards[PlayerId::P1][0].ability = plan;
+        }
+        assert!(
+            matches!(
+                CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                    base_rules: base.clone(),
+                    cards,
+                }),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::ConditionalControl,
+                    ..
+                })
+            ),
+            "{plan:?} bonus {bonus}"
+        );
+    }
+}
+
+/// Revision 75: `Killshot: -N Opp. Pillz And Life, Min M` is the revision-67 compound on the
+/// Killshot trigger. 1414749/0: an Attack of 56 against 7 takes Kephren's owner 12 - 2 - 2 = 8
+/// Life and 12 - 2 = 10 Pillz. Without the ratio it pays nothing, each resource is floored on
+/// its own, and an opposing write to the target's own resources on the round it pays - here
+/// `Defeat: +2 Life` - is refused, as it is for the Victory compound (1093173/1).
+#[test]
+fn killshot_opponent_pillz_and_life_pays_on_the_ratio_with_separate_floors() {
+    let compound = |minimum| {
+        execute(
+            5575,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { amount: 2, minimum },
+        )
+    };
+    let run = |p1_power: u16, p2_pillz: u16, minimum: u16| {
+        let mut base = base_spec(4, 2);
+        base.players[PlayerId::P1].hand[0] = card(100, p1_power, 2);
+        base.players[PlayerId::P2].initial_pillz = p2_pillz;
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = compound(minimum);
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &start);
+        (
+            report.players[PlayerId::P2].life,
+            report.players[PlayerId::P2].pillz,
+        )
+    };
+    // 8 doubles 4: the ratio holds, 20 - 2 damage - 2 = 16 Life and 20 - 2 = 18 Pillz.
+    assert_eq!(run(8, 20, 2), (16, 18));
+    // 7 wins but does not double 4: only the damage.
+    assert_eq!(run(7, 20, 2), (18, 20));
+    // The Pillz floor binds on its own: 3 - 2 stops at 2 while Life still falls.
+    assert_eq!(run(8, 3, 2), (16, 2));
+    // `Min 0` (Molch L3's `5776`) floors at zero.
+    assert_eq!(run(8, 1, 0), (16, 0));
+
+    let base = base_spec(4, 2);
+    for (opposing, reason) in [
+        (
+            execute(
+                862,
+                CombatStatPredicateV1::Always,
+                CombatStatEffectV1::GainLifeOnDefeat { life: 2 },
+            ),
+            Some(InvalidCombatStatPlanReasonV1::OpponentPillzAndLifeAgainstUnpinnedEffect),
+        ),
+        (
+            copy(9, CopiedSourceKindV1::Ability),
+            Some(InvalidCombatStatPlanReasonV1::OpponentPillzAndLifeAgainstUnpinnedEffect),
+        ),
+        // An opposing gain paid only on the opposing win never meets it.
+        (
+            execute(
+                10,
+                CombatStatPredicateV1::Always,
+                CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+            ),
+            None,
+        ),
+    ] {
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = compound(2);
+        cards[PlayerId::P2][1].ability = opposing;
+        cards[PlayerId::P2][1].source_ability_support_count = u16::from(matches!(
+            opposing,
+            CombatStatSourcePlanV1::CopyOpponentSource { .. }
+        ));
+        let actual = match CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards,
+        }) {
+            Ok(_) => None,
+            Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(reason),
+            Err(error) => panic!("{error:?}"),
+        };
+        assert_eq!(actual, reason, "{opposing:?}");
+    }
+
+    // A card ability only, positive and unconditional.
+    for (plan, bonus) in [
+        (compound(2), true),
+        (
+            execute(
+                5575,
+                CombatStatPredicateV1::Always,
+                CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot {
+                    amount: 0,
+                    minimum: 2,
+                },
+            ),
+            false,
+        ),
+        (
+            execute(
+                5575,
+                CombatStatPredicateV1::OwnerHandUnison,
+                CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot {
+                    amount: 2,
+                    minimum: 2,
+                },
+            ),
+            false,
+        ),
+    ] {
+        let mut cards = plans(&base);
+        if bonus {
+            cards[PlayerId::P1][0].bonus = plan;
+            cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        } else {
+            cards[PlayerId::P1][0].ability = plan;
+        }
+        assert!(
+            matches!(
+                CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                    base_rules: base.clone(),
+                    cards,
+                }),
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::KillshotPostRoundSource
+                        | InvalidCombatStatPlanReasonV1::KillshotPostRoundMagnitude
+                        | InvalidCombatStatPlanReasonV1::KillshotPostRoundPredicate,
+                    ..
+                })
+            ),
+            "{plan:?} bonus {bonus}"
+        );
+    }
 }

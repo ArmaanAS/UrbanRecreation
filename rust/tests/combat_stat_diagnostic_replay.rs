@@ -49,7 +49,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1011483, 2),
     (877812, 3),
     (874642, 1),
-    (1059269, 1),
+    // Four rounds since revision 75: Forjoten Ld's `Reprisal: Protect. Power And Damage`
+    // moves first in round 2, so its Reprisal is off (10/9 with Revenge and Fury).
+    (1059269, 4),
     (1091585, 1),
     // Four rounds since revision 44: Figaro's `Day:` ability takes Aurora from 7/5 to 6/4 in
     // round 2.
@@ -447,7 +449,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // reduction. TTQ's Asymmetry Stop Bonus pays in 1091314/2 (48, not 42), and
     // Skeletrezar's Night Stop takes Buck's Power +2 away in 878120/0.
     (1069721, 3),
-    (926584, 3),
+    // Four rounds since revision 75: Cusaghi's `Reprisal: Cancel Opp Pow & Dam Mod` moves
+    // second in round 3 and meets no modifier on Hal Gladius (7 x 3 - 9 = 12 against 7).
+    (926584, 4),
     (876882, 2),
     (1089742, 4),
     // Four rounds since revision 66: Stormblade imposes his printed 2 on Nebula in round 3,
@@ -540,7 +544,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (957442, 4),
     (963931, 4),
     (1081688, 4),
-    (1088008, 2),
+    // Four rounds since revision 75: Gregor Ld's `Asymmetry: Cancel Opp. Power Mod.` is live
+    // in round 2 (slot 1 against slot 3) and meets no Power modifier on Tina (9 x 5 = 45
+    // against 5 x 3 + 12 = 27).
+    (1088008, 4),
     // One round since revision 61: round 1 selects Kontra Ld's `Combust 1, Min 0`, refused
     // as a hazard there because Aurora's `+3 Life` writes the Life it floors.
     (1090096, 1),
@@ -594,7 +601,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (924146, 4),
     (964404, 4),
     (1011430, 2),
-    (1089974, 1),
+    // Four rounds since revision 75: Carnibox L2's Ability-slot `+1 Pillz And Life` wins round 1
+    // (7 x 8 = 56 against 17) and pays 11 - 7 + 1 = 5 Pillz and 7 + 1 = 8 Life.
+    (1089974, 4),
     (925628, 2),
     (925781, 2),
     // Two rounds since revision 72: Betul's `Revenge: + 2 Attack Per Opp. Power` is off in
@@ -720,11 +729,12 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // - 3 Life Min 1` takes his winning owner from 10 to 7 in 945871/1, the Min far away, and
     // Christopher's Growth Life pays 4 in round 3. Tiwi Ld's `Defeat: +3 Life, Max. 11` meets
     // its cap in 1131114/0: 14 - 5 = 9, and the server pays 2, not 3, stopping at 11; round 2
-    // selects Forjoten's closed `Reprisal: Protect. Power And Damage`. Sylvia Ld's Backlash is
+    // selects Forjoten's `Reprisal: Protect. Power And Damage`, admitted in revision 75 (live,
+    // with no opposing reduction to refuse: 10 x 5 = 50 against 17). Sylvia Ld's Backlash is
     // stopped by Spidee's Reprisal Stop in 1080662/3 and cancelled by Fletcher's `Cancel Opp.
     // Life Modif.` in 1337265/0, both rounds already in the gate and now executing it.
     (945871, 4),
-    (1131114, 2),
+    (1131114, 4),
     // Revision 72 admits `+N Attack Per Opp. Power` and its `Revenge:` form, Corrupt, and
     // Djanghost Ld's `Night: -4 Opp Power, Min 4` by identity. Mel-T takes 2 per opposing
     // Power: 7 x 2 + 2 x 7 (Uuber) = 28 in 964352/1, and 7 x 7 + 2 x 6 (Wesley, whose
@@ -769,6 +779,20 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // 7/5 (7 x 7 + 12 Support = 61); the Min 4 is far away. Each is the complete match.
     (1414168, 4),
     (1088641, 4),
+    // Revision 75 admits the priced singleton tail. Angelo L2's identity-admitted `Stop Opp.
+    // Ability` stops Aurora's `+3 Life` in 1065231/0: she wins from 12 and stays at 12. SpineHeadMan's
+    // `Killshot: -2 Opp. Pillz And Life, Min 2` fires in 1414749/0 (56 against 7): Kephren's
+    // owner goes 12 - 2 - 2 = 8 Life and 12 - 2 = 10 Pillz; round 1 is Bugamon's, round 2
+    // selects Kaifat's closed `Growth: Opp. Attack +1`. Molch's form of it loses round 1 of
+    // 1011102 (40 against 80) and pays nothing. Izsobahd's `Stop: -3 Pillz Opp. Min 1` loses
+    // 1058005/1 with nothing opposite able to stop it (Pillz 12 - 3 = 9, no payment). Caballine
+    // L3's Unison Copy of the Komboka bonus is captured in its Ability slot as `1714` and pays
+    // 12 + 1 Life and 12 - 7 + 1 Pillz in 876574/0.
+    (1065231, 2),
+    (1414749, 2),
+    (1011102, 2),
+    (1058005, 4),
+    (876574, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -1668,9 +1692,14 @@ fn kombokas_exact_pillz_and_life_bonus_unlocks_1069193_round_zero() {
 #[test]
 fn kombokas_pillz_and_life_admission_is_exact_to_bonus_1714_and_its_full_shape() {
     let catalog = catalog();
+    // Revision 75: the exact record also executes from a card's Ability slot, under the
+    // capture's own id (Carnibox L2's `3356`, or `1714` itself); `3356` in the Bonus slot does
+    // not.
     let cases = [
         (1714, false, "+1 Pillz And Life", false, true),
-        (3356, true, "+1 Pillz And Life", false, false),
+        (3356, true, "+1 Pillz And Life", false, true),
+        (1714, true, "+1 Pillz And Life", false, true),
+        (3356, false, "+1 Pillz And Life", false, false),
         (1716, true, "Defeat: +1 Pillz And Life", false, false),
         (1714, false, "+1 Pillz And Life", true, false),
         (900_1714, false, "+1 Pillz And Life", true, false),
@@ -1722,7 +1751,7 @@ fn kombokas_pillz_and_life_admission_is_exact_to_bonus_1714_and_its_full_shape()
                     identity,
                     effect: urban_recreation_rust::engine::CombatStatPostRoundEffectV1::GainOnePillzAndLifeOnVictory,
                     ..
-                } if identity.id == 1714
+                } if identity.id == id
             ),
             admitted,
             "id={id} ability={ability} malformed={malformed}"
@@ -1737,10 +1766,10 @@ fn kombokas_pillz_and_life_admission_is_exact_to_bonus_1714_and_its_full_shape()
             assert!(matches!(
                 plan,
                 CombatStatSourcePlanV1::Execute {
-                    source_id: 1714,
+                    source_id,
                     predicate: CombatStatPredicateV1::Always,
                     effect: urban_recreation_rust::engine::CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
-                }
+                } if *source_id == id
             ));
         } else {
             assert!(matches!(
@@ -1969,12 +1998,22 @@ fn support_abilities_execute_while_capped_increases_remain_disabled() {
         id: 266,
         description: "Support: Attack +3".to_owned(),
     });
-    source.players[0].hand[1].source_ability = Some(SourceModifier {
+    // Revision 75 admits `Power +N, Max. M` from a card's Ability slot; the same record in the
+    // Bonus slot, which no clan prints, stays a disabled capped increase.
+    source.players[0].hand[1].source_bonus = Some(SourceModifier {
+        id: 2969,
+        description: "Power +6, Max. 8".to_owned(),
+    });
+    source.players[0].hand[2].source_ability = Some(SourceModifier {
         id: 2969,
         description: "Power +6, Max. 8".to_owned(),
     });
     let prepared =
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+    assert!(matches!(
+        prepared.preparation()[PlayerId::P1][2].ability,
+        CombatStatProjectionDispositionV1::Execute { .. }
+    ));
     assert!(matches!(
         prepared.preparation()[PlayerId::P1][0].ability,
         CombatStatProjectionDispositionV1::Execute { .. }
@@ -1984,7 +2023,7 @@ fn support_abilities_execute_while_capped_increases_remain_disabled() {
         prepared.preparation()[PlayerId::P1][0].effective_clan_character_count
     );
     assert!(matches!(
-        prepared.preparation()[PlayerId::P1][1].ability,
+        prepared.preparation()[PlayerId::P1][1].bonus,
         CombatStatProjectionDispositionV1::Disabled {
             reason: CombatStatDisabledReasonV1::CappedIncrease { .. },
             ..
@@ -2002,7 +2041,7 @@ fn support_abilities_execute_while_capped_increases_remain_disabled() {
                 .unwrap()
                 .hand_index,
         );
-        source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
+        source.players[0].hand[selected_slot].source_bonus = Some(SourceModifier {
             id,
             description: description.to_owned(),
         });
@@ -6501,6 +6540,199 @@ fn revision_74_growth_sources_execute_and_take_the_two_sided_boundary() {
                 CombatStatSourcePlanV1::Execute { .. }
             ),
             "1676 {field} = {value}"
+        );
+    }
+}
+
+/// Revision 75: each tail source executes from the Ability slot of a real capture under the
+/// predicate its printed text names, never from the Bonus slot, and a malformed record or the
+/// complete shape under other text rejects when selected rather than acting as an inert source.
+#[test]
+fn revision_75_tail_sources_execute_and_take_the_two_sided_boundary() {
+    use urban_recreation_rust::engine::{
+        CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatEffectV1, CombatStatMagnitudeV1,
+        CombatStatOperationV1,
+    };
+    let catalog = catalog();
+    let registry = registry();
+    let selected_slot = {
+        let source = replay(875032, &catalog);
+        usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        )
+    };
+    let plan = |registry: &EffectRegistryV1, id: u32, text: &str, bonus: bool| {
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let modifier = Some(SourceModifier {
+            id,
+            description: text.to_owned(),
+        });
+        if bonus {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, registry, PROJECTION).unwrap();
+        let plans = prepared.new_game().card_plans()[PlayerId::P1][selected_slot];
+        if bonus {
+            plans.bonus
+        } else {
+            plans.ability
+        }
+    };
+    for (id, text, predicate, effect) in [
+        (
+            877,
+            "Stop Opp. Ability",
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::StopOpponentAbility,
+        ),
+        (
+            2969,
+            "Power +6, Max. 8",
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Player,
+                stat: CombatStatAttributeV1::Power,
+                operation: CombatStatOperationV1::Increase,
+                value: 6,
+                minimum: None,
+                maximum: Some(8),
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+        ),
+        (
+            3356,
+            "+1 Pillz And Life",
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
+        ),
+        (
+            646,
+            "Stop: -3 Pillz Opp. Min 1",
+            CombatStatPredicateV1::OwnerAbilityStopped,
+            CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+                pillz: 3,
+                minimum: 1,
+            },
+        ),
+        (
+            3103,
+            "Reprisal: Cancel Opp Pow & Dam Mod",
+            CombatStatPredicateV1::OwnerMovesSecond,
+            CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::PowerAndDamage,
+            },
+        ),
+        (
+            5805,
+            "Asymmetry: Cancel Opp. Power Mod.",
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::Power,
+            },
+        ),
+        (
+            5082,
+            "Reprisal: Protect. Power And Damage",
+            CombatStatPredicateV1::OwnerMovesSecond,
+            CombatStatEffectV1::ProtectOwnCombatStat {
+                stat: CombatStatAttributeV1::PowerAndDamage,
+            },
+        ),
+        (
+            5775,
+            "Killshot: -2 Opp. Pillz And Life, Min 2",
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot {
+                amount: 2,
+                minimum: 2,
+            },
+        ),
+        (
+            5776,
+            "Killshot: -2 Opp. Pillz And Life, Min 0",
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot {
+                amount: 2,
+                minimum: 0,
+            },
+        ),
+    ] {
+        assert_eq!(
+            plan(&registry, id, text, false),
+            CombatStatSourcePlanV1::Execute {
+                source_id: id,
+                predicate,
+                effect,
+            },
+            "{text}"
+        );
+        assert!(
+            !matches!(
+                plan(&registry, id, text, true),
+                CombatStatSourcePlanV1::Execute { .. }
+            ),
+            "{text} as a bonus"
+        );
+    }
+    let source: serde_json::Value =
+        serde_json::from_reader(File::open(root_path("captures/abilities.json")).unwrap()).unwrap();
+    // Each over a wrong structure.
+    for (id, field, value) in [
+        ("877", "value", serde_json::json!(3)),
+        ("2969", "valueMax", serde_json::json!(5)),
+        ("2969", "positionRequirement", serde_json::json!("attacker")),
+        ("3356", "value", serde_json::json!(2)),
+        ("646", "valueMax", serde_json::json!(4)),
+        ("646", "currentRoundRequirement", serde_json::json!("lose")),
+        ("3103", "positionRequirement", serde_json::json!("attacker")),
+        ("5805", "indexRequirement", serde_json::json!("symmetry")),
+        (
+            "5082",
+            "previousRoundRequirement",
+            serde_json::json!("lose"),
+        ),
+        ("5775", "valueMax", serde_json::json!(4)),
+        ("5775", "isClanmatesCountLinked", serde_json::json!(true)),
+    ] {
+        let mut malformed = source.clone();
+        malformed[id]["abilityData"][field] = value.clone();
+        let text = malformed[id]["description"].as_str().unwrap().to_owned();
+        let malformed = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&malformed, id, &text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{id} {field} = {value}"
+        );
+    }
+    // Each complete shape under other text.
+    for (id, text) in [
+        ("877", "Stop Opp. Ability Twice"),
+        ("2969", "Power +6, Max. 9"),
+        ("3356", "+1 Life And Pillz"),
+        ("646", "Stop: -3 Opp Pillz. Min 1"),
+        ("3103", "Reprisal: Cancel Opp. Power And Damage Modif."),
+        ("5805", "Asymmetry: Cancel Opp. Power Modif."),
+        ("5082", "Reprisal: Protection: Power And Damage"),
+        ("5775", "Killshot: -2 Opp. Pillz And Life, Min 3"),
+    ] {
+        let mut retexted = source.clone();
+        retexted[id]["description"] = serde_json::json!(text);
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&retexted, id, text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{id} as {text:?}"
         );
     }
 }

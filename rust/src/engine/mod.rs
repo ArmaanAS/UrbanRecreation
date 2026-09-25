@@ -733,7 +733,10 @@ impl PostRoundEffect {
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnDefeat(_)
             | Self::GainPillzAndLifeOnVictory(_)
-            | Self::ReduceOpponentPillzAndLifeOnVictory { .. } => PostRoundResourceV1::PillzAndLife,
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
+            | Self::ReduceOpponentPillzAndLifeOnKillshot { .. } => {
+                PostRoundResourceV1::PillzAndLife
+            }
             Self::ReduceBothPlayersLife { .. } | Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => {
                 PostRoundResourceV1::BothPlayersLife
             }
@@ -823,6 +826,7 @@ impl PostRoundEffect {
             | Self::GainPillzAndLifeOnKillshot { .. }
             | Self::GainPillzOnKillshot(_)
             | Self::GainLifeOnKillshot { .. }
+            | Self::ReduceOpponentPillzAndLifeOnKillshot { .. }
             | Self::LatchOnKillshot(_) => true,
             Self::RecoverPaidPillzOnDefeat { .. }
             | Self::RecoverPaidPillzOnVictory { .. }
@@ -892,7 +896,8 @@ impl PostRoundEffect {
         match self {
             Self::ReduceOpponentPillzOnVictory { .. }
             | Self::ReduceOpponentPillzOnDefeat { .. }
-            | Self::ReduceOpponentPillzAndLifeOnVictory { .. } => PillzWritesV1::OPPOSING_FLOOR,
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
+            | Self::ReduceOpponentPillzAndLifeOnKillshot { .. } => PillzWritesV1::OPPOSING_FLOOR,
             Self::GainTwoPillzOnDefeatMaxEleven | Self::GainPillzOnVictoryMax { .. } => {
                 PillzWritesV1::OWN_CAPPED_GAIN
             }
@@ -986,7 +991,8 @@ impl PostRoundEffect {
             | Self::ReduceOpponentLifeOnVictory { .. }
             | Self::ReduceOpponentLifeOnDefeat { .. }
             | Self::ReduceOpponentLifeOnKillshot { .. }
-            | Self::ReduceOpponentPillzAndLifeOnVictory { .. } => LifeWritesV1::OPPOSING_FLOOR,
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
+            | Self::ReduceOpponentPillzAndLifeOnKillshot { .. } => LifeWritesV1::OPPOSING_FLOOR,
             Self::ReduceBothPlayersLife { .. } => LifeWritesV1 {
                 own_gain: false,
                 own_order_sensitive: true,
@@ -1081,6 +1087,7 @@ impl PostRoundEffect {
             | Self::GainLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnVictory(_)
             | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
+            | Self::ReduceOpponentPillzAndLifeOnKillshot { .. }
             | Self::ReduceOwnLifeOnVictory { .. } => WriteOutcomesV1::WIN,
             Self::RecoverPaidPillzOnDefeat { .. }
             | Self::GainTwoPillzOnDefeatMaxEleven
@@ -1150,6 +1157,7 @@ impl PostRoundEffect {
             Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
             | Self::GainPillzOnVictoryOrDefeat(_)
             | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
+            | Self::ReduceOpponentPillzAndLifeOnKillshot { .. }
             | Self::GainPillzOnKillshot(_)
             | Self::LatchOnKillshot(
                 LatchedEffectV1::PoisonOpponentLife { .. }
@@ -1327,6 +1335,12 @@ pub(super) enum PostRoundEffect {
     /// `-N Opp. Pillz And Life, Min M`: the winner takes N from each opposing resource, each
     /// only while above M and never below it.
     ReduceOpponentPillzAndLifeOnVictory {
+        amount: u16,
+        minimum: u16,
+    },
+    /// `Killshot: -N Opp. Pillz And Life, Min M`: the same compound on the Killshot trigger -
+    /// the owner's final attack at least doubling the opposing one - instead of the win.
+    ReduceOpponentPillzAndLifeOnKillshot {
         amount: u16,
         minimum: u16,
     },
@@ -1945,6 +1959,27 @@ impl BaseRulesGame {
                         }
                     }
                     PostRoundEffect::ReduceOpponentPillzAndLifeOnVictory { .. } => {}
+                    // Revision 75: the same compound on the Killshot trigger every Killshot arm
+                    // asks (1414749/0: Kephren's owner 12 - 2 damage - 2 = 8 Life and
+                    // 12 - 0 bet - 2 = 10 Pillz, the raw post naming both halves).
+                    PostRoundEffect::ReduceOpponentPillzAndLifeOnKillshot { amount, minimum }
+                        if killshot_holds(&prepared, owner) =>
+                    {
+                        let target = owner.other();
+                        if position.players[target].pillz > minimum {
+                            position.players[target].pillz = position.players[target]
+                                .pillz
+                                .saturating_sub(amount)
+                                .max(minimum);
+                        }
+                        if position.players[target].life > minimum {
+                            position.players[target].life = position.players[target]
+                                .life
+                                .saturating_sub(amount)
+                                .max(minimum);
+                        }
+                    }
+                    PostRoundEffect::ReduceOpponentPillzAndLifeOnKillshot { .. } => {}
                     // Backlash is the Min-clamped opponent-Life reduction turned on its owner:
                     // the same `> minimum` guard and the same clamp, with the winner as the
                     // target (945871/1: 10 - 3 = 7). The opponent's knockout changes nothing -

@@ -8,10 +8,11 @@ use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_backlash_life, classify_bet_gated_post_round, classify_both_players_life_reduction,
     classify_brawl_post_round, classify_clan_gated_post_round, classify_combat_stat_effect,
-    classify_combust_opponent_life_and_pillz_on_victory, classify_conditional_stat_copy,
-    classify_conditional_stop, classify_consume_opponent_pillz_on_victory,
-    classify_copy_opponent_source, classify_corrupt_own_life, classify_defeat_capped_life,
-    classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
+    classify_combust_opponent_life_and_pillz_on_victory, classify_conditional_control,
+    classify_conditional_stat_copy, classify_conditional_stop,
+    classify_consume_opponent_pillz_on_victory, classify_copy_opponent_source,
+    classify_corrupt_own_life, classify_defeat_capped_life, classify_defeat_life,
+    classify_defeat_opponent_life, classify_defeat_opponent_pillz,
     classify_defeat_opponent_pillz_gain, classify_defeat_pillz, classify_defeat_pillz_and_life,
     classify_dope_pillz, classify_equalizer_opponent_life_on_victory,
     classify_equalizer_post_round_gain, classify_growth_permanent,
@@ -20,17 +21,17 @@ use super::combat_stat_compiler::{
     classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
     classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
     classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
-    classify_round_scaled_post_round, classify_support_post_round,
-    classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
-    classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
-    classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
-    classify_victory_opponent_pillz, classify_victory_opponent_pillz_and_life,
-    classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
-    classify_victory_or_defeat_life_per_damage, classify_victory_or_defeat_pillz,
-    classify_victory_or_defeat_pillz_amount, classify_victory_pillz, classify_victory_pillz_max,
-    classify_victory_pillz_per_damage, compact_effect, is_copy_opponent_source_description,
-    BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
-    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    classify_round_scaled_post_round, classify_stop_triggered_opponent_pillz,
+    classify_support_post_round, classify_toxin_opponent_life_on_victory,
+    classify_unison_defeat_life, classify_unison_pillz_and_life, classify_victory_life,
+    classify_victory_life_per_damage, classify_victory_life_per_opponent_damage,
+    classify_victory_opponent_life, classify_victory_opponent_pillz,
+    classify_victory_opponent_pillz_and_life, classify_victory_or_defeat_both_players_gain,
+    classify_victory_or_defeat_life, classify_victory_or_defeat_life_per_damage,
+    classify_victory_or_defeat_pillz, classify_victory_or_defeat_pillz_amount,
+    classify_victory_pillz, classify_victory_pillz_max, classify_victory_pillz_per_damage,
+    compact_effect, is_copy_opponent_source_description, BothPlayersGainV1,
+    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use super::effect_reads_support_count;
 use super::CopiedSourceKindV1;
@@ -160,7 +161,10 @@ const COPY_OPPONENT_ABILITY_DESCRIPTION: &str = "Copy: Opp. Ability";
 /// Revision 5 (compiler revision 69) lets a selected night variant, which the catalog gives
 /// no numeric identity, reach the post-round grammars that print a `Night:` form - by its
 /// exact text in a night match only (`require_catalog_alias_or_night_variant`).
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 5;
+/// Revision 6 (compiler revision 75) lets `+1 Pillz And Life` execute from a card's Ability
+/// slot where the printed ability id is a structural alias of its definition (Carnibox L2's
+/// `3356`); the Komboka clan requirement stays on the Bonus slot alone.
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 6;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -1391,9 +1395,13 @@ fn prepare_catalog_source(
                 .into_boxed_slice(),
         });
     }
-    // Komboka's clan bonus is a catalog namespace source.  Its same-text Carnibox
-    // Ability:3356 alias is provenance only: it must never lend execution authority to
-    // a card ability, another clan, or a different catalog bonus id.
+    // Komboka's clan bonus is a catalog namespace source, bridged only for the active
+    // effective clan and its own catalog bonus id. Since revision 75 the same text also
+    // executes from a card's Ability slot, but only where the printed ability id is itself a
+    // structural alias of the definition - Carnibox L2's `3356`, which 1089974/1 shows paying
+    // exactly as the bonus does. A same-text ability with no registry record of its own
+    // (Chasey `1519`/`3648`, Van Dijk `3456`/`3457`) stays closed, and the ability alias never
+    // lends authority to another clan's bonus.
     if description == KOMBOKA_VICTORY_PILLZ_AND_LIFE_DESCRIPTION {
         if source_kind == CombatStatEffectSourceV1::Bonus
             && effective_clan_id == KOMBOKA_CLAN_ID
@@ -1407,6 +1415,20 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
             );
+        }
+        if source_kind == CombatStatEffectSourceV1::Ability {
+            if let Ok(match_) = registry.lookup_description(description) {
+                if catalog_id.is_some_and(|id| match_.alias_ids().contains(&id)) {
+                    return prepare_komboka_victory_pillz_and_life_source(
+                        registry,
+                        player,
+                        hand_slot,
+                        source_kind,
+                        catalog_id,
+                        description,
+                    );
+                }
+            }
         }
         let definition = registry
             .lookup_description(description)
@@ -1479,6 +1501,20 @@ fn prepare_catalog_source(
             && (classify_conditional_stop(definition, source_kind).is_some()
                 || classify_conditional_stat_copy(definition, source_kind).is_some())
         {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+        }
+        // Revision 75's conditional cancels and Reprisal Protection are admitted by text and
+        // shape, so a printed level must likewise be a structural alias of the definition its
+        // text resolves to. None prints a night variant.
+        if classify_conditional_control(definition, source_kind).is_some() {
             require_catalog_alias(
                 match_.alias_ids(),
                 player,
@@ -1793,6 +1829,41 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
                 definition.id(),
+            );
+        }
+        // Revision 75's `Stop:` form of it follows the same rule. Its predicate never holds in
+        // a match construction admits, which refuses it wherever an opposing source could stop
+        // the owner's ability.
+        if classify_stop_triggered_opponent_pillz(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let (pillz, minimum) =
+                        classify_stop_triggered_opponent_pillz(definition, source_kind)?;
+                    Some((
+                        CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory {
+                            pillz,
+                            minimum,
+                        },
+                        CombatStatEffectV1::ReduceOpponentPillzOnVictory { pillz, minimum },
+                        CombatStatPredicateV1::OwnerAbilityStopped,
+                    ))
+                },
             );
         }
         // And so does its losing-side sibling.
@@ -2557,11 +2628,14 @@ fn prepare_control_source(
             .collect::<Vec<_>>()
             .into_boxed_slice()
     } else {
+        // Revision 75's Angelo L2 (`877`) is admitted by identity although the registry
+        // refuses its record, so it joins the provenance set only as itself.
         registry
             .iter()
             .filter_map(|(id, candidate)| {
                 (candidate.description() == description
-                    && candidate.compiled().supported() == Some(expected_effect))
+                    && (candidate.compiled().supported() == Some(expected_effect)
+                        || id == definition.id()))
                 .then_some(id)
             })
             .collect::<Vec<_>>()

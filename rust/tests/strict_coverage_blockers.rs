@@ -475,6 +475,29 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ),
     ("revision 74 Bugamon's own Growth decrease", &[1676]),
     ("revision 74 union", &[1266, 1282, 1676, 4959]),
+    // Revision 75, measured 2026-09-25: the priced singleton tail. Angelo L2's `Stop Opp.
+    // Ability` by identity, Jochar's capped fixed Power increase, Carnibox's Ability-slot
+    // `+1 Pillz And Life`, and five composition-only admissions: the Stop-triggered opposing
+    // Pillz cut, the Reprisal and Asymmetry cancels, the Reprisal Protection and the Killshot
+    // opposing Pillz-and-Life compound (both printed floors).
+    ("revision 75 Stop Opp. Ability (Angelo L2 identity)", &[877]),
+    ("revision 75 Power +N, Max. M", &[2968, 2969]),
+    (
+        "revision 75 +1 Pillz And Life from an Ability slot",
+        &[1714],
+    ),
+    ("revision 75 Stop: -N Pillz Opp. Min M", &[646]),
+    ("revision 75 Reprisal: Cancel Opp Pow & Dam Mod", &[3103]),
+    ("revision 75 Asymmetry: Cancel Opp. Power Mod.", &[5805]),
+    ("revision 75 Reprisal: Protect. Power And Damage", &[2434]),
+    (
+        "revision 75 Killshot: -N Opp. Pillz And Life, Min M",
+        &[5575, 5776],
+    ),
+    (
+        "revision 75 union",
+        &[646, 877, 1714, 2434, 2968, 2969, 3103, 5575, 5776, 5805],
+    ),
 ];
 
 fn root_path(path: &str) -> PathBuf {

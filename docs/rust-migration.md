@@ -3503,6 +3503,244 @@ Two questions are left for the owner:
 - A Growth permanent latched in round 0 or 2 would separate the latch-round factor from a flat
   doubling, and one latched in round 1 of a second capture would confirm 1414168.
 
+Semantic revision 75 (catalog-context revision 6) takes the ready part of the priced singleton
+tail, eight items from card abilities only, each by exact text over the complete structured
+shape. Three rest on server rounds of their own: Angelo L2's `Stop Opp. Ability` by identity,
+Jochar's capped fixed Power increase and Carnibox L2's Ability-slot `+1 Pillz And Life`. Five
+are composition-only admissions, and are labelled as such below: the `Stop:` opposing Pillz
+cut, the Reprisal and Asymmetry cancels, the Reprisal Protection and the Killshot opposing
+Pillz-and-Life compound. The family lines read 1 for Angelo (`877`), 2 for Jochar (`2968`,
+`2969`), 1 for Carnibox (`1714`), 1 for the `Stop:` cut (`646`), 1 each for the two cancels
+(`3103`, `5805`), 2 for the Reprisal Protection (`2434`, which `5082` folds into) and 1 for
+the Killshot compound (`5575` with `5775`, and the `Min 0` sibling `5776`), 10 together. The
+slice took eligibility from 293 to 302 of 383. Each unlocked draw is its item's own, and the
+eligible-set diff adds nine draws and removes none:
+- `1065231` (Angelo);
+- `1414237` (Jochar L3);
+- `1089974` (Carnibox);
+- `1058005` (Izsobahd's `Stop:` cut);
+- `926584` (Cusaghi) and `1088008` (Gregor Ld);
+- `1059269` and `1131114` (Forjoten Ld's Reprisal Protection);
+- `1011102` (Molch).
+
+The tenth draw the lines name, 1093569, stays closed by the new capped-increase refusal below.
+
+**Angelo L2 by identity.** `877` is the unconditional `Stop Opp. Ability` every other same-text
+record prints, except for one field: `value: 2`. The registry refuses it as a non-zero control
+value (revision 13 called it the "malformed same-text id"), and it still does.
+`classify_angelo_stop_opponent_ability` admits exactly that id, the exact text and that one
+differing field, from the Ability slot, as the ordinary Stop with no predicate. The
+registry's `NonZeroControlValues` stands for every other id, and the same value on Lumia Cr L4's
+`1341` stays a malformed control in the catalog test. The catalog SOA path already resolves a
+card ability by its own printed id, so no catalog rule changes. The provenance alias set gains
+`877` only as itself.
+
+**Evidence strength, Angelo.** One firing round. In 1065231/0 Aurora L5 wins 49 against Angelo's
+18 from 12 Life and stays at 12, with no `postRoundAbilities`. Every unstopped Aurora win from
+12 goes to 15 (1059030/0, 1059454/0, 1066077/0, 1066589/0), and Madabook's ordinary Stop
+produces the same 12 to 12 in 1065673/0. The value 2 has no visible effect. `877` is Angelo L2's
+only printed record and appears in no other captured hand.
+
+**Jochar's capped increase.** `Power +N, Max. M` (`2968` at level 3, `2969` at level 4) is the
+one plain fixed increase the registry prints with a cap. It is revision 45's clamp over a fixed
+magnitude. `classify_capped_fixed_power_increase` admits the exact text over the neutral fixed
+shape with `M > N`, Power only, card abilities only, as the ordinary own increase carrying
+`maximum: Some(M)`. The plan validator's `CappedIncrease` exemption gains exactly that shape:
+Fixed, Power, the Ability slot, unconditional, cap above amount. A capped Damage increase, a
+conditional one, a Bonus-slot one and a cap at or below the amount stay `CappedIncrease`. The
+engine needs nothing: `apply_u16_modifier` already clamps any magnitude that carries a maximum,
+leaving a stat at or above Max alone and otherwise stopping at Max. Jochar L5's `2970` (`Power
++7, Max. 8`) has no registry record and stays unknown.
+
+**Evidence strength, Jochar.** One binding round and one landing round, neither reachable by the
+gate:
+- 1093569/0: Jochar L4 prints Power 6, and 6 + 6 = 12 shows as 8 (Attack 8 on one pill).
+  Aurora's 7 x 7 + 12 = 61 wins, 14 - 5 = 9 and 14 + 3 = 17 as the server reports.
+- 1414237/3: Jochar L3 prints 5, and 5 + 3 = 8 is the cap exactly. He wins the 8-8 tie by
+  lower level.
+
+Both captures' first rounds select a captured Copy result that replay treats as dynamic
+provenance. In 1093569/0 that is Jochar's own `Copy: Opp. Ability` bonus, and in 1414237/0
+Viperine's copied `-5 Opp. Life Min 0`. So the engine test pins the arithmetic with the same
+numbers: 6 + 6 to 8, 5 + 3 to 8, 9 + 3 left at 9, and an opposing `-2` landing after the clamp
+(8 to 6), which revision 45 pins for its capped magnitudes (1130454/0, 874962/2).
+
+**Carnibox's Ability-slot `+1 Pillz And Life`.** Revision 16 locked `1714` to the Komboka Bonus
+on an effective Komboka card. It called Carnibox L2's same-text ability `3356` a structural
+alias that "must never lend execution authority to a card ability", on the ground that it had no
+selected round. It has one now, so this revision reverses that on evidence:
+`classify_komboka_victory_pillz_and_life` also passes the exact text and complete shape from
+the Ability slot. The catalog lets `(Ability, "+1 Pillz And Life")` through only where the
+printed ability id is a structural alias of the definition. That is `3356`; Chasey's
+`1519`/`3648` and Van Dijk's `3456`/`3457` have no record and stay closed. The Komboka clan
+requirement applies to the Bonus slot alone. The validator reserves `1714` and `3356`: the
+Bonus slot is `1714` on an effective Komboka card, and the Ability slot takes either alias with
+no clan requirement. The typed `GainOnePillzAndLifeOnVictory` commit is reused unchanged,
+Pillz then Life for a living winner. The plan carries its slot, so an opposing Stop Opp.
+Ability stops it and a Stop Opp. Bonus does not; that liveness is composition only. The
+catalog-context policy revision moves to 6, because catalog behaviour changed.
+
+**Evidence strength, Carnibox.** One printed paying round and two copied ones:
+- 1089974/1: Carnibox wins 56 against 17 and pays 11 - 7 + 1 = 5 Pillz and 7 + 1 = 8 Life.
+- 877167/1: Noctezuma Cr's Reprisal Copy of the bonus pays from an Ability slot, 15 + 1 = 16
+  Life and 8 - 6 + 1 = 3 Pillz.
+- 876574/0: Caballine L3's Unison Copy pays 12 + 1 = 13 Life and 12 - 7 + 1 = 6 Pillz.
+
+Replay captures a Copy's result in the copier's own slot. So 876574/0 now executes Caballine's
+captured `(Ability, 1714)` and matches the server, and it joins the gate. 1089974/2 is a
+TypeScript single-point mismatch (Dookor's Cancel against his own Growth, docs/replay-triage.md).
+The Rust gate replays it exactly, executing Dookor's `Cancel Opp. Power And Damage Modif.`
+(`1589`) for the first time.
+
+**The `Stop:` opposing Pillz cut, composition only.** `Stop: -N Pillz Opp. Min M` (Izsobahd L3's
+`646`) is the plain Victory opponent-Pillz record with `isInverted`, which is how the registry
+marks the `Stop:` trigger. Revision 48 left the Pillz forms closed because
+`classify_stop_triggered_numeric` reads combat stats only.
+`classify_stop_triggered_opponent_pillz` clears the flag, asks the plain shape and the exact
+text, and maps the source to the existing `ReduceOpponentPillzOnVictory` under the
+`OwnerAbilityStopped` predicate. The projection models that predicate as never holding, and
+revision 48's `StopTriggeredAgainstStopAbility` refuses it wherever an opposing Stop Opp.
+Ability or Copy could stop the owner's ability. So an admitted match never executes the
+payload. The validator admits the predicate on this effect from the Ability slot only. The
+record's `currentRoundRequirement: win` is the reading used for the payload, and it is never
+observed. `Stop: +3 Pillz` (`918`) has a different shape and keeps its record; its one draw also
+needs `728` and faces Spidee's Stop.
+
+**Evidence strength, the `Stop:` cut.** No firing round. Its one selected round, 1058005/1, is a
+loss: Jairin's `-3 Opp Power, Min 5` takes Izsobahd to 5, so 5 x 2 = 10 against 8 x 4 = 32, and
+Izsobahd's opponent's Pillz go 12 - 3 = 9 with no payment. The opposing Paradox hand has no Stop
+and no Copy, so the source is provably inert there.
+
+**The conditional cancels and the Reprisal Protection, composition only.**
+`classify_conditional_control` admits three exact texts over their complete records, each under
+the one predicate its prefix names:
+- `Reprisal: Cancel Opp Pow & Dam Mod` (Cusaghi L3's `3103`): the Power And Damage cancel under
+  `OwnerMovesSecond`;
+- `Asymmetry: Cancel Opp. Power Mod.` (Gregor Ld L5's `5805`): the Power cancel under
+  `SelectedHandSlotsDiffer`;
+- `Reprisal: Protect. Power And Damage` (`2434`, with `5082` its structural alias): revision
+  23's Protection under `OwnerMovesSecond`.
+
+The registry refuses all three, as conditional and as unreviewed text, and the compiler's
+unconditional fallback needs the neutral position. Every one of these predicates is resolved
+before the Stop graph, and cancels and Protection are applied per stat from the resolution
+mask. So the engine is unchanged: a false predicate simply leaves the control unlive. The
+validator admits exactly these three pairs from the Ability slot. The catalog requires a printed
+level to be a structural alias of the definition its text resolves to, so Magnar L5's `1018` and
+Forjoten Ld L1-L3 (`5499`, `5419`, `5420`), which print the Protection with no record of their
+own, stay closed. Fiend L3's data row prints `Symmetry: Power +1` where captures show `2434`; it
+affects neither unlocked draw. The single-stat Protection refusal does not apply, since the stat
+is Power And Damage. The existing cancel context refusals apply unchanged, and none meets these
+hands.
+
+**Evidence strength, stated per control.** No round shows any of the three live against a
+modifier or a reduction it would refuse:
+- 926584/3: Cusaghi moves second with Fury, 7 x 3 - 9 (Hive Equalizer) = 12 against Hal
+  Gladius' 7. Hal has no Power or Damage modifier. The only one in that Hive hand, Aegis Cr's
+  Equalizer Power +1, is shown cancelled by the unconditional form in 1130726/2.
+- 1088008/2: Gregor Ld is in slot 1 against Tina in slot 3, so the Asymmetry holds. Gregor is
+  9 x 5 = 45 (Damage 5 + 3), and Tina, whose Revenge is off, 5 x 3 + 12 = 27. The Rescue hand's
+  Power modifiers are Power And Damage ones, and a Power cancel meets only their Power half, as
+  the unconditional `Cancel Opp. Power Modif.` already does.
+- 1131114/2: Forjoten Ld moves second, with Revenge live: 10 x 5 = 50 against Tina's 17. There
+  is no reduction to refuse.
+- 1059269/2: Forjoten moves first, so the Reprisal is off. 1089830/1 (a structurally refused
+  draw) shows Callie's `-1` landing on a first-moving Fiend, the false predicate letting a cut
+  through.
+
+The TypeScript reference set the reduction-refusing guard only for the unconditional
+Protection. It now sets it whenever a Power And Damage Protection applies, since the ability's
+conditions already gate the modifier. The Cards form stays Cancel-only (docs/replay-triage.md,
+Protection). No replay moves: 368 exact and 8 mismatches before and after.
+
+**The Killshot opposing compound.** `Killshot: -N Opp. Pillz And Life, Min M` (Molch L2's `5775`,
+which the registry folds into SpineHeadMan's `5575`, and Molch L3's `Min 0` sibling `5776`) is
+the revision-67 compound on the revision-38 Killshot trigger.
+`KillshotPostRoundEffectV1::ReduceOpponentPillzAndLife` joins `classify_killshot_post_round`
+and `has_killshot_post_round_shape`. It is carried by the new
+`ReduceOpponentPillzAndLifeOnKillshot` in the public, compact and engine effects, which pays the
+compound's two floored reductions when `killshot_holds`. The exhaustive helpers call it a Pillz
+and Life resource and a Killshot. It is an opposing floor on both resources, written on the win
+and with no beneficiary. `is_killshot` therefore covers it, so the Tune Out and
+`KillshotAgainstZeroAttacks` refusals apply.
+
+**Evidence strength, the Killshot compound.** One firing round plus the pinned pieces. In
+1414749/0 SpineHeadMan bets 6 for 8 x 7 = 56 against Kephren's 7 (at least double). Kephren's
+owner goes 12 - 2 damage - 2 = 8 Life and 12 - 2 = 10 Pillz, and the raw post names both halves.
+That round now executes in the gate. The non-firing rounds are 1011102/1 (Molch loses 40 against
+80) and 949566/0 (`5776` loses 5 against 30). The per-resource floor is the plain compound's
+(963847/2). The `Min 0` form has no firing round and rests on composition alone, as the Killshot
+opponent-Life `Min 0` forms do.
+
+**Refusals.** One refusal is new, and one is extended.
+- `CappedPowerIncreaseAgainstOwnPowerIncrease`. The clamp makes the order of the capped increase
+  against any other increase of the same card's Power observable, and no round pins it: ability
+  then bonus gives 6 + 6 to 8 and then + 2 = 10, the other order 8. So the capped increase is
+  refused wherever another such increase could meet it (`capped_power_meets_own_power_increase`):
+  - the card's other slot raising its Power, alone or with Damage, under any magnitude or
+    predicate;
+  - a Copy there that could import such an increase from the opposing hand's copied slot;
+  - an opposing Copy that could take the capped increase.
+
+  It costs 1093569. Jochar L4's printed bonus `Copy: Opp. Ability` could import Tina's `Revenge:
+  Power And Damage +2` (`883`) onto the same card. The catalog test takes Tina out and sees the
+  draw prepare. In 1414237 the opposing Skeelz hand prints only Damage and Life reductions, so Jochar L3's
+  Copy imports no Power increase and the draw passes.
+- `OpponentPillzAndLifeAgainstUnpinnedEffect` now covers the Killshot compound. The target's own
+  writes that can land in the round it pays - on the target's loss, or every round for a
+  permanent - meet its floors in the 1093173/1 order, and so does an opposing Copy. It costs
+  nothing. 1011102's opposing hand has no end-of-round writer and no Copy. The catalog test puts
+  Eugene's `Defeat: +2 Life` there and sees the refusal.
+
+The `Stop:` cut inherits revision 48's `StopTriggeredAgainstStopAbility`, which costs nothing
+here. The catalog test puts Angelo L2 opposite Izsobahd and sees it refuse.
+
+The replay boundary needs no new clause. Each admitted text executes ahead of it. A malformed
+record or the complete shape under other text still rejects when selected: the `Stop:` clause,
+the Killshot channel, the Komboka clause, the selected-control and combat-stat hazards, which
+the replay test walks for every item.
+
+The gate grows from 882 to 905 rounds, by the rounds the slice newly reaches in the throwaway
+prefix scan:
+- 1065231 is added at two, the whole match (Angelo's Stop in round 0, Callie's knockout in
+  round 1);
+- 1414749 is added at two (the Killshot compound, then Bugamon; round 2 selects Pepo Brahms'
+  closed `Growth: Opp. Attack +1`);
+- 1011102 is added at two, the whole match (Molch's loss in round 1);
+- 1058005 is added at four (Izsobahd's inert loss);
+- 876574 is added at two, the whole match (Caballine's copied Komboka gain);
+- 1059269 is extended from one round to four, 926584 from three to four, 1088008 from two to
+  four, 1089974 from one to four and 1131114 from two to four.
+
+No fixture shrinks. The absent dispositions rise from 68 to 69: Leonaparte in 1058005/3 has no
+ability. The pinned execute ids gain the slice ids first reached - `646`, `877`, `3103`, `3356`,
+`5082`, `5575`, `5775` and `5805` - and seven ordinary ids first reached in the new rounds:
+- `472`, Sandro Cr's `Support: Power +1` (1414749/1);
+- `592`, Onyx's `Stop Opp. Ability` (1058005/0);
+- `991`, Vermaire's `Courage: Power And Damage + 1` (1065231/1);
+- `1589`, Dookor's `Cancel Opp. Power And Damage Modif.` (1089974/2);
+- `4347`, Parsek's `Growth: -1 Opp Power, Min 4` (1058005/2);
+- `5789`, Torre's `Equalizer: -1 Opp Power, Min 2` (1088008/3);
+- `5799`, Zerkov's `Victory Or Defeat : +1 Life` (1011102/0).
+
+The disabled ids are unchanged. `2968`, `2969` and `5776` are admitted but not executed by the
+gate.
+
+Left out, as the pricing and its skeptics decided:
+- Sinister Symmetry (`4303`), a single paying round of new knockout arithmetic;
+- the owner decisions `728`, `1231`, `5871`, `4799` and `2721`;
+- the items not ready yet: the `Stop:` stat forms (`505`, `1203`, `1474`), `1142`, `1497`,
+  Disunion and Perfect;
+- the partial `1652` and `1679`.
+
+Two questions are left for the owner:
+- The capped-increase refusal could be dropped for 1093569, as revision 45 admitted its capped
+  Per Life Left increases without one. That would take the ability-before-bonus order, which
+  applies revision 45's clamp before the copied `+2`, on no evidence. The conservative choice is
+  the one recorded here.
+- Carnibox's liveness under Stop Opp. Ability and Stop Bonus is composition from the plan's slot.
+  A round with Carnibox facing a Stop would pin it.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and
