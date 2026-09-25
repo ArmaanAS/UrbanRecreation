@@ -181,37 +181,38 @@ export class BaseData {
  * states. That allocation was never the problem; the dispatch was. Each access was an
  * un-inlinable runtime call that changed the packed object's map, so it churned through
  * map transitions and every `.final` site went megamorphic. A throwaway view costs
- * nothing by comparison: one view class per site keeps the site monomorphic, so TurboFan
- * inlines the getter and escape analysis drops the allocation. See
- * tests/CardAccess.bench.ts - alternating views were 223x slower through the swap, while
- * cloning, which is what the packing is really for, is identical either way.
+ * nothing by comparison, but only while TurboFan can inline its constructor so escape
+ * analysis drops the allocation, and that needs each view class to stand alone. They
+ * used to share an abstract `BaseAttr -> BaseStat` chain whose constructor stored `d`,
+ * which defeated it twice over on V8 15 (tests/CardAccess.bench.ts): every `super()`
+ * call went through the `FindNonDefaultConstructorOrConstruct` builtin, which TurboFan
+ * did not inline, and the one `d` store in the shared constructor saw all seven view
+ * maps, more than a polymorphic site holds. Either alone kept the allocation, and a real
+ * object per access cost the search a fifth of `deno task time-search` and an eighth of
+ * `deno task time`. So each view owns its constructor and `d`, and the shape they share
+ * is the type-only interfaces below. Do not give them a runtime base class again.
  */
-abstract class BaseAttr {
-  constructor(protected readonly d: BaseData) {}
-  abstract get cancel(): boolean;
-  abstract set cancel(n: boolean);
-  abstract get prot(): boolean;
-  abstract set prot(n: boolean);
+interface Attr {
+  cancel: boolean;
+  prot: boolean;
   /**
    * `protected || !cancelled`
    */
-  abstract get blocked(): boolean;
+  readonly blocked: boolean;
 }
-abstract class BaseStat extends BaseAttr {
-  abstract get base(): number;
-  abstract set base(n: number);
-  abstract get final(): number;
-  abstract set final(n: number);
+interface Stat extends Attr {
+  base: number;
+  final: number;
 }
 export enum AbilityString {
   DEFAULT = 0,
   NO_ABILITY = 1,
 }
-abstract class BaseString extends BaseAttr {
-  abstract get string(): AbilityString;
-  abstract set string(n: AbilityString);
+interface StringAttr extends Attr {
+  string: AbilityString;
 }
-export class AbilityStat extends BaseString {
+export class AbilityStat implements StringAttr {
+  constructor(private readonly d: BaseData) {}
   get string(): AbilityString {
     return this.d.a >> 20 & 1;
   }
@@ -234,7 +235,8 @@ export class AbilityStat extends BaseString {
     return (this.d.a >> 21 & 0b11) === 0b01;
   }
 }
-export class BonusStat extends BaseString {
+export class BonusStat implements StringAttr {
+  constructor(private readonly d: BaseData) {}
   get string(): AbilityString {
     return this.d.a >> 23 & 1;
   }
@@ -257,7 +259,8 @@ export class BonusStat extends BaseString {
     return (this.d.a >> 24 & 0b11) === 0b01;
   }
 }
-export class PowerStat extends BaseStat {
+export class PowerStat implements Stat {
+  constructor(private readonly d: BaseData) {}
   get base(): number {
     return this.d.a & 0x1f;
   }
@@ -303,7 +306,8 @@ export class PowerStat extends BaseStat {
     this.d.a = (this.d.a & ~0x4000000) | (+n << 26);
   }
 }
-export class DamageStat extends BaseStat {
+export class DamageStat implements Stat {
+  constructor(private readonly d: BaseData) {}
   get base(): number {
     return this.d.a >> 10 & 0x1f;
   }
@@ -339,7 +343,8 @@ export class DamageStat extends BaseStat {
     this.d.a = (this.d.a & ~0x8000000) | (+n << 27);
   }
 }
-export class AttackStat extends BaseStat {
+export class AttackStat implements Stat {
+  constructor(private readonly d: BaseData) {}
   get base(): number {
     return this.d.b & 0xff;
   }
@@ -368,7 +373,8 @@ export class AttackStat extends BaseStat {
     return (this.d.b >> 20 & 0b11) === 0b01;
   }
 }
-export class PillzStat extends BaseAttr {
+export class PillzStat implements Attr {
+  constructor(private readonly d: BaseData) {}
   get cancel(): boolean {
     return !!(this.d.b >> 22 & 1);
   }
@@ -385,7 +391,8 @@ export class PillzStat extends BaseAttr {
     return (this.d.b >> 22 & 0b11) === 0b01;
   }
 }
-export class LifeStat extends BaseAttr {
+export class LifeStat implements Attr {
+  constructor(private readonly d: BaseData) {}
   get cancel(): boolean {
     return !!(this.d.b >> 24 & 1);
   }

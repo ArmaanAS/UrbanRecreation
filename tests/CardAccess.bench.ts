@@ -10,19 +10,28 @@
 //           holding a reference to the data (src/game/types/CardTypes.ts)
 //   swap    what the engine used to do - Object.setPrototypeOf(this, PowerStat.prototype),
 //           reconstructed below because the engine no longer has it
-//   wrap    the same throwaway-view design, but each view a standalone class instead of
-//           CardTypes.ts's abstract BaseAttr -> BaseStat -> PowerStat chain
+//   wrap    the same throwaway-view design, as minimal standalone view classes declared
+//           in this module
 //   flat    distinct accessor names on one prototype, no view at all
 //
 // All four keep `a`/`b` and the bit layout byte for byte; only dispatch differs. The
 // `engine` rows go through the real classes, so they measure whatever CardTypes.ts ships.
 // (Until September 2026 the baseline was labelled `swap` but cast BaseData to PowerStat
 // and called the engine's getters, so after the dispatch changed it silently measured the
-// engine's views and the swap it named was not run at all.) `wrap` is kept beside
-// `engine` because the two differ by more than the claim in CardTypes.ts allows: measured
-// on 2026-09-25, the standalone views ran as fast as `flat` while the engine's inherited
-// ones were ~35x slower, and a local replica of that abstract chain was as slow as the
-// engine, so the hierarchy looks like what stops escape analysis there.
+// engine's views and the swap it named was not run at all.)
+//
+// `wrap` is the reference for `engine`. When the bench was fixed on 2026-09-25 the engine's
+// views still inherited from an abstract BaseAttr -> BaseStat chain and ran ~35x slower
+// than `wrap` (alternating 22.8 us vs 0.62 us per pass): every `super()` call went through
+// V8's FindNonDefaultConstructorOrConstruct builtin, and the shared constructor's `d`
+// store saw all seven view maps, so the view was never scalar-replaced. The real search
+// paid for it too - making the views standalone took `deno task time-search` from 1795 to
+// 1410 ms and `deno task time` from 18.9 to 16.4 s (medians, same results). After that
+// change `engine` measured 1.2 us alternating and 0.76 us same-view, against 0.62 us and
+// 0.50 us for `wrap` and `flat`. What remains is the cost of reaching an *exported* class
+// binding, which is read through a module cell, rather than a module-local one: the same
+// classes left unexported ran at 0.78 us. If `engine` drifts back towards `swap`,
+// something defeats escape analysis again.
 import { BaseData } from "@/game/types/CardTypes.ts";
 
 // --- swap: the previous engine dispatch, one prototype per view, re-pointed per access ---
