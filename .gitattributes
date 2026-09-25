@@ -1,0 +1,6 @@
+# The Rust provenance fingerprints hash these three files byte for byte, and
+# tests/expect/rust-provenance.json pins the result, so their line endings must not
+# depend on core.autocrlf: a fresh Windows checkout otherwise gets CRLF and a new hash.
+captures/abilities.json text eol=lf
+data/data.json text eol=lf
+data/battle_card_overrides.json text eol=lf
