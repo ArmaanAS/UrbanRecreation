@@ -670,6 +670,7 @@ impl PostRoundEffect {
             // A Life canceller drops an opposing Backlash too: Fletcher's `Cancel Opp. Life
             // Modif.` leaves Sylvia Ld's owner at 12 after her win in 1337265/0.
             Self::ReduceOwnLifeOnVictory { .. }
+            | Self::ReduceOwnLife { .. }
             | Self::GainLifeOnDefeatMax { .. }
             | Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
@@ -802,6 +803,7 @@ impl PostRoundEffect {
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
             | Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
             | Self::ReduceOwnLifeOnVictory { .. }
+            | Self::ReduceOwnLife { .. }
             | Self::GainLifeOnDefeatMax { .. }
             | Self::GainOpponentPillzOnDefeat(_) => false,
         }
@@ -871,6 +873,7 @@ impl PostRoundEffect {
             | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
             | Self::ReduceOwnLifeOnVictory { .. }
+            | Self::ReduceOwnLife { .. }
             | Self::GainLifeOnDefeatMax { .. } => PillzWritesV1::NONE,
         }
     }
@@ -915,8 +918,11 @@ impl PostRoundEffect {
             | Self::GainLifeOnKillshot { .. }
             | Self::ReanimateLife(_)
             | Self::GainLifeOnDefeatMax { .. } => LifeWritesV1::OWN_CAPPED_GAIN,
-            // Backlash floors its owner's own Life: order-sensitive against any other write.
-            Self::ReduceOwnLifeOnVictory { .. } => LifeWritesV1::OWN_FLOOR,
+            // Backlash and Corrupt floor their owner's own Life: order-sensitive against any
+            // other write.
+            Self::ReduceOwnLifeOnVictory { .. } | Self::ReduceOwnLife { .. } => {
+                LifeWritesV1::OWN_FLOOR
+            }
             Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
             | Self::ReduceOpponentLifeOnVictory { .. }
             | Self::ReduceOpponentLifeOnDefeat { .. }
@@ -1029,6 +1035,7 @@ impl PostRoundEffect {
             | Self::GainLifeOnVictoryOrDefeat { .. }
             | Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
             | Self::ReduceBothPlayersLife { .. }
+            | Self::ReduceOwnLife { .. }
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
             | Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
             | Self::GainPillzOnVictoryOrDefeat(_)
@@ -1105,6 +1112,7 @@ impl PostRoundEffect {
             | Self::ReduceOpponentLifeOnKillshot { .. }
             | Self::ReduceBothPlayersLife { .. }
             | Self::ReduceOwnLifeOnVictory { .. }
+            | Self::ReduceOwnLife { .. }
             | Self::GainOpponentPillzOnDefeat(_)
             | Self::LatchOnVictory(
                 LatchedEffectV1::PoisonOpponentLife { .. }
@@ -1263,6 +1271,12 @@ pub(super) enum PostRoundEffect {
     /// `Backlash: - N Life Min M`: the round winner's own Life falls by `life`, never below
     /// `minimum`, and an owner already at or below it is left alone.
     ReduceOwnLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// `Corrupt N Min. M`: whatever the round's outcome, the owner's own Life falls by
+    /// `life`, never below `minimum`, and an owner already at or below it is left alone.
+    ReduceOwnLife {
         life: u16,
         minimum: u16,
     },
@@ -1728,8 +1742,9 @@ impl BaseRulesGame {
                             .map_err(|_| BaseRulesError::LatchedEffectOverflow { player: owner })?;
                     }
                     PostRoundEffect::LatchOnKillshot(_) => {}
-                    // Xantiax is the only admitted post-round effect with no outcome
-                    // channel and no beneficiary: it takes from both players at once. The
+                    // Xantiax was the first admitted post-round effect with no outcome
+                    // channel and no beneficiary (Corrupt, below, is its own half on its
+                    // own): it takes from both players at once. The
                     // owner winning, losing or being knocked out by this round's damage
                     // makes no difference (1058151/3 pays into the opponent from an owner
                     // the round has just taken to zero; 1080464/2 charges a winning owner),
@@ -1882,6 +1897,21 @@ impl BaseRulesGame {
                             .max(minimum);
                     }
                     PostRoundEffect::ReduceOwnLifeOnVictory { .. } => {}
+                    // Corrupt is Xantiax's own half on its own: no outcome channel, the same
+                    // `> minimum` guard and the same clamp, on the owner alone. 1065308/2 and
+                    // 1066210/2 pin the floor (a winning owner on 6 goes to 5, not 4); the
+                    // losing side and a clamp that does not bind are Xantiax's (1059648/1,
+                    // 1080464/2), and an owner the round has taken to zero or down to Min is
+                    // left there.
+                    PostRoundEffect::ReduceOwnLife { life, minimum }
+                        if position.players[owner].life > minimum =>
+                    {
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .saturating_sub(life)
+                            .max(minimum);
+                    }
+                    PostRoundEffect::ReduceOwnLife { .. } => {}
                     // The capped Defeat Life is Defeat Life with Heal's cap, read when it pays:
                     // a knocked-out loser gains nothing, an owner already at or past Max gains
                     // nothing, and a gain that would overshoot stops there (1131114/0: 9 + 3

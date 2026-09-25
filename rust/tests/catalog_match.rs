@@ -4846,3 +4846,148 @@ fn strict_catalog_match_refuses_revision_71_sources_in_unpinned_contexts() {
         );
     }
 }
+
+/// Revision 72: every draw the slice unlocks prepares from its captured hands. Mel-T's and
+/// Betul's `+2 Attack Per Opp. Power` execute as an own Attack increase with the opposing
+/// Power magnitude, Betul's under Revenge; Nega D Ld's Corrupt is the end-of-round own-Life
+/// reduction; and Djanghost Ld's night ability, which has no catalog id, is the ordinary Night
+/// Power reduction with no maximum.
+#[test]
+fn strict_catalog_match_admits_revision_72_attack_per_power_corrupt_and_djanghost() {
+    use urban_recreation_rust::effect_registry::{AffectedSideV1, CombatStatV1, StatOperationV1};
+    let catalog = catalog();
+    let registry = registry();
+    let per_power = SupportedEffectV1::ModifyCombatStat {
+        side: AffectedSideV1::Player,
+        stat: CombatStatV1::Attack,
+        operation: StatOperationV1::Increase,
+        value: 2,
+        minimum: None,
+        maximum: None,
+        multiplier: MagnitudeMultiplierV1::OpponentPower,
+    };
+    let night_power = SupportedEffectV1::ModifyCombatStat {
+        side: AffectedSideV1::Opponent,
+        stat: CombatStatV1::Power,
+        operation: StatOperationV1::Decrease,
+        value: 4,
+        minimum: Some(4),
+        maximum: None,
+        multiplier: MagnitudeMultiplierV1::Fixed,
+    };
+    let always = CombatStatPredicateV1::Always;
+    let revenge = CombatStatPredicateV1::OwnerLostPreviousRound;
+    let night = CombatStatPredicateV1::MatchIsNight;
+    // Mel-T's two levels print one text, so both resolve to the same registry definition
+    // and keep their own catalog ids.
+    let mel_t = "+2 Attack Per Opp. Power";
+    let betul = "Revenge: + 2 Attack Per Opp. Power";
+    let djanghost = "Night: -4 Opp Power, Min 4";
+    for (capture, text, catalog_id, expected, predicate) in [
+        (962404, mel_t, Some(4661), per_power, always),
+        (964352, mel_t, Some(4661), per_power, always),
+        (1072885, mel_t, Some(1785), per_power, always),
+        (1089513, mel_t, Some(4661), per_power, always),
+        (1066337, betul, Some(1719), per_power, revenge),
+        (1025279, betul, Some(1719), per_power, revenge),
+        (1025279, djanghost, None, night_power, night),
+        (1025413, betul, Some(1719), per_power, revenge),
+        (1025413, djanghost, None, night_power, night),
+    ] {
+        let prepared =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+                .unwrap_or_else(|error| panic!("{capture}: {error:?}"));
+        let found = [PlayerId::P1, PlayerId::P2]
+            .into_iter()
+            .flat_map(|player| prepared.preparation()[player].iter())
+            .filter_map(|card| match &card.ability {
+                CatalogCombatStatSourceDispositionV1::Execute {
+                    identity,
+                    effect,
+                    predicate: actual,
+                } if identity.description == text => {
+                    assert_eq!(identity.catalog_id, catalog_id, "{capture}");
+                    assert_eq!(*actual, predicate, "{capture}");
+                    Some(*effect)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(found, vec![expected], "{capture} {text}");
+    }
+    for capture in [1065308, 1066210] {
+        let prepared =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+                .unwrap_or_else(|error| panic!("{capture}: {error:?}"));
+        let found = [PlayerId::P1, PlayerId::P2]
+            .into_iter()
+            .flat_map(|player| prepared.preparation()[player].iter())
+            .filter_map(|card| match &card.ability {
+                CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                    identity,
+                    effect,
+                    predicate,
+                } if identity.registry_definition_id == 5286 => {
+                    assert_eq!(identity.catalog_id, Some(5286), "{capture}");
+                    assert_eq!(*predicate, always, "{capture}");
+                    Some(*effect)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            found,
+            vec![CombatStatPostRoundEffectV1::ReduceOwnLife {
+                life: 2,
+                minimum: 5
+            }],
+            "{capture}"
+        );
+    }
+}
+
+/// The contexts revision 72 refuses rather than guesses: Corrupt opposite Xantiax Robb Cr,
+/// whose ability and Berzerk bonus both write Corrupt's owner's Life, and opposite Fletcher's
+/// `Cancel Opp. Life Modif.`, which no round shows meeting Corrupt. Djanghost Ld's day
+/// ability is another text with no registry definition, so a Djanghost hand by day stays
+/// closed.
+#[test]
+fn strict_catalog_match_refuses_revision_72_sources_in_unpinned_contexts() {
+    let catalog = catalog();
+    let registry = registry();
+    let (mut p1, p2) = fully_supported_hands();
+    p1[0] = CardKey::new(1401, 5);
+    assert!(
+        CatalogCombatStatMatchV1::new(input(p1, p2, false), &catalog, &registry, PROJECTION)
+            .is_ok()
+    );
+    for opposing in [CardKey::new(1573, 3), CardKey::new(1528, 2)] {
+        let mut p2 = p2;
+        p2[0] = opposing;
+        let result =
+            CatalogCombatStatMatchV1::new(input(p1, p2, false), &catalog, &registry, PROJECTION);
+        assert!(
+            matches!(
+                &result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { description, .. })
+                    if description == "Corrupt 2 Min. 5"
+            ),
+            "{opposing:?}: {result:?}"
+        );
+    }
+    let (mut p1, p2) = fully_supported_hands();
+    p1[0] = CardKey::new(1732, 4);
+    assert!(
+        CatalogCombatStatMatchV1::new(input(p1, p2, true), &catalog, &registry, PROJECTION).is_ok()
+    );
+    let result =
+        CatalogCombatStatMatchV1::new(input(p1, p2, false), &catalog, &registry, PROJECTION);
+    assert!(
+        matches!(
+            &result,
+            Err(CatalogCombatStatMatchErrorV1::Lookup { description, .. })
+                if description == "Day: Power +4"
+        ),
+        "{result:?}"
+    );
+}

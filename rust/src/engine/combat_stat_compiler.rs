@@ -195,7 +195,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 71;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 72;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -416,10 +416,10 @@ fn reprisal_stop_opponent_ability_shape_matches(input: &StructuredEffectV1) -> b
 /// predicate the projection already resolves: `Courage:`, `Confidence:`, `Revenge:`,
 /// `Asymmetry:`, `Symmetry:`, `Night:` and, since revision 68, `Unison :` - the owner's whole
 /// hand sharing the selected card's effective clan, which the structured record marks with
-/// its clan-mates flag rather than a condition field. Every one of those predicates is decided before
-/// the Stop graph, so a Stop whose condition fails is simply not live there - which is the
-/// reference's `Events.executeCancels` order and already how `active_effect` and
-/// `source_liveness` treat Reprisal. Reprisal keeps its identity lock and is not admitted
+/// its clan-mates flag rather than a condition field. Every one of those predicates is
+/// decided before the Stop graph, so a Stop whose condition fails is simply not live there -
+/// which is the reference's `Events.executeCancels` order and already how `active_effect`
+/// and `source_liveness` treat Reprisal. Reprisal keeps its identity lock and is not admitted
 /// here: nothing below maps the defender position.
 ///
 /// The structured record carries exactly one condition field and the printed prefix must
@@ -984,6 +984,86 @@ pub(crate) fn has_defeat_opponent_pillz_gain_shape(definition: &EffectDefinition
                 ..POST_ROUND_SHAPE
             },
         )
+}
+
+/// Recognize `Corrupt N Min. M` (Nega D Ld's `5286`, `Corrupt 2 Min. 5`): whether its card
+/// wins or loses, the owner's own Life falls by N at the end of the round, never below M, and
+/// an owner already at or below M is left alone. It is Xantiax's own half on its own: the
+/// record asks for no outcome and no condition, like Xantiax's, but names `sideAffected:
+/// player` where Xantiax names `both`, so neither can pass for the other, and the Victory
+/// Backlash names `win`. The server pins the floor twice (1065308/2 and 1066210/2: Nega wins
+/// a knockout round and its owner goes 6 to 5, a post quantity of 1); the unclamped amount
+/// and the losing side rest on Xantiax's own-side arm. A `Min 0` record could knock its own
+/// owner out, which no round shows, so it is refused here and replay rejects it when
+/// selected. Exact text rebuilt from the record's own numbers, card abilities only. Returns
+/// `(life, minimum)`.
+pub(crate) fn classify_corrupt_own_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && input.value_min > 0
+        && has_corrupt_own_life_shape(definition)
+        && definition.description() == format!("Corrupt {} Min. {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min))
+}
+
+/// Structural half of the Corrupt boundary, `Min 0` included, so replay preparation rejects
+/// the complete shape under malformed text, and a refused `Min 0` record, instead of
+/// disabling it.
+pub(crate) fn has_corrupt_own_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_min: ShapeFieldV1::Read,
+                current_round: CurrentRoundRequirementV1::Any,
+                action: AttributeActionV1::Decrease,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
+/// Recognize the `Revenge:` form of `+N Attack Per Opp. Power` (Betul's `1719`, printed with
+/// a space after the sign: `Revenge: + 2 Attack Per Opp. Power`). The registry compiles the
+/// plain form (`1785`, `4661`) with the `OpponentPower` magnitude and refuses this one only
+/// because it is conditional; `numeric_effect` refuses any special action, so the
+/// previous-round numeric classifier never reaches it. The record is the plain one with
+/// `previousRoundRequirement: lose` and nothing else, and the plan carries Revenge's
+/// already-resolved predicate. 1066337/3 pays (Betul lost round 2: 8 x 10 + 2 x 7 = 94) and
+/// 926071/1 does not (Betul won round 0: 24 less Hive's Equalizer 12 = 12). Card abilities
+/// only.
+fn classify_revenge_attack_per_opponent_power(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && input.previous_round_requirement == PreviousRoundRequirementV1::Lose
+        && neutral_except_previous_round(input)
+        && input.special_action == SpecialActionV1::ConvertOpponentPowerToAttack
+        && input.attribute_affected == AttributeAffectedV1::Attack
+        && input.attribute_action == AttributeActionV1::Increase
+        && input.side_affected == AffectedSideV1::Player
+        && !input.is_support
+        && input.value > 0
+        && input.value_min == 0
+        && input.value_max == 0
+        && definition.description() == format!("Revenge: + {} Attack Per Opp. Power", input.value))
+    .then_some((
+        SupportedEffectV1::ModifyCombatStat {
+            side: AffectedSideV1::Player,
+            stat: CombatStatV1::Attack,
+            operation: StatOperationV1::Increase,
+            value: input.value,
+            minimum: None,
+            maximum: None,
+            multiplier: MagnitudeMultiplierV1::OpponentPower,
+        },
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+    ))
 }
 
 /// Recognize the `+1 Pillz Per Damage` conversion and its `Symmetry:` form: the winner's
@@ -1971,9 +2051,10 @@ fn killshot_toxin_shape_matches(input: &StructuredEffectV1) -> bool {
         )
 }
 
-/// Recognize `Xantiax: -N Life, Min. M`: the only admitted post-round grammar that names
-/// no outcome and no beneficiary. Both players lose N, neither below M, whatever the round
-/// did. `Xantiax` is flavour on the printed text, not a condition - the structured record
+/// Recognize `Xantiax: -N Life, Min. M`: the first admitted post-round grammar that names
+/// no outcome and no beneficiary, and still the only one that reaches both players (Corrupt
+/// is its own half). Both players lose N, neither below M, whatever the round did.
+/// `Xantiax` is flavour on the printed text, not a condition - the structured record
 /// asks for no outcome, no previous round, no position and no hand slot, and reaches both
 /// sides at once, which is the shape no other admitted grammar has. Exact text and complete
 /// shape over every same-text registry record, card abilities only: no clan bonus prints it,
@@ -3280,6 +3361,7 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_backlash_life(definition, source_kind).is_some()
         || classify_defeat_capped_life(definition, source_kind).is_some()
         || classify_defeat_opponent_pillz_gain(definition, source_kind).is_some()
+        || classify_corrupt_own_life(definition, source_kind).is_some()
     {
         return None;
     }
@@ -3345,6 +3427,9 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_position_numeric(definition, source_kind) {
         return Some(classified);
     }
+    if let Some(classified) = classify_revenge_attack_per_opponent_power(definition, source_kind) {
+        return Some(classified);
+    }
     if let Some(classified) = classify_previous_round_numeric(definition, source_kind) {
         return Some(classified);
     }
@@ -3354,7 +3439,7 @@ pub(crate) fn classify_combat_stat_effect(
     if let Some(classified) = classify_night_confidence_numeric(definition, source_kind) {
         return Some(classified);
     }
-    if let Some(classified) = classify_day_night_numeric(definition) {
+    if let Some(classified) = classify_day_night_numeric(definition, source_kind) {
         return Some(classified);
     }
     if let Some(classified) = classify_stop_triggered_numeric(definition, source_kind) {
@@ -3423,6 +3508,9 @@ fn admitted_supported_effect(
                 && !(source_kind == CombatStatEffectSourceV1::Ability
                     && multiplier == MagnitudeMultiplierV1::Support
                     && matches!(stat, CombatStatV1::PowerAndDamage))
+                // `+N Attack Per Opp. Power` is printed by card abilities only.
+                && !(source_kind != CombatStatEffectSourceV1::Ability
+                    && multiplier == MagnitudeMultiplierV1::OpponentPower)
         }
     }
 }
@@ -3569,8 +3657,19 @@ fn classify_round_scaled_numeric(
 /// the predicate always holds. It is a predicate rather than an assumption so that a
 /// `Night:` source in a daylight match - a Copy, or a malformed capture - stays present and
 /// never fires instead of acting unconditionally.
+///
+/// One record is admitted by identity over a stray bound. Djanghost Ld's night ability
+/// `5391`, `Night: -4 Opp Power, Min 4`, carries `valueMax` 4 beside `value` 4 and `valueMin`
+/// 4, and it is the only decreasing combat-stat record in the registry with a `valueMax`, so
+/// `numeric_effect` refuses it. The printed text names no maximum and the server applies
+/// none: 1025279/0 takes Doela Noel from 8 to 4 and GhosTown's night bonus to 3 (Attack 21),
+/// and 1025413/0 takes Galahad from 6, floored at 4, and then to 3, which also pins the
+/// ability before the bonus with each clamp applied in turn. So that one definition id, from
+/// the Ability slot, with that exact text and the three equal numbers, compiles as the
+/// ordinary decrease with no maximum; `numeric_effect` is not relaxed for anything else.
 fn classify_day_night_numeric(
     definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
 ) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
     let description = definition.description();
     let (predicate, body) = if let Some(body) = description.strip_prefix("Night: ") {
@@ -3585,9 +3684,36 @@ fn classify_day_night_numeric(
     {
         return None;
     }
-    let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
+    let effect = if djanghost_night_stray_maximum(definition, source_kind) {
+        let mut input = input.clone();
+        input.value_max = 0;
+        numeric_effect(&input, MagnitudeMultiplierV1::Fixed)?
+    } else {
+        numeric_effect(input, MagnitudeMultiplierV1::Fixed)?
+    };
     numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
         .then_some((effect, predicate))
+}
+
+/// Djanghost Ld's night ability, the one Night numeric admitted over a stray `valueMax`.
+const DJANGHOST_NIGHT_POWER_REDUCTION_ID: u32 = 5391;
+
+/// Whether `definition` is exactly the reviewed Djanghost Ld record: its id, from the
+/// Ability slot, its printed text, and `valueMax` equal to `value` and `valueMin`.
+fn djanghost_night_stray_maximum(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> bool {
+    let input = definition.structured_input();
+    (source_kind, definition.id())
+        == (
+            CombatStatEffectSourceV1::Ability,
+            DJANGHOST_NIGHT_POWER_REDUCTION_ID,
+        )
+        && definition.description() == "Night: -4 Opp Power, Min 4"
+        && input.value == 4
+        && input.value_min == 4
+        && input.value_max == 4
 }
 
 /// Recognize the compound `Night: Confid.: <numeric body>` (Schwarz's night ability `1643`,
@@ -5330,6 +5456,7 @@ fn round_scaled_description_matches(description: &str, effect: SupportedEffectV1
         | MagnitudeMultiplierV1::AntiSupport
         | MagnitudeMultiplierV1::OpponentStars
         | MagnitudeMultiplierV1::OpponentDamage
+        | MagnitudeMultiplierV1::OpponentPower
         | MagnitudeMultiplierV1::OwnerLife
         | MagnitudeMultiplierV1::OwnerPillz
         | MagnitudeMultiplierV1::OwnerPillzLost
@@ -5472,6 +5599,7 @@ pub(crate) fn compact_effect(effect: SupportedEffectV1) -> Option<CombatStatEffe
                 MagnitudeMultiplierV1::OpponentStars => CombatStatMagnitudeV1::OpponentStars,
                 MagnitudeMultiplierV1::AntiSupport => CombatStatMagnitudeV1::AntiSupport,
                 MagnitudeMultiplierV1::OpponentDamage => CombatStatMagnitudeV1::OpponentDamage,
+                MagnitudeMultiplierV1::OpponentPower => CombatStatMagnitudeV1::OpponentPower,
                 MagnitudeMultiplierV1::OwnerLife => CombatStatMagnitudeV1::OwnerLife,
                 MagnitudeMultiplierV1::OwnerPillz => CombatStatMagnitudeV1::OwnerPillz,
                 MagnitudeMultiplierV1::OwnerPillzLost => CombatStatMagnitudeV1::OwnerPillzLost,
@@ -7609,13 +7737,13 @@ mod tests {
                 );
             }
         }
-        // `5391` prints a Min but also carries a `valueMax` on a decrease, which no admitted
-        // grammar reads, and `Day: Cancel` is a description context. Neither is admitted. The
-        // Night post-round effects `4747` and `4750` are their post-round grammars' since
-        // revision 69, never a combat stat, and the compound `Night: Confid.:` `1643` has its
-        // own conjunctive predicate (tested below). The Night Stop `5564` is the
-        // conditional-Stop grammar's, since revision 47.
-        for id in [5391, 4747, 4750, 2369] {
+        // `Day: Cancel` is a description context and is not admitted. The Night post-round
+        // effects `4747` and `4750` are their post-round grammars' since revision 69, never a
+        // combat stat, and the compound `Night: Confid.:` `1643` has its own conjunctive
+        // predicate (tested below). The Night Stop `5564` is the conditional-Stop grammar's,
+        // since revision 47. `5391`'s stray `valueMax` is admitted by identity since
+        // revision 72 (tested below).
+        for id in [4747, 4750, 2369] {
             let definition = registry.get(id).expect("registry definition");
             assert_eq!(
                 classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
@@ -7640,7 +7768,10 @@ mod tests {
             let malformed =
                 EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
             assert_eq!(
-                classify_day_night_numeric(malformed.get(1442).unwrap()),
+                classify_day_night_numeric(
+                    malformed.get(1442).unwrap(),
+                    CombatStatEffectSourceV1::Bonus
+                ),
                 None,
                 "malformed {field} = {value}",
             );
@@ -7649,7 +7780,10 @@ mod tests {
         retexted["1442"]["description"] = serde_json::json!("Dusk: -1 Opp Pow. And Damage, Min 1");
         let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
         assert_eq!(
-            classify_day_night_numeric(retexted.get(1442).unwrap()),
+            classify_day_night_numeric(
+                retexted.get(1442).unwrap(),
+                CombatStatEffectSourceV1::Bonus
+            ),
             None
         );
     }
@@ -9026,10 +9160,11 @@ mod tests {
         // conditional-Stop grammar, card abilities only.
         // And since revision 50 the `Confidence:` stat Copy and Exchange, by the conditional
         // stat-Copy grammar.
-        let admitted_stops = BTreeSet::from([490, 589, 1409, 1680, 1713]);
+        // Since revision 72 Betul's `Revenge: + 2 Attack Per Opp. Power` too, by its own
+        // grammar and from card abilities only.
+        let ability_only = BTreeSet::from([490, 589, 1409, 1680, 1713, 1719]);
         let deferred = BTreeSet::from([
-            814, 1643, 1652, 1661, 1702, 1719, 1751, 1810, 2113, 2582, 3016, 3301, 3546, 4301,
-            4449, 4972,
+            814, 1643, 1652, 1661, 1702, 1751, 1810, 2113, 2582, 3016, 3301, 3546, 4301, 4449, 4972,
         ]);
         let observed: BTreeSet<_> = registry
             .iter()
@@ -9043,7 +9178,7 @@ mod tests {
             observed,
             admitted
                 .iter()
-                .chain(&admitted_stops)
+                .chain(&ability_only)
                 .chain(&deferred)
                 .copied()
                 .collect()
@@ -9067,7 +9202,7 @@ mod tests {
                 })
                 .collect();
             let expected: BTreeSet<_> = if source == CombatStatEffectSourceV1::Ability {
-                admitted.union(&admitted_stops).copied().collect()
+                admitted.union(&ability_only).copied().collect()
             } else {
                 admitted.clone()
             };
@@ -10380,5 +10515,189 @@ mod tests {
                 "{text:?}"
             );
         }
+    }
+
+    /// Revision 72: `+N Attack Per Opp. Power` (registry-compiled) and its `Revenge:` form
+    /// (compiler-side), Corrupt by exact text over the complete shape, and Djanghost Ld's
+    /// Night numeric by identity. All card abilities only.
+    #[test]
+    fn revision_72_grammars_are_admitted_by_exact_text_shape_and_identity() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        let bonus = CombatStatEffectSourceV1::Bonus;
+        let per_power = SupportedEffectV1::ModifyCombatStat {
+            side: AffectedSideV1::Player,
+            stat: CombatStatV1::Attack,
+            operation: StatOperationV1::Increase,
+            value: 2,
+            minimum: None,
+            maximum: None,
+            multiplier: MagnitudeMultiplierV1::OpponentPower,
+        };
+        for id in [1785, 4661] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_combat_stat_effect(definition, ability),
+                Some((per_power, CombatStatPredicateV1::Always)),
+                "{id}"
+            );
+            assert_eq!(classify_combat_stat_effect(definition, bonus), None, "{id}");
+        }
+        let betul = registry.get(1719).expect("registry definition");
+        assert_eq!(
+            classify_combat_stat_effect(betul, ability),
+            Some((per_power, CombatStatPredicateV1::OwnerLostPreviousRound))
+        );
+        assert_eq!(classify_combat_stat_effect(betul, bonus), None);
+
+        let nega = registry.get(5286).expect("registry definition");
+        assert!(has_corrupt_own_life_shape(nega));
+        assert_eq!(classify_corrupt_own_life(nega, ability), Some((2, 5)));
+        assert_eq!(classify_corrupt_own_life(nega, bonus), None);
+        assert_eq!(classify_combat_stat_effect(nega, ability), None);
+        // Xantiax, Backlash and the opposing Victory reduction are other structures.
+        for id in [1379, 5198, 1058, 3092, 512] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(!has_corrupt_own_life_shape(definition), "{id}");
+            assert_eq!(classify_corrupt_own_life(definition, ability), None, "{id}");
+        }
+        assert!(!has_both_players_life_reduction_shape(nega));
+        assert!(!has_backlash_life_shape(nega));
+
+        let djanghost = registry.get(5391).expect("registry definition");
+        let night_power = SupportedEffectV1::ModifyCombatStat {
+            side: AffectedSideV1::Opponent,
+            stat: CombatStatV1::Power,
+            operation: StatOperationV1::Decrease,
+            value: 4,
+            minimum: Some(4),
+            maximum: None,
+            multiplier: MagnitudeMultiplierV1::Fixed,
+        };
+        assert_eq!(
+            classify_combat_stat_effect(djanghost, ability),
+            Some((night_power, CombatStatPredicateV1::MatchIsNight))
+        );
+        assert_eq!(classify_combat_stat_effect(djanghost, bonus), None);
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        let edited = |id: &str, field: &str, value: serde_json::Value| {
+            let mut edited = source.clone();
+            if field == "description" {
+                edited[id]["description"] = value;
+            } else {
+                edited[id]["abilityData"][field] = value;
+            }
+            EffectRegistryV1::from_reader(edited.to_string().as_bytes()).unwrap()
+        };
+        // The Revenge form: its one condition, its special action and its spelling.
+        for (field, value) in [
+            ("previousRoundRequirement", serde_json::json!("win")),
+            ("previousRoundRequirement", serde_json::json!("any")),
+            ("positionRequirement", serde_json::json!("attacker")),
+            ("specialAction", serde_json::json!("convert_opp_dmg_to_atk")),
+            ("specialAction", serde_json::json!("none")),
+            ("valueMax", serde_json::json!(4)),
+            ("valueMin", serde_json::json!(1)),
+            ("value", serde_json::json!(3)),
+            ("sideAffected", serde_json::json!("opponent")),
+            ("attributeAffected", serde_json::json!("pwr")),
+            ("isSupport", serde_json::json!(true)),
+            ("isPermanent", serde_json::json!(true)),
+            (
+                "description",
+                serde_json::json!("Revenge: +2 Attack Per Opp. Power"),
+            ),
+            (
+                "description",
+                serde_json::json!("Revenge: + 2 Attack Per Opp Power"),
+            ),
+            (
+                "description",
+                serde_json::json!("Revenge: + 2 Attack Per Opp. Damage"),
+            ),
+            (
+                "description",
+                serde_json::json!("Confidence: + 2 Attack Per Opp. Power"),
+            ),
+            (
+                "description",
+                serde_json::json!("+ 2 Attack Per Opp. Power"),
+            ),
+        ] {
+            let registry = edited("1719", field, value.clone());
+            assert_eq!(
+                classify_combat_stat_effect(registry.get(1719).unwrap(), ability),
+                None,
+                "1719 {field} = {value}"
+            );
+        }
+        // Corrupt: the refused `Min 0`, the structure and the spelling.
+        let min_zero = edited("5286", "valueMin", serde_json::json!(0));
+        let min_zero_definition = min_zero.get(5286).unwrap();
+        assert!(has_corrupt_own_life_shape(min_zero_definition));
+        assert_eq!(
+            classify_corrupt_own_life(min_zero_definition, ability),
+            None
+        );
+        for (field, value) in [
+            ("value", serde_json::json!(3)),
+            ("valueMin", serde_json::json!(4)),
+            ("valueMax", serde_json::json!(5)),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("currentRoundRequirement", serde_json::json!("lose")),
+            ("sideAffected", serde_json::json!("both")),
+            ("sideAffected", serde_json::json!("opponent")),
+            ("attributeAffected", serde_json::json!("pillz")),
+            ("attributeAction", serde_json::json!("increase")),
+            ("previousRoundRequirement", serde_json::json!("win")),
+            ("isPermanent", serde_json::json!(true)),
+            ("isOverdrive", serde_json::json!(true)),
+            ("description", serde_json::json!("Corrupt 2 Min 5")),
+            ("description", serde_json::json!("Corrupt 2, Min. 5")),
+            ("description", serde_json::json!("Xantiax: -2 Life, Min. 5")),
+            ("description", serde_json::json!("Corrupt 2 Min. 5 ")),
+        ] {
+            let registry = edited("5286", field, value.clone());
+            assert_eq!(
+                classify_corrupt_own_life(registry.get(5286).unwrap(), ability),
+                None,
+                "5286 {field} = {value}"
+            );
+        }
+        // Djanghost Ld: the identity is the id, the text and the three equal numbers. A
+        // `valueMax` on any other decrease stays refused.
+        for (field, value) in [
+            ("valueMax", serde_json::json!(5)),
+            ("valueMax", serde_json::json!(3)),
+            ("valueMin", serde_json::json!(3)),
+            ("value", serde_json::json!(3)),
+            (
+                "description",
+                serde_json::json!("Night: -4 Opp Power, Min 3"),
+            ),
+            ("description", serde_json::json!("Day: -4 Opp Power, Min 4")),
+            ("description", serde_json::json!("-4 Opp Power, Min 4")),
+            ("positionRequirement", serde_json::json!("attacker")),
+        ] {
+            let registry = edited("5391", field, value.clone());
+            assert_eq!(
+                classify_combat_stat_effect(registry.get(5391).unwrap(), ability),
+                None,
+                "5391 {field} = {value}"
+            );
+        }
+        // The same stray bound on the plain `-4 Opp Power, Min 4` (`616`) is not admitted.
+        let stray = edited("616", "valueMax", serde_json::json!(4));
+        assert_eq!(
+            classify_combat_stat_effect(stray.get(616).unwrap(), ability),
+            None
+        );
+        assert!(matches!(
+            classify_combat_stat_effect(registry.get(616).unwrap(), ability),
+            Some((SupportedEffectV1::ModifyCombatStat { .. }, _))
+        ));
     }
 }

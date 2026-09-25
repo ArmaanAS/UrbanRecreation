@@ -653,6 +653,7 @@ fn compact_effect(effect: SupportedEffectV1) -> Option<DiagnosticCombatEffectV1>
                 | MagnitudeMultiplierV1::OpponentStars
                 | MagnitudeMultiplierV1::AntiSupport
                 | MagnitudeMultiplierV1::OpponentDamage
+                | MagnitudeMultiplierV1::OpponentPower
                 | MagnitudeMultiplierV1::OwnerLife
                 | MagnitudeMultiplierV1::OwnerPillz
                 | MagnitudeMultiplierV1::OwnerPillzLost

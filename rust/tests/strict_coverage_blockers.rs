@@ -428,6 +428,18 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         "revision 71 union",
         &[1058, 1217, 1351, 2853, 3223, 5083, 5410, 5574],
     ),
+    // Revision 72, measured 2026-09-25: `+N Attack Per Opp. Power` with its `Revenge:` form,
+    // `Corrupt N Min. M`, and Djanghost Ld's `Night: -4 Opp Power, Min 4` admitted by
+    // identity. Only these five printed definitions have a registry record. 5391 unlocks
+    // nothing alone: 1025279 and 1025413 also need 1719, and 1025413 the clan-gated `4038`
+    // that revision 70 admitted.
+    (
+        "+N Attack Per Opp. Power (plain and Revenge)",
+        &[1719, 1785, 4661],
+    ),
+    ("Corrupt N Min. M", &[5286]),
+    ("Night: -4 Opp Power, Min 4 (identity)", &[5391]),
+    ("revision 72 union", &[1719, 1785, 4661, 5286, 5391]),
 ];
 
 fn root_path(path: &str) -> PathBuf {

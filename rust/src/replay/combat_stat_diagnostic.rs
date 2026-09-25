@@ -18,16 +18,16 @@ use crate::engine::combat_stat_compiler::{
     classify_backlash_life, classify_bet_gated_post_round, classify_both_players_life_reduction,
     classify_brawl_post_round, classify_clan_gated_post_round, classify_combat_stat_effect,
     classify_combust_opponent_life_and_pillz_on_victory,
-    classify_consume_opponent_pillz_on_victory, classify_defeat_capped_life, classify_defeat_life,
-    classify_defeat_opponent_life, classify_defeat_opponent_pillz,
-    classify_defeat_opponent_pillz_gain, classify_defeat_pillz, classify_defeat_pillz_and_life,
-    classify_dope_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
-    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
-    classify_round_scaled_post_round, classify_support_post_round,
+    classify_consume_opponent_pillz_on_victory, classify_corrupt_own_life,
+    classify_defeat_capped_life, classify_defeat_life, classify_defeat_opponent_life,
+    classify_defeat_opponent_pillz, classify_defeat_opponent_pillz_gain, classify_defeat_pillz,
+    classify_defeat_pillz_and_life, classify_dope_pillz,
+    classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
+    classify_heal_life_on_victory, classify_killshot_opponent_life,
+    classify_killshot_pillz_and_life, classify_killshot_post_round,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life, classify_recover_pillz,
+    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
     classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
     classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
@@ -39,13 +39,13 @@ use crate::engine::combat_stat_compiler::{
     has_bet_gated_post_round_shape, has_both_players_life_reduction_shape,
     has_brawl_post_round_shape, has_clan_gated_post_round_shape,
     has_combust_opponent_life_and_pillz_on_victory_shape,
-    has_consume_opponent_pillz_on_victory_shape, has_defeat_capped_life_shape,
-    has_defeat_life_shape, has_defeat_opponent_pillz_gain_shape, has_defeat_opponent_pillz_shape,
-    has_defeat_pillz_shape, has_dope_pillz_shape, has_equalizer_post_round_shape,
-    has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
-    has_killshot_post_round_shape, has_poison_opponent_life_on_defeat_shape,
-    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
-    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    has_consume_opponent_pillz_on_victory_shape, has_corrupt_own_life_shape,
+    has_defeat_capped_life_shape, has_defeat_life_shape, has_defeat_opponent_pillz_gain_shape,
+    has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_dope_pillz_shape,
+    has_equalizer_post_round_shape, has_heal_life_on_victory_shape,
+    has_killshot_opponent_life_shape, has_killshot_post_round_shape,
+    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
+    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape,
     has_unison_pillz_and_life_shape, has_victory_life_shape, has_victory_opponent_life_shape,
     has_victory_opponent_pillz_and_life_shape, has_victory_opponent_pillz_shape,
@@ -1223,6 +1223,16 @@ fn prepare_combat_stat_source(
             CombatStatPredicateV1::Always,
         ));
     }
+    // Corrupt names no outcome and no condition, as Xantiax does.
+    if let Some((life, minimum)) = classify_corrupt_own_life(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::ReduceOwnLife { life, minimum },
+            CombatStatEffectV1::ReduceOwnLife { life, minimum },
+            CombatStatPredicateV1::Always,
+        ));
+    }
     // The generic structural classifier makes malformed Reanimate records fail-closed, but
     // the executable replay slice remains restricted to Lobo's captured identity.
     if source.id == LOBO_REANIMATE_REGISTRY_ID {
@@ -1596,6 +1606,11 @@ fn prepare_combat_stat_source(
     // disabled no-op.
     let unadmitted_both_players_life_reduction = source.description.starts_with("Xantiax")
         || has_both_players_life_reduction_shape(definition);
+    // Corrupt is admitted since revision 72 for a Min of at least 1. Its text over a wrong slot
+    // or structure, a `Min 0` record, and the complete shape under other text reject when
+    // selected.
+    let unadmitted_corrupt =
+        source.description.starts_with("Corrupt ") || has_corrupt_own_life_shape(definition);
     // The both-players Victory Or Defeat gains: the printed `Players` text over a wrong
     // slot or structure, or the complete shape under other text, rejects when selected.
     let unadmitted_both_players_gain = (source.description.starts_with("Victory Or Defeat")
@@ -1759,6 +1774,7 @@ fn prepare_combat_stat_source(
         || unadmitted_killshot
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
+        || unadmitted_corrupt
         || unadmitted_both_players_gain
         || unadmitted_brawl_post_round
         || unadmitted_support_post_round
@@ -1806,6 +1822,7 @@ fn prepare_combat_stat_source(
         || unadmitted_killshot
         || unadmitted_komboka_victory_pillz_and_life
         || unadmitted_both_players_life_reduction
+        || unadmitted_corrupt
         || unadmitted_both_players_gain
         || unadmitted_brawl_post_round
         || unadmitted_support_post_round

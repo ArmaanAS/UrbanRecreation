@@ -9595,3 +9595,352 @@ fn revision_71_plans_are_refused_beside_unpinned_writes_to_their_resource() {
         Some(InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect)
     );
 }
+
+fn attack_per_opponent_power(value: u16) -> CombatStatEffectV1 {
+    modifier(
+        CombatStatAffectedSideV1::Player,
+        CombatStatAttributeV1::Attack,
+        CombatStatOperationV1::Increase,
+        value,
+        None,
+        None,
+        CombatStatMagnitudeV1::OpponentPower,
+    )
+}
+
+/// `+N Attack Per Opp. Power` scales by the opposing card's Power as the Attack phase sees
+/// it: after every Power/Damage modifier, so a reduction of the opposing Power counts, and a
+/// cut to the owner's own Power leaves the magnitude alone. Fury, which only adds Damage, does
+/// not move it. 1089513/2 is the captured own-cut case: Mel-T 7 cut to 4, 4 x 3 + 2 x 6 = 24.
+#[test]
+fn attack_per_opponent_power_reads_the_resolved_opposing_power() {
+    let base = base_spec(8, 2);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(
+        4661,
+        CombatStatPredicateV1::Always,
+        attack_per_opponent_power(2),
+    );
+    let mut plain = game(base.clone(), cards.clone());
+    let (report, _) = plain
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, true)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].damage, 4); // 2 printed + 2 Fury
+    assert_eq!(report.cards[PlayerId::P1].attack, 48); // 8 x 4 + 2 x 8
+
+    // The owner's own reduction of the opposing Power counts: 8 - 3 = 5.
+    let mut reduced = cards.clone();
+    reduced[PlayerId::P1][0].bonus = execute(
+        612,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Power, 3, 4),
+    );
+    reduced[PlayerId::P1][0].source_bonus_support_count = 1;
+    let (report, _) = game(base.clone(), reduced)
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 5);
+    assert_eq!(report.cards[PlayerId::P1].attack, 42); // 8 x 4 + 2 x 5
+
+    // An opposing increase of its own Power counts too: 8 + 2 = 10.
+    let mut raised = cards.clone();
+    raised[PlayerId::P2][0].ability = execute(
+        2006,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Power, 2),
+    );
+    let (report, _) = game(base.clone(), raised)
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].power, 10);
+    assert_eq!(report.cards[PlayerId::P1].attack, 52); // 8 x 4 + 2 x 10
+
+    // A cut to the owner's own Power moves only the Power term (Wesley's Confidence on
+    // Mel-T in 1089513/2): 5 x 4 + 2 x 8.
+    let mut own_cut = cards.clone();
+    own_cut[PlayerId::P2][0].ability = execute(
+        520,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Power, 3, 4),
+    );
+    let (report, _) = game(base.clone(), own_cut)
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 5);
+    assert_eq!(report.cards[PlayerId::P1].attack, 36);
+
+    // An opposing `Cancel Opp. Attack Modif.` drops it, as any own Attack increase.
+    let mut cancelled = cards.clone();
+    cancelled[PlayerId::P2][0].bonus = execute(
+        1163,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+            stat: CombatStatAttributeV1::Attack,
+        },
+    );
+    cancelled[PlayerId::P2][0].source_bonus_support_count = 1;
+    let (report, _) = game(base.clone(), cancelled)
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 32);
+
+    // Stopped, it adds nothing (962404/2: Lumia Cr stops Mel-T, 7 x 6 = 42).
+    let mut stopped = cards;
+    stopped[PlayerId::P2][0].ability = execute(
+        1341,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let (report, _) = game(base, stopped)
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].attack, 32);
+}
+
+/// The `Revenge:` form pays only in a round after its owner lost one (1066337/3), and not
+/// after a win (926071/1).
+#[test]
+fn revenge_attack_per_opponent_power_pays_only_after_a_lost_round() {
+    let base = base_spec(8, 2);
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][1].ability = execute(
+        1719,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        attack_per_opponent_power(2),
+    );
+    for (p1_first_bet, p2_first_bet, expected) in [(0, 5, 2 * 8 + 16), (5, 0, 2 * 8)] {
+        let mut diag = game(base.clone(), cards.clone());
+        let (first, _) = diag
+            .make(input(
+                PlayerId::P1,
+                (0, p1_first_bet, false),
+                (0, p2_first_bet, false),
+            ))
+            .unwrap();
+        assert_eq!(first.cards[PlayerId::P1].won, p1_first_bet > p2_first_bet);
+        let (second, _) = diag
+            .make(input(PlayerId::P2, (1, 1, false), (1, 1, false)))
+            .unwrap();
+        assert_eq!(
+            second.cards[PlayerId::P1].attack,
+            expected,
+            "after a first-round bet of {p1_first_bet}"
+        );
+    }
+}
+
+const CORRUPT: CombatStatEffectV1 = CombatStatEffectV1::ReduceOwnLife {
+    life: 2,
+    minimum: 5,
+};
+
+/// P1 holds `effect` as the ability of slot 0 and starts on `p1_life`; P2 starts on
+/// `p2_life`. Both hands are 6/3 with 20 Pillz, and every other source is absent.
+fn revision_72_spec(
+    effect: CombatStatEffectV1,
+    p1_life: u16,
+    p2_life: u16,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_life = p1_life;
+    base.players[PlayerId::P2].initial_life = p2_life;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(5286, CombatStatPredicateV1::Always, effect);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+/// Corrupt is a card ability only, unconditional, with a positive magnitude and a Min of at
+/// least 1.
+#[test]
+fn corrupt_plan_is_ability_only_positive_and_unconditional() {
+    assert!(CombatStatDiagnosticV1::new(revision_72_spec(CORRUPT, 12, 12)).is_ok());
+    let mut bonus = revision_72_spec(CORRUPT, 12, 12);
+    bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    bonus.cards[PlayerId::P1][0].bonus = execute(5286, CombatStatPredicateV1::Always, CORRUPT);
+    bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert_eq!(
+        refusal(bonus),
+        Some(InvalidCombatStatPlanReasonV1::CorruptLifeSource)
+    );
+    for bad in [
+        CombatStatEffectV1::ReduceOwnLife {
+            life: 0,
+            minimum: 5,
+        },
+        // `Min 0` could knock its own owner out, which no round shows.
+        CombatStatEffectV1::ReduceOwnLife {
+            life: 2,
+            minimum: 0,
+        },
+    ] {
+        assert_eq!(
+            refusal(revision_72_spec(bad, 12, 12)),
+            Some(InvalidCombatStatPlanReasonV1::CorruptLifeMagnitude),
+            "{bad:?}"
+        );
+    }
+    for condition in [
+        CombatStatPredicateV1::OwnerMovesFirst,
+        CombatStatPredicateV1::OwnerLostPreviousRound,
+        CombatStatPredicateV1::MatchIsNight,
+    ] {
+        let mut spec = revision_72_spec(CORRUPT, 12, 12);
+        spec.cards[PlayerId::P1][0].ability = execute(5286, condition, CORRUPT);
+        assert_eq!(
+            refusal(spec),
+            Some(InvalidCombatStatPlanReasonV1::CorruptLifePredicate),
+            "{condition:?}"
+        );
+    }
+}
+
+/// Corrupt takes N from its owner whatever the round did, never below Min, and leaves an
+/// owner at or below Min - a knocked-out one included - where it is. 1065308/2 and 1066210/2
+/// are the captured rounds: a winning owner on 6, in a knockout round, goes to 5.
+#[test]
+fn corrupt_takes_life_from_its_owner_on_either_outcome_down_to_its_minimum() {
+    for (p1_life, p2_life, p1_wins, expected_p1, expected_p2, status) in [
+        (6, 3, true, 5, 0, MatchStatus::Won(PlayerId::P1)), // 1065308/2, 1066210/2
+        (12, 12, true, 10, 9, MatchStatus::Playing),        // unclamped on a win
+        (12, 12, false, 7, 12, MatchStatus::Playing),       // 12 - 3 damage - 2
+        (9, 12, false, 5, 12, MatchStatus::Playing),        // 9 - 3 = 6, floored at 5
+        (7, 12, false, 4, 12, MatchStatus::Playing),        // already below Min: untouched
+        (5, 12, true, 5, 9, MatchStatus::Playing),          // at Min: untouched
+        (3, 12, false, 0, 12, MatchStatus::Won(PlayerId::P2)), // never revives
+    ] {
+        let spec = revision_72_spec(CORRUPT, p1_life, p2_life);
+        let mut diag = game(spec.base_rules, spec.cards);
+        let before = diag.position().clone();
+        let round = if p1_wins {
+            input(PlayerId::P1, (0, 5, false), (0, 0, false))
+        } else {
+            input(PlayerId::P1, (0, 0, false), (0, 5, false))
+        };
+        let (report, undo) = diag.make(round).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].won, p1_wins);
+        assert_eq!(report.players[PlayerId::P1].life, expected_p1, "{p1_life}");
+        assert_eq!(report.players[PlayerId::P2].life, expected_p2, "{p1_life}");
+        assert_eq!(diag.position().status, status, "{p1_life}");
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &before);
+    }
+    // An opposing `Stop Opp. Ability` stops it.
+    let mut spec = revision_72_spec(CORRUPT, 12, 12);
+    spec.cards[PlayerId::P2][0].ability = execute(
+        877,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let (report, _) = game(spec.base_rules, spec.cards)
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].life, 12);
+}
+
+/// Corrupt is refused wherever another write to its owner's Life can land in the same round,
+/// on either outcome, or beside an opposing Life canceller or Copy.
+#[test]
+fn corrupt_is_refused_beside_unpinned_writes_to_its_owners_life() {
+    let other = |id, effect| execute(id, CombatStatPredicateV1::Always, effect);
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Bonus,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    let victory_life_floor = other(
+        512,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 2,
+            minimum: 1,
+        },
+    );
+    let defeat_life_floor = other(
+        959,
+        CombatStatEffectV1::ReduceOpponentLifeOnDefeat {
+            life: 2,
+            minimum: 1,
+        },
+    );
+    let poison = other(
+        206,
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+            life: 1,
+            minimum: 3,
+        },
+    );
+    let xantiax = other(
+        1379,
+        CombatStatEffectV1::ReduceBothPlayersLife {
+            life: 3,
+            minimum: 0,
+        },
+    );
+    let canceller = other(
+        1172,
+        CombatStatEffectV1::CancelOpponentResourceModifiers {
+            resources: ResourceCancellationV1::Life,
+        },
+    );
+    let victory_life = other(377, CombatStatEffectV1::GainLifeOnVictory { life: 3 });
+    let defeat_life = other(2000, CombatStatEffectV1::GainLifeOnDefeat { life: 2 });
+    let heal = other(
+        649,
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 15,
+        },
+    );
+    let victory_pillz = other(337, CombatStatEffectV1::GainPillzOnVictory { pillz: 2 });
+    let combat_stat = other(2006, own(CombatStatAttributeV1::Power, 2));
+    #[derive(Clone, Copy)]
+    enum Where {
+        /// P2's slot-2 ability.
+        Opposing,
+        /// The bonus of P1's slot-0 card, beside Corrupt.
+        OtherSlot,
+        /// P1's slot-1 ability, another card.
+        OwnCard,
+    }
+    let refused = Some(InvalidCombatStatPlanReasonV1::CorruptLifeAgainstUnpinnedEffect);
+    for (placed, other_plan, expected) in [
+        // Corrupt writes on either outcome, so every opposing floor meets it.
+        (Where::Opposing, victory_life_floor, refused),
+        (Where::Opposing, defeat_life_floor, refused),
+        (Where::Opposing, poison, refused),
+        (Where::Opposing, xantiax, refused),
+        (Where::Opposing, canceller, refused),
+        (Where::Opposing, copy, refused),
+        // An opposing gain writes the opposing player's own Life (Anita and Aurora in
+        // 1065308 and 1066210).
+        (Where::Opposing, victory_life, None),
+        (Where::Opposing, victory_pillz, None),
+        (Where::OtherSlot, victory_life, refused),
+        (Where::OtherSlot, copy, refused),
+        (Where::OtherSlot, combat_stat, None),
+        (Where::OwnCard, heal, refused),
+        (Where::OwnCard, defeat_life, None),
+    ] {
+        let mut spec = revision_72_spec(CORRUPT, 12, 12);
+        let target = match placed {
+            Where::Opposing => &mut spec.cards[PlayerId::P2][2],
+            Where::OtherSlot => &mut spec.cards[PlayerId::P1][0],
+            Where::OwnCard => &mut spec.cards[PlayerId::P1][1],
+        };
+        if matches!(placed, Where::OtherSlot) {
+            target.bonus = other_plan;
+            target.source_bonus_support_count = 1;
+        } else {
+            target.ability = other_plan;
+            if matches!(
+                other_plan,
+                CombatStatSourcePlanV1::CopyOpponentSource { .. }
+            ) {
+                target.source_ability_support_count = 1;
+            }
+        }
+        assert_eq!(refusal(spec), expected, "Corrupt beside {other_plan:?}");
+    }
+}

@@ -34,7 +34,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Four rounds since revision 67: Hilal's `-1 Opp. Pillz And Life, Min 0` takes Sue's
     // owner to 5 Pillz and 7 Life in round 1.
     (1069193, 4),
-    (1089513, 2),
+    // Four rounds since revision 72: Mel-T L4's `+2 Attack Per Opp. Power` in round 2 reads
+    // Wesley's 6 while Wesley's live Confidence cuts Mel-T itself from 7 to 4, 4 x 3 + 2 x 6
+    // = 24, and Djet's Power Exchange wins round 3.
+    (1089513, 4),
     // Three rounds since revision 49, whose round 2 selects Wilkinson's Pillz & Life cancel
     // against a hand with nothing for it to cancel.
     (901400, 3),
@@ -387,7 +390,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1091703, 4),
     (1087884, 3),
     (1080007, 4),
-    (1066210, 2),
+    // Three rounds since revision 72: Nega D Ld's `Corrupt 2 Min. 5` takes its winning owner
+    // from 6 to 5 in round 2, the Min binding, in the round Nega knocks Aurora's owner out.
+    (1066210, 3),
     (901004, 2),
     // Revision 44 admits the `Night:` and `Day:` forms of the plain numeric grammar under a
     // match-constant predicate. Figaro's night ability takes itself from 7/4 to 8/5 in
@@ -588,7 +593,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1089974, 1),
     (925628, 2),
     (925781, 2),
-    (926071, 1),
+    // Two rounds since revision 72: Betul's `Revenge: + 2 Attack Per Opp. Power` is off in
+    // round 1, because Betul's owner won round 0, and 8 x 3 less Hive's Equalizer 12 is 12.
+    // Round 2 selects Bazalt's closed `After [clan:54][clan:44]: +3 Life`.
+    (926071, 2),
     (964150, 2),
     // Revision 58 admits the post-round `Support:`, `Equalizer:` and `Courage:` Victory
     // grammars. Hewa Cr's Support reduction reads a count of 3 in 866431/0 (12 - 2 - 3 = 7,
@@ -663,7 +671,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Opp. Pillz And Life, Min 0`, which stays closed and now rejects when selected.
     (878178, 3),
     (877733, 4),
-    (1066337, 3),
+    // Four rounds since revision 72: Betul L5's Revenge is live in round 3, her owner having
+    // lost round 2, and she takes Aurora's 7: 8 x 10 + 2 x 7 = 94, then Komboka's +1/+1.
+    (1066337, 4),
     (1131352, 2),
     // Revision 67 admits the opposing compound `-N Opp. Pillz And Life, Min M`, `Victory Or
     // Defeat : +N Pillz` for N of two or more and `Victory Or Defeat: +N Life Per Damage`.
@@ -711,6 +721,20 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Life Modif.` in 1337265/0, both rounds already in the gate and now executing it.
     (945871, 4),
     (1131114, 2),
+    // Revision 72 admits `+N Attack Per Opp. Power` and its `Revenge:` form, Corrupt, and
+    // Djanghost Ld's `Night: -4 Opp Power, Min 4` by identity. Mel-T takes 2 per opposing
+    // Power: 7 x 2 + 2 x 7 (Uuber) = 28 in 964352/1, and 7 x 7 + 2 x 6 (Wesley, whose
+    // Confidence is off) = 61 in 1072885/2; Lumia Cr stops it in 962404/2, 7 x 6 = 42.
+    // Nega D Ld's Corrupt floors its winning owner at 5, from 6, in 1065308/2. Djanghost Ld
+    // takes Doela Noel from 8 to 4 and GhosTown's night bonus to 3 in 1025279/0 (Attack 21),
+    // and Galahad from 6, floored at 4, then to 3 in 1025413/0 (Attack 3 x 1 + 10 = 13).
+    // Each is the complete match.
+    (964352, 3),
+    (1072885, 4),
+    (962404, 4),
+    (1065308, 3),
+    (1025279, 3),
+    (1025413, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -5925,6 +5949,175 @@ fn revision_71_post_round_grammars_execute_and_take_the_two_sided_boundary() {
             plan(&retexted, id, text, false),
             CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
             "{text}"
+        );
+    }
+}
+
+/// Revision 72: `+N Attack Per Opp. Power` and its `Revenge:` form, Corrupt, and Djanghost
+/// Ld's Night numeric execute in replay from the Ability slot. Corrupt takes the two-sided
+/// boundary: its text over a wrong slot or structure, a `Min 0` record, and the complete shape
+/// under other text reject when selected. The Night numeric's stray bound is admitted for its
+/// own record only.
+#[test]
+fn revision_72_sources_execute_and_take_the_two_sided_boundary() {
+    use urban_recreation_rust::engine::{
+        CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatEffectV1, CombatStatMagnitudeV1,
+        CombatStatOperationV1,
+    };
+    let catalog = catalog();
+    let registry = registry();
+    let selected_slot = {
+        let source = replay(875032, &catalog);
+        usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        )
+    };
+    let plan = |registry: &EffectRegistryV1, id: u32, text: &str, bonus: bool| {
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let modifier = Some(SourceModifier {
+            id,
+            description: text.to_owned(),
+        });
+        if bonus {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, registry, PROJECTION).unwrap();
+        let plans = prepared.new_game().card_plans()[PlayerId::P1][selected_slot];
+        if bonus {
+            plans.bonus
+        } else {
+            plans.ability
+        }
+    };
+    let per_power = CombatStatEffectV1::ModifyCombatStat {
+        side: CombatStatAffectedSideV1::Player,
+        stat: CombatStatAttributeV1::Attack,
+        operation: CombatStatOperationV1::Increase,
+        value: 2,
+        minimum: None,
+        maximum: None,
+        multiplier: CombatStatMagnitudeV1::OpponentPower,
+    };
+    for (id, text, predicate, effect) in [
+        (
+            1785,
+            "+2 Attack Per Opp. Power",
+            CombatStatPredicateV1::Always,
+            per_power,
+        ),
+        (
+            4661,
+            "+2 Attack Per Opp. Power",
+            CombatStatPredicateV1::Always,
+            per_power,
+        ),
+        (
+            1719,
+            "Revenge: + 2 Attack Per Opp. Power",
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+            per_power,
+        ),
+        (
+            5391,
+            "Night: -4 Opp Power, Min 4",
+            CombatStatPredicateV1::MatchIsNight,
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Opponent,
+                stat: CombatStatAttributeV1::Power,
+                operation: CombatStatOperationV1::Decrease,
+                value: 4,
+                minimum: Some(4),
+                maximum: None,
+                multiplier: CombatStatMagnitudeV1::Fixed,
+            },
+        ),
+        (
+            5286,
+            "Corrupt 2 Min. 5",
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceOwnLife {
+                life: 2,
+                minimum: 5,
+            },
+        ),
+    ] {
+        assert_eq!(
+            plan(&registry, id, text, false),
+            CombatStatSourcePlanV1::Execute {
+                source_id: id,
+                predicate,
+                effect,
+            },
+            "{text}"
+        );
+        assert!(
+            !matches!(
+                plan(&registry, id, text, true),
+                CombatStatSourcePlanV1::Execute { .. }
+            ),
+            "{text} as a bonus"
+        );
+    }
+    assert_eq!(
+        plan(&registry, 5286, "Corrupt 2 Min. 5", true),
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 5286 }
+    );
+    let source: serde_json::Value =
+        serde_json::from_reader(File::open(root_path("captures/abilities.json")).unwrap()).unwrap();
+    // The printed text over a wrong structure, the refused `Min 0` included.
+    for (id, field, value) in [
+        ("5286", "valueMin", serde_json::json!(0)),
+        ("5286", "valueMin", serde_json::json!(4)),
+        ("5286", "currentRoundRequirement", serde_json::json!("win")),
+        ("5286", "sideAffected", serde_json::json!("opponent")),
+    ] {
+        let mut malformed = source.clone();
+        malformed[id]["abilityData"][field] = value.clone();
+        let text = malformed[id]["description"].as_str().unwrap().to_owned();
+        let malformed = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&malformed, id, &text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{id} {field} = {value}"
+        );
+    }
+    // The complete Corrupt shape under other text.
+    let mut retexted = source.clone();
+    retexted["5286"]["description"] = serde_json::json!("Taint 2 Min. 5");
+    let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+    assert_eq!(
+        plan(&retexted, 5286, "Taint 2 Min. 5", false),
+        CombatStatSourcePlanV1::RejectIfSelected { source_id: 5286 }
+    );
+    // The Power conversion and Djanghost Ld's bound are locked to their records: a wrong
+    // bound or number never executes.
+    for (id, field, value) in [
+        ("1785", "valueMax", serde_json::json!(4)),
+        ("1719", "previousRoundRequirement", serde_json::json!("win")),
+        ("5391", "valueMax", serde_json::json!(5)),
+        ("5391", "valueMin", serde_json::json!(3)),
+    ] {
+        let mut malformed = source.clone();
+        malformed[id]["abilityData"][field] = value.clone();
+        let text = malformed[id]["description"].as_str().unwrap().to_owned();
+        let malformed = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert!(
+            !matches!(
+                plan(&malformed, id, &text, false),
+                CombatStatSourcePlanV1::Execute { .. }
+            ),
+            "{id} {field} = {value}"
         );
     }
 }

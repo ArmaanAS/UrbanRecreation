@@ -535,6 +535,11 @@ pub(super) fn prepare_combat_resolution_with_post_round(
     // Goran's "+2 Attack Per Opp. Damage" is worth +4 against a Fury Uuber, whose printed
     // 2 Damage becomes 4 only where the damage is dealt.
     let pre_fury_damage = damage;
+    // `+N Attack Per Opp. Power` reads the opposing Power from the same point: resolved by
+    // every Power/Damage modifier (1089513/2: Mel-T's 2 per Power is taken against the 6 of a
+    // Wesley whose Confidence has already cut Mel-T itself to 4), and before the `Tune Out`
+    // reset below, under which no Attack effect runs anyway.
+    let resolved_power = power;
 
     // Fury is added after Power/Damage modifiers.
     for player in PlayerId::ALL {
@@ -581,6 +586,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 rounds_played,
                 opponent_stars[origin],
                 pre_fury_damage[origin.other()],
+                resolved_power[origin.other()],
                 &mut attack,
             )?;
         }
@@ -595,6 +601,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 rounds_played,
                 opponent_stars[origin],
                 pre_fury_damage[origin.other()],
+                resolved_power[origin.other()],
                 &mut attack,
             )?;
         }
@@ -619,6 +626,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
             rounds_played,
             opponent_stars[origin],
             pre_fury_damage[origin.other()],
+            resolved_power[origin.other()],
             &mut attack,
         )?;
     }
@@ -965,6 +973,7 @@ fn apply_ordered_attack_reductions(
     rounds_played: u8,
     opponent_stars: u16,
     opponent_damage: u16,
+    opponent_power: u16,
     attack: &mut ByPlayer<u32>,
 ) -> Result<(), CombatResolutionError> {
     let bonus_min = attack_reduction_min(bonus.effect);
@@ -980,6 +989,7 @@ fn apply_ordered_attack_reductions(
             rounds_played,
             opponent_stars,
             opponent_damage,
+            opponent_power,
             attack,
         )?;
         apply_attack_effect(
@@ -992,6 +1002,7 @@ fn apply_ordered_attack_reductions(
             rounds_played,
             opponent_stars,
             opponent_damage,
+            opponent_power,
             attack,
         )
     } else {
@@ -1005,6 +1016,7 @@ fn apply_ordered_attack_reductions(
             rounds_played,
             opponent_stars,
             opponent_damage,
+            opponent_power,
             attack,
         )?;
         apply_attack_effect(
@@ -1017,6 +1029,7 @@ fn apply_ordered_attack_reductions(
             rounds_played,
             opponent_stars,
             opponent_damage,
+            opponent_power,
             attack,
         )
     }
@@ -1135,6 +1148,7 @@ fn apply_power_damage_effect(
         rounds_played,
         opponent_stars,
         0,
+        0,
     )?;
     // Protection refuses a reduction by the opposing character and nothing else, so the
     // opposing half of a `Cards` increase still lands on a protected card.
@@ -1186,6 +1200,7 @@ fn apply_attack_effect(
     rounds_played: u8,
     opponent_stars: u16,
     opponent_damage: u16,
+    opponent_power: u16,
     attack: &mut ByPlayer<u32>,
 ) -> Result<(), CombatResolutionError> {
     let Some(DiagnosticCombatEffectV1::ModifyCombatStat {
@@ -1224,6 +1239,7 @@ fn apply_attack_effect(
         rounds_played,
         opponent_stars,
         opponent_damage,
+        opponent_power,
     )?;
     attack[target] = apply_u32_modifier(
         origin,
@@ -1251,6 +1267,9 @@ fn effect_amount(
     // The opposing card's Damage as the Attack phase sees it: resolved, but before Fury.
     // Zero on the Power/Damage path, which never applies an Attack effect.
     opponent_damage: u16,
+    // The opposing card's Power as the Attack phase sees it: resolved, before any `Tune
+    // Out` reset. Zero on the Power/Damage path, as above.
+    opponent_power: u16,
 ) -> Result<u32, CombatResolutionError> {
     let multiplier = match multiplier {
         DiagnosticMagnitudeV1::Fixed => 1,
@@ -1265,6 +1284,7 @@ fn effect_amount(
         )?),
         DiagnosticMagnitudeV1::OpponentStars => u32::from(opponent_stars),
         DiagnosticMagnitudeV1::OpponentDamage => u32::from(opponent_damage),
+        DiagnosticMagnitudeV1::OpponentPower => u32::from(opponent_power),
         DiagnosticMagnitudeV1::OwnerLife => u32::from(owner_life),
         DiagnosticMagnitudeV1::OwnerPillz => u32::from(owner_pillz),
         DiagnosticMagnitudeV1::OwnerPillzLost => u32::from(owner_pillz_lost),

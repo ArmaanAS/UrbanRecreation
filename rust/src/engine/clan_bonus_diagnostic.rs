@@ -59,6 +59,8 @@ pub enum DiagnosticMagnitudeV1 {
     OpponentStars,
     /// Scaled by the opposing selected card's resolved Damage, before Fury.
     OpponentDamage,
+    /// Scaled by the opposing selected card's resolved Power, before any `Tune Out` reset.
+    OpponentPower,
     /// `Brawl:`. Scaled by the number of distinct characters in the opposing hand sharing
     /// the opposing selected card's effective clan - the mirror of Support, which counts
     /// the owner's own hand.

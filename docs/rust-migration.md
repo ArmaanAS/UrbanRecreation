@@ -3018,6 +3018,139 @@ strength of the printed text alone, as Xantiax's Min 0 already is, even though n
 self-knockout has been seen. Admitting them is a one-line change to the classifier and the
 validator, and would add 1131144.
 
+Semantic revision 72 admits three grammars from card abilities only, each by exact text over
+the complete structured shape. The first is `+N Attack Per Opp. Power` (Mel-T's `1785` at
+level 5 and `4661` at level 4) with its `Revenge:` form, `Revenge: + 2 Attack Per Opp. Power`
+(Betul's `1719`): the owner's Attack rises by N for each point of the opposing selected card's
+Power. The second is Corrupt, `Corrupt N Min. M` (Nega D Ld's `5286`): whatever the round did,
+the owner's own Life falls by N, never below M. The third is Djanghost Ld's night ability
+`Night: -4 Opp Power, Min 4` (`5391`), admitted by identity over a stray bound. The family
+lines read 5, 2 and 0, 9 together, and the slice unlocked those 9 - `962404`, `964352`,
+`1066337`, `1072885` and `1089513` from the Power conversion, `1065308` and `1066210` from
+Corrupt, and `1025279` and `1025413`, which need both Betul and Djanghost - taking eligibility
+from 273 to 282 of 383. The eligible-set diff adds those nine and removes none. `5391` unlocks
+nothing alone; 1025413 also needs the clan-gated `-2 Opp Pillz. Min 2` (`4038`) that revision 70
+admitted.
+
+**The Power conversion** is revision 25's Damage conversion with the other link. The registry
+keeps it in `specialAction: convert_opp_pwr_to_atk`, which had no compile arm, so the plain
+form fell to the catch-all. It now takes the Damage arm with a new magnitude,
+`MagnitudeMultiplierV1::OpponentPower`, mirrored as `CombatStatMagnitudeV1` and
+`DiagnosticMagnitudeV1::OpponentPower`, and its text is checked whole, `+{N} Attack Per Opp.
+Power`, as the Damage form's is. The registry still refuses the `Revenge:` record as
+conditional, and `numeric_effect` refuses any special action, so a compiler classifier of its
+own admits it: the plain record with `previousRoundRequirement: lose` and nothing else, the
+spaced text `Revenge: + {N} Attack Per Opp. Power`, and Revenge's already-resolved
+`OwnerLostPreviousRound` predicate. The combat compiler admits the magnitude from the Ability
+slot only; no clan bonus prints it.
+
+The engine reads the opposing Power where the Damage conversion reads the opposing Damage: after
+every Power/Damage modifier, in `resolved_power`, a snapshot taken beside `pre_fury_damage` and
+before the `Tune Out` reset to 1 (under which no Attack effect runs anyway). Fury adds only
+Damage, so it never moves this magnitude. `effect_amount`, `apply_attack_effect` and
+`apply_ordered_attack_reductions` gained the opposing Power next to the opposing Damage. The
+TypeScript reference reads the same thing, the opposing card's current Power at POST1
+(`BasicModifier` `OPP_POWER`).
+
+**Evidence strength, the Power conversion.** Four firing rounds and two non-firing ones, all
+hand-checked against the server's Attack:
+- 964352/1: Mel-T L4, 7 x 2 = 14, plus 2 x Uuber's 7 = 28 (server 28). Uuber's Hive Equalizer
+  Attack cut is cancelled by the Raptors bonus.
+- 1072885/2: Mel-T L5, 7 x 7 = 49, plus 2 x Wesley's 6 = 61 (server 61). Wesley's Confidence
+  is off, because his owner lost round 1.
+- 1089513/2: Mel-T L4's own 7 falls to 4 under Wesley's live Confidence, `-3 Opp. Power, Min 4`,
+  and the magnitude does not move: 4 x 3 = 12, plus 2 x Wesley's 6 = 24 (server 24).
+- 1066337/3: Betul L5's Revenge is live, her owner having lost round 2: 8 x 10 = 80, plus 2 x
+  Aurora's 7 = 94 (server 94), then Komboka's +1 Pillz and Life.
+- 926071/1: Betul's Revenge is off, her owner having won round 0: 8 x 3 = 24, less Hive's
+  Equalizer 3 x 4 = 12 (server 12).
+- 962404/2: Lumia Cr stops Mel-T: 7 x 6 = 42 (server 42).
+
+**No captured round separates the opposing card's printed Power from its resolved Power**: in
+every firing round the opposing Power is unmodified. This is exactly the question revision 25
+left open for Damage, and it is answered the same way - the resolved reading, which is what the
+TypeScript reference does - on composition rather than observation. The engine test pins what
+the corpus cannot reach: an opposing Power cut by the owner's own reduction (8 to 5, so 2 x 5)
+and raised by the opposing card's own increase (8 to 10) both count. The optional refusal the
+price named - refusing where the opposing hand could change its own card's Power - would cost 0
+draws, but it is not taken, to keep the Damage precedent's shape; the open question is recorded
+here instead.
+
+**Corrupt** is Xantiax's own half on its own. Its record asks for no outcome and no condition,
+like Xantiax's, but names `sideAffected: player` where Xantiax names `both` and the Victory
+Backlash names `win`, so none of the three can pass for another. It is a new `PostRoundEffect`
+arm, `ReduceOwnLife`, with Xantiax's own-side arithmetic: the same `> minimum` guard and the
+same clamp, on the owner alone, so an owner at or below Min, a knocked-out one included, is left
+there. The exhaustive helpers say it is a `Life` resource written on either outcome
+(`WriteOutcomesV1::EITHER`), an own order-sensitive write (`LifeWritesV1::OWN_FLOOR`, which
+Backlash already uses) and has no beneficiary. The TypeScript reference implements it since
+commit `52ddf22` with the same reading, and its triage entry records the same limit.
+
+**Evidence strength, Corrupt.** Two firing rounds, both with the Min binding. 1065308/2: Nega
+wins 48 against 44 with 10 Damage, knocks Tina's owner out (7 to 0), and its own owner goes 6
+to 5; the raw capture's one post entry is a Life decrease of 1 on Nega's player. 1066210/2:
+Nega wins 64 against 37, knocks Aurora's owner out (5 to 0), and its owner again goes 6 to 5,
+quantity 1. **The unclamped magnitude and the losing side are never observed.** They rest on
+the revision-35 Xantiax own-side arm, which pays both (1080464/2 a winning owner, 1059648/1 a
+losing one, after the round's damage, and 1058151/3 a knocked-out one left at zero).
+
+One refusal is new. `CorruptLifeAgainstUnpinnedEffect` refuses Corrupt wherever another effect
+writes its owner's Life in the same round, because the floor makes the order observable and no
+round pins it (1093173/1 shows the server's cross-owner order is not the engine's): an opposing
+floor or both-players gain on either outcome, since Corrupt pays on both, a latched Poison or
+Toxin included; the Corrupt card's other slot or an own latched permanent writing the owner's
+Life; an opposing Life canceller, which no round shows meeting Corrupt; and any opposing Copy.
+It costs nothing: the two draws' only other end-of-round writers are Anita's Courage conversion
+and Aurora's `+3 Life`, both on their own owner. Spidee's Reprisal Stop in both Rescue hands is
+the ordinary Stop path. The classifier and the validator refuse a `Min 0` Corrupt, which no card
+prints, as revision 71 refused the `Min 0` Backlash. In replay Corrupt takes the two-sided
+boundary: its text over a wrong slot or structure, a `Min 0` record, and the complete shape
+under other text reject when selected.
+
+**Djanghost Ld's Night numeric** is the revision-44 Night predicate over the plain fixed
+decrease. Its record carries `valueMax` 4 beside `value` 4 and `valueMin` 4, the only decreasing
+combat-stat record in the registry with a `valueMax`, so `numeric_effect` refused it and
+revision 44 left it closed. `classify_day_night_numeric` now admits that one record by
+identity - definition id `5391`, the Ability slot, the exact text and the three equal numbers -
+and compiles it as the ordinary decrease with no maximum; `numeric_effect` is not relaxed for
+anything else, and the same stray bound on the plain `-4 Opp Power, Min 4` (`616`) stays
+refused. There is no catalog or engine change: a night variant has no catalog id and reaches the
+combat-stat route by exact text, as the revision-44 Night numerics do. Every printed level (L1 to
+L4) shares the text; `Day: -4 Opp Power, Min 4` and `Night: -4 Opp Power, Min 3` belong to other
+cards and have no registry record. Djanghost Ld's day ability, `Day: Power +4`, has no registry
+definition, so a Djanghost hand by day stays closed.
+
+**Evidence strength, Djanghost.** Two firing rounds, and one of them pins the order. 1025279/0:
+Doela Noel L2's 8 Power falls by 4 to 4, then GhosTown's night bonus takes it to 3; Attack 3 x 7
+= 21 and Damage 2 - 1 = 1, both as the server reports. 1025413/0: Galahad L2's 6 falls to 2,
+floored at 4, then the bonus takes it to 3 (server 3; Attack 3 x 1 + 10 = 13). Had the bonus
+applied first the result would be 4, so this pins the ability before the bonus with each clamp
+applied in turn, which is the engine's existing order.
+
+The gate grows from 829 to 854 rounds, by the rounds the slice newly reaches in the throwaway
+prefix scan:
+- 964352 (3, the whole match), 1072885 (4), 962404 (4), 1065308 (3), 1025279 (3) and 1025413 (3)
+  are added;
+- 1089513 is extended from two rounds to four, 1066210 from two to three, 1066337 from three to
+  four and 926071 from one to two (round 2 selects Bazalt's closed `After [clan:54][clan:44]:
+  +3 Life`).
+
+No fixture shrinks. The pinned execute ids gain the five slice ids - `1719`, `1785`, `4661`,
+`5286` and `5391` - and six ordinary ids first reached in the new rounds: Zaria's `Cancel Opp.
+Power Modif.` (`1164`, 1072885/0), Kruger's `-2 Opp Power And Damage, Min 4` (`1506`,
+964352/2), Becos Pill's `Revenge: Poison 2, Min 0` (`3301`, 1025279/1, a win that latches
+nothing because its owner also won round 0), Dark Kaizerin's clan-gated `4038` (1025413/1), Drakorah Cr's `Killshot: -5 Opp. Life
+Min 0` (`4785`, 964352/0) and Ysmereth's `Courage: Attack +10` (`5377`, 1025279/2). The absent
+dispositions go from 65 to 66. The disabled ids are unchanged.
+
+Left closed, as priced:
+- the catalog-only printed siblings of the Power conversion (`+1`/`+2`/`+3 Attack Per Opp.
+  Power` on other cards, `Revenge: + 2` as `1832`/`4546`, `Unison : +2` as `3999`) have no
+  registry record, so an exact text-and-shape grammar covers them only once they are captured;
+- a `Min 0` Corrupt is refused, as above;
+- the other Night numerics with a stray bound do not exist in the registry, and `numeric_effect`
+  keeps refusing a `valueMax` on any other decrease.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

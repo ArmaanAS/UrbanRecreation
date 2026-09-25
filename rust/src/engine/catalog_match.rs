@@ -10,8 +10,8 @@ use super::combat_stat_compiler::{
     classify_brawl_post_round, classify_clan_gated_post_round, classify_combat_stat_effect,
     classify_combust_opponent_life_and_pillz_on_victory, classify_conditional_stat_copy,
     classify_conditional_stop, classify_consume_opponent_pillz_on_victory,
-    classify_copy_opponent_source, classify_defeat_capped_life, classify_defeat_life,
-    classify_defeat_opponent_life, classify_defeat_opponent_pillz,
+    classify_copy_opponent_source, classify_corrupt_own_life, classify_defeat_capped_life,
+    classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
     classify_defeat_opponent_pillz_gain, classify_defeat_pillz, classify_defeat_pillz_and_life,
     classify_dope_pillz, classify_equalizer_opponent_life_on_victory,
     classify_equalizer_post_round_gain, classify_heal_life_on_victory,
@@ -1839,6 +1839,36 @@ fn prepare_catalog_source(
                     Some((
                         CombatStatPostRoundEffectV1::GainOpponentPillzOnDefeat { pillz },
                         CombatStatEffectV1::GainOpponentPillzOnDefeat { pillz },
+                        CombatStatPredicateV1::Always,
+                    ))
+                },
+            );
+        }
+        // Corrupt is Xantiax's own half on its own and follows the same alias rule. Nega D Ld
+        // is its only printed card.
+        if classify_corrupt_own_life(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    let (life, minimum) = classify_corrupt_own_life(definition, source_kind)?;
+                    Some((
+                        CombatStatPostRoundEffectV1::ReduceOwnLife { life, minimum },
+                        CombatStatEffectV1::ReduceOwnLife { life, minimum },
                         CombatStatPredicateV1::Always,
                     ))
                 },

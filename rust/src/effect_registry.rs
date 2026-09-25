@@ -243,6 +243,9 @@ pub enum MagnitudeMultiplierV1 {
     /// Scaled by the opposing selected card's Damage as resolved for that round, before
     /// Fury is added to it.
     OpponentDamage,
+    /// Scaled by the opposing selected card's Power as resolved for that round: every
+    /// Power/Damage modifier has run, and a `Tune Out` reset of Power to 1 has not.
+    OpponentPower,
     /// `Brawl:`. Scaled by the number of distinct characters in the *opposing* hand sharing
     /// the opposing selected card's effective clan - the mirror of `Support`, which counts
     /// the owner's own hand. Like `OpponentStars` this is never emitted by the registry
@@ -1061,9 +1064,12 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
         // is linked to the opposing card rather than to a count of the owner's own hand.
         // The registry keeps that link in `specialAction`, not in one of the `is*Linked`
         // flags, so it needs an arm of its own rather than a flag on the arm above.
+        // `+N Attack Per Opp. Power` is the same own-Attack increase with the opposing
+        // card's Power as the link, and it takes the same arm.
         (
             AttributeActionV1::Increase,
-            SpecialActionV1::ConvertOpponentDamageToAttack,
+            SpecialActionV1::ConvertOpponentDamageToAttack
+            | SpecialActionV1::ConvertOpponentPowerToAttack,
             Some(CombatStatV1::Attack),
         ) => {
             if input.side_affected != AffectedSideV1::Player {
@@ -1085,7 +1091,13 @@ fn compile(input: &StructuredEffectV1, description: &str) -> CompiledEffectV1 {
                     value: input.value,
                     minimum: None,
                     maximum: None,
-                    multiplier: MagnitudeMultiplierV1::OpponentDamage,
+                    multiplier: if input.special_action
+                        == SpecialActionV1::ConvertOpponentPowerToAttack
+                    {
+                        MagnitudeMultiplierV1::OpponentPower
+                    } else {
+                        MagnitudeMultiplierV1::OpponentDamage
+                    },
                 })
             }
         }
@@ -1403,14 +1415,20 @@ fn reviewed_stat_description(
         CombatStatV1::Power => "Power",
         CombatStatV1::PowerAndDamage => "Power And Damage",
     };
-    // This one names its link after the magnitude instead of before it, so it is checked
-    // whole rather than as a prefix on the shared shape below.
-    if multiplier == MagnitudeMultiplierV1::OpponentDamage {
+    // These two name their link after the magnitude instead of before it, so they are
+    // checked whole rather than as a prefix on the shared shape below.
+    let per_opponent = match multiplier {
+        MagnitudeMultiplierV1::OpponentDamage => Some("Damage"),
+        MagnitudeMultiplierV1::OpponentPower => Some("Power"),
+        _ => None,
+    };
+    if let Some(link) = per_opponent {
         return side == AffectedSideV1::Player
+            && stat == "Attack"
             && operation == StatOperationV1::Increase
             && minimum.is_none()
             && maximum.is_none()
-            && description == format!("+{value} Attack Per Opp. Damage");
+            && description == format!("+{value} Attack Per Opp. {link}");
     }
     let prefix = match multiplier {
         MagnitudeMultiplierV1::Fixed => "",
@@ -1420,6 +1438,7 @@ fn reviewed_stat_description(
         MagnitudeMultiplierV1::OpponentStars => "Equalizer: ",
         MagnitudeMultiplierV1::AntiSupport => "Brawl: ",
         MagnitudeMultiplierV1::OpponentDamage
+        | MagnitudeMultiplierV1::OpponentPower
         | MagnitudeMultiplierV1::OwnerLife
         | MagnitudeMultiplierV1::OwnerPillz
         | MagnitudeMultiplierV1::OwnerPillzLost
@@ -1949,13 +1968,77 @@ mod tests {
             );
         }
 
-        // The Power conversion is a different special action with no reviewed round, and
-        // the Revenge-prefixed one is conditional on top of that.
-        for id in [1785, 4661, 1719] {
+        // The Power conversion is a different special action with a magnitude of its own.
+        // The Revenge-prefixed one is conditional, which the registry leaves to the combat
+        // compiler.
+        for id in [1785, 4661] {
             assert_eq!(
                 registry.get(id).unwrap().compiled().supported(),
-                None,
+                Some(SupportedEffectV1::ModifyCombatStat {
+                    side: AffectedSideV1::Player,
+                    stat: CombatStatV1::Attack,
+                    operation: StatOperationV1::Increase,
+                    value: 2,
+                    minimum: None,
+                    maximum: None,
+                    multiplier: MagnitudeMultiplierV1::OpponentPower,
+                }),
                 "effect {id}",
+            );
+        }
+        assert_eq!(registry.get(1719).unwrap().compiled().supported(), None);
+    }
+
+    /// Revision 72: the Power conversion is checked whole, like the Damage one, and never
+    /// under the other's text or with bounds.
+    #[test]
+    fn attack_per_opponent_power_is_text_and_bound_locked() {
+        let source: serde_json::Value =
+            serde_json::from_reader(std::fs::File::open(dictionary_path()).unwrap()).unwrap();
+        for (field, value, text) in [
+            (
+                "description",
+                serde_json::json!(null),
+                "+2 Attack Per Opp. Damage",
+            ),
+            (
+                "description",
+                serde_json::json!(null),
+                "+2 Attack Per Opp Power",
+            ),
+            (
+                "description",
+                serde_json::json!(null),
+                "+ 2 Attack Per Opp. Power",
+            ),
+            (
+                "description",
+                serde_json::json!(null),
+                "+3 Attack Per Opp. Power",
+            ),
+            ("valueMax", serde_json::json!(4), "+2 Attack Per Opp. Power"),
+            ("valueMin", serde_json::json!(1), "+2 Attack Per Opp. Power"),
+            (
+                "sideAffected",
+                serde_json::json!("opponent"),
+                "+2 Attack Per Opp. Power",
+            ),
+            (
+                "attributeAffected",
+                serde_json::json!("pwr"),
+                "+2 Attack Per Opp. Power",
+            ),
+        ] {
+            let mut malformed = source.clone();
+            malformed["1785"]["description"] = serde_json::json!(text);
+            if field != "description" {
+                malformed["1785"]["abilityData"][field] = value;
+            }
+            let registry = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+            assert_eq!(
+                registry.get(1785).unwrap().compiled().supported(),
+                None,
+                "{field} {text:?}"
             );
         }
     }

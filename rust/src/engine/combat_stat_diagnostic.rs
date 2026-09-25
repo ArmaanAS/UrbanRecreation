@@ -69,6 +69,8 @@ pub enum CombatStatMagnitudeV1 {
     OpponentStars,
     /// Scaled by the opposing selected card's resolved Damage, before Fury.
     OpponentDamage,
+    /// Scaled by the opposing selected card's resolved Power, before any `Tune Out` reset.
+    OpponentPower,
     /// `Brawl:`. Scaled by the number of distinct characters in the opposing hand sharing
     /// the opposing selected card's effective clan - the mirror of Support, which counts
     /// the owner's own hand.
@@ -472,6 +474,12 @@ pub enum CombatStatPostRoundEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// `Corrupt N Min. M`, M of one or more: whatever the outcome, the owner's own Life falls
+    /// by `life`, never below `minimum`. Ability slot only.
+    ReduceOwnLife {
+        life: u16,
+        minimum: u16,
+    },
     /// `Defeat: +N Life, Max. M`: a living loser gains `life`, never past `maximum`. Ability
     /// slot only.
     GainLifeOnDefeatMax {
@@ -817,6 +825,13 @@ pub enum CombatStatEffectV1 {
         life: u16,
         minimum: u16,
     },
+    /// Corrupt: whatever the outcome, the owner's own Life falls by `life`, never below
+    /// `minimum`, and an owner at or below it is left alone. Ability slot only,
+    /// unconditional, `minimum` at least 1.
+    ReduceOwnLife {
+        life: u16,
+        minimum: u16,
+    },
     /// Defeat Life with Heal's cap: a living loser gains `life`, never past `maximum`, and an
     /// owner already at or above it gains nothing. Ability slot only, unconditional.
     GainLifeOnDefeatMax {
@@ -998,6 +1013,17 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// server's cross-owner order is not the engine's, and no round shows the order within
     /// one owner.
     BacklashLifeAgainstUnpinnedEffect,
+    /// Corrupt: card abilities only, a positive magnitude, a Min of at least 1 (a `Min 0`
+    /// record could knock its own owner out, which no round shows) and no predicate.
+    CorruptLifeSource,
+    CorruptLifeMagnitude,
+    CorruptLifePredicate,
+    /// Corrupt beside any other effect on its owner's Life that can land in the same round -
+    /// an opposing floor or both-players gain on either outcome, a latched Poison included,
+    /// the Corrupt card's other slot or an own latched permanent - or beside an opposing Life
+    /// canceller or an opposing Copy. Its two pinned rounds have no other writer on that
+    /// Life, and no round shows a canceller meeting it.
+    CorruptLifeAgainstUnpinnedEffect,
     /// The capped Defeat Life beside an opposing floor on its owner's Life written on the
     /// opposing win, a same-owner writer of that Life, or an opposing Copy: the cap makes
     /// either order observable.
@@ -1690,6 +1716,34 @@ pub(crate) fn unmodelled_source_context(
             || same_owner_meets(plan, own, writes_own_life) =>
         {
             Some(InvalidCombatStatPlanReasonV1::BacklashLifeAgainstUnpinnedEffect)
+        }
+        // Corrupt floors its owner's own Life whatever the round did, so any other write to
+        // that Life in the same round meets it at the floor on some outcome. Its two pinned
+        // rounds, 1065308/2 and 1066210/2, have no other writer on that Life, and 1093173/1
+        // shows the cross-owner order is not the engine's. So a match is refused where an
+        // opposing effect floors the owner's Life or raises both players' - on either outcome,
+        // a latched Poison or Toxin included - where the Corrupt card's other slot or an own
+        // latched permanent writes the owner's Life, where the opposing hand holds a Life
+        // canceller, which no round shows meeting Corrupt, or where it holds a Copy, which
+        // could take Corrupt or import a writer.
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ReduceOwnLife { .. },
+            ..
+        } if hand_has_copy(opponent)
+            || source_plans(opponent).any(|opposing| {
+                life_writes(opposing).opposing_floor
+                    || life_beneficiary(opposing) == Some(LifeBeneficiaryV1::Both)
+                    || matches!(
+                        opposing,
+                        CombatStatSourcePlanV1::Execute {
+                            effect: CombatStatEffectV1::CancelOpponentResourceModifiers { .. },
+                            ..
+                        }
+                    )
+            })
+            || same_owner_meets(plan, own, writes_own_life) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::CorruptLifeAgainstUnpinnedEffect)
         }
         // The capped Defeat Life reads its owner's Life when it pays on the owner's loss, so
         // any other write to that Life in the same round moves the value the cap reads. The
@@ -3612,6 +3666,26 @@ fn validate_combat_stat_source_plan(
             None => Ok(()),
         };
     }
+    // Corrupt keeps Backlash's guards: a card ability, a positive magnitude, a Min of at least
+    // 1 and no predicate; the classifier refuses `Min 0` and the validator keeps a hand-built
+    // plan from reaching the self-knockout corner either.
+    if let CombatStatEffectV1::ReduceOwnLife { life, minimum } = effect {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::CorruptLifeSource)
+        } else if life == 0 || minimum == 0 {
+            Some(InvalidCombatStatPlanReasonV1::CorruptLifeMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::CorruptLifePredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
+    }
     // The capped Defeat Life keeps Defeat Life's guards and adds Heal's: a positive magnitude
     // strictly below a cap, which every printed record satisfies.
     if let CombatStatEffectV1::GainLifeOnDefeatMax { life, maximum } = effect {
@@ -4442,6 +4516,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
                 CombatStatMagnitudeV1::OpponentStars => DiagnosticMagnitudeV1::OpponentStars,
                 CombatStatMagnitudeV1::AntiSupport => DiagnosticMagnitudeV1::AntiSupport,
                 CombatStatMagnitudeV1::OpponentDamage => DiagnosticMagnitudeV1::OpponentDamage,
+                CombatStatMagnitudeV1::OpponentPower => DiagnosticMagnitudeV1::OpponentPower,
                 CombatStatMagnitudeV1::OwnerLife => DiagnosticMagnitudeV1::OwnerLife,
                 CombatStatMagnitudeV1::OwnerPillz => DiagnosticMagnitudeV1::OwnerPillz,
                 CombatStatMagnitudeV1::OwnerPillzLost => DiagnosticMagnitudeV1::OwnerPillzLost,
@@ -4565,6 +4640,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. }
         | CombatStatEffectV1::GainPillzOnVictoryMax { .. }
         | CombatStatEffectV1::ReduceOwnLifeOnVictory { .. }
+        | CombatStatEffectV1::ReduceOwnLife { .. }
         | CombatStatEffectV1::GainLifeOnDefeatMax { .. }
         | CombatStatEffectV1::GainOpponentPillzOnDefeat { .. } => return None,
     })
@@ -4836,6 +4912,9 @@ pub(crate) fn shared_post_round_effect(
         CombatStatEffectV1::ReduceOwnLifeOnVictory { life, minimum } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::ReduceOwnLifeOnVictory { life, minimum }),
         ),
+        CombatStatEffectV1::ReduceOwnLife { life, minimum } => Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::ReduceOwnLife { life, minimum },
+        )),
         CombatStatEffectV1::GainLifeOnDefeatMax { life, maximum } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainLifeOnDefeatMax { life, maximum }),
         ),
