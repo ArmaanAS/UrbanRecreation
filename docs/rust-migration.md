@@ -4247,7 +4247,8 @@ So `Search` has a reference `exactOpening` mode that the live advisor never sets
 `tests/solver/ExactOpeningParity.test.ts` runs both implementations over the same opening
 root and requires `rust match` on every candidate's average, worst, ceiling, displayed
 percent, KO and risk shares, and the chosen best move. It is skipped unless `UR_SLOW_PARITY=1`
-because TypeScript needs about seventy seconds for the SECOND set that Rust finishes in two.
+because TypeScript needs about seventy seconds for the SECOND set that Rust finishes in two
+(about twenty since the 2026-09-25 engine fixes in AGENTS.md "Performance").
 
 The hosted bridge carries an `opening_policy` field on every V3 request and the worker echoes
 which evaluator actually ran, so a host that predates the field keeps its old behaviour, an

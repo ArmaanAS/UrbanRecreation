@@ -337,8 +337,9 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 ## Performance (measured Sept 2026)
 
 `deno task time` went from **40.0s to 17.0s** (2.36x) on the round-2 bench, same tree
-explored (2,303,378 states at the last ply, unchanged), and to about 14 s after the
-stat-view fix at the end of the first bullet. Both of the first changes came from profiling,
+explored (2,303,378 states at the last ply, unchanged), and to about 11.5 s after the
+stat-view and `length = 0` fixes below (2026-09-25; `deno task time-search` 1.69 s -> 0.64 s
+over the same two). Both of the first changes came from profiling,
 not from reading the code - the first guess was wrong by 20x, so measure before believing
 anything below. `deno bench -A --no-check tests/CardAccess.bench.ts` holds the micro
 numbers; a full profile is `--v8-flags=--prof,--logfile=<path>` then `node --prof-process`.
@@ -376,10 +377,23 @@ numbers; a full profile is `--v8-flags=--prof,--logfile=<path>` then `node --pro
   perfect-information `Search` used `Deep.ts` instead of `iterTree(game, false)` per unit:
   **`deno task time-search` went 12.0s ->
   7.9s** (1.53x) with an identical result checksum, and **GC fell from 27% of ticks to
-  1%**. What is left is battle resolution itself - `Events.execute` is 122 of 152
-  shared-library ticks - so the next lever would be algorithmic (transpositions, better
-  pruning), not allocation. `shiftRange` at 1.7% and `unplayedCardIndexes` at 0.3% are not
-  worth chasing.
+  1%**. The note here then read the 122 of 152 shared-library ticks under `Events.execute`
+  as battle resolution itself and called the next lever algorithmic. They were not: see
+  the next bullet.
+- **`arr.length = 0` was half the live search (fixed 2026-09-25).** An array's `length` is
+  an accessor with a C++ setter, so assigning it cannot be inlined: optimised code goes
+  StoreIC -> CEntry -> `JSArray::SetLength` on every call, even on an empty array, and
+  right-trims the backing store for the next `push` to regrow. `Events` cleared twenty
+  buckets per battle that way, most of them empty; a profile put 30% of ticks in
+  unsymbolised `deno.exe` C++ under `Events.execute`/`executeCancels` plus 10% in the
+  StoreIC builtins. A `pop()` loop, which TurboFan inlines and which keeps the capacity,
+  and skipping the Min-clamp sort below two abilities took `deno task time-search` from
+  1.27 s to 0.64 s and `deno task time` from about 13.8 s to 11.5 s, identical output. The
+  profile is now 97% JS with GC under 1%, spread over `Events.execute`, `CardBattle`,
+  `Policy.opponentFirstValue`, `Game.make`, `Game.battle` and `CachedEvents.merge`. A large
+  `deno.exe` share in a `--prof` Summary means C++ runtime calls (GC is counted
+  separately): look for accessor stores such as `length`, `delete`, or megamorphic keyed
+  access in the caller. Do not reintroduce `length = 0` in engine code.
 
   `iterTree` and `Deep.ts` are deliberately left as-is as the perfect-information reference
   (`tests/solver/DeepEquivalence.test.ts` checks `deepValue` returns the same number *and*
