@@ -18,6 +18,16 @@ const quiet = <T>(f: () => T): T => {
   }
 };
 
+// ParallelSearch falls back to its single-thread superclass when a worker cannot start,
+// and that gives the same answer, so every test checks the pool really ran. Without this a
+// worker that failed to load (as they did under a type-checked `deno test` while Game.ts
+// used the window-only `prompt`) passed every comparison below.
+async function complete(parallel: ParallelSearch) {
+  while (!parallel.done) await parallel.workFor(50);
+  assertEquals(parallel.workerFailure, undefined);
+  assertEquals(parallel.workerCount, 3);
+}
+
 function finalRound() {
   return quiet(() => {
     // High life keeps the fixture alive through three deliberately cheap rounds. The last
@@ -47,7 +57,7 @@ Deno.test("ParallelSearch merges worker slices into the single-thread answer", a
   });
 
   const parallel = new ParallelSearch(game, 3, 10);
-  while (!parallel.done) await parallel.workFor(50);
+  await complete(parallel);
 
   assertEquals(parallel.stats.unitsDone, serial.stats.unitsDone);
   assertEquals(
@@ -83,7 +93,7 @@ Deno.test("ParallelSearch preserves exact hidden-wager outcomes", async () => {
   });
 
   const parallel = new ParallelSearch(game, 3, 10);
-  while (!parallel.done) await parallel.workFor(50);
+  await complete(parallel);
 
   for (const [i, candidate] of parallel.candidates.entries()) {
     for (const opponent of serial.opponentMoves) {
@@ -105,7 +115,7 @@ Deno.test("ParallelSearch merges blind-second estimates before a card is reveale
   });
 
   const parallel = new ParallelSearch(game, 3, 10, true);
-  while (!parallel.done) await parallel.workFor(50);
+  await complete(parallel);
 
   assertEquals(parallel.stats.unitsDone, serial.stats.unitsDone);
   assertEquals(

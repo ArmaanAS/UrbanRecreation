@@ -544,8 +544,7 @@ export default class Game {
         \\____/ \\___|_|\\___|\\___|\\__|  \\___\\__,_|_|  \\__,_| o o o\n\n\n`;
 
     console.log(msg.green);
-    const answer = prompt('Index Pillz [Fury] Or "Undo" or "End" -', "")!
-      .toLowerCase();
+    const answer = ask('Index Pillz [Fury] Or "Undo" or "End" -')!.toLowerCase();
 
     if (answer === "undo") {
       this.deselect();
@@ -723,6 +722,22 @@ interface BaseGame {
   counterAttack2: boolean;
   day: boolean;
   round: number;
+}
+
+/**
+ * The window-only `prompt`, for interactive play on the main thread. The search workers
+ * load this module too, and Deno type-checks a worker against its worker lib, which has no
+ * `prompt`; naming it directly made every worker fail to start under a type-checked
+ * `deno test`, silently dropping ParallelSearch to one thread.
+ */
+function ask(message: string): string | null {
+  const { prompt } = globalThis as {
+    prompt?: (message?: string, defaultValue?: string) => string | null;
+  };
+  if (prompt === undefined) {
+    throw new Error("Interactive input needs the main thread's prompt");
+  }
+  return prompt(message, "");
 }
 
 export class GameGenerator {
