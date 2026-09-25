@@ -5,11 +5,11 @@ use urban_recreation_rust::catalog::CardKey;
 use urban_recreation_rust::effect_registry::ResourceCancellationV1;
 use urban_recreation_rust::engine::{
     BaseRulesError, BaseRulesMatchSpec, BaseRulesPlayerSpec, BaseRulesPosition,
-    BaseRulesRoundInput, BaseRulesSelection, ByPlayer, ClanSetV1, CombatStatAffectedSideV1,
-    CombatStatAttributeV1, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1,
-    CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
-    CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1, CombatStatPlanErrorV1,
-    CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1,
+    BaseRulesRoundInput, BaseRulesSelection, ByPlayer, ClanConjunctV1, ClanSetV1,
+    CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatCardPlanV1,
+    CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1,
+    CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1,
+    CombatStatPlanErrorV1, CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1,
     InvalidCombatStatPlanReasonV1, MatchStatus, PlayerId, RoundScaleV1,
 };
 
@@ -8719,4 +8719,509 @@ fn night_confidence_predicate_is_refused_on_a_bonus_and_on_a_stop() {
             ..
         })
     ));
+}
+
+fn refusal(spec: CombatStatDiagnosticMatchSpecV1) -> Option<InvalidCombatStatPlanReasonV1> {
+    match CombatStatDiagnosticV1::new(spec) {
+        Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(reason),
+        _ => None,
+    }
+}
+
+/// Revision 70's `OwnerClanInAnd` holds exactly when the owner's effective clan is listed and
+/// its conjunct holds: the first move (`Courage:`), the second (`Repris.:`) or differing
+/// hand slots (`Asymm.:`/`Asy. :`). P1's slot-0 card is clan 1; the gate lists 1 or 2.
+#[test]
+fn clan_compound_predicate_holds_only_when_both_halves_hold() {
+    let set = |id: u32| ClanSetV1::from_ids(&[id]).unwrap();
+    for (listed, conjunct, first, p2_slot, fires) in [
+        (1, ClanConjunctV1::OwnerMovesFirst, PlayerId::P1, 0, true),
+        (1, ClanConjunctV1::OwnerMovesFirst, PlayerId::P2, 0, false),
+        (2, ClanConjunctV1::OwnerMovesFirst, PlayerId::P1, 0, false),
+        (1, ClanConjunctV1::OwnerMovesSecond, PlayerId::P2, 0, true),
+        (1, ClanConjunctV1::OwnerMovesSecond, PlayerId::P1, 0, false),
+        (2, ClanConjunctV1::OwnerMovesSecond, PlayerId::P2, 0, false),
+        (
+            1,
+            ClanConjunctV1::SelectedHandSlotsDiffer,
+            PlayerId::P1,
+            1,
+            true,
+        ),
+        (
+            1,
+            ClanConjunctV1::SelectedHandSlotsDiffer,
+            PlayerId::P1,
+            0,
+            false,
+        ),
+        (
+            2,
+            ClanConjunctV1::SelectedHandSlotsDiffer,
+            PlayerId::P1,
+            1,
+            false,
+        ),
+    ] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].ability =
+            power_up_under(CombatStatPredicateV1::OwnerClanInAnd(set(listed), conjunct));
+        let mut diag = game(base, cards);
+        let before = diag.position().clone();
+        let (report, undo) = diag
+            .make(input(first, (0, 0, false), (p2_slot, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.cards[PlayerId::P1].power,
+            if fires { 9 } else { 6 },
+            "listed {listed}, {conjunct:?}, first {first:?}, P2 slot {p2_slot}"
+        );
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &before);
+    }
+
+    // The gate reads the effective clan the plan carries - an infiltrating Oculus is judged
+    // by the clan it infiltrates, never by Oculus.
+    let (mut base, mut cards) = clan_gate_spec();
+    base.players[PlayerId::P1].hand[0].clan_id = 56;
+    cards[PlayerId::P1][0].effective_clan_id = 7;
+    cards[PlayerId::P1][0].ability = power_up_under(CombatStatPredicateV1::OwnerClanInAnd(
+        set(7),
+        ClanConjunctV1::OwnerMovesFirst,
+    ));
+    let (report, _) = game(base, cards)
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P1].power, 9);
+}
+
+/// The compound is already two conditions: it is refused from a clan bonus, never pairs
+/// with a magnitude, and is a conditional Stop's only with the differing hand slots it is
+/// printed with.
+#[test]
+fn clan_compound_predicate_is_ability_only_fixed_only_and_stop_only_with_slots() {
+    let set = ClanSetV1::from_ids(&[1]).unwrap();
+    let courage = CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::OwnerMovesFirst);
+    let (base, mut cards) = clan_gate_spec();
+    cards[PlayerId::P1][0].bonus = power_up_under(courage);
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert_eq!(
+        refusal(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards,
+        }),
+        Some(InvalidCombatStatPlanReasonV1::ConditionalBonus)
+    );
+    for magnitude in [
+        CombatStatMagnitudeV1::Growth,
+        CombatStatMagnitudeV1::OpponentStars,
+        CombatStatMagnitudeV1::AntiSupport,
+    ] {
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(
+            4680,
+            courage,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Power,
+                CombatStatOperationV1::Increase,
+                1,
+                None,
+                None,
+                magnitude,
+            ),
+        );
+        assert_eq!(
+            refusal(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base.clone(),
+                cards,
+            }),
+            Some(InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude),
+            "{magnitude:?}"
+        );
+    }
+    for (conjunct, admitted) in [
+        (ClanConjunctV1::SelectedHandSlotsDiffer, true),
+        (ClanConjunctV1::OwnerMovesFirst, false),
+        (ClanConjunctV1::OwnerMovesSecond, false),
+    ] {
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = execute(
+            4999,
+            CombatStatPredicateV1::OwnerClanInAnd(set, conjunct),
+            CombatStatEffectV1::StopOpponentAbility,
+        );
+        let result = refusal(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base.clone(),
+            cards,
+        });
+        if admitted {
+            assert_eq!(result, None, "{conjunct:?}");
+        } else {
+            assert_eq!(
+                result,
+                Some(InvalidCombatStatPlanReasonV1::ConditionalControl),
+                "{conjunct:?}"
+            );
+        }
+    }
+    // A clan-gated Copy is a printed ability; no clan bonus prints one.
+    for predicate in [
+        CombatStatPredicateV1::OwnerClanIn(set),
+        CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::SelectedHandSlotsDiffer),
+    ] {
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 4132,
+            copied: CopiedSourceKindV1::Ability,
+            predicate,
+        };
+        cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        assert_eq!(
+            refusal(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base.clone(),
+                cards,
+            }),
+            Some(InvalidCombatStatPlanReasonV1::ConditionalBonus),
+            "{predicate:?}"
+        );
+    }
+}
+
+/// Revision 70's clan-gated end-of-round sources: with the owner's clan listed each pays
+/// exactly as its ungated grammar does, and with it unlisted each is present but never
+/// fires. The Consume latch also needs its owner to move second. Compared round by round
+/// against the same plan under `Always` and against no source at all.
+#[test]
+fn clan_gated_post_round_sources_pay_as_their_grammar_only_under_a_listed_clan() {
+    let listed = ClanSetV1::from_ids(&[1]).unwrap();
+    let unlisted = ClanSetV1::from_ids(&[2]).unwrap();
+    let cases = [
+        (
+            5392,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 2,
+                minimum: 2,
+            },
+            None,
+        ),
+        (
+            4038,
+            CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+                pillz: 2,
+                minimum: 2,
+            },
+            None,
+        ),
+        (
+            5165,
+            CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star: 1 },
+            None,
+        ),
+        (
+            5616,
+            CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 },
+            None,
+        ),
+        (
+            5613,
+            CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+                life: 1,
+                minimum: 1,
+            },
+            None,
+        ),
+        (
+            5275,
+            CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+                pillz: 1,
+                minimum: 4,
+            },
+            Some(ClanConjunctV1::OwnerMovesSecond),
+        ),
+    ];
+    // Two rounds P1 wins with its slot-0 source, then with slot 1, so a latch pays again.
+    let play = |plan: Option<CombatStatSourcePlanV1>, first: PlayerId| {
+        let (base, mut cards) = clan_gate_spec();
+        if let Some(plan) = plan {
+            cards[PlayerId::P1][0].ability = plan;
+        }
+        let mut diag = game(base, cards);
+        let (first_round, _) = diag
+            .make(input(first, (0, 4, false), (0, 0, false)))
+            .unwrap();
+        let (second_round, _) = diag
+            .make(input(first.other(), (1, 4, false), (1, 0, false)))
+            .unwrap();
+        [first_round.players, second_round.players]
+    };
+    for (id, effect, conjunct) in cases {
+        let gate = |set| match conjunct {
+            None => CombatStatPredicateV1::OwnerClanIn(set),
+            Some(conjunct) => CombatStatPredicateV1::OwnerClanInAnd(set, conjunct),
+        };
+        // The Consume gate also wants the second move: P1 moves second in round 0.
+        let paying_first = if conjunct.is_some() {
+            PlayerId::P2
+        } else {
+            PlayerId::P1
+        };
+        let always = play(
+            Some(execute(id, CombatStatPredicateV1::Always, effect)),
+            paying_first,
+        );
+        let none = play(None, paying_first);
+        assert_ne!(always, none, "{id} must move a resource");
+        assert_eq!(
+            play(Some(execute(id, gate(listed), effect)), paying_first),
+            always,
+            "{id} listed"
+        );
+        assert_eq!(
+            play(Some(execute(id, gate(unlisted), effect)), paying_first),
+            none,
+            "{id} unlisted"
+        );
+        if conjunct.is_some() {
+            // Listed, but moving first: never latches.
+            assert_eq!(
+                play(Some(execute(id, gate(listed), effect)), PlayerId::P1),
+                play(None, PlayerId::P1),
+                "{id} moving first"
+            );
+        }
+    }
+}
+
+/// The clan-gated end-of-round plans carry only the gate their grammar prints, from the
+/// Ability slot only.
+#[test]
+fn clan_gated_post_round_plans_carry_only_their_printed_gate() {
+    let set = ClanSetV1::from_ids(&[1]).unwrap();
+    let clan = CombatStatPredicateV1::OwnerClanIn(set);
+    let reprisal = CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::OwnerMovesSecond);
+    let courage = CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::OwnerMovesFirst);
+    let reduce_life = CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+        life: 2,
+        minimum: 2,
+    };
+    let toxin = CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+        life: 1,
+        minimum: 1,
+    };
+    let consume = CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+        pillz: 1,
+        minimum: 4,
+    };
+    for (effect, predicate, bonus, expected) in [
+        (
+            reduce_life,
+            courage,
+            false,
+            Some(InvalidCombatStatPlanReasonV1::VictoryOpponentLifePredicate),
+        ),
+        (
+            reduce_life,
+            clan,
+            true,
+            Some(InvalidCombatStatPlanReasonV1::VictoryOpponentLifeIdentity),
+        ),
+        (
+            CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+                pillz: 2,
+                minimum: 2,
+            },
+            courage,
+            false,
+            Some(InvalidCombatStatPlanReasonV1::VictoryOpponentPillzPredicate),
+        ),
+        (
+            toxin,
+            reprisal,
+            false,
+            Some(InvalidCombatStatPlanReasonV1::PermanentLifePredicate),
+        ),
+        (
+            toxin,
+            clan,
+            true,
+            Some(InvalidCombatStatPlanReasonV1::PermanentLifeSource),
+        ),
+        (
+            consume,
+            clan,
+            false,
+            Some(InvalidCombatStatPlanReasonV1::PermanentLifePredicate),
+        ),
+        (
+            consume,
+            courage,
+            false,
+            Some(InvalidCombatStatPlanReasonV1::PermanentLifePredicate),
+        ),
+        (
+            CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+                life: 1,
+                minimum: 1,
+            },
+            clan,
+            false,
+            Some(InvalidCombatStatPlanReasonV1::PermanentLifePredicate),
+        ),
+        (
+            CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                per_star: 1,
+                minimum: 2,
+            },
+            clan,
+            false,
+            Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundPredicate),
+        ),
+        (
+            CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star: 1 },
+            reprisal,
+            false,
+            Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundPredicate),
+        ),
+        (
+            CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 },
+            clan,
+            true,
+            Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundSource),
+        ),
+        (reduce_life, clan, false, None),
+        (toxin, clan, false, None),
+        (consume, reprisal, false, None),
+    ] {
+        let (base, mut cards) = clan_gate_spec();
+        if bonus {
+            cards[PlayerId::P1][0].bonus = execute(9000, predicate, effect);
+            cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        } else {
+            cards[PlayerId::P1][0].ability = execute(9000, predicate, effect);
+        }
+        assert_eq!(
+            refusal(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            expected,
+            "{effect:?} under {predicate:?}, bonus {bonus}"
+        );
+    }
+}
+
+/// The clan-gated end-of-round sources rest on one firing round each or none, so a match is
+/// refused wherever 1093173/1's cross-owner order question could arise for them, or an
+/// opposing Copy could take one or import an own write. The same plans ungated keep the
+/// rules they had.
+#[test]
+fn clan_gated_post_round_sources_are_refused_beside_an_unpinned_opposing_effect() {
+    let set = ClanSetV1::from_ids(&[1]).unwrap();
+    let clan = CombatStatPredicateV1::OwnerClanIn(set);
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Bonus,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    let own = |effect| execute(9001, CombatStatPredicateV1::Always, effect);
+    let defeat_life = own(CombatStatEffectV1::GainLifeOnDefeat { life: 2 });
+    let victory_life = own(CombatStatEffectV1::GainLifeOnVictory { life: 3 });
+    let defeat_pillz = own(CombatStatEffectV1::GainPillzOnDefeat { pillz: 2 });
+    let victory_pillz = own(CombatStatEffectV1::GainPillzOnVictory { pillz: 2 });
+    let defeat_life_floor = own(CombatStatEffectV1::ReduceOpponentLifeOnDefeat {
+        life: 2,
+        minimum: 3,
+    });
+    let victory_life_floor = own(CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+        life: 2,
+        minimum: 3,
+    });
+    let defeat_pillz_floor = own(CombatStatEffectV1::ReduceOpponentPillzOnDefeat {
+        pillz: 2,
+        minimum: 4,
+    });
+    let victory_pillz_floor = own(CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+        pillz: 2,
+        minimum: 4,
+    });
+    let reduce_life = CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+        life: 2,
+        minimum: 2,
+    };
+    let toxin = CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+        life: 1,
+        minimum: 1,
+    };
+    let reduce_pillz = CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+        pillz: 2,
+        minimum: 2,
+    };
+    let equalizer_life = CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 };
+    let equalizer_pillz = CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star: 1 };
+    for (effect, opposing, refused) in [
+        (reduce_life, defeat_life, true),
+        (reduce_life, victory_life, false),
+        (reduce_life, copy, true),
+        (toxin, defeat_life, true),
+        (toxin, victory_life, true),
+        (toxin, victory_pillz, false),
+        (toxin, copy, true),
+        (reduce_pillz, defeat_pillz, true),
+        (reduce_pillz, victory_pillz, false),
+        (reduce_pillz, copy, true),
+        (equalizer_life, defeat_life_floor, true),
+        (equalizer_life, victory_life_floor, false),
+        (equalizer_life, copy, true),
+        (equalizer_pillz, defeat_pillz_floor, true),
+        (equalizer_pillz, victory_pillz_floor, false),
+        (equalizer_pillz, copy, true),
+    ] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].ability = execute(9000, clan, effect);
+        cards[PlayerId::P2][2].ability = opposing;
+        if matches!(opposing, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+            cards[PlayerId::P2][2].source_ability_support_count = 1;
+        }
+        let result = refusal(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        assert_eq!(
+            result,
+            refused
+                .then_some(InvalidCombatStatPlanReasonV1::ClanGatedPostRoundAgainstUnpinnedEffect),
+            "{effect:?} against {opposing:?}"
+        );
+    }
+    // Ungated, the opponent-Life reduction keeps revision 30's open question rather than
+    // taking this refusal: it is the gate's evidence that is thin, not the grammar's.
+    let (base, mut cards) = clan_gate_spec();
+    cards[PlayerId::P1][0].ability = execute(9000, CombatStatPredicateV1::Always, reduce_life);
+    cards[PlayerId::P2][2].ability = defeat_life;
+    assert_eq!(
+        refusal(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        None
+    );
+    // The clan-gated Consume latch takes the `Consume` refusal of any opposing Pillz writer.
+    let (base, mut cards) = clan_gate_spec();
+    cards[PlayerId::P1][0].ability = execute(
+        5275,
+        CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::OwnerMovesSecond),
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 4,
+        },
+    );
+    cards[PlayerId::P2][2].ability = victory_pillz;
+    assert_eq!(
+        refusal(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        }),
+        Some(InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect)
+    );
 }

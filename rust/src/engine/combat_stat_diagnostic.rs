@@ -121,6 +121,34 @@ pub enum CombatStatPredicateV1 {
     /// the conjunction of `MatchIsNight` and `OwnerWonPreviousRound`, both already resolved
     /// before a round is prepared. Never holds in round 0 or by day.
     OwnerWonPreviousRoundAtNight,
+    /// `[clan:A][clan:B] <prefix>: X`: the owner-clan gate of `OwnerClanIn` and one more
+    /// condition the projection already resolves before a round is prepared - `Courage:`,
+    /// `Repris.:` or `Asymm.:`/`Asy. :`. Both must hold. Card abilities only, over a fixed
+    /// magnitude, a conditional Stop, a Copy or a latch (revision 70).
+    OwnerClanInAnd(ClanSetV1, ClanConjunctV1),
+}
+
+/// The second condition of `OwnerClanInAnd`. Each is one of the plain predicates, so the
+/// compound is exactly their conjunction and adds no new context.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ClanConjunctV1 {
+    /// `Courage:` - the owner moves first.
+    OwnerMovesFirst,
+    /// `Repris.:` - the owner moves second.
+    OwnerMovesSecond,
+    /// `Asymm.:`/`Asy. :` - the two selected cards sit in different hand slots.
+    SelectedHandSlotsDiffer,
+}
+
+impl ClanConjunctV1 {
+    /// The plain predicate this conjunct is.
+    pub const fn predicate(self) -> CombatStatPredicateV1 {
+        match self {
+            Self::OwnerMovesFirst => CombatStatPredicateV1::OwnerMovesFirst,
+            Self::OwnerMovesSecond => CombatStatPredicateV1::OwnerMovesSecond,
+            Self::SelectedHandSlotsDiffer => CombatStatPredicateV1::SelectedHandSlotsDiffer,
+        }
+    }
 }
 
 /// A set of clan ids below 64, as a bit mask so the predicate stays `Copy`.
@@ -906,6 +934,11 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// the round it pays, or an opposing Copy: the cap makes any cross-owner order
     /// observable, and 1093173/1 shows the server's order is not the engine's.
     CappedVictoryPillzAgainstUnpinnedEffect,
+    /// A revision-70 clan-gated end-of-round source beside an opposing write to the same
+    /// resource that can land in the round it pays, or beside an opposing Copy: 1093173/1
+    /// shows the server's cross-owner order is not the engine's, and no round shows a clan
+    /// gate judged for a copier.
+    ClanGatedPostRoundAgainstUnpinnedEffect,
     VictoryOpponentPillzSource,
     VictoryOpponentPillzMagnitude,
     VictoryOpponentPillzPredicate,
@@ -1584,6 +1617,17 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::CappedVictoryPillzAgainstUnpinnedEffect)
         }
+        // Revision 70's clan-gated end-of-round sources rest on one firing round each, or on
+        // none, so they are admitted only where the order question 1093173/1 raised cannot
+        // arise and no Copy is in the opposing hand. `Consume` under its compound gate is
+        // refused by the `Consume`/`Combust` arm above whatever its predicate.
+        CombatStatSourcePlanV1::Execute {
+            predicate: CombatStatPredicateV1::OwnerClanIn(_),
+            effect,
+            ..
+        } if clan_gated_post_round_meets_unpinned_effect(effect, opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::ClanGatedPostRoundAgainstUnpinnedEffect)
+        }
         // The Victory Or Defeat own gains are uncapped and pay whatever the outcome, so an
         // opposing floor on their resource, an own cap on it, or a Copy meets them in an order
         // no round pins.
@@ -1709,6 +1753,47 @@ pub(crate) fn unmodelled_source_context(
         }
         _ => None,
     }
+}
+
+/// Whether a revision-70 clan-gated end-of-round `effect` meets an opposing effect in an
+/// order no round pins, or an opposing Copy, which could take it or import an own write
+/// (`life_writes` and `pillz_writes` report nothing for a Copy). Only the effects the gate
+/// was admitted over are refused here; every combat-stat plan under `OwnerClanIn` answers
+/// false.
+/// - the opponent-Life reduction pays on its owner's win, so an opposing Life gain or an
+///   order-sensitive own Life write landing on the opposing loss (or every round, for a
+///   permanent) meets it;
+/// - the Toxin latch pays every round after it latches, so any opposing own Life gain or
+///   order-sensitive own Life write meets it, whatever outcome it lands on;
+/// - the opponent-Pillz reduction meets an opposing own Pillz gain on the opposing loss;
+/// - the Equalizer gains meet an opposing floor on the owner's resource on the opposing loss.
+fn clan_gated_post_round_meets_unpinned_effect(
+    effect: CombatStatEffectV1,
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let on_opposing_loss = |plan: CombatStatSourcePlanV1| write_outcomes(plan).on_loss;
+    let meets = match effect {
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory { .. } => {
+            source_plans(opponent).any(|opposing| {
+                let life = life_writes(opposing);
+                on_opposing_loss(opposing) && (life.own_gain || life.own_order_sensitive)
+            })
+        }
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. } => {
+            source_plans(opponent).any(|opposing| {
+                let life = life_writes(opposing);
+                life.own_gain || life.own_order_sensitive
+            })
+        }
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory { .. } => source_plans(opponent)
+            .any(|opposing| on_opposing_loss(opposing) && pillz_writes(opposing).own_gain),
+        CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { .. } => source_plans(opponent)
+            .any(|opposing| on_opposing_loss(opposing) && life_writes(opposing).opposing_floor),
+        CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { .. } => source_plans(opponent)
+            .any(|opposing| on_opposing_loss(opposing) && pillz_writes(opposing).opposing_floor),
+        _ => return false,
+    };
+    meets || hand_has_copy(opponent)
 }
 
 /// True when the Life a `/ Life Lost` source reads could rise during the match. Its owner
@@ -2320,7 +2405,12 @@ fn validate_combat_stat_source_plan(
     // shape are the cold compiler's authority, so the string-free plan can only require a
     // real source identity here. Totality against every opposing card is checked
     // separately, once both hands are known.
-    if let CombatStatSourcePlanV1::CopyOpponentSource { source_id, .. } = plan {
+    if let CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id,
+        predicate,
+        ..
+    } = plan
+    {
         return if source_id == 0 {
             Err(invalid_combat_stat_execute(
                 player,
@@ -2328,6 +2418,21 @@ fn validate_combat_stat_source_plan(
                 source,
                 source_id,
                 InvalidCombatStatPlanReasonV1::CopyOpponentSourceIdentity,
+            ))
+        } else if source == CombatStatEffectSourceV1::Bonus
+            && matches!(
+                predicate,
+                CombatStatPredicateV1::OwnerClanIn(_) | CombatStatPredicateV1::OwnerClanInAnd(..)
+            )
+        {
+            // The clan-gated Copies (revision 70) are printed abilities; no clan bonus
+            // prints a clan gate over a Copy.
+            Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::ConditionalBonus,
             ))
         } else {
             Ok(())
@@ -2519,6 +2624,19 @@ fn validate_combat_stat_source_plan(
         | CombatStatEffectV1::ToxinOpponentLifeOnVictory { life, .. }
         | CombatStatEffectV1::ConsumeOpponentPillzOnVictory { pillz: life, .. }
         | CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory { amount: life, .. } => {
+            // Revision 70 puts the owner-clan gate on Toxin (`5613`) and the gate with
+            // Reprisal's second move on Consume (`5275`); each is its own grammar's only
+            // gated form, and both are card abilities.
+            let clan_gated = matches!(
+                (effect, predicate),
+                (
+                    CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. },
+                    CombatStatPredicateV1::OwnerClanIn(_),
+                ) | (
+                    CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. },
+                    CombatStatPredicateV1::OwnerClanInAnd(_, ClanConjunctV1::OwnerMovesSecond),
+                )
+            );
             if source != CombatStatEffectSourceV1::Ability
                 && !matches!(
                     effect,
@@ -2542,7 +2660,7 @@ fn validate_combat_stat_source_plan(
                     InvalidCombatStatPlanReasonV1::PermanentLifeMagnitude,
                 ));
             }
-            if !permanent_predicate_admitted(predicate) {
+            if !permanent_predicate_admitted(predicate) && !clan_gated {
                 return Err(invalid_combat_stat_execute(
                     player,
                     hand_slot,
@@ -2643,12 +2761,14 @@ fn validate_combat_stat_source_plan(
             ));
         }
         // `Night: -N Opp. Life Min M` (Lyra's `4750`) puts the match constant on it since
-        // revision 69.
+        // revision 69, and Phalloide Ld's `[clan:..] - 2 Opp. Life Min 2` (`5392`) the
+        // owner-clan gate since revision 70.
         if !matches!(
             predicate,
             CombatStatPredicateV1::Always
                 | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
                 | CombatStatPredicateV1::MatchIsNight
+                | CombatStatPredicateV1::OwnerClanIn(_)
         ) {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -2711,16 +2831,23 @@ fn validate_combat_stat_source_plan(
     // Every other Equalizer post-round effect is a grammar: the opponent-Life reduction at
     // any printed numbers and the two own gains. Card abilities only - a captured Copy's
     // Bonus provenance is the reviewed identities' alone - with a positive amount per star
-    // and no condition beyond the outcome the engine resolves.
+    // and no condition beyond the outcome the engine resolves, except that since revision
+    // 70 the two own gains may carry the owner-clan gate (`5165`, `5616`).
     if let CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { per_star, .. }
     | CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star }
     | CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star } = effect
     {
+        let clan_gated_gain = matches!(predicate, CombatStatPredicateV1::OwnerClanIn(_))
+            && matches!(
+                effect,
+                CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { .. }
+                    | CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { .. }
+            );
         let reason = if source != CombatStatEffectSourceV1::Ability {
             Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundSource)
         } else if per_star == 0 {
             Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundMagnitude)
-        } else if predicate != CombatStatPredicateV1::Always {
+        } else if predicate != CombatStatPredicateV1::Always && !clan_gated_gain {
             Some(InvalidCombatStatPlanReasonV1::EqualizerPostRoundPredicate)
         } else {
             None
@@ -3091,9 +3218,13 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::VictoryOpponentPillzMagnitude,
             ));
         }
+        // Dark Kaizerin's `[clan:..] -2 Opp Pillz. Min 2` (`4037`, `4038`) puts the
+        // owner-clan gate on it since revision 70.
         if !matches!(
             predicate,
-            CombatStatPredicateV1::Always | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+            CombatStatPredicateV1::Always
+                | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+                | CombatStatPredicateV1::OwnerClanIn(_)
         ) {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -3614,7 +3745,9 @@ fn validate_combat_stat_source_plan(
             && source == CombatStatEffectSourceV1::Ability)
         // The owner-clan gate is decided from the owner's own effective clan, and every one
         // of these magnitudes is read independently of it, so the two compose. Ability slot
-        // only, and only the gate and magnitudes the server has shown together.
+        // only, and only the gate and magnitudes the server has shown together. Revision 70's
+        // `OwnerClanInAnd` is already two conditions and is exempt from nothing here: it
+        // carries a fixed magnitude only.
         && !(matches!(predicate, CombatStatPredicateV1::OwnerClanIn(_))
             && source == CombatStatEffectSourceV1::Ability
             && matches!(
@@ -3646,6 +3779,7 @@ fn validate_combat_stat_source_plan(
                 | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
                 | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
                 | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+                | CombatStatPredicateV1::OwnerClanInAnd(..)
         ) || (matches!(
             predicate,
             CombatStatPredicateV1::SelectedHandSlotsMatch
@@ -3843,6 +3977,20 @@ fn predicate_matches(
         CombatStatPredicateV1::MatchIsDay => !night,
         CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => {
             night && previous_round_winner == Some(owner)
+        }
+        CombatStatPredicateV1::OwnerClanInAnd(set, conjunct) => {
+            set.contains(clan.owner_effective_clan)
+                && predicate_matches(
+                    conjunct.predicate(),
+                    owner,
+                    first_mover,
+                    owner_slot,
+                    opponent_slot,
+                    previous_round_winner,
+                    night,
+                    owner_unison,
+                    clan,
+                )
         }
         // Construction guarantees no opposing source can stop the owner's ability.
         CombatStatPredicateV1::OwnerAbilityStopped => false,

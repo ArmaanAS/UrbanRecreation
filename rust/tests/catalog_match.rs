@@ -11,9 +11,9 @@ use urban_recreation_rust::engine::{
     derive_catalog_hand, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
     CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1, CatalogCombatStatMatchV1,
     CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-    CatalogCombatStatSourceDispositionV1, CombatStatEffectSourceV1, CombatStatEffectV1,
-    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1,
-    EffectiveCatalogHandErrorV1, MatchStatus, PlayerId,
+    CatalogCombatStatSourceDispositionV1, ClanConjunctV1, ClanSetV1, CombatStatEffectSourceV1,
+    CombatStatEffectV1, CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1,
+    CopiedSourceKindV1, EffectiveCatalogHandErrorV1, MatchStatus, PlayerId,
     CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
 };
 use urban_recreation_rust::replay::{
@@ -4387,6 +4387,364 @@ fn strict_catalog_match_bridges_night_variants_of_post_round_grammars_by_text_at
                 }) if description == text
             ),
             "{text:?} at night = {night}"
+        );
+    }
+}
+
+/// The draw a capture played, as a strict catalog input: both hands in index order, their
+/// starting Life and Pillz, the room's rule and the match's night flag.
+fn captured_input(id: u64) -> CatalogCombatStatMatchInputV1 {
+    let capture: serde_json::Value =
+        serde_json::from_slice(&fs::read(root_path(&format!("captures/games/{id}.json"))).unwrap())
+            .unwrap();
+    let side = |side: usize| {
+        let player = &capture["players"][side];
+        let mut cards = player["hand"].as_array().unwrap().clone();
+        cards.sort_by_key(|card| card["index"].as_u64().unwrap());
+        CatalogCombatStatPlayerInputV1 {
+            initial_life: player["baseLife"].as_u64().unwrap() as u16,
+            initial_pillz: player["basePillz"].as_u64().unwrap() as u16,
+            hand: std::array::from_fn(|index| {
+                CardKey::new(
+                    cards[index]["id"].as_u64().unwrap() as u32,
+                    cards[index]["level"].as_u64().unwrap() as u8,
+                )
+            }),
+        }
+    };
+    CatalogCombatStatMatchInputV1 {
+        battle_rule_id: capture["battleRuleId"].as_u64().unwrap() as u32,
+        night: capture["night"].as_bool().unwrap(),
+        players: ByPlayer::new(side(0), side(1)),
+    }
+}
+
+/// Revision 70: every draw the slice unlocks, prepared from its captured hands. The carrier
+/// is always an Oculus, its effective clan is the clan it infiltrates, and that clan is
+/// listed, so the gate holds; the plan carries the gate (and its second condition) as the
+/// predicate its text prints.
+#[test]
+fn strict_catalog_match_admits_the_revision_70_clan_gates_under_the_infiltrated_clan() {
+    let catalog = catalog();
+    let registry = registry();
+    let set = |ids: &[u32]| ClanSetV1::from_ids(ids).unwrap();
+    let nunavik = CombatStatPredicateV1::OwnerClanInAnd(
+        set(&[38, 25, 47, 54, 59]),
+        ClanConjunctV1::OwnerMovesFirst,
+    );
+    enum Expected {
+        Combat(CombatStatPredicateV1),
+        PostRound(CombatStatPostRoundEffectV1, CombatStatPredicateV1),
+        Copy(CombatStatPredicateV1),
+    }
+    let cases = [
+        (945791, PlayerId::P1, 2, 4680, 59, Expected::Combat(nunavik)),
+        (
+            1080264,
+            PlayerId::P2,
+            3,
+            4680,
+            54,
+            Expected::Combat(nunavik),
+        ),
+        (
+            1091985,
+            PlayerId::P1,
+            3,
+            4680,
+            54,
+            Expected::Combat(nunavik),
+        ),
+        (
+            963847,
+            PlayerId::P1,
+            1,
+            5392,
+            40,
+            Expected::PostRound(
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
+                    life: 2,
+                    minimum: 2,
+                },
+                CombatStatPredicateV1::OwnerClanIn(set(&[58, 40, 50, 49, 44])),
+            ),
+        ),
+        (
+            925118,
+            PlayerId::P1,
+            0,
+            5392,
+            44,
+            Expected::PostRound(
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
+                    life: 2,
+                    minimum: 2,
+                },
+                CombatStatPredicateV1::OwnerClanIn(set(&[58, 40, 50, 49, 44])),
+            ),
+        ),
+        (
+            1130942,
+            PlayerId::P1,
+            3,
+            5165,
+            32,
+            Expected::PostRound(
+                CombatStatPostRoundEffectV1::GainPillzOnVictoryPerOpponentStars { per_star: 1 },
+                CombatStatPredicateV1::OwnerClanIn(set(&[32, 51, 49, 30, 45])),
+            ),
+        ),
+        (
+            1414517,
+            PlayerId::P1,
+            3,
+            4037,
+            57,
+            Expected::PostRound(
+                CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory {
+                    pillz: 2,
+                    minimum: 2,
+                },
+                CombatStatPredicateV1::OwnerClanIn(set(&[52, 54, 27, 57, 4])),
+            ),
+        ),
+        (
+            948108,
+            PlayerId::P1,
+            0,
+            5613,
+            49,
+            Expected::PostRound(
+                CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory {
+                    life: 1,
+                    minimum: 1,
+                },
+                CombatStatPredicateV1::OwnerClanIn(set(&[55, 50, 49, 44, 60])),
+            ),
+        ),
+        (
+            1073107,
+            PlayerId::P2,
+            0,
+            5616,
+            60,
+            Expected::PostRound(
+                CombatStatPostRoundEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 },
+                CombatStatPredicateV1::OwnerClanIn(set(&[4, 30, 44, 60, 45])),
+            ),
+        ),
+        (
+            1065673,
+            PlayerId::P2,
+            2,
+            5275,
+            44,
+            Expected::PostRound(
+                CombatStatPostRoundEffectV1::ConsumeOpponentPillzOnVictory {
+                    pillz: 1,
+                    minimum: 4,
+                },
+                CombatStatPredicateV1::OwnerClanInAnd(
+                    set(&[53, 52, 37, 57, 44]),
+                    ClanConjunctV1::OwnerMovesSecond,
+                ),
+            ),
+        ),
+        (
+            1091381,
+            PlayerId::P1,
+            0,
+            4999,
+            49,
+            Expected::Combat(CombatStatPredicateV1::OwnerClanInAnd(
+                set(&[31, 46, 54, 49]),
+                ClanConjunctV1::SelectedHandSlotsDiffer,
+            )),
+        ),
+        (
+            1091703,
+            PlayerId::P1,
+            0,
+            4132,
+            33,
+            Expected::Copy(CombatStatPredicateV1::OwnerClanIn(set(&[25, 4, 50, 33]))),
+        ),
+        (
+            1087884,
+            PlayerId::P1,
+            0,
+            5073,
+            42,
+            Expected::Copy(CombatStatPredicateV1::OwnerClanInAnd(
+                set(&[46, 58, 40, 55, 42, 50]),
+                ClanConjunctV1::SelectedHandSlotsDiffer,
+            )),
+        ),
+    ];
+    for (capture, player, slot, registry_id, effective_clan, expected) in cases {
+        let prepared =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+                .unwrap_or_else(|error| panic!("{capture}: {error:?}"));
+        let card = &prepared.preparation()[player][slot];
+        assert_eq!(
+            card.canonical_clan_id, 56,
+            "{capture}: the carrier is an Oculus"
+        );
+        assert_eq!(card.effective_clan_id, effective_clan, "{capture}");
+        match (&card.ability, expected) {
+            (
+                CatalogCombatStatSourceDispositionV1::Execute {
+                    identity,
+                    predicate,
+                    ..
+                },
+                Expected::Combat(expected),
+            ) => {
+                assert_eq!(*predicate, expected, "{capture}");
+                assert!(
+                    identity.registry_alias_ids.contains(&registry_id),
+                    "{capture}"
+                );
+            }
+            (
+                CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                    identity,
+                    effect,
+                    predicate,
+                },
+                Expected::PostRound(expected_effect, expected),
+            ) => {
+                assert_eq!(*effect, expected_effect, "{capture}");
+                assert_eq!(*predicate, expected, "{capture}");
+                assert_eq!(identity.catalog_id, Some(registry_id), "{capture}");
+            }
+            (
+                CatalogCombatStatSourceDispositionV1::CopyOpponentSource {
+                    identity,
+                    copied,
+                    predicate,
+                },
+                Expected::Copy(expected),
+            ) => {
+                assert_eq!(*copied, CopiedSourceKindV1::Ability, "{capture}");
+                assert_eq!(*predicate, expected, "{capture}");
+                assert_eq!(identity.registry_definition_id, registry_id, "{capture}");
+            }
+            (other, _) => panic!("{capture}: unexpected disposition {other:?}"),
+        }
+    }
+}
+
+/// With the owner's effective clan unlisted, a clan-gated source is still executable - it
+/// takes part in the match and in Stop liveness - but never fires. Phalloide Ld's `[clan:..]
+/// - 2 Opp. Life Min 2` pays in 963847/0, where he infiltrates Freaks (listed); beside three
+/// GHEIST cards he infiltrates GHEIST (unlisted) and the same winning round pays nothing.
+#[test]
+fn strict_catalog_match_executes_an_unlisted_clan_gate_as_present_but_never_firing() {
+    let catalog = catalog();
+    let registry = registry();
+    let listed = captured_input(963847);
+    let hive = listed.players[PlayerId::P2].hand;
+    let mut unlisted = listed.clone();
+    unlisted.players[PlayerId::P1].hand = [
+        CardKey::new(252, 4),  // Erika, GHEIST
+        CardKey::new(2094, 4), // Phalloide Ld, Oculus
+        CardKey::new(1588, 3), // Rekt Ld, GHEIST
+        CardKey::new(1083, 2), // Stalfhaust, GHEIST
+    ];
+    unlisted.players[PlayerId::P2].hand = hive;
+    for (input, effective_clan, reduction) in [(listed, 40, 2), (unlisted, 32, 0)] {
+        let prepared =
+            CatalogCombatStatMatchV1::new(input, &catalog, &registry, PROJECTION).unwrap();
+        let card = &prepared.preparation()[PlayerId::P1][1];
+        assert_eq!(card.effective_clan_id, effective_clan);
+        assert!(matches!(
+            card.ability,
+            CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                effect: CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { .. },
+                predicate: CombatStatPredicateV1::OwnerClanIn(_),
+                ..
+            }
+        ));
+        let mut game = prepared.new_game();
+        let before = game.position().clone();
+        // 963847/0: Mou first with no bet, Phalloide second with four.
+        let (report, undo) = game
+            .make(BaseRulesRoundInput {
+                first_mover: PlayerId::P2,
+                selections: ByPlayer::new(
+                    BaseRulesSelection::new(1, 4, false),
+                    BaseRulesSelection::new(2, 0, false),
+                ),
+            })
+            .unwrap();
+        assert!(report.cards[PlayerId::P1].won);
+        assert_eq!(
+            report.players[PlayerId::P2].life,
+            12 - report.cards[PlayerId::P1].damage - reduction,
+            "effective clan {effective_clan}"
+        );
+        game.unmake(undo);
+        assert_eq!(game.position(), &before);
+    }
+}
+
+/// The same-text catalog levels that own no registry definition stay closed: the clan-gated
+/// post-round grammars require a structural alias, and the Copy and conditional-Stop routes
+/// look their catalog id up. Each is shown here by giving a GHEIST filler card the text
+/// under a catalog id that is not a definition of it.
+#[test]
+fn strict_catalog_match_keeps_clan_gated_text_under_a_foreign_id_closed() {
+    let registry = registry();
+    let (p1, p2) = fully_supported_hands();
+    for (text, foreign_id) in [
+        (
+            "[clan:58][clan:40][clan:50][clan:49][clan:44] - 2 Opp. Life Min 2",
+            5391,
+        ),
+        (
+            "[clan:52][clan:54][clan:27][clan:57][clan:4] -2 Opp Pillz. Min 2",
+            4039,
+        ),
+        (
+            "[clan:55][clan:50][clan:49][clan:44][clan:60] Toxin 1, Min 1",
+            5612,
+        ),
+        (
+            "[clan:4][clan:30][clan:44][clan:60][clan:45] Equalizer: +1 Life",
+            5615,
+        ),
+        (
+            "[clan:32][clan:51][clan:49][clan:30][clan:45] Equalizer: +1 Pillz",
+            5164,
+        ),
+        (
+            "[clan:25][clan:4][clan:50][clan:33] Copy: Opp. Ability",
+            4133,
+        ),
+        (
+            "[clan:31][clan:46][clan:54][clan:49] Asymm.: Stop Opp. Ability",
+            4998,
+        ),
+        (
+            "[clan:53][clan:52][clan:37][clan:57][clan:44] Repris.: Consume 1, Min 4",
+            5274,
+        ),
+    ] {
+        let catalog = catalog_with_ability_alias(p1[0], foreign_id, text);
+        let result =
+            CatalogCombatStatMatchV1::new(input(p1, p2, false), &catalog, &registry, PROJECTION);
+        assert!(
+            matches!(
+                result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player: PlayerId::P1,
+                    source_kind: CombatStatEffectSourceV1::Ability,
+                    ref description,
+                    ..
+                }) if description == text
+            ),
+            "{text:?} under {foreign_id}: {result:?}"
         );
     }
 }

@@ -5,17 +5,18 @@
 
 use super::CopiedSourceKindV1;
 use super::{
-    ClanSetV1, CombatStatAffectedSideV1, CombatStatAttributeV1, CombatStatCardPlanV1,
-    CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1,
-    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, RoundScaleV1,
-    HAND_SIZE,
+    ClanConjunctV1, ClanSetV1, CombatStatAffectedSideV1, CombatStatAttributeV1,
+    CombatStatCardPlanV1, CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1,
+    CombatStatOperationV1, CombatStatPostRoundEffectV1, CombatStatPredicateV1,
+    CombatStatSourcePlanV1, RoundScaleV1, HAND_SIZE,
 };
 
 /// Every source-copying Copy grammar this projection admits, as the exact printed text it
 /// requires. `Reprisal:`, `Revenge:` and `Asymmetry:` reuse predicates the projection
 /// already resolves before a round is prepared, so they gate the adoption itself rather
 /// than needing new context. `Unison` (a draw-level clan-mate count), `Confidence`,
-/// `Bet > N` and the clan-gated `Asy.` variant keep their own deferred grammars. Note the
+/// `Bet > N` and the clan-gated forms (`CLAN_GATED_COPY_GRAMMARS`) keep their own
+/// grammars. Note the
 /// site's own inconsistent punctuation: a copied Bonus loses the second colon under
 /// `Reprisal`/`Revenge` but keeps it under `Asymmetry`.
 const COPY_OPPONENT_SOURCE_GRAMMARS: [(&str, CopiedSourceKindV1, CombatStatPredicateV1); 10] = [
@@ -71,6 +72,18 @@ const COPY_OPPONENT_SOURCE_GRAMMARS: [(&str, CopiedSourceKindV1, CombatStatPredi
     ),
 ];
 
+/// The Copy bodies printed under the owner-clan gate `[clan:A][clan:B] `, and the second
+/// condition each carries beside it: Yayoi's `[clan:..] Copy: Opp. Ability` (`4132`) and
+/// Hypnos' `[clan:..] Asy. : Copy: Opp. Ability` (`5073`). Revision 70. Both copy the
+/// opposing Ability; no clan-gated Bonus Copy is printed.
+const CLAN_GATED_COPY_GRAMMARS: [(&str, Option<ClanConjunctV1>); 2] = [
+    ("Copy: Opp. Ability", None),
+    (
+        "Asy. : Copy: Opp. Ability",
+        Some(ClanConjunctV1::SelectedHandSlotsDiffer),
+    ),
+];
+
 /// True for every printed text the Copy compiler recognizes, so the catalog boundary can
 /// route a source here without repeating the table.
 pub(crate) fn is_copy_opponent_source_description(description: &str) -> bool {
@@ -78,6 +91,93 @@ pub(crate) fn is_copy_opponent_source_description(description: &str) -> bool {
         .iter()
         .any(|(text, _, _)| *text == description)
         || bet_gated_copy_body(description).is_some()
+        || split_clan_tags(description).is_some_and(|(_, body)| {
+            CLAN_GATED_COPY_GRAMMARS
+                .iter()
+                .any(|(text, _)| *text == body)
+        })
+}
+
+/// Split a printed `[clan:A][clan:B] X` into its clan ids, in printed order, and `X`: at
+/// least one tag, each a plain decimal id, then exactly one space. Text alone - the
+/// classifiers still require the record's own `clanRequirement` to rebuild the same tags.
+pub(crate) fn split_clan_tags(description: &str) -> Option<(Vec<u32>, &str)> {
+    let mut ids = Vec::new();
+    let mut rest = description;
+    while let Some(tail) = rest.strip_prefix("[clan:") {
+        let (id, tail) = tail.split_once(']')?;
+        if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        ids.push(id.parse().ok()?);
+        rest = tail;
+    }
+    if ids.is_empty() {
+        return None;
+    }
+    Some((ids, rest.strip_prefix(' ')?))
+}
+
+/// The owner-clan gate read from the record: its `clanRequirement` as a set, both other clan
+/// lists empty, and the text after the exact `[clan:A][clan:B] ` prefix rebuilt from that
+/// list - the rule revision 54 set for `classify_clan_gated`.
+fn owner_clan_gate<'a>(
+    input: &StructuredEffectV1,
+    description: &'a str,
+) -> Option<(ClanSetV1, &'a str)> {
+    let ids = input.clan_requirement.as_slice();
+    if ids.is_empty()
+        || !input.opponent_clan_requirement.is_empty()
+        || !input.previous_clan_requirement.is_empty()
+    {
+        return None;
+    }
+    let set = ClanSetV1::from_ids(ids)?;
+    let tags: String = ids.iter().map(|id| format!("[clan:{id}]")).collect();
+    Some((
+        set,
+        description.strip_prefix(tags.as_str())?.strip_prefix(' ')?,
+    ))
+}
+
+/// The record with its owner-clan gate cleared, so the ungated grammar's own shape can judge
+/// everything else about it. No existing shape is loosened: each clan-gated classifier asks
+/// the plain one about this copy, and the plain classifiers still see the gate.
+fn without_owner_clan_gate(input: &StructuredEffectV1) -> StructuredEffectV1 {
+    let mut plain = input.clone();
+    plain.clan_requirement = ClanIdsV1::default();
+    plain
+}
+
+/// `[clan:A][clan:B] Copy: Opp. Ability` and its `Asy. :` form: the adoption happens only
+/// when the copier's own effective clan is listed, and for `Asy. :` also only when the two
+/// selected cards sit in different slots. The record must be the ungated grammar's once the
+/// gate is cleared. Revision 21's totality rule applies as to every Copy.
+fn classify_clan_gated_copy(
+    definition: &EffectDefinitionV1,
+) -> Option<(CopiedSourceKindV1, CombatStatPredicateV1)> {
+    let input = definition.structured_input();
+    let (set, body) = owner_clan_gate(input, definition.description())?;
+    let (_, conjunct) = CLAN_GATED_COPY_GRAMMARS
+        .iter()
+        .find(|(text, _)| *text == body)?;
+    let (shape_predicate, predicate) = match conjunct {
+        None => (
+            CombatStatPredicateV1::Always,
+            CombatStatPredicateV1::OwnerClanIn(set),
+        ),
+        Some(conjunct) => (
+            conjunct.predicate(),
+            CombatStatPredicateV1::OwnerClanInAnd(set, *conjunct),
+        ),
+    };
+    copy_opponent_source_shape_matches(
+        &without_owner_clan_gate(input),
+        SpecialActionV1::CopyAbility,
+        shape_predicate,
+        false,
+    )
+    .then_some((CopiedSourceKindV1::Ability, predicate))
 }
 
 /// `Bet > N Pillz: Copy: Opp. Ability` (and its Bonus twin): the unconditional Copy text
@@ -89,13 +189,13 @@ fn bet_gated_copy_body(description: &str) -> Option<&str> {
         .then_some(body)
 }
 use crate::effect_registry::{
-    AffectedSideV1, AttributeActionV1, AttributeAffectedV1, BetPillzLinkV1, CombatStatV1,
-    CompiledEffectV1, CurrentRoundRequirementV1, EffectDefinitionV1, IndexRequirementV1,
-    MagnitudeMultiplierV1, PositionRequirementV1, PreviousRoundRequirementV1, SpecialActionV1,
-    StatOperationV1, StructuredEffectV1, SupportedEffectV1,
+    AffectedSideV1, AttributeActionV1, AttributeAffectedV1, BetPillzLinkV1, ClanIdsV1,
+    CombatStatV1, CompiledEffectV1, CurrentRoundRequirementV1, EffectDefinitionV1,
+    IndexRequirementV1, MagnitudeMultiplierV1, PositionRequirementV1, PreviousRoundRequirementV1,
+    SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 69;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 70;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -107,6 +207,9 @@ pub(crate) fn classify_copy_opponent_source(
 ) -> Option<(CopiedSourceKindV1, CombatStatPredicateV1)> {
     let description = definition.description();
     let input = definition.structured_input();
+    if !input.clan_requirement.is_empty() {
+        return classify_clan_gated_copy(definition);
+    }
     // A Bet-gated Copy is the unconditional row with the gate as its predicate: the adoption
     // itself happens only when the owner's `pillzUsed` clears the threshold.
     let (text, bet) = match bet_gated_copy_body(description) {
@@ -181,7 +284,8 @@ fn copy_opponent_source_shape_matches(
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
         | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
-        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => return false,
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+        | CombatStatPredicateV1::OwnerClanInAnd(..) => return false,
     };
     let unison = predicate == CombatStatPredicateV1::OwnerHandUnison;
     let bet_fields_match = if bet_gated {
@@ -347,6 +451,27 @@ pub(crate) fn classify_conditional_stop(
         _ => return None,
     };
     let description = definition.description();
+    // Revision 70: Kupanda's `[clan:..] Asymm.: Stop Opp. Ability` (`4999`) - the owner-clan
+    // gate and the differing hand slots together. Its record is the `Asymmetry:` Stop's once
+    // the gate is cleared, and `Asymm.:` is the spelling it prints.
+    if !input.clan_requirement.is_empty() {
+        let (set, body) = owner_clan_gate(input, description)?;
+        let shape = PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(0),
+            conditions: SLOTS_DIFFER,
+            current_round: CurrentRoundRequirementV1::Any,
+            attribute: AttributeAffectedV1::None,
+            action: AttributeActionV1::None,
+            special: input.special_action,
+            ..POST_ROUND_SHAPE
+        };
+        return (body == format!("Asymm.: Stop Opp. {target}")
+            && shape_matches(&without_owner_clan_gate(input), shape))
+        .then_some((
+            effect,
+            CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::SelectedHandSlotsDiffer),
+        ));
+    }
     let (predicate, prefix, position, conditions) = if description.starts_with("Night: ") {
         (
             CombatStatPredicateV1::MatchIsNight,
@@ -436,11 +561,13 @@ pub(crate) fn classify_conditional_stop(
 }
 
 /// The predicates a conditional Stop plan may carry. `OwnerMovesSecond` is deliberately
-/// absent: the Reprisal Stop stays identity-locked to its two reviewed definitions.
+/// absent: the Reprisal Stop stays identity-locked to its two reviewed definitions. The
+/// compound clan gate is admitted only with the differing hand slots it is printed with.
 pub(crate) fn conditional_stop_predicate_admitted(predicate: CombatStatPredicateV1) -> bool {
     matches!(
         predicate,
-        CombatStatPredicateV1::OwnerMovesFirst
+        CombatStatPredicateV1::OwnerClanInAnd(_, ClanConjunctV1::SelectedHandSlotsDiffer)
+            | CombatStatPredicateV1::OwnerMovesFirst
             | CombatStatPredicateV1::OwnerWonPreviousRound
             | CombatStatPredicateV1::OwnerLostPreviousRound
             | CombatStatPredicateV1::SelectedHandSlotsMatch
@@ -1322,9 +1449,10 @@ const VICTORY_OPPONENT_LIFE_IDENTITIES: [(
 /// structured trace, so the record is the unconditional one and the text alone names it -
 /// exactly how the Night numerics and the Night Stops are read.
 ///
-/// Everything else remains fail-closed: the capped, compound and clan-gated neighbours, the
+/// Everything else remains fail-closed here: the capped and compound neighbours, the
 /// complete shape under other prefixed text, and the same-text catalog ids that have no
-/// registry definition at all (Rakhan `978`, Milovan `498`, Fraser `1289`).
+/// registry definition at all (Rakhan `978`, Milovan `498`, Fraser `1289`). The clan-gated
+/// `5392` has its own classifier since revision 70 (`classify_clan_gated_post_round`).
 pub(crate) fn classify_victory_opponent_life(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
@@ -1449,7 +1577,8 @@ fn victory_opponent_life_shape_matches(
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
         | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
-        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => return false,
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+        | CombatStatPredicateV1::OwnerClanInAnd(..) => return false,
     };
     input.value == life
         && input.value_min == minimum
@@ -2586,6 +2715,162 @@ fn permanent_condition(
     }
 }
 
+/// Revision 70: the owner-clan gate `[clan:A][clan:B] ` over end-of-round bodies the
+/// projection already executes, each by the exact text its one printed record carries and by
+/// the ungated grammar's complete shape once the gate is cleared (`without_owner_clan_gate`),
+/// so no existing gate is loosened. Card abilities only.
+/// - `- N Opp. Life Min M` (Phalloide Ld `5392`, spaced minus), the Victory opponent-Life
+///   reduction;
+/// - `-N Opp Pillz. Min M` (Dark Kaizerin `4037`, `4038`), the Victory opponent-Pillz one;
+/// - `Equalizer: +N Life` / `Equalizer: +N Pillz` (Dark Mandrak `5616`, Synapsburg `5165`);
+/// - `Toxin N, Min M` (Dark Eloxia `5613`), on the Victory latch;
+/// - `Repris.: Consume N, Min M` (Dunkelstern `5275`), on the latch with Reprisal's second
+///   move, which its record carries in the position field.
+/// The gate is decided at resolution from the owner's effective clan, so an Oculus that
+/// infiltrates a listed clan pays and one that does not holds a source that never fires.
+/// Returns the public effect, the compact effect and the predicate.
+pub(crate) fn classify_clan_gated_post_round(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(
+    CombatStatPostRoundEffectV1,
+    CombatStatEffectV1,
+    CombatStatPredicateV1,
+)> {
+    if source_kind != CombatStatEffectSourceV1::Ability {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (set, body) = owner_clan_gate(input, definition.description())?;
+    let plain = without_owner_clan_gate(input);
+    let (value, minimum) = (plain.value, plain.value_min);
+    if value == 0 {
+        return None;
+    }
+    let gated = CombatStatPredicateV1::OwnerClanIn(set);
+    let unconditional_latch =
+        || permanent_condition(&plain) == Some((CombatStatPredicateV1::Always, ""));
+    if victory_opponent_life_shape_matches(&plain, value, minimum, CombatStatPredicateV1::Always)
+        && body == format!("- {value} Opp. Life Min {minimum}")
+    {
+        return Some((
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
+                life: value,
+                minimum,
+            },
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: value,
+                minimum,
+            },
+            gated,
+        ));
+    }
+    if victory_opponent_pillz_shape_matches(&plain)
+        && body == format!("-{value} Opp Pillz. Min {minimum}")
+    {
+        return Some((
+            CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory {
+                pillz: value,
+                minimum,
+            },
+            CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+                pillz: value,
+                minimum,
+            },
+            gated,
+        ));
+    }
+    for (attribute, name, gain) in [
+        (
+            AttributeAffectedV1::Life,
+            "Life",
+            EqualizerPostRoundGainV1::Life { per_star: value },
+        ),
+        (
+            AttributeAffectedV1::Pillz,
+            "Pillz",
+            EqualizerPostRoundGainV1::Pillz { per_star: value },
+        ),
+    ] {
+        if equalizer_own_gain_shape_matches(&plain, attribute)
+            && body == format!("Equalizer: +{value} {name}")
+        {
+            let (effect, compact_effect) = gain.effects();
+            return Some((effect, compact_effect, gated));
+        }
+    }
+    if permanent_opponent_life_shape_matches(&plain, true)
+        && unconditional_latch()
+        && body == format!("Toxin {value}, Min {minimum}")
+    {
+        return Some((
+            CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory {
+                life: value,
+                minimum,
+            },
+            CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+                life: value,
+                minimum,
+            },
+            gated,
+        ));
+    }
+    if plain.position_requirement == PositionRequirementV1::Defender
+        && body == format!("Repris.: Consume {value}, Min {minimum}")
+    {
+        let mut both = plain.clone();
+        both.position_requirement = PositionRequirementV1::Both;
+        if consume_opponent_pillz_shape_matches(&both)
+            && permanent_condition(&both) == Some((CombatStatPredicateV1::Always, ""))
+        {
+            return Some((
+                CombatStatPostRoundEffectV1::ConsumeOpponentPillzOnVictory {
+                    pillz: value,
+                    minimum,
+                },
+                CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+                    pillz: value,
+                    minimum,
+                },
+                CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::OwnerMovesSecond),
+            ));
+        }
+    }
+    None
+}
+
+/// Structural half of the clan-gated end-of-round boundary: a record carrying only the
+/// owner-clan gate that is, once the gate is cleared, the complete shape of one of the
+/// bodies above - whatever its text says.
+pub(crate) fn has_clan_gated_post_round_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    if input.clan_requirement.is_empty()
+        || !input.opponent_clan_requirement.is_empty()
+        || !input.previous_clan_requirement.is_empty()
+        || input.value == 0
+    {
+        return false;
+    }
+    let plain = without_owner_clan_gate(input);
+    let unconditional_latch = |input: &StructuredEffectV1| {
+        permanent_condition(input) == Some((CombatStatPredicateV1::Always, ""))
+    };
+    let mut both = plain.clone();
+    both.position_requirement = PositionRequirementV1::Both;
+    victory_opponent_life_shape_matches(
+        &plain,
+        plain.value,
+        plain.value_min,
+        CombatStatPredicateV1::Always,
+    ) || victory_opponent_pillz_shape_matches(&plain)
+        || equalizer_own_gain_shape_matches(&plain, AttributeAffectedV1::Life)
+        || equalizer_own_gain_shape_matches(&plain, AttributeAffectedV1::Pillz)
+        || (permanent_opponent_life_shape_matches(&plain, true) && unconditional_latch(&plain))
+        || (plain.position_requirement == PositionRequirementV1::Defender
+            && consume_opponent_pillz_shape_matches(&both)
+            && unconditional_latch(&both))
+}
+
 /// True for every predicate a permanent's plan may carry.
 pub(crate) fn permanent_predicate_admitted(predicate: CombatStatPredicateV1) -> bool {
     matches!(
@@ -2909,6 +3194,7 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_bet_gated_post_round(definition, source_kind).is_some()
         || classify_support_post_round(definition, source_kind).is_some()
         || classify_equalizer_post_round_gain(definition, source_kind).is_some()
+        || classify_clan_gated_post_round(definition, source_kind).is_some()
     {
         return None;
     }
@@ -3540,6 +3826,14 @@ fn classify_clan_gated(
                 .or_else(|| description.strip_prefix(&format!("After {tags}: ")))?,
         ),
     };
+    // Revision 70: one more already-resolved condition beside the owner-clan gate -
+    // `Courage:` in the position field or `Asy. :` in the hand-slot field.
+    if matches!(gate, Gate::OwnerCard)
+        && (input.position_requirement != PositionRequirementV1::Both
+            || input.index_requirement != IndexRequirementV1::Any)
+    {
+        return classify_clan_gated_compound(input, body, set);
+    }
     if input.position_requirement != PositionRequirementV1::Both {
         return None;
     }
@@ -3566,6 +3860,43 @@ fn classify_clan_gated(
     let effect = numeric_effect(input, MagnitudeMultiplierV1::Fixed)?;
     numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
         .then_some((effect, predicate))
+}
+
+/// The plain fixed numeric body under the owner-clan gate and exactly one more condition:
+/// Dark Nunavik's `[clan:..] Courage: Power +4` (`4680`, `5299`), the first move, and
+/// Hypnos' `[clan:..] Asy. : -3 Opp Dam., Min 1` (`5072`), the differing hand slots. The
+/// record must be `neutral_except_clan_gate` once that one field is cleared, so no second
+/// condition and no magnitude can ride along; the plan carries both as `OwnerClanInAnd`.
+/// Card abilities only - the caller has already refused a Bonus.
+fn classify_clan_gated_compound(
+    input: &StructuredEffectV1,
+    body: &str,
+    set: ClanSetV1,
+) -> Option<(SupportedEffectV1, CombatStatPredicateV1)> {
+    let mut plain = input.clone();
+    let (conjunct, body) = match (input.position_requirement, input.index_requirement) {
+        (PositionRequirementV1::Attacker, IndexRequirementV1::Any) => {
+            plain.position_requirement = PositionRequirementV1::Both;
+            (
+                ClanConjunctV1::OwnerMovesFirst,
+                body.strip_prefix("Courage: ")?,
+            )
+        }
+        (PositionRequirementV1::Both, IndexRequirementV1::Asymmetry) => {
+            plain.index_requirement = IndexRequirementV1::Any;
+            (
+                ClanConjunctV1::SelectedHandSlotsDiffer,
+                body.strip_prefix("Asy. : ")?,
+            )
+        }
+        _ => return None,
+    };
+    if !neutral_except_clan_gate(&plain) {
+        return None;
+    }
+    let effect = numeric_effect(&plain, MagnitudeMultiplierV1::Fixed)?;
+    numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
+        .then_some((effect, CombatStatPredicateV1::OwnerClanInAnd(set, conjunct)))
 }
 
 /// A magnitude body under `[clan:A][clan:B]`: `Growth:`/`Degrowth:`, `Equalizer:` and
@@ -4791,7 +5122,8 @@ fn position_description_matches(
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
         | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
-        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => return false,
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+        | CombatStatPredicateV1::OwnerClanInAnd(..) => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -4822,7 +5154,8 @@ fn index_description_matches(
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
         | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
-        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => return false,
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+        | CombatStatPredicateV1::OwnerClanInAnd(..) => return false,
     };
     numeric_description_body_matches(
         description.strip_prefix(prefix).unwrap_or(""),
@@ -4855,7 +5188,8 @@ fn previous_round_description_matches(
         | CombatStatPredicateV1::OpponentHandHasClan(_)
         | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
         | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
-        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight => None,
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+        | CombatStatPredicateV1::OwnerClanInAnd(..) => None,
     };
     body.is_some_and(|body| {
         numeric_description_body_matches(body, effect, MagnitudeMultiplierV1::Fixed)
@@ -4964,6 +5298,9 @@ fn numeric_description_body_matches(
                 // Hattori `304`/`961` print the abbreviated stat. Same grammar, same shape:
                 // the registry's structured fields are identical, only the spelling differs.
                 || body == format!("-{value} Opp. Dmg, Min {min}")
+                // Hypnos `5072`: `[clan:..] Asy. : -3 Opp Dam., Min 1`, the only record that
+                // prints this spelling.
+                || body == format!("-{value} Opp Dam., Min {min}")
         }
         (AffectedSideV1::Opponent, CombatStatV1::Attack, StatOperationV1::Decrease, Some(min)) => {
             body == format!("-{value} Opp Attack, Min {min}")
@@ -5378,14 +5715,30 @@ mod tests {
             );
         }
 
-        // Clan-gated Courage and the post-round Equalizer forms are other grammars.
-        for id in [4680, 5299, 5165, 5616] {
+        // The post-round Equalizer forms are other grammars, and clan-gated Courage carries
+        // two conditions (both since revision 70, tested below).
+        for id in [5165, 5616] {
             assert_eq!(
                 classify_combat_stat_effect(
                     registry.get(id).unwrap(),
                     CombatStatEffectSourceV1::Ability
                 ),
                 None,
+                "{id}"
+            );
+        }
+        for id in [4680, 5299] {
+            assert!(
+                matches!(
+                    classify_combat_stat_effect(
+                        registry.get(id).unwrap(),
+                        CombatStatEffectSourceV1::Ability
+                    ),
+                    Some((
+                        _,
+                        CombatStatPredicateV1::OwnerClanInAnd(_, ClanConjunctV1::OwnerMovesFirst)
+                    ))
+                ),
                 "{id}"
             );
         }
@@ -6403,6 +6756,556 @@ mod tests {
             compact_effect(SupportedEffectV1::SimplifyAttackToPillz),
             Some(CombatStatEffectV1::SimplifyAttackToPillz)
         );
+    }
+
+    /// The captured registry source, parsed once for the revision-70 tests.
+    fn abilities_source() -> &'static serde_json::Value {
+        static SOURCE: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+        SOURCE.get_or_init(|| {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap()
+        })
+    }
+
+    /// The registry with one abilityData field of one record replaced, for the malformed-shape
+    /// halves of the revision-70 tests.
+    fn with_field(id: &str, field: &str, value: serde_json::Value) -> EffectRegistryV1 {
+        let mut source = abilities_source().clone();
+        source[id]["abilityData"][field] = value;
+        EffectRegistryV1::from_reader(source.to_string().as_bytes()).unwrap()
+    }
+
+    /// The registry with one record's printed text replaced.
+    fn with_text(id: &str, text: &str) -> EffectRegistryV1 {
+        let mut source = abilities_source().clone();
+        source[id]["description"] = serde_json::json!(text);
+        EffectRegistryV1::from_reader(source.to_string().as_bytes()).unwrap()
+    }
+
+    fn clan_set(ids: &[u32]) -> ClanSetV1 {
+        ClanSetV1::from_ids(ids).unwrap()
+    }
+
+    /// Revision 70: the plain fixed numeric body under the owner-clan gate and one more
+    /// condition - Dark Nunavik's `Courage:` (`4680`, `5299`) and Hypnos' `Asy. :` (`5072`,
+    /// with its `Opp Dam.` spelling) - carried as `OwnerClanInAnd`. Card abilities only, and
+    /// the record must be the gated plain one once the one condition field is cleared.
+    #[test]
+    fn clan_gated_courage_and_asymmetry_numerics_carry_the_compound_predicate() {
+        let registry = registry();
+        let nunavik = clan_set(&[38, 25, 47, 54, 59]);
+        let hypnos = clan_set(&[46, 58, 40, 55, 42, 50]);
+        for (id, expected) in [
+            (
+                4680,
+                (
+                    SupportedEffectV1::ModifyCombatStat {
+                        side: AffectedSideV1::Player,
+                        stat: CombatStatV1::Power,
+                        operation: StatOperationV1::Increase,
+                        value: 4,
+                        minimum: None,
+                        maximum: None,
+                        multiplier: MagnitudeMultiplierV1::Fixed,
+                    },
+                    CombatStatPredicateV1::OwnerClanInAnd(nunavik, ClanConjunctV1::OwnerMovesFirst),
+                ),
+            ),
+            (
+                5299,
+                (
+                    SupportedEffectV1::ModifyCombatStat {
+                        side: AffectedSideV1::Player,
+                        stat: CombatStatV1::Power,
+                        operation: StatOperationV1::Increase,
+                        value: 4,
+                        minimum: None,
+                        maximum: None,
+                        multiplier: MagnitudeMultiplierV1::Fixed,
+                    },
+                    CombatStatPredicateV1::OwnerClanInAnd(nunavik, ClanConjunctV1::OwnerMovesFirst),
+                ),
+            ),
+            (
+                5072,
+                (
+                    SupportedEffectV1::ModifyCombatStat {
+                        side: AffectedSideV1::Opponent,
+                        stat: CombatStatV1::Damage,
+                        operation: StatOperationV1::Decrease,
+                        value: 3,
+                        minimum: Some(1),
+                        maximum: None,
+                        multiplier: MagnitudeMultiplierV1::Fixed,
+                    },
+                    CombatStatPredicateV1::OwnerClanInAnd(
+                        hypnos,
+                        ClanConjunctV1::SelectedHandSlotsDiffer,
+                    ),
+                ),
+            ),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                Some(expected),
+                "{id}"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} as a bonus"
+            );
+        }
+        // A second condition, a magnitude, a different position or no position at all, and
+        // numbers the text disagrees with are all refused.
+        for (id, field, value) in [
+            ("4680", "positionRequirement", serde_json::json!("defender")),
+            ("4680", "positionRequirement", serde_json::json!("both")),
+            ("4680", "indexRequirement", serde_json::json!("asymmetry")),
+            ("4680", "previousRoundRequirement", serde_json::json!("win")),
+            ("4680", "currentRoundRequirement", serde_json::json!("win")),
+            ("4680", "isOverdrive", serde_json::json!(true)),
+            ("4680", "value", serde_json::json!(5)),
+            ("4680", "clanRequirement", serde_json::json!("38,25,47,54")),
+            ("5072", "indexRequirement", serde_json::json!("any")),
+            ("5072", "indexRequirement", serde_json::json!("symmetry")),
+            ("5072", "positionRequirement", serde_json::json!("attacker")),
+            ("5072", "valueMin", serde_json::json!(2)),
+            ("5072", "isOppStarsLinked", serde_json::json!(true)),
+        ] {
+            let malformed = with_field(id, field, value.clone());
+            assert_eq!(
+                classify_combat_stat_effect(
+                    malformed.get(id.parse().unwrap()).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id} {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            ("4680", "[clan:38][clan:25][clan:47][clan:54][clan:59] Power +4"),
+            (
+                "4680",
+                "[clan:38][clan:25][clan:47][clan:54][clan:59] Courage : Power +4",
+            ),
+            ("4680", "[clan:38][clan:25][clan:47][clan:54] Courage: Power +4"),
+            ("4680", "Courage: Power +4"),
+            (
+                "5072",
+                "[clan:46][clan:58][clan:40][clan:55][clan:42][clan:50] Asymmetry: -3 Opp Dam., Min 1",
+            ),
+            (
+                "5072",
+                "[clan:46][clan:58][clan:40][clan:55][clan:42][clan:50] Asy. : -3 Opp Dam., Min 2",
+            ),
+        ] {
+            let retexted = with_text(id, text);
+            assert_eq!(
+                classify_combat_stat_effect(
+                    retexted.get(id.parse().unwrap()).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id} as {text:?}"
+            );
+        }
+    }
+
+    /// Revision 70: Kupanda's `[clan:..] Asymm.: Stop Opp. Ability` (`4999`) is the
+    /// `Asymmetry:` Stop under the owner-clan gate, card abilities only, by its printed
+    /// `Asymm.:` spelling over the conditional Stop's record once the gate is cleared.
+    #[test]
+    fn clan_gated_asymmetry_stop_carries_the_compound_predicate() {
+        let registry = registry();
+        let kupanda = registry.get(4999).expect("registry definition");
+        let expected = Some((
+            SupportedEffectV1::StopOpponentAbility,
+            CombatStatPredicateV1::OwnerClanInAnd(
+                clan_set(&[31, 46, 54, 49]),
+                ClanConjunctV1::SelectedHandSlotsDiffer,
+            ),
+        ));
+        assert_eq!(
+            classify_conditional_stop(kupanda, CombatStatEffectSourceV1::Ability),
+            expected
+        );
+        assert_eq!(
+            classify_combat_stat_effect(kupanda, CombatStatEffectSourceV1::Ability),
+            expected
+        );
+        assert_eq!(
+            classify_conditional_stop(kupanda, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        let set = clan_set(&[1]);
+        assert!(conditional_stop_predicate_admitted(
+            CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::SelectedHandSlotsDiffer)
+        ));
+        for conjunct in [
+            ClanConjunctV1::OwnerMovesFirst,
+            ClanConjunctV1::OwnerMovesSecond,
+        ] {
+            assert!(!conditional_stop_predicate_admitted(
+                CombatStatPredicateV1::OwnerClanInAnd(set, conjunct)
+            ));
+        }
+        for (field, value) in [
+            ("indexRequirement", serde_json::json!("any")),
+            ("indexRequirement", serde_json::json!("symmetry")),
+            ("positionRequirement", serde_json::json!("attacker")),
+            ("previousRoundRequirement", serde_json::json!("lose")),
+            ("value", serde_json::json!(1)),
+            ("isClanmatesCountLinked", serde_json::json!(true)),
+        ] {
+            let malformed = with_field("4999", field, value.clone());
+            assert_eq!(
+                classify_conditional_stop(
+                    malformed.get(4999).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "4999 {field} = {value}"
+            );
+        }
+        for text in [
+            "[clan:31][clan:46][clan:54][clan:49] Asymmetry: Stop Opp. Ability",
+            "[clan:31][clan:46][clan:54][clan:49] Asymm.: Stop Opp. Bonus",
+            "[clan:31][clan:46][clan:54] Asymm.: Stop Opp. Ability",
+            "Asymm.: Stop Opp. Ability",
+        ] {
+            let retexted = with_text("4999", text);
+            assert_eq!(
+                classify_conditional_stop(
+                    retexted.get(4999).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "4999 as {text:?}"
+            );
+        }
+    }
+
+    /// Revision 70: Yayoi's `[clan:..] Copy: Opp. Ability` (`4132`) and Hypnos' `[clan:..]
+    /// Asy. : Copy: Opp. Ability` (`5073`) adopt only when the copier's effective clan is
+    /// listed, the second also only across different slots. The record must be the ungated
+    /// Copy's once the gate is cleared.
+    #[test]
+    fn clan_gated_copies_gate_the_adoption_on_the_copiers_clan() {
+        let registry = registry();
+        for (id, expected) in [
+            (
+                4132,
+                (
+                    CopiedSourceKindV1::Ability,
+                    CombatStatPredicateV1::OwnerClanIn(clan_set(&[25, 4, 50, 33])),
+                ),
+            ),
+            (
+                5073,
+                (
+                    CopiedSourceKindV1::Ability,
+                    CombatStatPredicateV1::OwnerClanInAnd(
+                        clan_set(&[46, 58, 40, 55, 42, 50]),
+                        ClanConjunctV1::SelectedHandSlotsDiffer,
+                    ),
+                ),
+            ),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(is_copy_opponent_source_description(
+                definition.description()
+            ));
+            assert_eq!(
+                classify_copy_opponent_source(definition),
+                Some(expected),
+                "{id}"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, CombatStatEffectSourceV1::Ability),
+                None
+            );
+        }
+        for (id, field, value) in [
+            ("4132", "indexRequirement", serde_json::json!("asymmetry")),
+            ("4132", "positionRequirement", serde_json::json!("defender")),
+            ("4132", "specialAction", serde_json::json!("copy_bonus")),
+            ("4132", "clanRequirement", serde_json::json!("25,4,50")),
+            ("5073", "indexRequirement", serde_json::json!("any")),
+            (
+                "5073",
+                "previousRoundRequirement",
+                serde_json::json!("lose"),
+            ),
+            ("5073", "isClanmatesCountLinked", serde_json::json!(true)),
+        ] {
+            let malformed = with_field(id, field, value.clone());
+            assert_eq!(
+                classify_copy_opponent_source(malformed.get(id.parse().unwrap()).unwrap()),
+                None,
+                "{id} {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            ("4132", "[clan:25][clan:4][clan:50][clan:33] Copy: Opp. Bonus"),
+            ("4132", "[clan:25][clan:4][clan:50][clan:33] Copy Opp. Ability"),
+            ("4132", "[clan:25][clan:4][clan:50][clan:34] Copy: Opp. Ability"),
+            (
+                "5073",
+                "[clan:46][clan:58][clan:40][clan:55][clan:42][clan:50] Asymmetry: Copy: Opp. Ability",
+            ),
+        ] {
+            let retexted = with_text(id, text);
+            assert_eq!(
+                classify_copy_opponent_source(retexted.get(id.parse().unwrap()).unwrap()),
+                None,
+                "{id} as {text:?}"
+            );
+        }
+        // The text-only router needs at least one well-formed tag and exactly one space.
+        for text in [
+            "[clan:]Copy: Opp. Ability",
+            "[clan:25]Copy: Opp. Ability",
+            "[clan:x] Copy: Opp. Ability",
+            " Copy: Opp. Ability",
+        ] {
+            assert!(!is_copy_opponent_source_description(text), "{text:?}");
+        }
+    }
+
+    /// Revision 70: the owner-clan gate over the end-of-round bodies the projection already
+    /// executes, each by its one printed text over the ungated grammar's complete shape once
+    /// the gate is cleared. Card abilities only; never a combat stat; and the ungated
+    /// classifiers still refuse every one of them.
+    #[test]
+    fn clan_gated_post_round_bodies_are_admitted_by_exact_text_over_the_ungated_shape() {
+        let registry = registry();
+        let kaizerin = CombatStatPredicateV1::OwnerClanIn(clan_set(&[52, 54, 27, 57, 4]));
+        let cases = [
+            (
+                5392,
+                (
+                    CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
+                        life: 2,
+                        minimum: 2,
+                    },
+                    CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                        life: 2,
+                        minimum: 2,
+                    },
+                    CombatStatPredicateV1::OwnerClanIn(clan_set(&[58, 40, 50, 49, 44])),
+                ),
+            ),
+            (
+                4037,
+                (
+                    CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory {
+                        pillz: 2,
+                        minimum: 2,
+                    },
+                    CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+                        pillz: 2,
+                        minimum: 2,
+                    },
+                    kaizerin,
+                ),
+            ),
+            (
+                4038,
+                (
+                    CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictory {
+                        pillz: 2,
+                        minimum: 2,
+                    },
+                    CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+                        pillz: 2,
+                        minimum: 2,
+                    },
+                    kaizerin,
+                ),
+            ),
+            (
+                5165,
+                (
+                    CombatStatPostRoundEffectV1::GainPillzOnVictoryPerOpponentStars { per_star: 1 },
+                    CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { per_star: 1 },
+                    CombatStatPredicateV1::OwnerClanIn(clan_set(&[32, 51, 49, 30, 45])),
+                ),
+            ),
+            (
+                5616,
+                (
+                    CombatStatPostRoundEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 },
+                    CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { per_star: 1 },
+                    CombatStatPredicateV1::OwnerClanIn(clan_set(&[4, 30, 44, 60, 45])),
+                ),
+            ),
+            (
+                5613,
+                (
+                    CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory {
+                        life: 1,
+                        minimum: 1,
+                    },
+                    CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+                        life: 1,
+                        minimum: 1,
+                    },
+                    CombatStatPredicateV1::OwnerClanIn(clan_set(&[55, 50, 49, 44, 60])),
+                ),
+            ),
+            (
+                5275,
+                (
+                    CombatStatPostRoundEffectV1::ConsumeOpponentPillzOnVictory {
+                        pillz: 1,
+                        minimum: 4,
+                    },
+                    CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+                        pillz: 1,
+                        minimum: 4,
+                    },
+                    CombatStatPredicateV1::OwnerClanInAnd(
+                        clan_set(&[53, 52, 37, 57, 44]),
+                        ClanConjunctV1::OwnerMovesSecond,
+                    ),
+                ),
+            ),
+        ];
+        for (id, expected) in cases {
+            let definition = registry.get(id).expect("registry definition");
+            let ability = CombatStatEffectSourceV1::Ability;
+            assert_eq!(
+                classify_clan_gated_post_round(definition, ability),
+                Some(expected),
+                "{id}"
+            );
+            assert!(has_clan_gated_post_round_shape(definition), "{id}");
+            assert_eq!(
+                classify_clan_gated_post_round(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} as a bonus"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, ability),
+                None,
+                "{id}"
+            );
+            // The ungated grammars still see the gate and refuse it.
+            assert_eq!(classify_victory_opponent_life(definition, ability), None);
+            assert_eq!(classify_victory_opponent_pillz(definition, ability), None);
+            assert_eq!(
+                classify_equalizer_post_round_gain(definition, ability),
+                None
+            );
+            assert_eq!(
+                classify_toxin_opponent_life_on_victory(definition, ability),
+                None
+            );
+            assert_eq!(
+                classify_consume_opponent_pillz_on_victory(definition, ability),
+                None
+            );
+        }
+        // The shared permanent predicate list is untouched: the gates ride on their own
+        // effects only, in the plan validator.
+        assert!(!permanent_predicate_admitted(
+            CombatStatPredicateV1::OwnerClanIn(clan_set(&[1]))
+        ));
+        // The closed neighbours stay closed: `2317`'s gated Victory Life, `4673`'s gated
+        // Defeat reduction, `5578`'s gated Defeat Heal, and the `Versus` Toxin `5563`.
+        for id in [2317, 4673, 5578, 5563] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_clan_gated_post_round(definition, CombatStatEffectSourceV1::Ability),
+                None,
+                "{id}"
+            );
+            assert!(!has_clan_gated_post_round_shape(definition), "{id}");
+        }
+        for (id, field, value) in [
+            ("5392", "value", serde_json::json!(3)),
+            ("5392", "valueMin", serde_json::json!(1)),
+            ("5392", "currentRoundRequirement", serde_json::json!("lose")),
+            ("5392", "positionRequirement", serde_json::json!("attacker")),
+            ("5392", "isPermanent", serde_json::json!(true)),
+            ("5392", "clanRequirement", serde_json::json!("58,40,50,49")),
+            ("4037", "valueMin", serde_json::json!(3)),
+            ("4037", "currentRoundRequirement", serde_json::json!("lose")),
+            ("4037", "indexRequirement", serde_json::json!("asymmetry")),
+            ("5165", "isOppStarsLinked", serde_json::json!(false)),
+            ("5165", "attributeAffected", serde_json::json!("life")),
+            ("5165", "currentRoundRequirement", serde_json::json!("any")),
+            ("5616", "isOppStarsLinked", serde_json::json!(false)),
+            ("5616", "valueMax", serde_json::json!(5)),
+            ("5613", "isImmediatePermanent", serde_json::json!(false)),
+            ("5613", "previousRoundRequirement", serde_json::json!("win")),
+            ("5275", "positionRequirement", serde_json::json!("both")),
+            ("5275", "positionRequirement", serde_json::json!("attacker")),
+            ("5275", "isImmediatePermanent", serde_json::json!(false)),
+            ("5275", "attributeAffected", serde_json::json!("life")),
+            ("5275", "indexRequirement", serde_json::json!("asymmetry")),
+        ] {
+            let malformed = with_field(id, field, value.clone());
+            assert_eq!(
+                classify_clan_gated_post_round(
+                    malformed.get(id.parse().unwrap()).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id} {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            (
+                "5392",
+                "[clan:58][clan:40][clan:50][clan:49][clan:44] -2 Opp. Life Min 2",
+            ),
+            (
+                "5392",
+                "[clan:58][clan:40][clan:50][clan:49][clan:44] - 2 Opp. Life Min 3",
+            ),
+            ("5392", "- 2 Opp. Life Min 2"),
+            (
+                "4037",
+                "[clan:52][clan:54][clan:27][clan:57][clan:4] -2 Opp. Pillz, Min 2",
+            ),
+            (
+                "5165",
+                "[clan:32][clan:51][clan:49][clan:30][clan:45] Equalizer: +1 Life",
+            ),
+            (
+                "5616",
+                "[clan:4][clan:30][clan:44][clan:60][clan:45] Equalizer : +1 Life",
+            ),
+            (
+                "5613",
+                "[clan:55][clan:50][clan:49][clan:44][clan:60] Poison 1, Min 1",
+            ),
+            (
+                "5613",
+                "[clan:55][clan:50][clan:49][clan:44][clan:61] Toxin 1, Min 1",
+            ),
+            (
+                "5275",
+                "[clan:53][clan:52][clan:37][clan:57][clan:44] Reprisal: Consume 1, Min 4",
+            ),
+            (
+                "5275",
+                "[clan:53][clan:52][clan:37][clan:57][clan:44] Consume 1, Min 4",
+            ),
+        ] {
+            let retexted = with_text(id, text);
+            assert_eq!(
+                classify_clan_gated_post_round(
+                    retexted.get(id.parse().unwrap()).unwrap(),
+                    CombatStatEffectSourceV1::Ability
+                ),
+                None,
+                "{id} as {text:?}"
+            );
+        }
     }
 
     /// Revision 69: the capped Victory Pillz grammar, plain (Mandrak Cr's `1139`) and under
@@ -7498,13 +8401,10 @@ mod tests {
         // variant is never a source copy: since revision 24 the unconditional ones are
         // admitted as their own effect, and `4126` matters in particular because it is a
         // Reprisal Copy, but of a stat. (`5304`, the `Bet > 3 Pillz:` Copy, is admitted
-        // since revision 56 with its gate as the adoption predicate.)
+        // since revision 56 with its gate as the adoption predicate, and the clan-gated
+        // `5073` since revision 70.)
         for (id, description) in [
             (1409, "Confidence: Copy: Opp. Power"),
-            (
-                5073,
-                "[clan:46][clan:58][clan:40][clan:55][clan:42][clan:50] Asy. : Copy: Opp. Ability",
-            ),
             (315, "Copy: Opp. Power"),
             (1513, "Copy: Opp. Damage"),
             (2673, "Copy: Power And Damage Opp."),
@@ -8197,9 +9097,10 @@ mod tests {
                 "definition {id} as a bonus",
             );
         }
-        // Reprisal keeps its identity lock, and the `Bet >` and clan-gated forms are other
-        // grammars.
-        for id in [4860, 4949, 4999, 5738] {
+        // Reprisal keeps its identity lock, and the `Bet >` and `After` forms are other
+        // grammars. The clan-gated `Asymm.:` form `4999` is admitted since revision 70 under
+        // its compound predicate, tested on its own.
+        for id in [4860, 4949, 5738] {
             let definition = registry.get(id).expect("registry definition");
             assert_eq!(
                 classify_conditional_stop(definition, CombatStatEffectSourceV1::Ability),

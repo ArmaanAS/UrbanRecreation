@@ -7,17 +7,18 @@
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_bet_gated_post_round, classify_both_players_life_reduction, classify_brawl_post_round,
-    classify_combat_stat_effect, classify_combust_opponent_life_and_pillz_on_victory,
-    classify_conditional_stat_copy, classify_conditional_stop,
-    classify_consume_opponent_pillz_on_victory, classify_copy_opponent_source,
-    classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
-    classify_defeat_pillz, classify_defeat_pillz_and_life, classify_dope_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
-    classify_heal_life_on_victory, classify_killshot_opponent_life,
-    classify_killshot_pillz_and_life, classify_killshot_post_round,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life, classify_recover_pillz,
-    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
+    classify_clan_gated_post_round, classify_combat_stat_effect,
+    classify_combust_opponent_life_and_pillz_on_victory, classify_conditional_stat_copy,
+    classify_conditional_stop, classify_consume_opponent_pillz_on_victory,
+    classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
+    classify_defeat_opponent_pillz, classify_defeat_pillz, classify_defeat_pillz_and_life,
+    classify_dope_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
+    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
+    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
+    classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
     classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
     classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
@@ -1534,6 +1535,32 @@ fn prepare_catalog_source(
                     let (effect, compact_effect) = effect.effects();
                     Some((effect, compact_effect, predicate))
                 },
+            );
+        }
+        // Revision 70's owner-clan gate over the end-of-round bodies. A printed level must be
+        // a structural alias of the definition its text resolves to, so the same-text levels
+        // that own no registry definition (Dark Kaizerin `4039`/`3350`, Dark Eloxia
+        // `5612`/`5614`, Dark Mandrak `5615`) stay closed. The gate itself is judged at
+        // resolution from the effective clan this card was prepared with.
+        if classify_clan_gated_post_round(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                classify_clan_gated_post_round,
             );
         }
         if classify_victory_life(definition, source_kind).is_some() {

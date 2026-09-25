@@ -40,7 +40,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (901400, 3),
     (874837, 2),
     (1011643, 2),
-    (1011768, 1),
+    // Four rounds since revision 70: Dark Nunavik L1's `[clan:..] Courage: Power +4` (`5299`)
+    // infiltrates Frozn and moves first in round 1, 6 + 4 = 10 and 10 x 5 = 50.
+    (1011768, 4),
     (1011483, 2),
     (877812, 3),
     (874642, 1),
@@ -550,7 +552,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Four rounds since revision 64: Talhia's Dope pays 3 + 1 = 4 under its Max in round 2,
     // and 0 + 3 in round 3 to an owner the round knocks out.
     (924853, 4),
-    (945791, 1),
+    // Four rounds since revision 70: Dark Nunavik L2's `[clan:..] Courage: Power +4` (`4680`)
+    // infiltrates Zenith and moves first in round 1, 10 x 3 = 30 less Hive's Equalizer 6 = 24.
+    (945791, 4),
     (1131225, 4),
     (949959, 4),
     (924999, 4),
@@ -666,7 +670,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // `+2 Pillz` pays on a win in 1088123/2 (9 - 5 + 2); Senestra's Life conversion pays
     // her own final 4 Damage on a loss in 1066589/0 (12 - 5 + 4).
     (1023608, 4),
-    (1080264, 3),
+    // Four rounds since revision 70, whose round 3 selects Dark Nunavik's `[clan:..] Courage:
+    // Power +4` moving first, stopped by Spidee's Reprisal Stop: 6 x 2 = 12.
+    (1080264, 4),
     (1088123, 4),
     (1066589, 4),
     // Revision 68 admits `Unison : Stop Opp. Ability` and `Unison : Stop Opp. Bonus` as the
@@ -676,6 +682,23 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // 874712 has the Oblivion bonus copying, which the replay refuses as dynamic provenance.
     (874712, 1),
     (877436, 4),
+    // Revision 70 puts the owner-clan gate over bodies the projection already executes, and
+    // over a second condition beside it. Every carrier is an Oculus under the clan it
+    // infiltrates. Dark Nunavik's `[clan:..] Courage: Power +4` moves first in 1091985/0,
+    // 10 x 2 = 20. Phalloide Ld's `[clan:..] - 2 Opp. Life Min 2` pays in 963847/0, 12 - 5 -
+    // 2 = 5, with the Freaks Poison latching the same round and paying nothing until round 1.
+    // Synapsburg's `[clan:..] Equalizer: +1 Pillz` pays against Aurora L5 in 1130942/0, 12 -
+    // 7 + 5 = 10. Dunkelstern's `[clan:..] Repris.: Consume 1, Min 4` latches moving second in
+    // 1065673/1 and pays at once (6 to 5), then 5 to 4, and leaves 0 alone below its Min in
+    // round 3. Dark Mandrak's `[clan:..] Equalizer: +1 Life` loses 40 to 42 in 1073107/0 and
+    // pays nothing, and Dark Kupanda's `[clan:..] Asymm.: Stop Opp. Ability` meets Lumia's
+    // own Stop across different slots in 1091381/0, where the numbers cannot show it.
+    (1091985, 2),
+    (963847, 4),
+    (1130942, 3),
+    (1065673, 4),
+    (1073107, 4),
+    (1091381, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -989,6 +1012,23 @@ fn one_entry_registry(entry: serde_json::Value) -> EffectRegistryV1 {
     entries.insert(id, entry);
     let bytes = serde_json::to_vec(&serde_json::Value::Object(entries)).unwrap();
     EffectRegistryV1::from_reader(bytes.as_slice()).unwrap()
+}
+
+/// A conditional Stop no card prints: Kupanda's clan gate over a `Courage:` Stop. Since
+/// revision 70 every printed conditional Stop is admitted, so the tests that need a selected
+/// unadmitted control use this one.
+const UNPRINTED_CLAN_GATED_STOP: &str =
+    "[clan:31][clan:46][clan:54][clan:49] Courage: Stop Opp. Ability";
+
+/// The full registry with Kupanda's `4999` rewritten as `UNPRINTED_CLAN_GATED_STOP`: the
+/// first move in the position field and no hand-slot condition.
+fn unprinted_clan_gated_stop_registry() -> EffectRegistryV1 {
+    let mut source: serde_json::Value =
+        serde_json::from_reader(File::open(root_path("captures/abilities.json")).unwrap()).unwrap();
+    source["4999"]["description"] = serde_json::json!(UNPRINTED_CLAN_GATED_STOP);
+    source["4999"]["abilityData"]["positionRequirement"] = serde_json::json!("attacker");
+    source["4999"]["abilityData"]["indexRequirement"] = serde_json::json!("any");
+    EffectRegistryV1::from_reader(source.to_string().as_bytes()).unwrap()
 }
 
 fn clear_sources(replay: &mut ReplayCaseV1) {
@@ -2047,7 +2087,7 @@ fn support_ability_grammar_is_exact_and_nested_or_unobserved_shapes_fail_closed(
 #[test]
 fn selected_stop_ability_is_visible_and_rejected_fail_closed() {
     let catalog = catalog();
-    let registry = registry();
+    let registry = unprinted_clan_gated_stop_registry();
     let mut source = replay(875032, &catalog);
     let selected_slot = usize::from(
         source.rounds[0]
@@ -2057,12 +2097,13 @@ fn selected_stop_ability_is_visible_and_rejected_fail_closed() {
             .unwrap()
             .hand_index,
     );
-    // Courage Stop Opp. Ability is admitted by grammar since revision 47 and the Unison form
-    // since revision 68; the clan-gated `Asymm.:` form is not, so it is the selected control
-    // that must still refuse the round.
+    // Courage Stop Opp. Ability is admitted by grammar since revision 47, the Unison form
+    // since revision 68 and the clan-gated `Asymm.:` form since revision 70, so every printed
+    // conditional Stop is admitted. A clan-gated `Courage:` Stop, which no card prints, is the
+    // selected control that must still refuse the round.
     source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
         id: 4999,
-        description: "[clan:31][clan:46][clan:54][clan:49] Asymm.: Stop Opp. Ability".to_owned(),
+        description: UNPRINTED_CLAN_GATED_STOP.to_owned(),
     });
     let prepared =
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
@@ -4773,13 +4814,14 @@ fn index_grammar_is_exact_and_nested_contexts_fail_closed() {
 
     // An unadmitted conditional control still rejects before predicate evaluation rather
     // than becoming a successful no-op. Since revision 47 `Symmetry: Stop Opp. Bonus` is
-    // admitted, so the clan-gated `Asymm.:` Stop stands in for it.
-    let registry = registry();
+    // admitted, and since revision 70 the clan-gated `Asymm.:` Stop that stood in for it, so
+    // an unprinted clan-gated `Courage:` Stop stands in now.
+    let registry = unprinted_clan_gated_stop_registry();
     let mut source = replay(875032, &catalog);
     clear_sources(&mut source);
     source.players[0].hand[selected_slot].source_ability = Some(SourceModifier {
         id: 4999,
-        description: "[clan:31][clan:46][clan:54][clan:49] Asymm.: Stop Opp. Ability".to_owned(),
+        description: UNPRINTED_CLAN_GATED_STOP.to_owned(),
     });
     let prepared =
         CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
@@ -5585,6 +5627,145 @@ fn night_opponent_life_executes_under_the_match_constant_and_near_misses_reject(
                 CombatStatSourcePlanV1::RejectIfSelected { source_id: 4750 }
             ),
             "{field} = {value}: {plan:?}"
+        );
+    }
+}
+
+/// Revision 70: the clan-gated end-of-round bodies execute in replay under the gate their
+/// text prints, and take the two-sided boundary every admitted post-round grammar has: the
+/// printed text over a wrong slot or structure, or the complete gated shape under other
+/// text, rejects when selected rather than acting as an inert disabled source.
+#[test]
+fn clan_gated_post_round_bodies_execute_and_take_the_two_sided_boundary() {
+    let catalog = catalog();
+    let registry = registry();
+    let selected_slot = {
+        let source = replay(875032, &catalog);
+        usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        )
+    };
+    let plan = |registry: &EffectRegistryV1, id: u32, text: &str, bonus: bool| {
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let modifier = Some(SourceModifier {
+            id,
+            description: text.to_owned(),
+        });
+        if bonus {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, registry, PROJECTION).unwrap();
+        let plans = prepared.new_game().card_plans()[PlayerId::P1][selected_slot];
+        if bonus {
+            plans.bonus
+        } else {
+            plans.ability
+        }
+    };
+    let texts = [
+        (
+            5392,
+            "[clan:58][clan:40][clan:50][clan:49][clan:44] - 2 Opp. Life Min 2",
+        ),
+        (
+            4038,
+            "[clan:52][clan:54][clan:27][clan:57][clan:4] -2 Opp Pillz. Min 2",
+        ),
+        (
+            5165,
+            "[clan:32][clan:51][clan:49][clan:30][clan:45] Equalizer: +1 Pillz",
+        ),
+        (
+            5616,
+            "[clan:4][clan:30][clan:44][clan:60][clan:45] Equalizer: +1 Life",
+        ),
+        (
+            5613,
+            "[clan:55][clan:50][clan:49][clan:44][clan:60] Toxin 1, Min 1",
+        ),
+        (
+            5275,
+            "[clan:53][clan:52][clan:37][clan:57][clan:44] Repris.: Consume 1, Min 4",
+        ),
+    ];
+    for (id, text) in texts {
+        assert!(
+            matches!(
+                plan(&registry, id, text, false),
+                CombatStatSourcePlanV1::Execute {
+                    source_id,
+                    predicate:
+                        CombatStatPredicateV1::OwnerClanIn(_) | CombatStatPredicateV1::OwnerClanInAnd(..),
+                    ..
+                } if source_id == id
+            ),
+            "{text}"
+        );
+        // From the Bonus slot the same record rejects when selected.
+        assert!(
+            matches!(
+                plan(&registry, id, text, true),
+                CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+            ),
+            "{text} as a bonus"
+        );
+    }
+    let source: serde_json::Value =
+        serde_json::from_reader(File::open(root_path("captures/abilities.json")).unwrap()).unwrap();
+    // The printed text over a wrong structure.
+    for (id, field, value) in [
+        ("5392", "currentRoundRequirement", serde_json::json!("lose")),
+        ("4038", "valueMin", serde_json::json!(3)),
+        ("5613", "isImmediatePermanent", serde_json::json!(false)),
+        ("5275", "positionRequirement", serde_json::json!("both")),
+    ] {
+        let mut malformed = source.clone();
+        malformed[id]["abilityData"][field] = value.clone();
+        let text = malformed[id]["description"].as_str().unwrap().to_owned();
+        let malformed = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert!(
+            matches!(
+                plan(&malformed, id, &text, false),
+                CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+            ),
+            "{id} {field} = {value}"
+        );
+    }
+    // The complete gated shape under other text.
+    for (id, text) in [
+        (
+            "5392",
+            "[clan:58][clan:40][clan:50][clan:49][clan:44] -2 Opp. Life Min 2",
+        ),
+        (
+            "5613",
+            "[clan:55][clan:50][clan:49][clan:44][clan:60] Poison 1, Min 1",
+        ),
+        (
+            "5275",
+            "[clan:53][clan:52][clan:37][clan:57][clan:44] Reprisal: Consume 1, Min 4",
+        ),
+    ] {
+        let mut retexted = source.clone();
+        retexted[id]["description"] = serde_json::json!(text);
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert!(
+            matches!(
+                plan(&retexted, id, text, false),
+                CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
+            ),
+            "{text}"
         );
     }
 }

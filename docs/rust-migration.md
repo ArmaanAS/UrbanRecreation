@@ -2710,6 +2710,171 @@ engine arm, and its cap is just as order-sensitive, but it carries no such refus
 slice leaves Brawl as it was. Extending the refusal to it measured at no cost in draws
 (still 255 of 383), but that would change an admitted grammar, which is the owner's call.
 
+Semantic revision 70 puts revision 54's owner-clan gate `[clan:A][clan:B] ` over bodies the
+projection already executes, card abilities only. Four sit on the end-of-round channel: the
+Victory opponent-Life reduction (Phalloide Ld's `- 2 Opp. Life Min 2`, `5392`), the Victory
+opponent-Pillz reduction (Dark Kaizerin's `-2 Opp Pillz. Min 2`, `4037`, `4038`), the two
+Equalizer own gains (Synapsburg's `Equalizer: +1 Pillz`, `5165`, and Dark Mandrak's
+`Equalizer: +1 Life`, `5616`) and the Toxin latch (Dark Eloxia's `Toxin 1, Min 1`, `5613`).
+Three are a Copy, a Stop or a combat stat: Yayoi's `Copy: Opp. Ability` (`4132`), and a
+second condition beside the gate on Dark Nunavik's `Courage: Power +4` (`4680`, `5299`),
+Dunkelstern's `Repris.: Consume 1, Min 4` (`5275`), Kupanda's `Asymm.: Stop Opp. Ability`
+(`4999`) and Hypnos' `Asy. : Copy: Opp. Ability` (`5073`) and `Asy. : -3 Opp Dam., Min 1`
+(`5072`).
+
+The lines read 7 for the ready tier (Courage 3, the opponent-Life reduction 2, Equalizer
+Pillz 1, the opponent-Pillz reduction 1), 3 for the composition-only tier and 3 for the
+prefix tier, 13 together and additive. Measured tier by tier, the slice took eligibility from
+255 to 262, then 265, then 268 of 383. The eligible-set diff adds exactly those 13 draws and
+removes none:
+- ready: 945791, 1080264, 1091985 (Courage), 925118, 963847 (opponent Life), 1130942
+  (Equalizer Pillz), 1414517 (opponent Pillz);
+- composition: 948108 (Toxin), 1073107 (Equalizer Life), 1091703 (Copy);
+- prefix: 1065673 (`Repris.:` Consume), 1091381 (`Asymm.:` Stop), 1087884 (`Asy. :` Copy).
+
+The price said 12. It read the opponent-Pillz line as 0, but measured it is 1: 1414517,
+which the price listed only as a losing round of `4037`.
+
+The price was one new predicate and one orthogonal classifier per channel, and no existing
+`neutral_except_*` gate was loosened - the fork "The clan gate, measured but not taken"
+below warns about. Each clan-gated classifier reads the gate the rev-54 way (the record's
+`clanRequirement` rebuilt into the exact printed tags, both other clan lists empty), clears
+it on a copy of the record (`without_owner_clan_gate`), and asks the ungated grammar's own
+shape about everything else. The ungated classifiers still see the gate and refuse it.
+- `classify_clan_gated_post_round` takes the five end-of-round bodies by the one printed
+  text each carries. The opponent-Life reduction needs its spaced minus `- 2`. The Consume
+  latch needs `Repris.: ` and the defender position its record carries in place of the
+  plain Consume's `Both`.
+- The combat-stat compound is a branch of `classify_clan_gated`. The record must be
+  `neutral_except_clan_gate` once its one other condition field is cleared: the position
+  for `Courage: `, the hand slot for `Asy. : `. `numeric_description_body_matches` gains
+  `-N Opp Dam., Min M`, which only `5072` prints.
+- The Stop is a branch of `classify_conditional_stop`, so the catalog's conditional-Stop
+  alias rule keeps Kupanda L1 (`4998`, no registry definition) closed.
+- The Copies are a `CLAN_GATED_COPY_GRAMMARS` table beside the Bet-gated Copy parser.
+
+`CombatStatPredicateV1::OwnerClanInAnd(ClanSetV1, ClanConjunctV1)` carries the gate and one
+plain predicate - `OwnerMovesFirst`, `OwnerMovesSecond` or `SelectedHandSlotsDiffer` - and
+holds when both do. It is one more arm in `predicate_matches` and fail-closed in every
+exhaustive predicate match. The predicate stays 16 bytes and the source plan 40, measured
+before and after. It is refused from a Bonus slot (`ConditionalBonus`). Revision 55's
+`CompoundPredicateAndMagnitude` exemption does not cover it, so it never pairs with a
+magnitude. It is a conditional Stop's predicate only with `SelectedHandSlotsDiffer`, and a
+permanent's only as Consume's `OwnerMovesSecond`. The plain `OwnerClanIn` is admitted per
+effect: on the opponent-Life and opponent-Pillz reductions, the two Equalizer own gains, the
+Toxin latch and the Copy. The shared `permanent_predicate_admitted` list is untouched. The
+catalog routes the end-of-round bodies through `require_catalog_alias`, so Dark Kaizerin
+L4/L5 (`4039`/`3350`), Dark Eloxia L1/L3 (`5612`/`5614`) and Dark Mandrak L2 (`5615`) stay
+closed. The Copy route looks its catalog id up, which keeps Yayoi's other levels
+(`4133`-`4135`) closed too. The gate itself is judged at resolution from the effective clan
+the card was prepared with. An infiltrating Oculus pays under the clan it infiltrates, and an
+unlisted clan leaves a source present - in the match and in Stop liveness - that never fires.
+
+**Evidence strength, stated per sub-grammar.**
+- `[clan:..] Courage: Power +4` is ready, on the gate-true, moved-first corner only, which
+  the server shows three times. In 1011768/1 Dark Nunavik L1 infiltrates Frozn: 6 + 4 = 10,
+  and 10 x 5 = 50. In 1091985/0 he infiltrates Komboka: 10 x 2 = 20. In 945791/1 he
+  infiltrates Zenith: 10 x 3 = 30, less Hive's Equalizer 6, is 24. In 1080264/3 he moves
+  first but Spidee's Reprisal Stop stops him, and his Power stays 6 (6 x 2 = 12). No round
+  shows the gate false or the card moving second. Those corners rest on pinned Courage and
+  the pinned gate (1022847/2).
+- `[clan:..] - 2 Opp. Life Min 2` is ready on one firing round. In 963847/0 Phalloide Ld
+  infiltrates Freaks and wins 28 against 6: side 1 goes 12 - 5 - 2 = 5. The raw post list
+  separates a non-permanent decrease of 2 from the Freaks Poison's permanent 0, which rules
+  out reading the 2 as Poison paying at once. In 925118/2 he loses and nothing is paid.
+- `[clan:..] Equalizer: +1 Pillz` is ready on one firing round. In 1130942/0 Synapsburg
+  infiltrates GHEIST and beats Aurora L5: 12 - 7 + 1 x 5 = 10.
+- `[clan:..] -2 Opp Pillz. Min 2` has its arithmetic in a draw it does not unlock. In
+  1025413/1 Dark Kaizerin L3 (`4038`) infiltrates GhosTown and wins: 12 - 1 - 2 = 9. The draw
+  it unlocks, 1414517, selects `4037` once, in a lost round 0.
+- `[clan:..] Toxin 1, Min 1` is composition only. Its one selected round, 948108/1, is a
+  loss that Lumia's Stop would have made inert anyway. It rests on plain Toxin (revision 28)
+  and the gate.
+- `[clan:..] Equalizer: +1 Life` is composition only. 1073107/0 loses 40 against 42 and
+  1081037/2 is lost too. It rests on the plain Equalizer Life gain (1092729/1) and the gate.
+- `[clan:..] Copy: Opp. Ability` is composition only. In 1091703/0 Yayoi infiltrates
+  Sentinel (9 x 5 + 8 - 9 = 44), and the capture already carries the adopted `Stop Opp.
+  Ability` text, so the server did adopt. But her Stop against Lumia's Stop cannot show in
+  the numbers. Revision 21's totality rule applies unchanged.
+- `[clan:..] Repris.: Consume 1, Min 4` is ready on one latching round and is the first
+  position predicate on a latch. In 1065673/1 Dunkelstern infiltrates Skeelz, moves second
+  and wins. Side 0 goes 6 - 0 - 1 = 5, since the latch pays at once. Round 2 takes 5 to 4,
+  and round 3 leaves 0 alone, below Min 4. No round shows the predicate false. The existing
+  `PillzPermanentAgainstOpposingResourceEffect` refusal applies, and 1065673's Rescue hand
+  passes it.
+- `[clan:..] Asymm.: Stop Opp. Ability` is composition only. 1091381/0 is asymmetric
+  (slot 0 against Lumia's slot 2), but Lumia's own Stop makes it unobservable: 8 x 5 - 6 =
+  34 against 36. Revision 68's `BonusSlotCopyOfUnpinnedSource` already treats it as a
+  conditional Stop, because it refuses any Stop whose predicate is not `Always`.
+- `[clan:..] Asy. : Copy: Opp. Ability` was never selected, so no server evidence exists.
+  Its one carrier is 1087884. `[clan:..] Asy. : -3 Opp Dam., Min 1` was never selected
+  either and unlocks nothing. It is admitted because it is the same compound over the plain
+  numeric body.
+
+The `Repris.:`, `Asymm.:` and `Asy. :` forms could only be taken once the TypeScript
+reference read them. Before 52ddf22 its normaliser deleted every `.` before its `Asymm`
+replacement ran, so all three reached `Condition` as unknown names and were met
+unconditionally. Rust and TypeScript now agree on each.
+
+One refusal is new, `ClanGatedPostRoundAgainstUnpinnedEffect`, because these end-of-round
+sources rest on one firing round each or on none. Construction refuses a match in each of
+these cases:
+- the opponent-Life reduction faces an opposing own Life gain or order-sensitive own Life
+  write that lands on the opposing loss, or every round for a permanent. This is the
+  1093173/1 order question;
+- the Toxin latch pays every round, so it faces such a write on any outcome;
+- the opponent-Pillz reduction faces an opposing own Pillz gain on the opposing loss;
+- an Equalizer gain faces an opposing floor on its owner's resource on the opposing loss;
+- the opposing hand holds any Copy, which could take the source or import an own write.
+  Revision 68 noted that `life_writes` and `pillz_writes` report nothing for a Copy.
+
+The same plans ungated keep the rules they had. The plain reduction still carries revision
+30's open question rather than this refusal, because the thin evidence is the gate's, not
+the grammar's. The refusal costs no draw: all 13 draws the lines name are eligible with it.
+
+In replay the five end-of-round bodies take the two-sided boundary every admitted post-round
+grammar has. One of their printed bodies under a clan prefix over a wrong slot or structure,
+or the complete gated shape under other text, now rejects when selected. Before, `5392`,
+`4037`/`4038`, `5613` and `5275` were visible-but-disabled records. The two Equalizer gains
+were already selected hazards through the Equalizer clause. Two replay tests used `4999` as
+the one unadmitted conditional Stop. Every printed conditional Stop is now admitted, so they
+use an unprinted clan-gated `Courage:` Stop built from `4999`'s record.
+
+The gate grows from 795 to 822 rounds. The throwaway prefix scan ran at 723e40d in a separate
+detached worktree and again with the slice, and only the rounds the slice newly reaches were
+added:
+- 1011768, 945791 and 1080264 extended from 1, 1 and 3 rounds to 4 (Nunavik's Courage);
+- 1091985 added at 2;
+- 963847 added at 4 (Phalloide's reduction);
+- 1130942 added at 3 (Synapsburg's gain);
+- 1065673 added at 4 (the `Repris.:` latch paying in rounds 1 and 2 and leaving round 3
+  alone);
+- 1073107 added at 4 (Mandrak's non-paying loss);
+- 1091381 added at 3 (the unobservable `Asymm.:` Stop).
+
+925118 already replayed three rounds before the slice, so it is not added. No fixture
+shrinks. The pinned execute ids gain the eight slice ids (`4680`, `5299`, `4999`, `5165`,
+`5275`, `5392`, `5613`, `5616`) and ten ordinary ids first reached in those rounds (`1665`,
+`2018`, `2897`, `3533`, `4292`, `4504`, `4601`, `5084`, `5190`, `5639`). The disabled ids
+lose `5613`, which now executes in 948108's existing fixture, and gain `5594` (`Perfect: Regen
+1, Max. 17`, reached in 1011768's later rounds). The absent dispositions are unchanged.
+
+Left closed, as priced:
+- `2317` `[clan:..] +1 Life` unlocks nothing, and one of its two gate-false rounds is
+  confounded by a Reprisal Stop;
+- `4673` `[clan:..] Defeat: -1 Opp. Pillz, Min 4` still carries revision 30's cross-owner
+  question;
+- `5578` `[clan:..] Defeat: Heal 1, Max 14` is a `Defeat:`-prefixed permanent, which is
+  unadmitted even ungated;
+- the same-text sibling levels without a registry definition.
+
+Two questions are left for the owner:
+- An opposing Copy that adopts a clan-gated Courage numeric or the `Asymm.:` Stop runs it
+  under the copier's own effective clan. No round shows that, and it is not refused here,
+  just as revision 54's clan-gated numerics were not. No unlocked draw has such a Copy.
+- The gate-false corner of every grammar here rests on revision 54's numeric rounds, not on
+  a round of its own.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

@@ -385,6 +385,36 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         "Oculus clan gate (plain numeric bodies only)",
         &[4667, 5353, 5814, 5909, 5911, 5912],
     ),
+    // Revision 70, measured 2026-09-25: the owner-clan gate over bodies the projection
+    // already executes. Every printed level with a registry definition is listed.
+    ("[clan] Courage: Power +4", &[4680, 5299]),
+    ("[clan] - 2 Opp. Life Min 2", &[5392]),
+    ("[clan] Equalizer: +1 Pillz", &[5165]),
+    ("[clan] -2 Opp Pillz. Min 2", &[4037, 4038]),
+    (
+        "[clan] ready tier (Courage, Opp. Life, Equalizer Pillz, Opp Pillz)",
+        &[4037, 4038, 4680, 5165, 5299, 5392],
+    ),
+    ("[clan] Toxin 1, Min 1", &[5613]),
+    ("[clan] Equalizer: +1 Life", &[5616]),
+    ("[clan] Copy: Opp. Ability", &[4132]),
+    (
+        "[clan] composition tier (Toxin, Equalizer Life, Copy)",
+        &[4132, 5613, 5616],
+    ),
+    ("[clan] Repris.: Consume 1, Min 4", &[5275]),
+    ("[clan] Asymm.: Stop Opp. Ability", &[4999]),
+    ("[clan] Asy. : Copy / Asy. : Opp Dam.", &[5072, 5073]),
+    (
+        "[clan] prefix tier (Repris., Asymm., Asy.)",
+        &[4999, 5072, 5073, 5275],
+    ),
+    (
+        "[clan] revision 70 union",
+        &[
+            4037, 4038, 4132, 4680, 4999, 5072, 5073, 5165, 5275, 5299, 5392, 5613, 5616,
+        ],
+    ),
 ];
 
 fn root_path(path: &str) -> PathBuf {
@@ -628,6 +658,14 @@ fn report_strict_coverage_blockers() {
             .filter(|blockers| blockers.iter().all(|id| ids.contains(id)))
             .count();
         println!("{unlocked:4}  {name}");
+        if (1..=15).contains(&unlocked) {
+            let draws: Vec<u64> = per_capture
+                .iter()
+                .filter(|(_, blockers)| blockers.iter().all(|id| ids.contains(id)))
+                .map(|(capture, _)| *capture)
+                .collect();
+            println!("        {draws:?}");
+        }
     }
 
     // The scan stays total and attributable: every draw is eligible, structurally refused,

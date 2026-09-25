@@ -16,7 +16,8 @@ use crate::effect_registry::{
 use crate::engine::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
     classify_bet_gated_post_round, classify_both_players_life_reduction, classify_brawl_post_round,
-    classify_combat_stat_effect, classify_combust_opponent_life_and_pillz_on_victory,
+    classify_clan_gated_post_round, classify_combat_stat_effect,
+    classify_combust_opponent_life_and_pillz_on_victory,
     classify_consume_opponent_pillz_on_victory, classify_defeat_life,
     classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_pillz,
     classify_defeat_pillz_and_life, classify_dope_pillz,
@@ -35,7 +36,7 @@ use crate::engine::combat_stat_compiler::{
     classify_victory_or_defeat_pillz_amount, classify_victory_pillz, classify_victory_pillz_max,
     classify_victory_pillz_per_damage, compact_effect, has_bet_gated_post_round_shape,
     has_both_players_life_reduction_shape, has_brawl_post_round_shape,
-    has_combust_opponent_life_and_pillz_on_victory_shape,
+    has_clan_gated_post_round_shape, has_combust_opponent_life_and_pillz_on_victory_shape,
     has_consume_opponent_pillz_on_victory_shape, has_defeat_life_shape,
     has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_dope_pillz_shape,
     has_equalizer_post_round_shape, has_heal_life_on_victory_shape,
@@ -48,7 +49,7 @@ use crate::engine::combat_stat_compiler::{
     has_victory_or_defeat_both_players_gain_shape, has_victory_or_defeat_life_per_damage_shape,
     has_victory_or_defeat_opponent_life_shape, has_victory_or_defeat_pillz_amount_shape,
     has_victory_pillz_max_shape, has_victory_pillz_per_damage_shape, has_victory_pillz_shape,
-    BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
+    split_clan_tags, BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::{
@@ -1346,6 +1347,19 @@ fn prepare_combat_stat_source(
             },
         });
     }
+    // Revision 70's owner-clan gate over the end-of-round bodies. The gate is decided at
+    // resolution from the effective clan the card was prepared with.
+    if let Some((post_round_effect, compact_effect, predicate)) =
+        classify_clan_gated_post_round(definition, source_kind)
+    {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            predicate,
+        ));
+    }
     if let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) {
         let compact_effect = compact_effect(effect).ok_or(
             CombatStatDiagnosticPreparationErrorV1::UnsupportedCompiledShape {
@@ -1598,6 +1612,21 @@ fn prepare_combat_stat_source(
                 | AttributeAffectedV1::LifeAndPillz
         ))
         || has_bet_gated_post_round_shape(definition);
+    // Revision 70's clan-gated end-of-round bodies take the same two-sided boundary: one of
+    // their printed bodies under a clan prefix over a wrong slot or structure, or the
+    // complete gated shape under other text, rejects when selected. Before, they were inert
+    // disabled sources (the Equalizer gains already rejected through the Equalizer clause).
+    let unadmitted_clan_gated_post_round =
+        split_clan_tags(&source.description).is_some_and(|(_, body)| {
+            matches!(
+                input.attribute_affected,
+                AttributeAffectedV1::Life | AttributeAffectedV1::Pillz
+            ) && ((body.starts_with('-')
+                && (body.contains("Opp. Life") || body.contains("Opp Pillz")))
+                || body.starts_with("Equalizer: +")
+                || body.starts_with("Toxin ")
+                || body.starts_with("Repris.: Consume "))
+        }) || has_clan_gated_post_round_shape(definition);
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
@@ -1683,6 +1712,7 @@ fn prepare_combat_stat_source(
         || unadmitted_defeat_pillz
         || unadmitted_round_scaled_post_round
         || unadmitted_bet_gated_post_round
+        || unadmitted_clan_gated_post_round
         || unadmitted_heal_life
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
@@ -1728,6 +1758,7 @@ fn prepare_combat_stat_source(
         || unadmitted_defeat_pillz
         || unadmitted_round_scaled_post_round
         || unadmitted_bet_gated_post_round
+        || unadmitted_clan_gated_post_round
         || unadmitted_heal_life
     {
         CombatStatSourcePlanV1::RejectIfSelected {
