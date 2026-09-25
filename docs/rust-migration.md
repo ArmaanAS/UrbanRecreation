@@ -4195,22 +4195,26 @@ Reach it with `deno task rust:advise --exact-opening`, or through the hosted wor
 `deno task advise --rust=use --exact-opening`. It is off by default and has no effect once a
 round has been played, because later rounds are exact under either policy.
 
-Measured on 2026-09-25 on this 6-core machine, release, complete with no deadline cutoff, at
+Measured on 2026-09-26 on this 6-core machine, release, complete with no deadline cutoff, at
 one thread and at the default six (`std::thread::available_parallelism`), median of three
-alternating samples. Other agents' builds and tests were running at the same time, so every
-figure here is slower than a quiet machine: the demo draw's one-thread FIRST took 6.2 s
-when it was first measured and 8.5 s here.
+alternating samples:
 
 | Decision | Units | 1 thread | 6 threads | Speedup |
 | --- | --- | --- | --- | --- |
-| demo draw opening FIRST | 8464 | 8.5 s | 2.0 s | 4.4x |
-| `925719` opening FIRST | 8464 | 16.4 s | 3.7 s | 4.4x |
-| `925719` opening SECOND | 2116 | 2.6 s | 660 ms | 4.0x |
-| `1024673` opening FIRST | 8464 | 19.3 s | 4.5 s | 4.3x |
-| `1024673` opening SECOND | 2116 | 3.8 s | 1.0 s | 3.7x |
-| `1089346` opening FIRST | 8464 | 24.4 s | 5.6 s | 4.3x |
-| `1089346` opening SECOND | 2116 | 6.3 s | 1.5 s | 4.3x |
-| `877636` round 2 exact FIRST | 3519 | 84 ms | 19 ms | 4.3x |
+| demo draw opening FIRST | 8464 | 187 ms | 87 ms | 2.2x |
+| `925719` opening FIRST | 8464 | 1.5 s | 795 ms | 1.8x |
+| `925719` opening SECOND | 2116 | 216 ms | 95 ms | 2.3x |
+| `1024673` opening FIRST | 8464 | 1.7 s | 904 ms | 1.9x |
+| `1024673` opening SECOND | 2116 | 224 ms | 106 ms | 2.1x |
+| `1089346` opening FIRST | 8464 | 2.1 s | 1.2 s | 1.8x |
+| `1089346` opening SECOND | 2116 | 458 ms | 249 ms | 1.8x |
+| `877636` round 2 exact FIRST | 3519 | 35 ms | 11 ms | 3.1x |
+
+Until the continuation cache described under "Where the exact opening's time went" below,
+the same rows took 8.5 s, 16.4 s, 2.6 s, 19.3 s, 3.8 s, 24.4 s, 6.3 s and 84 ms at one
+thread and 2.0 s to 5.6 s for FIRST at six, measured on 2026-09-25 while other agents'
+builds shared the machine. The demo draw's one-thread FIRST had taken 6.2 s when it was
+first measured, on a quieter machine.
 
 FIRST is the round's first mover; SECOND is the other side, shown the card the first mover
 actually played. The table comes from an ignored release test that asserts every sample is
@@ -4225,7 +4229,7 @@ The one-thread path costs what the old serial loop did: alternating the `842a07b
 `--threads 1` on the demo draw measured 8.5 s against 8.4-8.5 s for FIRST and 3.5 s against
 3.4-3.5 s for SECOND.
 
-SECOND is roughly four times cheaper because the opponent's card is already known, so the
+SECOND is four to eight times cheaper because the opponent's card is already known, so the
 matrix is one card wide rather than four.
 
 Three things had to be separated to make this correct, because the historical pair of
@@ -4247,8 +4251,8 @@ So `Search` has a reference `exactOpening` mode that the live advisor never sets
 `tests/solver/ExactOpeningParity.test.ts` runs both implementations over the same opening
 root and requires `rust match` on every candidate's average, worst, ceiling, displayed
 percent, KO and risk shares, and the chosen best move. It is skipped unless `UR_SLOW_PARITY=1`
-because TypeScript needs about seventy seconds for the SECOND set that Rust finishes in two
-(about twenty since the 2026-09-25 engine fixes in AGENTS.md "Performance").
+because TypeScript needs about twenty seconds for the SECOND set (seventy before the
+2026-09-25 engine fixes in AGENTS.md "Performance"), which Rust finishes in well under one.
 
 The hosted bridge carries an `opening_policy` field on every V3 request and the worker echoes
 which evaluator actually ran, so a host that predates the field keeps its old behaviour, an
@@ -4284,14 +4288,61 @@ samples, the TypeScript host checks `units_done` and elapsed time are monotonic 
 are, since only the calling thread publishes) and accepts only a complete final, and the
 terminal view and replay grading already treat each row's sample count on its own.
 
-What is still open: six threads buy about 4.3x, not six. The machine was shared, and
-SECOND's 23 columns over six threads leave the last round of blocks part-empty, but neither
-cause was measured separately. The worst exact-opening FIRST measured is now 5.6 s, inside
-the worker's 30 s budget ceiling rather than at it. The host still starts the TypeScript
-search beside the Rust worker in `--rust=compare` and `--rust=use`, and the two now compete
-for the same cores. Deadline-bounded partial results exist in the protocol but a partially
-evaluated root matrix cannot be ranked honestly, so a budget expiry still falls back rather
-than publishing a half-searched opening.
+### Where the exact opening's time went
+
+Profiled on 2026-09-26, single-threaded, on the demo draw's opening FIRST. Windows has no
+`perf`, and `samply` records through ETW, which needs an elevated session this machine does
+not give, so the profile came from a throwaway in-process sampler: a second thread suspended
+the search thread about every 0.7 ms, unwound its stack with `RtlVirtualUnwind`, and
+resolved the addresses against the release PDB (`debug = true` is already on). A counting
+global allocator and a replica of the policy loop counted the rest.
+
+- The search made 24.8 million round inputs at about 340 ns each, and not one heap
+  allocation per input: 296 allocations in the whole 8.5 s. Allocation is not where the
+  Rust time goes, which is the opposite of what the TypeScript profiles found.
+- 9% was the deadline check. `Instant::now()` before every round input is a
+  `QueryPerformanceCounter` call and a 128-bit rescale on Windows. The clock is now read on
+  every 64th input, and always on a fresh control's first, so an expired control still makes
+  nothing and a deadline still stops the search within tens of microseconds. That alone
+  took the demo FIRST from 8.45 s to 7.72 s, and it is worth 5-7% on top of the cache.
+- The rest was `make`, and inside it the profile is flat: effect preparation
+  (`prepare_combat_stat_diagnostic`, `resolution_card_plan`,
+  `prepare_combat_resolution_with_post_round`) about 60%, `commit` about 11%, no single line
+  above 3.5%. There was nothing to remove there without editing effect resolution.
+
+So the lever was how many round inputs the search makes, not what each one costs. A
+continuation value is a pure function of the match spec, the position, the asking player and
+the round's explicit first mover, and the exact opening reaches the same position again and
+again: the same cards played with the same pillz left and the same Life, by another order of
+bets. A Fury bet of p and a plain bet of p + 3 leave the same pillz, for one. In the replica,
+85-97% of the positions entering rounds three and four, and about a third of those entering
+round two, had been solved already. `PolicyControl` now remembers every completed value by
+position, asking player and first mover. It forgets them all when handed another match spec,
+stores nothing from a subtree the deadline cut, and past 458,752 entries (2^19 buckets, about
+40 MB) it stops remembering new positions; it never changes a remembered one. The largest
+opening measured needs under 300,000 entries and the demo draw about 22,000, and the demo
+FIRST went from 24.8 million round inputs to about half a million.
+
+No result moved. The timing test still asserts every sample bit-identical to the one-thread
+result; a scratch harness hashing every row's f64 bits gave the same fingerprints before and
+after on all seven openings in the table; `--replay` output for all ten supported captures
+was identical before and after, with and without `--exact-opening`; two new unit tests compare
+whole searches and whole rounds against a control that recomputes every position;
+`ExactOpeningParity` still reports `rust match` and `deno task pins:update` moves no expect
+file. The advisor policy semantic revision did not move. The cost is memory: the peak
+working set of `--replay 1089346 --exact-opening` went from 12 MB to 63 MB at one thread and
+131 MB at six. The cache lives for one search and one request.
+
+What is still open: six threads now buy about 2x, not the 4.3x they bought before the cache,
+because each worker owns its control and so its own cache, and a position one worker has
+solved is solved again by the next. A shared table would recover some of that at the price
+of synchronisation; it was not tried. SECOND's 23 columns over six threads also leave the
+last round of blocks part-empty. The worst exact-opening FIRST measured is now 1.2 s at six
+threads and 2.1 s at one, far inside the worker's 30 s budget ceiling. The host still
+starts the TypeScript search beside the Rust worker in `--rust=compare` and `--rust=use`,
+and the two now compete for the same cores. Deadline-bounded partial results exist in the
+protocol but a partially evaluated root matrix cannot be ranked honestly, so a budget expiry
+still falls back rather than publishing a half-searched opening.
 
 ## Working commands
 

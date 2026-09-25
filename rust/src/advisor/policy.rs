@@ -9,11 +9,14 @@
 //! This module only evaluates an already prepared [`CombatStatDiagnosticV1`].  It does
 //! not widen that engine's admitted effect set or turn an unsupported effect into a no-op.
 
+use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::time::{Duration, Instant};
 
 use crate::engine::{
-    BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CombatStatDiagnosticV1, MatchStatus,
-    PlayerId, FURY_COST, HAND_SIZE,
+    BaseRulesPosition, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
+    CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, MatchStatus, PlayerId, FURY_COST,
+    HAND_SIZE,
 };
 
 /// An exact terminal result in the asking player's frame.
@@ -24,12 +27,21 @@ pub enum ExactValue {
     Win,
 }
 
-/// Deadline and diagnostic work count shared by one continuation search.
+/// Round inputs between two reads of the clock; a power of two so the test is a mask.
+const DEADLINE_CHECK_INTERVAL: u64 = 64;
+
+/// The most continuation values one control remembers. The largest exact opening measured
+/// needs under 300,000; stopping here keeps the table inside 2^19 buckets, about 40 MB, and
+/// a full table only stops remembering new positions, it never changes a value.
+const CACHE_CAPACITY: usize = 7 << 16;
+
+/// Deadline, diagnostic work count and remembered values shared by one continuation search.
 #[derive(Clone, Debug)]
 pub struct PolicyControl {
     // An unrepresentably distant deadline is equivalent to no deadline.
     deadline: Option<Instant>,
     nodes: u64,
+    cache: ContinuationCache,
     // Deterministic nested-cancellation coverage without adding a production policy knob.
     #[cfg(test)]
     node_limit: Option<u64>,
@@ -40,6 +52,7 @@ impl PolicyControl {
         Self {
             deadline: Some(deadline),
             nodes: 0,
+            cache: ContinuationCache::default(),
             #[cfg(test)]
             node_limit: None,
         }
@@ -54,6 +67,7 @@ impl PolicyControl {
         Self {
             deadline: started.checked_add(budget),
             nodes: 0,
+            cache: ContinuationCache::default(),
             #[cfg(test)]
             node_limit: None,
         }
@@ -71,9 +85,14 @@ impl PolicyControl {
     }
 
     fn before_make(&mut self) -> bool {
-        if self
-            .deadline
-            .is_some_and(|deadline| Instant::now() >= deadline)
+        // Reading the clock is a QueryPerformanceCounter call on Windows, and doing it
+        // before every round input was 9% of a single-threaded exact opening. Every 64th
+        // input still stops within tens of microseconds of the deadline, and the first
+        // input of a fresh control is always checked, so an expired control makes nothing.
+        if self.nodes % DEADLINE_CHECK_INTERVAL == 0
+            && self
+                .deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
         {
             return false;
         }
@@ -90,8 +109,110 @@ impl PolicyControl {
         Self {
             deadline: Instant::now().checked_add(Duration::from_secs(60)),
             nodes: 0,
+            cache: ContinuationCache::default(),
             node_limit: Some(node_limit),
         }
+    }
+
+    /// The same control recomputing every position instead of remembering any: the
+    /// reference the cache is tested against.
+    #[cfg(test)]
+    pub(crate) fn without_cache(mut self) -> Self {
+        self.cache.disabled = true;
+        self
+    }
+}
+
+/// Continuation values already computed by one control, keyed by everything they depend on.
+///
+/// A value is a pure function of the match's immutable spec, the mutable position, the
+/// asking player and the round's explicit first mover: `make` reads nothing else, and the
+/// recurrence below prunes only on exact endpoints, which cannot change a node's value. So a
+/// position reached again through a different line - the same cards played, the same pillz
+/// left, the same Life - has the value it had the first time, and the exact opening reaches
+/// most positions many times over. Only completed values are stored; a subtree cut by the
+/// deadline returns `None` and leaves nothing behind.
+#[derive(Clone, Debug, Default)]
+struct ContinuationCache {
+    // The match these values belong to. A control handed another match forgets them first.
+    spec: Option<CombatStatDiagnosticMatchSpecV1>,
+    values: HashMap<ContinuationKey, ExactValue, BuildHasherDefault<PositionHasher>>,
+    #[cfg(test)]
+    disabled: bool,
+}
+
+type ContinuationKey = (BaseRulesPosition, PlayerId, PlayerId);
+
+impl ContinuationCache {
+    fn bind(&mut self, spec: &CombatStatDiagnosticMatchSpecV1) {
+        if self.spec.as_ref() != Some(spec) {
+            self.values.clear();
+            self.spec = Some(spec.clone());
+        }
+    }
+
+    fn get(&self, key: &ContinuationKey) -> Option<ExactValue> {
+        #[cfg(test)]
+        if self.disabled {
+            return None;
+        }
+        self.values.get(key).copied()
+    }
+
+    fn insert(&mut self, key: ContinuationKey, value: ExactValue) {
+        #[cfg(test)]
+        if self.disabled {
+            return;
+        }
+        if self.values.len() < CACHE_CAPACITY {
+            self.values.insert(key, value);
+        }
+    }
+}
+
+/// FxHash's multiply step with a finishing rotation that moves its well-mixed high bits
+/// down to where the table takes its bucket index. The keys are small integers built inside
+/// this process, so SipHash's resistance to chosen collisions buys nothing here.
+#[derive(Default)]
+struct PositionHasher(u64);
+
+impl PositionHasher {
+    const SEED: u64 = 0xf135_7aea_2e62_a9c5;
+
+    fn add(&mut self, word: u64) {
+        self.0 = self.0.wrapping_add(word).wrapping_mul(Self::SEED);
+    }
+}
+
+impl Hasher for PositionHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.add(u64::from(byte));
+        }
+    }
+
+    fn write_u8(&mut self, value: u8) {
+        self.add(u64::from(value));
+    }
+
+    fn write_u16(&mut self, value: u16) {
+        self.add(u64::from(value));
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.add(u64::from(value));
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.add(value);
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.add(value as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        self.0.rotate_left(26)
     }
 }
 
@@ -106,6 +227,7 @@ pub fn continuation_value(
     next_first_mover: PlayerId,
     control: &mut PolicyControl,
 ) -> Option<ExactValue> {
+    control.cache.bind(game.match_spec());
     terminal_value(game, us)
         .map(Some)
         .unwrap_or_else(|| round_value(game, us, next_first_mover, control))
@@ -117,11 +239,17 @@ fn round_value(
     first_mover: PlayerId,
     control: &mut PolicyControl,
 ) -> Option<ExactValue> {
-    if first_mover == us {
+    let key = (game.position().clone(), us, first_mover);
+    if let Some(value) = control.cache.get(&key) {
+        return Some(value);
+    }
+    let value = if first_mover == us {
         our_first_value(game, us, first_mover, control)
     } else {
         opponent_first_value(game, us, first_mover, control)
-    }
+    }?;
+    control.cache.insert(key, value);
+    Some(value)
 }
 
 /// We choose a complete move; pessimistically, the opponent sees it and finds its worst
@@ -517,6 +645,60 @@ mod tests {
             ExactValue::Loss
         );
         assert_eq!(game, before);
+    }
+
+    #[test]
+    fn a_control_forgets_remembered_values_when_handed_another_match() {
+        let even = [(3, 0), (3, 0), (5, 0), (5, 1)];
+        let mut tied = late_game(1, 0, even, even);
+        commit_zero_round(&mut tied, 2, PlayerId::P1);
+        let mut outclassed = late_game(1, 0, even, [(3, 0), (3, 0), (5, 0), (9, 1)]);
+        commit_zero_round(&mut outclassed, 2, PlayerId::P1);
+        // The same position in two matches: only the cards behind it differ.
+        assert_eq!(tied.position(), outclassed.position());
+
+        let mut control = PolicyControl::until(Instant::now() + Duration::from_secs(60));
+        let mut value = |game: &mut CombatStatDiagnosticV1| {
+            continuation_value(game, PlayerId::P1, PlayerId::P1, &mut control).unwrap()
+        };
+        assert_eq!(value(&mut tied), ExactValue::Win);
+        assert_eq!(value(&mut outclassed), ExactValue::Loss);
+        assert_eq!(value(&mut tied), ExactValue::Win);
+    }
+
+    #[test]
+    fn remembered_values_match_recomputed_ones_over_a_whole_round() {
+        let mut game = late_game(
+            6,
+            5,
+            [(1, 0), (1, 0), (4, 3), (6, 2)],
+            [(1, 0), (1, 0), (5, 2), (3, 4)],
+        );
+        let before = game.clone();
+        let far = || PolicyControl::until(Instant::now() + Duration::from_secs(60));
+        let mut remembered = far();
+        let mut recomputed = far().without_cache();
+        for first in PlayerId::ALL {
+            for ours in legal_actions(&game, PlayerId::P1) {
+                for theirs in legal_actions(&game, PlayerId::P2) {
+                    let (_, undo) = game
+                        .make(BaseRulesRoundInput {
+                            first_mover: first,
+                            selections: ByPlayer::new(ours, theirs),
+                        })
+                        .unwrap();
+                    let with =
+                        continuation_value(&mut game, PlayerId::P1, first.other(), &mut remembered);
+                    let without =
+                        continuation_value(&mut game, PlayerId::P1, first.other(), &mut recomputed);
+                    game.unmake(undo);
+                    assert_eq!(with, without, "{first:?} {ours:?} {theirs:?}");
+                    assert!(with.is_some());
+                }
+            }
+        }
+        assert_eq!(game, before);
+        assert!(remembered.nodes() < recomputed.nodes());
     }
 
     #[test]

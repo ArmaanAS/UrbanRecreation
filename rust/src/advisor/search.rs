@@ -1899,6 +1899,74 @@ mod tests {
         }
     }
 
+    #[test]
+    fn remembered_continuation_values_leave_every_complete_result_bit_identical() {
+        let roots = [
+            (
+                "exact opening",
+                varied_game(12, 3),
+                OpeningPolicy::ExactContinuation,
+            ),
+            (
+                "round two",
+                played(varied_game(12, 5), &[(PlayerId::P1, 0, 1, 0, 1)]),
+                OpeningPolicy::PositionHeuristic,
+            ),
+            (
+                "round three",
+                played(
+                    varied_game(12, 7),
+                    &[(PlayerId::P1, 0, 1, 0, 1), (PlayerId::P2, 1, 1, 1, 1)],
+                ),
+                OpeningPolicy::PositionHeuristic,
+            ),
+        ];
+        for (label, mut game, opening) in roots {
+            let unplayed = (0..HAND_SIZE as u8)
+                .find(|&slot| !game.position().played[PlayerId::P2][usize::from(slot)])
+                .unwrap();
+            for mode in [
+                SearchMode::First,
+                SearchMode::Second {
+                    opponent_hand_index: unplayed,
+                },
+                SearchMode::BlindSecond,
+            ] {
+                let config = mode_config(mode, opening);
+                let before = game.clone();
+                let mut run = |mut control: PolicyControl| {
+                    let result = search_with_control(
+                        &mut game,
+                        config,
+                        NonZeroUsize::MIN,
+                        Instant::now(),
+                        &mut control,
+                        |_| {},
+                    );
+                    (result, control.nodes())
+                };
+                let (remembered, remembered_nodes) = run(PolicyControl::for_nodes(u64::MAX));
+                let (recomputed, recomputed_nodes) =
+                    run(PolicyControl::for_nodes(u64::MAX).without_cache());
+                assert_eq!(game, before, "{label} {mode:?}: the root moved");
+                assert!(
+                    remembered.complete && recomputed.complete,
+                    "{label} {mode:?}"
+                );
+                assert_eq!(
+                    remembered.ranked.iter().map(row_bits).collect::<Vec<_>>(),
+                    recomputed.ranked.iter().map(row_bits).collect::<Vec<_>>(),
+                    "{label} {mode:?}: remembering a value changed it",
+                );
+                assert!(
+                    remembered_nodes < recomputed_nodes,
+                    "{label} {mode:?}: no position was reached twice \
+                     ({remembered_nodes} vs {recomputed_nodes})",
+                );
+            }
+        }
+    }
+
     /// The final result carries a later `elapsed` than the publication it repeats.
     fn assert_same_result(published: &SearchSnapshot, result: &SearchSnapshot) {
         assert_eq!(

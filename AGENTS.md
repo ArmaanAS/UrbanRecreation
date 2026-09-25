@@ -217,9 +217,10 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   model. The current hidden-information `Search`/`Policy` behavior must be ported explicitly.
 - Round one has two evaluators. The default is still the one-round position heuristic with
   the fixed 198-play reply prior, in both implementations. `--exact-opening` asks Rust to
-  solve the opening with the ordinary continuation policy instead: complete, and on six
-  threads 0.7-1.5 s for SECOND and 2-6 s for FIRST (one thread: 2.6-6.3 s and 8.5-24 s,
-  measured on a shared machine). Weighting replies by the captured prior is a
+  solve the opening with the ordinary continuation policy instead: complete, 0.2-0.5 s for
+  SECOND and 0.2-2.1 s for FIRST on one thread and about half that on six, because the
+  policy remembers solved positions (it was 8.5-24 s for FIRST on one thread before
+  2026-09-26; see "The exact opening" in `docs/rust-migration.md`). Weighting replies by the captured prior is a
   property of round one and survives that switch; only leaf scoring changes. Never read
   `openingEstimate` as "this is round one" - use `openingPrior` (TS) or
   `weights_by_opening_prior` (Rust), because conflating them is a live bug three times over.
@@ -407,6 +408,19 @@ numbers; a full profile is `--v8-flags=--prof,--logfile=<path>` then `node --pro
   10-20% faster, identical output. The profile left is spread thin: `Policy`'s loops
   about 16%, make/unmake bookkeeping about 10%, `shiftRange` and its generator 3.5%, the
   PRE1/POST2 sort 2%.
+- **Rust: the exact policy remembers positions (2026-09-26).** A single-threaded profile
+  of the Rust exact opening (an in-process sampler; samply needs an elevated ETW session
+  here) found zero allocations per `make`, 9% in `Instant::now()` per `make`, and `make`
+  itself flat. The lever was the node count: 85-97% of the positions entering rounds 3 and
+  4 were repeats (a Fury bet of p and a plain bet of p + 3 leave the same pillz).
+  `PolicyControl` caches each completed continuation value by (`BaseRulesPosition`, us,
+  first mover), which is exact because `CombatStatDiagnosticV1` is its spec plus that
+  position and the recursion prunes only on exact endpoints; the cache is dropped when the
+  match spec changes and never stores a deadline-cut value. The clock is read every 64th
+  `make`. Demo exact opening FIRST 8.5 s -> 0.19 s, worst capture 24.4 s -> 2.1 s, results
+  bit-identical. Each worker owns its cache, so six threads now buy about 2x, not 4.3x,
+  and peak memory is up to about 40 MB per worker. Keep everything a round can change in
+  `BaseRulesPosition`: state kept anywhere else would make this cache silently wrong.
 
   `iterTree` and `Deep.ts` are deliberately left as-is as the perfect-information reference
   (`tests/solver/DeepEquivalence.test.ts` checks `deepValue` returns the same number *and*
