@@ -86,7 +86,8 @@ function atDecision(source: Capture, completed: number, decision: Decision) {
   };
 }
 
-const modeName = (mode: SearchMode) => SearchMode[mode] ?? String(mode);
+// SearchMode is a string enum, so its value is already the name to print.
+const modeName = (mode: SearchMode): string => mode;
 
 const REPEATS = 3;
 const median = (values: number[]) =>

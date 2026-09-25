@@ -2,6 +2,7 @@
   "tasks": {
     "run": "UR_DEBUG=1 deno run -S --allow-env=FORCE_COLOR,UR_DEBUG --allow-read --allow-net --unstable-worker-options --v8-flags=--max-old-space-size=12000 --watch ./src/Main.ts",
     "data": "deno run --env --allow-env=API_KEY,API_SECRET,NODE_EXTRA_CA_CERTS,FORCE_COLOR -RWN --allow-sys=osRelease ./scripts/RequestCards.ts",
+    "check": "deno check src/ tests/ scripts/ log_server.ts",
     "compile": "deno run -RW ./scripts/CompileAbilities.js",
     "log": "deno run --watch --allow-net=0.0.0.0:8787 --allow-read=captures --allow-write=ur_log.jsonl,captures,data --allow-env=FORCE_COLOR --allow-sys=osRelease ./log_server.ts",
     "cards": "deno run --allow-read --allow-write=data --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/BuildCardData.ts",

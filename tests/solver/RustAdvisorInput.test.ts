@@ -230,6 +230,7 @@ Deno.test("Rust V3 normalises the revealed first card for SECOND without adding 
   )!;
   assertEquals(result.request.protocol_version, 3);
   assertEquals(result.request.mode, "second");
+  if (result.request.mode !== "second") return;
   assertEquals(result.request.us, "p1");
   assertEquals(result.request.first_mover, "p2");
   assertEquals(result.request.opponent_hand_index, firstMove.index);

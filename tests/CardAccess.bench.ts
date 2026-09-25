@@ -1,19 +1,79 @@
-// Is the prototype-swap dispatch in CardTypes.ts costing anything?
+// Is the stat-view dispatch in CardTypes.ts costing anything?
 //
 //   deno bench -A --no-check tests/CardAccess.bench.ts
 //
 // The packing is not in question: one object per card holding two SMIs is what keeps a
 // clone cheap and lets the search hold millions of nodes. The question is only how a stat
-// view is selected. Three ways of reading the *same* packed layout are compared:
+// view is selected. Four ways of reading the *same* packed layout are compared:
 //
-//   swap    what the engine does now - Object.setPrototypeOf(this, PowerStat.prototype)
-//   wrap    a throwaway view object holding a reference to the data
+//   engine  what the engine does now - `BaseData.power` returns a throwaway PowerStat view
+//           holding a reference to the data (src/game/types/CardTypes.ts)
+//   swap    what the engine used to do - Object.setPrototypeOf(this, PowerStat.prototype),
+//           reconstructed below because the engine no longer has it
+//   wrap    the same throwaway-view design, but each view a standalone class instead of
+//           CardTypes.ts's abstract BaseAttr -> BaseStat -> PowerStat chain
 //   flat    distinct accessor names on one prototype, no view at all
 //
-// Both alternatives keep `a`/`b` and the bit layout byte for byte; only dispatch differs.
-import { AttackStat, BaseData, DamageStat, PowerStat } from "@/game/types/CardTypes.ts";
+// All four keep `a`/`b` and the bit layout byte for byte; only dispatch differs. The
+// `engine` rows go through the real classes, so they measure whatever CardTypes.ts ships.
+// (Until September 2026 the baseline was labelled `swap` but cast BaseData to PowerStat
+// and called the engine's getters, so after the dispatch changed it silently measured the
+// engine's views and the swap it named was not run at all.) `wrap` is kept beside
+// `engine` because the two differ by more than the claim in CardTypes.ts allows: measured
+// on 2026-09-25, the standalone views ran as fast as `flat` while the engine's inherited
+// ones were ~35x slower, and a local replica of that abstract chain was as slow as the
+// engine, so the hierarchy looks like what stops escape analysis there.
+import { BaseData } from "@/game/types/CardTypes.ts";
 
-// --- wrap: one prototype per view, but the view points at the data ----------------------
+// --- swap: the previous engine dispatch, one prototype per view, re-pointed per access ---
+class SwapData {
+  a = 0;
+  b = 0;
+  get power(): SwapPower {
+    return Object.setPrototypeOf(this, SwapPower.prototype);
+  }
+  get damage(): SwapDamage {
+    return Object.setPrototypeOf(this, SwapDamage.prototype);
+  }
+  get attack(): SwapAttack {
+    return Object.setPrototypeOf(this, SwapAttack.prototype);
+  }
+}
+class SwapPower extends SwapData {
+  get final() {
+    return this.a >> 5 & 0x1f;
+  }
+  set final(n: number) {
+    this.a = (this.a & ~0x3e0) | ((n & 0x1f) << 5);
+  }
+  get blocked() {
+    return (this.b >> 16 & 0b11) === 0b01;
+  }
+}
+class SwapDamage extends SwapData {
+  get final() {
+    return this.a >> 15 & 0x1f;
+  }
+  set final(n: number) {
+    this.a = (this.a & ~0xf8000) | ((n & 0x1f) << 15);
+  }
+  get blocked() {
+    return (this.b >> 18 & 0b11) === 0b01;
+  }
+}
+class SwapAttack extends SwapData {
+  get final() {
+    return this.b >> 8 & 0xff;
+  }
+  set final(n: number) {
+    this.b = (this.b & ~0xff00) | ((n & 0xff) << 8);
+  }
+  get blocked() {
+    return (this.b >> 20 & 0b11) === 0b01;
+  }
+}
+
+// --- wrap: the engine's design, minus its class hierarchy ------------------------------
 class Packed {
   a = 0;
   b = 0;
@@ -96,22 +156,34 @@ class Flat {
 
 // Many cards, so the access sites see the same spread of objects the solver gives them.
 const N = 256;
-const swaps = Array.from({ length: N }, () => new BaseData());
+const engines = Array.from({ length: N }, () => new BaseData());
+const swaps = Array.from({ length: N }, () => new SwapData());
 const wraps = Array.from({ length: N }, () => new Packed());
 const flats = Array.from({ length: N }, () => new Flat());
 for (let i = 0; i < N; i++) {
-  swaps[i].a = flats[i].a = wraps[i].a = 0x2af5;
-  swaps[i].b = flats[i].b = wraps[i].b = 0x51234;
+  engines[i].a = swaps[i].a = wraps[i].a = flats[i].a = 0x2af5;
+  engines[i].b = swaps[i].b = wraps[i].b = flats[i].b = 0x51234;
 }
 
 // Pattern 1: alternating views, as CardBattle does - read power, read damage, write attack.
-Deno.bench({ name: "alternating views · swap", group: "alternating", baseline: true }, () => {
+Deno.bench({ name: "alternating views · engine", group: "alternating", baseline: true }, () => {
+  let t = 0;
+  for (const d of engines) {
+    const p = d.power.final;
+    const dm = d.damage.final;
+    d.attack.final = p * 3 + dm;
+    t += d.attack.final;
+  }
+  if (t < 0) throw new Error("no");
+});
+
+Deno.bench({ name: "alternating views · swap", group: "alternating" }, () => {
   let t = 0;
   for (const d of swaps) {
-    const p = (d as unknown as PowerStat).power.final;
-    const dm = (d as unknown as DamageStat).damage.final;
-    (d as unknown as AttackStat).attack.final = p * 3 + dm;
-    t += (d as unknown as AttackStat).attack.final;
+    const p = d.power.final;
+    const dm = d.damage.final;
+    d.attack.final = p * 3 + dm;
+    t += d.attack.final;
   }
   if (t < 0) throw new Error("no");
 });
@@ -139,12 +211,20 @@ Deno.bench({ name: "alternating views · flat", group: "alternating" }, () => {
 });
 
 // Pattern 2: repeated same view, as a modifier does - read power, clamp, write power back.
-Deno.bench({ name: "same view repeated · swap", group: "same", baseline: true }, () => {
+Deno.bench({ name: "same view repeated · engine", group: "same", baseline: true }, () => {
+  let t = 0;
+  for (const d of engines) {
+    if (!d.power.blocked) d.power.final = Math.min(d.power.final + 2, 20);
+    t += d.power.final;
+  }
+  if (t < 0) throw new Error("no");
+});
+
+Deno.bench({ name: "same view repeated · swap", group: "same" }, () => {
   let t = 0;
   for (const d of swaps) {
-    const s = d as unknown as PowerStat;
-    if (!s.power.blocked) s.power.final = Math.min(s.power.final + 2, 20);
-    t += s.power.final;
+    if (!d.power.blocked) d.power.final = Math.min(d.power.final + 2, 20);
+    t += d.power.final;
   }
   if (t < 0) throw new Error("no");
 });
@@ -168,7 +248,13 @@ Deno.bench({ name: "same view repeated · flat", group: "same" }, () => {
 });
 
 // Pattern 3: cloning, which is the other thing the packing buys - one object, two SMIs.
-Deno.bench({ name: "clone · swap", group: "clone", baseline: true }, () => {
+Deno.bench({ name: "clone · engine", group: "clone", baseline: true }, () => {
+  for (const d of engines) {
+    const c = { ...d };
+    if (c.a < 0) throw new Error("no");
+  }
+});
+Deno.bench({ name: "clone · swap", group: "clone" }, () => {
   for (const d of swaps) {
     const c = { ...d };
     if (c.a < 0) throw new Error("no");

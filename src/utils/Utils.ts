@@ -183,11 +183,11 @@ export class FlowController {
   promise: Promise<void>;
   private res: () => void;
   constructor() {
-    this.promise = new Promise(res => this.res = res);
+    ({ promise: this.promise, resolve: this.res } = Promise.withResolvers<void>());
   }
 
   resume() {
     this.res();
-    this.promise = new Promise(res => this.res = res);
+    ({ promise: this.promise, resolve: this.res } = Promise.withResolvers<void>());
   }
 }

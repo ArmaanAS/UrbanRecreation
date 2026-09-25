@@ -15,6 +15,8 @@ import { Turn } from "@/game/types/Types.ts";
 import type {
   RustAdvisorRequest,
   RustAdvisorRunner,
+  RustEvaluationKind,
+  RustOpeningPolicy,
 } from "@/solver/RustAdvisor.ts";
 import type { RustAdvisorInputResult } from "@/solver/RustAdvisorInput.ts";
 import { SearchMode } from "@/solver/Search.ts";
@@ -38,7 +40,11 @@ const wireProvenance = {
   advisor_policy_semantic_revision: 1,
 };
 
-const workerFinal = (requestId: string, search: Search) =>
+const workerFinal = (
+  requestId: string,
+  search: Search,
+  evaluationKind: RustEvaluationKind = "opening_estimate",
+) =>
   JSON.stringify({
     protocol_version: 3,
     request_id: requestId,
@@ -50,7 +56,7 @@ const workerFinal = (requestId: string, search: Search) =>
       : search.mode,
     opponent_hand_index: search.oppIndex ?? null,
     score_frame: "requester",
-    evaluation_kind: "opening_estimate",
+    evaluation_kind: evaluationKind,
     complete: true,
     units_done: search.units,
     units_total: search.units,
@@ -82,6 +88,7 @@ function startFakeRustJob(
   runner: RustAdvisorRunner,
   normalise: () => Promise<RustAdvisorInputResult> = () =>
     Promise.resolve(supportedRequest()),
+  openingPolicy: RustOpeningPolicy = "position_heuristic",
 ) {
   const game = rustJobGame();
   let search: Search = new Search(game);
@@ -98,6 +105,7 @@ function startFakeRustJob(
     normalise,
     runner,
     budgetMs: 50,
+    openingPolicy,
   });
   return {
     game,
@@ -121,12 +129,15 @@ function supportedRequest() {
   };
 }
 
-const successfulRunner = (search: () => Search): RustAdvisorRunner => ({
+const successfulRunner = (
+  search: () => Search,
+  evaluationKind?: RustEvaluationKind,
+): RustAdvisorRunner => ({
   run(request) {
     const requestId = JSON.parse(request).request_id;
     return Promise.resolve({
       code: 0,
-      stdout: `${workerFinal(requestId, search())}\n`,
+      stdout: `${workerFinal(requestId, search(), evaluationKind)}\n`,
       stderr: "",
     });
   },
@@ -210,6 +221,38 @@ Deno.test("use atomically replaces TypeScript only after a valid complete Rust r
     state.job.status,
     "rust active · v3:21/3/1",
   );
+});
+
+Deno.test("use accepts an exact opening only when the job asked for one", async () => {
+  const runner = successfulRunner(() => state.search, "exact_opening_policy");
+  const state = startFakeRustJob(
+    "use",
+    runner,
+    undefined,
+    "exact_continuation",
+  );
+  const ts = state.search;
+  await waitFor(() => !state.job.waiting);
+  assertNotEquals(state.search, ts);
+  assertEquals(state.job.status, "rust active · v3:21/3/1");
+});
+
+Deno.test("an opening evaluator the job did not ask for leaves the TypeScript fallback live", async () => {
+  // Both directions of the echo check: an estimate answering an exact-opening request,
+  // and an exact opening answering the default heuristic request.
+  for (
+    const [asked, answered] of [
+      ["exact_continuation", "opening_estimate"],
+      ["position_heuristic", "exact_opening_policy"],
+    ] as const
+  ) {
+    const runner = successfulRunner(() => state.search, answered);
+    const state = startFakeRustJob("use", runner, undefined, asked);
+    const ts = state.search;
+    await waitFor(() => !state.job.waiting);
+    assertEquals(state.search, ts, `${asked} answered by ${answered}`);
+    assert(state.job.status.includes("evaluation_kind"), state.job.status);
+  }
 });
 
 Deno.test("a rejected Rust normalisation leaves the TypeScript fallback live", async () => {
