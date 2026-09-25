@@ -9,14 +9,15 @@
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Read, Write};
+use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::advisor::input::{repository_root, BATTLE_RULE_ID};
 use crate::advisor::search::{
-    search, EvaluationKind, OpeningPolicy, RankedMove, SearchConfig, SearchMode, SearchSnapshot,
-    ADVISOR_POLICY_SEMANTIC_REVISION_V1,
+    default_search_threads, search_with_threads, EvaluationKind, OpeningPolicy, RankedMove,
+    SearchConfig, SearchMode, SearchSnapshot, ADVISOR_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::catalog::{CardKey, EffectiveCardCatalog};
 use crate::effect_registry::EffectRegistryV1;
@@ -77,8 +78,20 @@ impl From<io::Error> for JsonlWorkerError {
 /// to correlate, and this keeps stdout a stream of successful protocol messages exclusively.
 pub fn run(
     input: impl Read,
+    output: impl Write,
+    diagnostics: &mut impl Write,
+) -> Result<(), JsonlWorkerError> {
+    run_with_threads(input, output, diagnostics, default_search_threads())
+}
+
+/// [`run`] with the root search on exactly `threads` workers. The thread count is a process
+/// setting rather than a request field, so it never reaches the wire protocol: results are
+/// identical at any count and only the time they take changes.
+pub fn run_with_threads(
+    input: impl Read,
     mut output: impl Write,
     diagnostics: &mut impl Write,
+    threads: NonZeroUsize,
 ) -> Result<(), JsonlWorkerError> {
     let request = read_request(input)?;
     let request_id = request.request_id.clone();
@@ -125,7 +138,7 @@ pub fn run(
     let mut write_failed = None;
     let mut last_progress = Duration::ZERO;
     let mut progress_records = 0;
-    let final_snapshot = search(&mut game, config, |snapshot| {
+    let final_snapshot = search_with_threads(&mut game, config, threads, |snapshot| {
         if write_failed.is_none()
             && !snapshot.complete
             && progress_records < MAX_PROGRESS_RECORDS

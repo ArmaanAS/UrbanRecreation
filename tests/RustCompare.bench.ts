@@ -10,6 +10,7 @@
 // not a faster answer. Rust's column is whole-process wall time - spawn, canonical data
 // load, search, response - which is what the host actually waits for; `spawn` isolates
 // everything but the search so the two parts can be read separately.
+// Both sides are single-threaded: the worker is launched with `--threads 1`.
 import { assert } from "@std/assert";
 import {
   buildPosition,
@@ -128,7 +129,8 @@ for (const [at, one] of CASES.entries()) {
   for (let run = 0; run < REPEATS; run++) {
     const started = performance.now();
     const transcript = await runRustAdvisor(
-      new DenoCommandRunner({ command: worker }),
+      // One worker thread, like the one-thread TypeScript Search it is timed against.
+      new DenoCommandRunner({ command: worker, args: ["--threads", "1"] }),
       { ...input.request, request_id: `${input.request.request_id}-${run}` },
       state.search.candidates,
       { timeoutMs: 600_000 },

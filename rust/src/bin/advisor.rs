@@ -13,7 +13,8 @@ use urban_recreation_rust::advisor::input::{
     parse_args, prepare, AdvisorCommand, AdvisorOptions, PreparedAdvisorInput, USAGE,
 };
 use urban_recreation_rust::advisor::search::{
-    search, AdvisorMove, EvaluationKind, OpeningPolicy, SearchConfig, SearchMode, SearchSnapshot,
+    default_search_threads, search_with_threads, AdvisorMove, EvaluationKind, OpeningPolicy,
+    SearchConfig, SearchMode, SearchSnapshot,
 };
 use urban_recreation_rust::advisor::session::{AdvisorSession, ManualSelection};
 use urban_recreation_rust::advisor::view::{
@@ -485,7 +486,11 @@ fn render_search(
     output: &mut impl Write,
 ) -> io::Result<SearchSnapshot> {
     let mode = config.mode;
-    let snapshot = search(game, config, |_| {});
+    let threads = prepared
+        .options
+        .threads
+        .unwrap_or_else(default_search_threads);
+    let snapshot = search_with_threads(game, config, threads, |_| {});
     let model = view_model(prepared, game, snapshot.clone(), mode);
     let colour = if prepared.options.plain {
         ColourMode::Never

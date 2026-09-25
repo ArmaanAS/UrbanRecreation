@@ -9,6 +9,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs::File;
 use std::io;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 
 use crate::catalog::{CardKey, EffectiveCardCatalog, EffectiveCatalogError};
@@ -45,7 +46,7 @@ const DEMO_P2: [CardKey; HAND_SIZE] = [
     CardKey::new(447, 1),
 ];
 
-pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,... | --replay BATTLE_ID] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--exact-opening] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match. --replay grades every recorded decision through the strict Rust engine and solver; it may be combined only with budget/display flags. One-shot second-mover advice requires --second-card. --exact-opening solves round one to the end of the match instead of estimating it, which takes seconds rather than milliseconds.";
+pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,... | --replay BATTLE_ID] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--exact-opening] [--threads N] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match. --replay grades every recorded decision through the strict Rust engine and solver; it may be combined only with budget/display flags. One-shot second-mover advice requires --second-card. --exact-opening solves round one to the end of the match instead of estimating it, which takes seconds rather than milliseconds. --threads fixes how many threads the root search uses (default: every hardware thread); the result is the same at any count.";
 
 /// All non-card controls are explicit, while the two hands remain fixed-size card keys.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -63,6 +64,9 @@ pub struct AdvisorOptions {
     /// Solve the opening round exactly instead of estimating it. Rounds two through four
     /// are exact either way, so this changes nothing once a round is on the board.
     pub exact_opening: bool,
+    /// Root-search worker threads. `None` uses every hardware thread; the ranking is
+    /// identical at any count, only the time it takes changes.
+    pub threads: Option<NonZeroUsize>,
     pub width: u16,
     pub height: u16,
     pub plain: bool,
@@ -86,6 +90,7 @@ impl Default for AdvisorOptions {
             second_card: None,
             budget_ms: DEFAULT_BUDGET_MS,
             exact_opening: false,
+            threads: None,
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
             plain: false,
@@ -331,6 +336,13 @@ where
             "--exact-opening" => {
                 mark_once(&mut seen, flag)?;
                 options.exact_opening = true;
+            }
+            "--threads" => {
+                mark_once(&mut seen, flag)?;
+                options.threads = NonZeroUsize::new(parse_nonzero(
+                    value_after(&arguments, &mut index, flag)?,
+                    flag,
+                )?);
             }
             "--plain" => {
                 mark_once(&mut seen, flag)?;
@@ -879,6 +891,7 @@ mod tests {
     };
     use crate::catalog::{CardKey, EffectiveCardCatalog};
     use crate::engine::PlayerId;
+    use std::num::NonZeroUsize;
 
     fn parse(arguments: &[&str]) -> AdvisorCommand {
         parse_args(arguments.iter().map(|argument| (*argument).to_owned())).unwrap()
@@ -1085,9 +1098,21 @@ mod tests {
             vec!["--unknown"],
             vec!["--p1", "1:1,2:1,3:1"],
             vec!["--help", "--plain"],
+            vec!["--threads", "0"],
+            vec!["--threads", "two"],
+            vec!["--threads", "2", "--threads", "3"],
         ] {
             assert!(parse_args(arguments.into_iter().map(str::to_owned)).is_err());
         }
+    }
+
+    #[test]
+    fn threads_default_to_the_hardware_and_can_be_fixed_even_in_replay() {
+        assert_eq!(AdvisorOptions::default().threads, None);
+        let AdvisorCommand::Run(options) = parse(&["--replay", "877636", "--threads", "1"]) else {
+            panic!("a fixed thread count is a budget-like control");
+        };
+        assert_eq!(options.threads, NonZeroUsize::new(1));
     }
 
     #[test]

@@ -64,6 +64,12 @@ impl PolicyControl {
         self.nodes
     }
 
+    /// Adds the work a worker's clone of this control performed on another thread, so the
+    /// root control still counts every round input the whole search executed.
+    pub(crate) fn absorb_nodes(&mut self, nodes: u64) {
+        self.nodes = self.nodes.saturating_add(nodes);
+    }
+
     fn before_make(&mut self) -> bool {
         if self
             .deadline

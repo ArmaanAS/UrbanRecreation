@@ -6,6 +6,11 @@
 //! presents an opening estimate as a solved future game.
 
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::engine::{
@@ -307,7 +312,14 @@ fn ordered_bets(available: u16) -> Vec<(u16, bool)> {
     bets
 }
 
-/// Evaluates the current round until every pairing is complete or the time budget expires.
+/// The worker count a root search uses unless the caller names one: one per hardware thread
+/// the operating system reports, and one when it cannot say.
+pub fn default_search_threads() -> NonZeroUsize {
+    thread::available_parallelism().unwrap_or(NonZeroUsize::MIN)
+}
+
+/// Evaluates the current round until every pairing is complete or the time budget expires,
+/// on [`default_search_threads`] workers.
 ///
 /// The callback receives immutable, already-ranked snapshots at bounded useful boundaries:
 /// after a full reply set in First mode or one complete unknown-opponent column across all
@@ -319,9 +331,33 @@ pub fn search(
     config: SearchConfig,
     progress: impl FnMut(&SearchSnapshot),
 ) -> SearchSnapshot {
+    search_with_threads(game, config, default_search_threads(), progress)
+}
+
+/// [`search`] on exactly `threads` workers. One thread evaluates every block inline on the
+/// caller's own game, in block order; more threads each own a clone of the root. A complete
+/// result is bit-identical whatever the count, because completed blocks are always folded
+/// into the candidates in ascending block order rather than in completion order.
+///
+/// The callback always runs on the calling thread. A partial result is a set of whole
+/// blocks: a prefix with one thread, but with several it can be any subset, because a later
+/// block can finish before an earlier one is cut by the deadline.
+pub fn search_with_threads(
+    game: &mut CombatStatDiagnosticV1,
+    config: SearchConfig,
+    threads: NonZeroUsize,
+    progress: impl FnMut(&SearchSnapshot),
+) -> SearchSnapshot {
     let started = Instant::now();
     let mut policy_control = PolicyControl::for_budget(started, config.budget);
-    search_with_control(game, config, started, &mut policy_control, progress)
+    search_with_control(
+        game,
+        config,
+        threads,
+        started,
+        &mut policy_control,
+        progress,
+    )
 }
 
 #[cfg(test)]
@@ -331,12 +367,20 @@ fn search_with_test_control(
     policy_control: &mut PolicyControl,
     progress: impl FnMut(&SearchSnapshot),
 ) -> SearchSnapshot {
-    search_with_control(game, config, Instant::now(), policy_control, progress)
+    search_with_control(
+        game,
+        config,
+        NonZeroUsize::MIN,
+        Instant::now(),
+        policy_control,
+        progress,
+    )
 }
 
 fn search_with_control(
     game: &mut CombatStatDiagnosticV1,
     config: SearchConfig,
+    threads: NonZeroUsize,
     started: Instant,
     policy_control: &mut PolicyControl,
     mut progress: impl FnMut(&SearchSnapshot),
@@ -364,113 +408,224 @@ fn search_with_control(
         SearchMode::BlindSecond => legal_moves(game, opponent),
     };
     let units_total = our_moves.len().saturating_mul(opponent_moves.len());
-    let mut candidates: Vec<_> = our_moves.into_iter().map(Candidate::new).collect();
-    let mut units_done = 0;
-    let mut expired = false;
-    let mut last_publication: Option<(usize, bool)> = None;
+    let mut candidates: Vec<_> = our_moves.iter().copied().map(Candidate::new).collect();
 
     // A publication is transactional. First mode commits a whole reply row; Second and
     // BlindSecond modes commit one whole hidden-opponent column. A deadline or policy
     // cancellation inside either block discards its buffered samples, so ranked candidates
     // never contain incomparable partial blocks and `units_done` always counts published
     // work.
-    match config.mode {
-        SearchMode::First => {
-            'matrix: for candidate_index in 0..candidates.len() {
-                let mut row = Vec::with_capacity(opponent_moves.len());
-                for &opponent_move in &opponent_moves {
-                    if started.elapsed() >= config.budget {
-                        expired = true;
-                        break 'matrix;
-                    }
-                    let Some(sample) = evaluate_pair(
-                        game,
-                        config,
-                        candidates[candidate_index].move_,
-                        opponent_move,
-                        evaluation,
-                        policy_control,
-                    ) else {
-                        expired = true;
-                        break 'matrix;
-                    };
-                    row.push((sample, sample_weight(evaluation, opponent_move)));
-                }
-                for (sample, weight) in row {
-                    candidates[candidate_index].push(sample, weight);
-                }
-                units_done += opponent_moves.len();
-                // This recommendation is now comparable across its complete reply set.
-                publish(
-                    &candidates,
-                    units_done,
-                    units_total,
-                    started.elapsed(),
-                    evaluation,
-                    &mut progress,
-                    &mut last_publication,
-                );
-            }
-        }
+    let (block_count, block_len) = match config.mode {
+        SearchMode::First => (our_moves.len(), opponent_moves.len()),
         SearchMode::Second { .. } | SearchMode::BlindSecond => {
-            let retain_hidden_outcomes = matches!(config.mode, SearchMode::Second { .. });
-            'matrix: for &opponent_move in &opponent_moves {
-                let mut column = Vec::with_capacity(candidates.len());
-                for candidate in &candidates {
-                    if started.elapsed() >= config.budget {
-                        expired = true;
-                        break 'matrix;
-                    }
-                    let Some(sample) = evaluate_pair(
-                        game,
-                        config,
-                        candidate.move_,
-                        opponent_move,
-                        evaluation,
-                        policy_control,
-                    ) else {
-                        expired = true;
-                        break 'matrix;
-                    };
-                    column.push((sample, sample_weight(evaluation, opponent_move)));
-                }
-                for (candidate, (sample, weight)) in candidates.iter_mut().zip(column) {
-                    candidate.push(sample, weight);
-                    if retain_hidden_outcomes {
-                        candidate.push_hidden_outcome(opponent_move, sample);
-                    }
-                }
-                units_done += candidates.len();
-                // This exact hidden wager (and, in blind mode, its card) has now been
-                // tested against every possible fixed response.
-                publish(
-                    &candidates,
-                    units_done,
-                    units_total,
-                    started.elapsed(),
-                    evaluation,
-                    &mut progress,
-                    &mut last_publication,
-                );
+            (opponent_moves.len(), our_moves.len())
+        }
+    };
+    let pair = |block: usize, unit: usize| match config.mode {
+        SearchMode::First => (our_moves[block], opponent_moves[unit]),
+        SearchMode::Second { .. } | SearchMode::BlindSecond => {
+            (our_moves[unit], opponent_moves[block])
+        }
+    };
+    let evaluate_block = |game: &mut CombatStatDiagnosticV1,
+                          policy_control: &mut PolicyControl,
+                          block: usize|
+     -> Option<Vec<Sample>> {
+        let mut samples = Vec::with_capacity(block_len);
+        for unit in 0..block_len {
+            if started.elapsed() >= config.budget {
+                return None;
+            }
+            let (our_move, opponent_move) = pair(block, unit);
+            samples.push(evaluate_pair(
+                game,
+                config,
+                our_move,
+                opponent_move,
+                evaluation,
+                policy_control,
+            )?);
+        }
+        Some(samples)
+    };
+    let retain_hidden_outcomes = matches!(config.mode, SearchMode::Second { .. });
+    let fold = |candidates: &mut [Candidate], block: usize, samples: &[Sample]| {
+        for (unit, &sample) in samples.iter().enumerate() {
+            let (_, opponent_move) = pair(block, unit);
+            let candidate = match config.mode {
+                SearchMode::First => &mut candidates[block],
+                SearchMode::Second { .. } | SearchMode::BlindSecond => &mut candidates[unit],
+            };
+            candidate.push(sample, sample_weight(evaluation, opponent_move));
+            if retain_hidden_outcomes {
+                candidate.push_hidden_outcome(opponent_move, sample);
             }
         }
-    }
+    };
+
+    // `candidates` holds every block below `next_fold`, folded in ascending order. A block
+    // that completes ahead of an earlier one waits in `pending` and is folded on top of a
+    // copy only for publication, so every published snapshot, and the complete result, sums
+    // its samples in the same order as a serial search. With one thread `pending` is always
+    // empty.
+    let mut next_fold = 0;
+    let mut pending: BTreeMap<usize, Vec<Sample>> = BTreeMap::new();
+    let mut units_done = 0;
+    let mut last_publication: Option<(usize, bool)> = None;
+    let published = |candidates: &[Candidate],
+                     pending: &BTreeMap<usize, Vec<Sample>>,
+                     units_done: usize,
+                     complete: bool| {
+        let elapsed = started.elapsed();
+        if pending.is_empty() {
+            return snapshot(
+                candidates,
+                units_done,
+                units_total,
+                elapsed,
+                complete,
+                evaluation,
+            );
+        }
+        let mut view = candidates.to_vec();
+        for (&block, samples) in pending {
+            fold(&mut view, block, samples);
+        }
+        snapshot(
+            &view,
+            units_done,
+            units_total,
+            elapsed,
+            complete,
+            evaluation,
+        )
+    };
+    let expired = run_blocks(
+        threads,
+        block_count,
+        game,
+        policy_control,
+        &evaluate_block,
+        |block, samples| {
+            pending.insert(block, samples);
+            while let Some(samples) = pending.remove(&next_fold) {
+                fold(&mut candidates, next_fold, &samples);
+                next_fold += 1;
+            }
+            units_done += block_len;
+            // This recommendation is now comparable across its complete reply set, or this
+            // exact hidden wager (and, in blind mode, its card) has now been tested against
+            // every possible fixed response.
+            let complete = units_done == units_total;
+            progress(&published(&candidates, &pending, units_done, complete));
+            last_publication = Some((units_done, complete));
+        },
+    );
 
     let complete = !expired && units_done == units_total;
-    let result = snapshot(
-        &candidates,
-        units_done,
-        units_total,
-        started.elapsed(),
-        complete,
-        evaluation,
-    );
+    let result = published(&candidates, &pending, units_done, complete);
     // Always send a final state for a zero-budget, empty, or between-boundaries stop, but
     // avoid cloning and repainting the final complete matrix twice.
     if last_publication != Some((units_done, complete)) {
         progress(&result);
     }
     result
+}
+
+/// Evaluates blocks `0..block_count`, hands each completed one to `completed` on the calling
+/// thread, and returns whether a block was cancelled.
+///
+/// Every worker runs the same loop: claim the next unclaimed block, evaluate it whole, and
+/// stop at the first cancelled block, which also stops the others claiming more. With one
+/// worker that loop runs inline on the caller's own game and control, so it evaluates and
+/// publishes blocks strictly in order and stops exactly where a serial search would. With
+/// more, each worker owns a clone of the root game and of the control, whose deadline is the
+/// caller's; the root game is never touched, and every worker's nodes are added back.
+fn run_blocks<E>(
+    threads: NonZeroUsize,
+    block_count: usize,
+    game: &mut CombatStatDiagnosticV1,
+    policy_control: &mut PolicyControl,
+    evaluate_block: &E,
+    mut completed: impl FnMut(usize, Vec<Sample>),
+) -> bool
+where
+    E: Fn(&mut CombatStatDiagnosticV1, &mut PolicyControl, usize) -> Option<Vec<Sample>> + Sync,
+{
+    let next_block = AtomicUsize::new(0);
+    let cancelled = AtomicBool::new(false);
+    let work = |game: &mut CombatStatDiagnosticV1,
+                policy_control: &mut PolicyControl,
+                completed: &mut dyn FnMut(usize, Vec<Sample>)| {
+        while !cancelled.load(AtomicOrdering::Relaxed) {
+            let block = next_block.fetch_add(1, AtomicOrdering::Relaxed);
+            if block >= block_count {
+                break;
+            }
+            match evaluate_block(game, policy_control, block) {
+                Some(samples) => completed(block, samples),
+                None => cancelled.store(true, AtomicOrdering::Relaxed),
+            }
+        }
+    };
+
+    let workers = threads.get().min(block_count);
+    if workers <= 1 {
+        work(game, policy_control, &mut completed);
+        return cancelled.into_inner();
+    }
+
+    let root: &CombatStatDiagnosticV1 = game;
+    let (sender, receiver) = mpsc::channel();
+    let nodes = thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let sender = sender.clone();
+                let mut game = root.clone();
+                let mut policy_control = policy_control.clone();
+                let work = &work;
+                let cancelled = &cancelled;
+                scope.spawn(move || {
+                    let _unwinding = CancelOnPanic(cancelled);
+                    let before = policy_control.nodes();
+                    work(&mut game, &mut policy_control, &mut |block, samples| {
+                        // Only a panicking caller drops the receiver early, and then the
+                        // block is not wanted.
+                        let _ = sender.send((block, samples));
+                    });
+                    policy_control.nodes() - before
+                })
+            })
+            .collect();
+        drop(sender);
+        // Publication stays on the calling thread. The channel closes once every worker
+        // has returned or unwound. A panicking callback stops the workers claiming more
+        // blocks, so the scope does not wait out the rest of the matrix before unwinding.
+        let _unwinding = CancelOnPanic(&cancelled);
+        for (block, samples) in receiver {
+            completed(block, samples);
+        }
+        handles
+            .into_iter()
+            .map(|handle| match handle.join() {
+                Ok(nodes) => nodes,
+                Err(panic) => std::panic::resume_unwind(panic),
+            })
+            .sum::<u64>()
+    });
+    policy_control.absorb_nodes(nodes);
+    cancelled.into_inner()
+}
+
+/// Stops the other workers claiming blocks when the thread holding it unwinds.
+struct CancelOnPanic<'a>(&'a AtomicBool);
+
+impl Drop for CancelOnPanic<'_> {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            self.0.store(true, AtomicOrdering::Relaxed);
+        }
+    }
 }
 
 fn evaluate_pair(
@@ -494,28 +649,6 @@ fn evaluate_pair(
     );
     game.unmake(undo);
     sample
-}
-
-fn publish(
-    candidates: &[Candidate],
-    units_done: usize,
-    units_total: usize,
-    elapsed: Duration,
-    evaluation: EvaluationKind,
-    progress: &mut impl FnMut(&SearchSnapshot),
-    last_publication: &mut Option<(usize, bool)>,
-) {
-    let complete = units_done == units_total;
-    let update = snapshot(
-        candidates,
-        units_done,
-        units_total,
-        elapsed,
-        complete,
-        evaluation,
-    );
-    progress(&update);
-    *last_publication = Some((units_done, complete));
 }
 
 fn round_input(
@@ -680,7 +813,7 @@ mod tests {
     use crate::catalog::CardKey;
     use crate::engine::{
         BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, CombatStatCardPlanV1,
-        CombatStatDiagnosticMatchSpecV1, CombatStatSourcePlanV1,
+        CombatStatDiagnosticMatchSpecV1, CombatStatSourcePlanV1, HAND_SIZE,
     };
 
     fn card(id: u32, power: u16, damage: u16) -> BaseRulesCardSpec {
@@ -1554,5 +1687,380 @@ mod tests {
             compare_ranked(left, right, EvaluationKind::ExactContinuationPolicy)
         });
         assert_eq!(exact[0], higher_floor);
+    }
+
+    /// Four different cards a side, so the matrix has distinct values, knockouts and
+    /// non-integer weighted opening averages rather than one repeated sample.
+    fn varied_game(life: u16, pillz: u16) -> CombatStatDiagnosticV1 {
+        let hand = |base: u32, stats: [(u16, u16); HAND_SIZE]| {
+            std::array::from_fn(|index| card(base + index as u32, stats[index].0, stats[index].1))
+        };
+        let base_rules = BaseRulesMatchSpec {
+            battle_rule_id: 0,
+            night: false,
+            players: ByPlayer::new(
+                BaseRulesPlayerSpec {
+                    initial_life: life,
+                    initial_pillz: pillz,
+                    hand: hand(300, [(8, 4), (5, 6), (7, 2), (3, 7)]),
+                },
+                BaseRulesPlayerSpec {
+                    initial_life: life,
+                    initial_pillz: pillz,
+                    hand: hand(400, [(6, 5), (7, 3), (4, 6), (9, 1)]),
+                },
+            ),
+        };
+        let plan = |card: BaseRulesCardSpec| CombatStatCardPlanV1 {
+            key: card.key,
+            effective_clan_id: card.clan_id,
+            ability: CombatStatSourcePlanV1::Absent,
+            bonus: CombatStatSourcePlanV1::Absent,
+            source_bonus_support_count: 0,
+            source_ability_support_count: 0,
+        };
+        let cards = ByPlayer::new(
+            base_rules.players[PlayerId::P1].hand.map(plan),
+            base_rules.players[PlayerId::P2].hand.map(plan),
+        );
+        CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 { base_rules, cards }).unwrap()
+    }
+
+    fn played(
+        mut game: CombatStatDiagnosticV1,
+        rounds: &[(PlayerId, u8, u16, u8, u16)],
+    ) -> CombatStatDiagnosticV1 {
+        for &(first_mover, ours, our_pillz, theirs, their_pillz) in rounds {
+            game.make(round_input(
+                first_mover,
+                PlayerId::P1,
+                AdvisorMove {
+                    hand_index: ours,
+                    pillz: our_pillz,
+                    fury: false,
+                },
+                AdvisorMove {
+                    hand_index: theirs,
+                    pillz: their_pillz,
+                    fury: false,
+                },
+            ))
+            .unwrap();
+        }
+        game
+    }
+
+    fn mode_config(mode: SearchMode, opening: OpeningPolicy) -> SearchConfig {
+        SearchConfig {
+            us: PlayerId::P1,
+            first_mover: match mode {
+                SearchMode::First => PlayerId::P1,
+                SearchMode::Second { .. } | SearchMode::BlindSecond => PlayerId::P2,
+            },
+            mode,
+            budget: Duration::from_secs(600),
+            opening,
+        }
+    }
+
+    type RowBits = (
+        AdvisorMove,
+        u64,
+        u64,
+        u64,
+        usize,
+        usize,
+        usize,
+        Vec<(u16, bool, u64, u8)>,
+    );
+
+    fn row_bits(row: &RankedMove) -> RowBits {
+        (
+            row.move_,
+            row.average.to_bits(),
+            row.worst.to_bits(),
+            row.best.to_bits(),
+            row.samples,
+            row.kos,
+            row.koed,
+            row.hidden_outcomes
+                .iter()
+                .map(|outcome| {
+                    (
+                        outcome.opponent_pillz,
+                        outcome.opponent_fury,
+                        outcome.value.to_bits(),
+                        outcome.flags,
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// Runs one search and returns its result with every published snapshot's shape.
+    fn traced(
+        game: &mut CombatStatDiagnosticV1,
+        config: SearchConfig,
+        threads: usize,
+    ) -> (SearchSnapshot, Vec<(usize, bool)>) {
+        let mut published = Vec::new();
+        let result = search_with_threads(game, config, NonZeroUsize::new(threads).unwrap(), |s| {
+            published.push((s.units_done, s.complete))
+        });
+        (result, published)
+    }
+
+    #[test]
+    fn a_parallel_complete_search_is_bit_identical_to_one_thread() {
+        let roots: [(&str, CombatStatDiagnosticV1, OpeningPolicy, EvaluationKind); 4] = [
+            (
+                "opening estimate",
+                varied_game(12, 5),
+                OpeningPolicy::PositionHeuristic,
+                EvaluationKind::OpeningEstimate,
+            ),
+            (
+                "exact opening",
+                varied_game(12, 2),
+                OpeningPolicy::ExactContinuation,
+                EvaluationKind::ExactOpeningPolicy,
+            ),
+            (
+                "round two",
+                played(varied_game(12, 5), &[(PlayerId::P1, 0, 1, 0, 1)]),
+                OpeningPolicy::PositionHeuristic,
+                EvaluationKind::ExactContinuationPolicy,
+            ),
+            (
+                "round three",
+                played(
+                    varied_game(12, 7),
+                    &[(PlayerId::P1, 0, 1, 0, 1), (PlayerId::P2, 1, 1, 1, 1)],
+                ),
+                OpeningPolicy::PositionHeuristic,
+                EvaluationKind::ExactContinuationPolicy,
+            ),
+        ];
+        for (label, mut game, opening, evaluation) in roots {
+            let unplayed = (0..HAND_SIZE as u8)
+                .find(|&slot| !game.position().played[PlayerId::P2][usize::from(slot)])
+                .unwrap();
+            for mode in [
+                SearchMode::First,
+                SearchMode::Second {
+                    opponent_hand_index: unplayed,
+                },
+                SearchMode::BlindSecond,
+            ] {
+                let config = mode_config(mode, opening);
+                let before = game.clone();
+                let (serial, serial_published) = traced(&mut game, config, 1);
+                assert_eq!(game, before, "{label} {mode:?}: one thread moved the root");
+                assert!(serial.complete, "{label} {mode:?}");
+                assert_eq!(serial.evaluation, evaluation, "{label} {mode:?}");
+                assert!(
+                    serial
+                        .ranked
+                        .iter()
+                        .any(|row| row.average != serial.ranked[0].average),
+                    "{label} {mode:?}: a uniform matrix would not test the fold order",
+                );
+                for threads in [2, 3, 8] {
+                    let (parallel, parallel_published) = traced(&mut game, config, threads);
+                    assert_eq!(game, before, "{label} {mode:?} x{threads}: root moved");
+                    assert_eq!(
+                        (
+                            parallel.units_done,
+                            parallel.units_total,
+                            parallel.complete,
+                            parallel.evaluation
+                        ),
+                        (
+                            serial.units_done,
+                            serial.units_total,
+                            serial.complete,
+                            serial.evaluation
+                        ),
+                        "{label} {mode:?} x{threads}",
+                    );
+                    assert_eq!(
+                        parallel.ranked.iter().map(row_bits).collect::<Vec<_>>(),
+                        serial.ranked.iter().map(row_bits).collect::<Vec<_>>(),
+                        "{label} {mode:?} x{threads}: ranked rows differ",
+                    );
+                    // One publication per block, the last of them the complete result, and
+                    // no duplicate final: the same shape a serial search publishes.
+                    assert_eq!(
+                        parallel_published, serial_published,
+                        "{label} {mode:?} x{threads}: publications differ",
+                    );
+                }
+            }
+        }
+    }
+
+    /// The final result carries a later `elapsed` than the publication it repeats.
+    fn assert_same_result(published: &SearchSnapshot, result: &SearchSnapshot) {
+        assert_eq!(
+            (
+                published.units_done,
+                published.units_total,
+                published.complete
+            ),
+            (result.units_done, result.units_total, result.complete),
+        );
+        assert_eq!(
+            published.ranked.iter().map(row_bits).collect::<Vec<_>>(),
+            result.ranked.iter().map(row_bits).collect::<Vec<_>>(),
+        );
+    }
+
+    /// Whole-block shape of a partial result: First rows are empty or full, Second and
+    /// BlindSecond candidates all carry the same completed columns.
+    fn assert_whole_blocks(snapshot: &SearchSnapshot, mode: SearchMode, replies: usize) {
+        let samples: usize = snapshot.ranked.iter().map(|row| row.samples).sum();
+        assert_eq!(samples, snapshot.units_done);
+        match mode {
+            SearchMode::First => assert!(snapshot
+                .ranked
+                .iter()
+                .all(|row| row.samples == 0 || row.samples == replies)),
+            SearchMode::Second { .. } | SearchMode::BlindSecond => {
+                let columns = snapshot.ranked[0].samples;
+                assert!(snapshot.ranked.iter().all(|row| row.samples == columns));
+            }
+        }
+    }
+
+    #[test]
+    fn a_deadline_cut_parallel_search_publishes_only_whole_blocks_and_restores_the_root() {
+        let mut game = varied_game(12, 4);
+        let before = game.clone();
+        let complete = search_with_threads(
+            &mut game,
+            mode_config(
+                SearchMode::Second {
+                    opponent_hand_index: 1,
+                },
+                OpeningPolicy::ExactContinuation,
+            ),
+            NonZeroUsize::MIN,
+            |_| {},
+        );
+        let exact_outcome = |move_: AdvisorMove, outcome: &HiddenOutcome| {
+            complete
+                .ranked
+                .iter()
+                .find(|row| row.move_ == move_)
+                .unwrap()
+                .hidden_outcomes
+                .iter()
+                .any(|full| {
+                    (
+                        full.opponent_pillz,
+                        full.opponent_fury,
+                        full.value.to_bits(),
+                        full.flags,
+                    ) == (
+                        outcome.opponent_pillz,
+                        outcome.opponent_fury,
+                        outcome.value.to_bits(),
+                        outcome.flags,
+                    )
+                })
+        };
+
+        for mode in [
+            SearchMode::First,
+            SearchMode::Second {
+                opponent_hand_index: 1,
+            },
+            SearchMode::BlindSecond,
+        ] {
+            let config = mode_config(mode, OpeningPolicy::ExactContinuation);
+            let replies = match mode {
+                SearchMode::First => legal_moves(&game, PlayerId::P2).len(),
+                _ => 0,
+            };
+            // Each worker's copy of the control stops after a fifth of the round inputs a
+            // complete search executes, which cuts the matrix at several places at once.
+            let mut full = PolicyControl::for_nodes(u64::MAX);
+            search_with_control(
+                &mut game,
+                config,
+                NonZeroUsize::MIN,
+                Instant::now(),
+                &mut full,
+                |_| {},
+            );
+            let mut control = PolicyControl::for_nodes(full.nodes() / 5);
+            let mut published = Vec::new();
+            let result = search_with_control(
+                &mut game,
+                config,
+                NonZeroUsize::new(4).unwrap(),
+                Instant::now(),
+                &mut control,
+                |snapshot| published.push(snapshot.clone()),
+            );
+            assert_eq!(game, before, "{mode:?}: the root moved");
+            assert!(!result.complete, "{mode:?}");
+            assert!(result.units_done > 0, "{mode:?}");
+            assert!(
+                control.nodes() > full.nodes() / 5,
+                "{mode:?}: the workers' nodes were not counted"
+            );
+            assert!(!published.is_empty());
+            for snapshot in &published {
+                assert_whole_blocks(snapshot, mode, replies);
+                assert!(!snapshot.complete);
+            }
+            assert!(published
+                .windows(2)
+                .all(|pair| pair[0].units_done < pair[1].units_done));
+            // The last publication already is the result, so it is not sent twice.
+            assert_same_result(published.last().unwrap(), &result);
+            assert_whole_blocks(&result, mode, replies);
+            if let SearchMode::Second { .. } = mode {
+                // Whatever subset of columns finished, each one holds the exact value a
+                // complete search found for that hidden wager.
+                assert!(result.ranked.iter().all(|row| {
+                    row.hidden_outcomes.len() == row.samples
+                        && row
+                            .hidden_outcomes
+                            .iter()
+                            .all(|outcome| exact_outcome(row.move_, outcome))
+                }));
+            }
+        }
+
+        // A wall-clock deadline is honoured by every worker and cut blocks are discarded.
+        for mode in [SearchMode::First, SearchMode::BlindSecond] {
+            let config = SearchConfig {
+                budget: Duration::from_millis(30),
+                ..mode_config(mode, OpeningPolicy::ExactContinuation)
+            };
+            let mut published = Vec::new();
+            let result = search_with_threads(
+                &mut varied_game(12, 6),
+                config,
+                NonZeroUsize::new(4).unwrap(),
+                |snapshot| published.push(snapshot.clone()),
+            );
+            assert!(!result.complete);
+            assert!(
+                result.elapsed < Duration::from_secs(5),
+                "{:?}",
+                result.elapsed
+            );
+            assert_same_result(published.last().unwrap(), &result);
+            for snapshot in &published {
+                assert_whole_blocks(
+                    snapshot,
+                    mode,
+                    legal_moves(&varied_game(12, 6), PlayerId::P2).len(),
+                );
+            }
+        }
     }
 }

@@ -4050,7 +4050,7 @@ captured-reply-weighted opening estimate; rounds 2–4 use the conservative exac
 policy. The opening prior is the literal 198-play `OPENING_REPLY_COUNTS` table from the
 TypeScript advisor, captured as of 2026-09-13, with Laplace +1 for unseen wagers. It is
 historical provenance, not a table regenerated from the current corpus. The round-two slice
-also adds a single-thread blind-second pass in manual sessions: in rounds 2-4 while the
+also adds a blind-second pass in manual sessions: in rounds 2-4 while the
 opponent chooses, every unplayed opponent card and hidden wager is a hypothesis and every
 row remains one fixed reply. A full hypothesis column is committed transactionally, so a
 deadline or policy cancellation never publishes incomparable rows. The visible card then
@@ -4078,10 +4078,11 @@ Do not revive the old perfect-information recommendation model as the live advis
 the current TypeScript behavior deliberately:
 
 - allocation-free make/unmake search;
-- depth-2 work units and cancellation;
+- depth-2 work units and cancellation (Rust splits its root into transactional row or
+  column blocks run on several threads, see "The exact opening"; it has no finer units);
 - the conservative information-aware policy for hidden pillz and Fury;
 - opening-prior refresh from later captures;
-- blind-second handling (manual single-thread slice landed);
+- blind-second handling (manual slice landed);
 - visible-percent, knockout, safety, then cost ranking.
 
 Keep the old Rust solver available as a historical reference until equivalence tests cover
@@ -4162,6 +4163,11 @@ outright by already being warm. The one row where the search dominates is round-
 FIRST, at roughly **18x**. That is the shape to expect: the process boundary costs a flat
 40 ms and buys back an order of magnitude only once the tree is big enough to pay for it.
 
+The worker's root search has used every hardware thread by default since 2026-09-25, so the
+bench launches it with `--threads 1`: the table stays a like-for-like comparison with a
+one-thread TypeScript `Search`, and the numbers above were taken before that change on the
+same single-threaded path.
+
 ### Is an exact opening affordable yet?
 
 Round one is a deliberate model choice in both implementations, not a speed limit either
@@ -4188,12 +4194,35 @@ Reach it with `deno task rust:advise --exact-opening`, or through the hosted wor
 `deno task advise --rust=use --exact-opening`. It is off by default and has no effect once a
 round has been played, because later rounds are exact under either policy.
 
-Measured on this machine, release, single-threaded, complete with no deadline cutoff:
+Measured on 2026-09-25 on this 6-core machine, release, complete with no deadline cutoff, at
+one thread and at the default six (`std::thread::available_parallelism`), median of three
+alternating samples. Other agents' builds and tests were running at the same time, so every
+figure here is slower than a quiet machine: the demo draw's one-thread FIRST took 6.2 s
+when it was first measured and 8.5 s here.
 
-| Information set | Units | Time |
-| --- | --- | --- |
-| SECOND, opponent's card visible | 2116 | 2.0-5.8 s |
-| FIRST | 8464 | 6.2-29.8 s |
+| Decision | Units | 1 thread | 6 threads | Speedup |
+| --- | --- | --- | --- | --- |
+| demo draw opening FIRST | 8464 | 8.5 s | 2.0 s | 4.4x |
+| `925719` opening FIRST | 8464 | 16.4 s | 3.7 s | 4.4x |
+| `925719` opening SECOND | 2116 | 2.6 s | 660 ms | 4.0x |
+| `1024673` opening FIRST | 8464 | 19.3 s | 4.5 s | 4.3x |
+| `1024673` opening SECOND | 2116 | 3.8 s | 1.0 s | 3.7x |
+| `1089346` opening FIRST | 8464 | 24.4 s | 5.6 s | 4.3x |
+| `1089346` opening SECOND | 2116 | 6.3 s | 1.5 s | 4.3x |
+| `877636` round 2 exact FIRST | 3519 | 84 ms | 19 ms | 4.3x |
+
+FIRST is the round's first mover; SECOND is the other side, shown the card the first mover
+actually played. The table comes from an ignored release test that asserts every sample is
+bit-identical to the one-thread result and that the root is restored:
+
+```bash
+cargo test --manifest-path rust/Cargo.toml --release --locked \
+  --test advisor_parallel_timing -- --ignored --nocapture
+```
+
+The one-thread path costs what the old serial loop did: alternating the `842a07b` binary with
+`--threads 1` on the demo draw measured 8.5 s against 8.4-8.5 s for FIRST and 3.5 s against
+3.4-3.5 s for SECOND.
 
 SECOND is roughly four times cheaper because the opponent's card is already known, so the
 matrix is one card wide rather than four.
@@ -4230,11 +4259,37 @@ The advice genuinely changes. On capture `925674`'s opening the heuristic recomm
 at five to eight pillz; the exact solve puts Mou at one pillz on top and does not rank Aegis
 Cr in the first four at all.
 
-What is still open: the search is single-threaded, so FIRST at 6-30 s is a parallelism
-problem rather than an algorithmic one, and there is no unit splitting on the Rust side at
-all. Deadline-bounded partial results exist in the protocol but a partially evaluated root
-matrix cannot be ranked honestly, so a budget expiry currently falls back rather than
-publishing a half-searched opening.
+The root search is parallel. It already committed its matrix in transactional blocks - one
+candidate's whole reply row in FIRST, one hidden opposing wager's whole column across every
+candidate in SECOND and blind-second - and those blocks are now the unit of work. Each worker
+thread owns a clone of the root game and claims the next unclaimed block; the calling thread
+receives finished blocks, folds them into the candidates, and runs the progress callback,
+which therefore never leaves it. A complete result is bit-identical at any thread count,
+including every f64: in SECOND and blind-second each column adds one sample to every
+candidate, so a block that finishes early waits and is folded in ascending block order, never
+in completion order. Every worker checks the same deadline, a block cut by it is discarded
+whole, and a thread count of one runs the same loop inline on the caller's own game, which
+is exactly the old serial search, deterministic node-limit test cancellation included.
+`search` uses every hardware thread; `search_with_threads`, `--threads N` on
+`urban-recreation-advisor` and on the JSONL worker fix the count. The count is a process
+setting and never reaches the V3 wire protocol, and the advisor policy semantic revision did
+not move, because no result changed.
+
+One thing changed shape: with several threads a deadline-cut partial result is any set of
+whole blocks rather than a prefix, because a later block can finish while an earlier one is
+still running. Nothing downstream assumed a prefix. The JSONL worker drops rows with no
+samples, the TypeScript host checks `units_done` and elapsed time are monotonic (both still
+are, since only the calling thread publishes) and accepts only a complete final, and the
+terminal view and replay grading already treat each row's sample count on its own.
+
+What is still open: six threads buy about 4.3x, not six. The machine was shared, and
+SECOND's 23 columns over six threads leave the last round of blocks part-empty, but neither
+cause was measured separately. The worst exact-opening FIRST measured is now 5.6 s, inside
+the worker's 30 s budget ceiling rather than at it. The host still starts the TypeScript
+search beside the Rust worker in `--rust=compare` and `--rust=use`, and the two now compete
+for the same cores. Deadline-bounded partial results exist in the protocol but a partially
+evaluated root matrix cannot be ranked honestly, so a budget expiry still falls back rather
+than publishing a half-searched opening.
 
 ## Working commands
 
