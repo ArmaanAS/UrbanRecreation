@@ -142,8 +142,8 @@ for (const [at, one] of CASES.entries()) {
   const rustMs = median(rustSamples);
   floorMs = Math.min(floorMs, ...rustSamples);
 
-  // The TypeScript reference owns a process-global battle cache, so every repeat has to
-  // reuse this one Game. Each run gets a fresh single-threaded Search over it.
+  // Every repeat reuses this one Game, so each times the search alone and not building and
+  // compiling a match. Each run gets a fresh single-threaded Search over it.
   const tsSamples: number[] = [];
   for (let run = 0; run < REPEATS; run++) {
     const search = new Search(state.game, 1, 0, one.decision === "blind");

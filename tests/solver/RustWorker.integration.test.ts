@@ -122,8 +122,8 @@ Deno.test({
       "first",
       SearchMode.FIRST,
     );
-    // Complete each TS semantic comparison before constructing another Game. The TS
-    // reference still owns a process-global CardBattle cache and supports one live Game.
+    // Complete each TS semantic comparison before constructing the next Game. Each Game
+    // owns its battle cache now, so this is only to keep one comparison in flight at a time.
     while (openingFirst.search.step()) {
       /* complete the TypeScript opening matrix */
     }

@@ -10,6 +10,7 @@ import CardBattle from "./battle/CardBattle.ts";
 import { Turn } from "./types/Types.ts";
 import CachedCardBattle from "./battle/CachedCardBattle.ts";
 import Ability from "@/game/Ability.ts";
+import { DEBUG } from "@/utils/Debug.ts";
 
 export let counter = 0;
 
@@ -22,6 +23,20 @@ export enum Winner {
 
 export type CardIndex = 0 | 1 | 2 | 3 | number;
 export type Selection = [CardIndex, number, boolean];
+
+/**
+ * The two tables a match derives once, at construction, and every position in it reads.
+ * They are per match - owned by the Game that built them and shared by reference with every
+ * clone, make/unmake and search node taken from it - so any number of Games can be alive
+ * and interleaved in one process. Both used to be module globals, which let the most
+ * recently built Game silently answer for every other one.
+ *
+ * They are keyed by symbol so that neither a structured clone (the worker pool's
+ * `postMessage`) nor `JSON.stringify` copies them: `Game.from` rebuilds both on the far
+ * side, where the cards they compile are no longer the same objects anyway.
+ */
+const BASES: unique symbol = Symbol("Game.bases");
+const BATTLES: unique symbol = Symbol("Game.battles");
 
 /**
  * Everything one `Game.make()` can change, so it can be walked back by `Game.unmake()`.
@@ -105,6 +120,14 @@ export default class Game {
   events2 = new Events();
   r1: PlayerRound;
   r2: PlayerRound;
+
+  /**
+   * Turn order per `id`: 0..8 when player 1 moved first in round one, 9..17 when player 2
+   * did (see `createBaseGameCache`). Depends on the hands' Counter-attack Leaders.
+   */
+  [BASES]: BaseGame[] = [];
+  /** A compiled battle per card pair, at `ci1 * 4 + ci2`; see `createBattleDataCache`. */
+  [BATTLES]: (CachedCardBattle | undefined)[] = [];
 
   constructor(
     p1: Player,
@@ -201,6 +224,9 @@ export default class Game {
     g.events2 = events2;
     g.r1 = this.r1.clone(h1, h2);
     g.r2 = this.r2.clone(h2, h1);
+    // The match's tables, by reference: a clone is a position in the same match.
+    g[BASES] = this[BASES];
+    g[BATTLES] = this[BATTLES];
     return g;
   }
 
@@ -284,6 +310,10 @@ export default class Game {
     this.id = u.id;
   }
 
+  /**
+   * Restore a Game that went through a structured clone. That keeps the object graph but
+   * strips prototypes and the symbol-keyed per-match tables, so both are rebuilt here.
+   */
   static from(o: Game) {
     Object.setPrototypeOf(o, Game.prototype);
 
@@ -306,7 +336,7 @@ export default class Game {
   }
 
   get base() {
-    return baseGames[this.id];
+    return this[BASES][this.id];
   }
 
   get day() {
@@ -453,7 +483,7 @@ export default class Game {
       const fury1 = this.i1[2];
       const fury2 = this.i2[2];
 
-      const ccb = battleCache.get(`${this.i1[0]} ${this.i2[0]}`);
+      const ccb = this[BATTLES][this.i1[0] * 4 + this.i2[0]];
       if (ccb === undefined) {
         new CardBattle(
           this,
@@ -481,8 +511,8 @@ export default class Game {
       // Both players can hit 0 in the same round - the round loser takes card damage while
       // the winner pays a Backlash / poison cost - and that has to be recorded as a result
       // like any other. Leaving `winner` on PLAYING here let the solver treat a finished
-      // game as live: it kept expanding, `id` walked off the end of this half of
-      // `baseGames` into the other one (resetting `round` to 1), and the leaves it built
+      // game as live: it kept expanding, `id` walked off the end of this half of the
+      // base table into the other one (resetting `round` to 1), and the leaves it built
       // had neither children nor a result, so `Node.rating()` returned its Infinity
       // sentinel and every MAX ancestor inherited it.
       if (this.p1.life <= 0 && this.p2.life <= 0) {
@@ -582,9 +612,15 @@ export default class Game {
     this.r2.next(this.playingFirst === Turn.PLAYER_2);
   }
 
+  /**
+   * Compile a battle for every pair of cards still in hand into this match's own table.
+   * Clones share it; a fresh Game (or `Game.from`) builds its own. A pair whose card has
+   * already been played is left empty, since it can never battle again.
+   */
   createBattleDataCache() {
-    const log = console.log;
-    // console.log = () => 1;
+    // Filled by push, not `new Array(16)`, so the hot lookup reads a packed array.
+    const battles: (CachedCardBattle | undefined)[] = [];
+    for (let k = 0; k < 16; k++) battles.push(undefined);
 
     let counter = 0;
     for (let ci1 = 0; ci1 < 4; ci1++) {
@@ -596,26 +632,36 @@ export default class Game {
         if (c2.won !== undefined) continue;
 
         counter++;
-        battleCache.set(
-          `${ci1} ${ci2}`,
-          new CachedCardBattle(
-            this.h1,
-            c1,
-            this.h2,
-            c2,
-          ),
+        battles[ci1 * 4 + ci2] = new CachedCardBattle(
+          this.h1,
+          c1,
+          this.h2,
+          c2,
         );
       }
     }
 
-    console.log = log;
-    console.log(
-      `Cached ${`${counter}`.green} CardBattles `.white +
-        `(${battleCache.size} keys)`.green.dim,
-    );
+    this[BATTLES] = battles;
+    // Construction narration, behind the same switch as the rest of the engine's tracing:
+    // `deno task run` sets UR_DEBUG and still prints it, and nothing else that builds a
+    // Game (tests, benches, the advisor's replays) gets a line per construction.
+    if (DEBUG) console.log(`Cached ${`${counter}`.green} CardBattles`.white);
   }
 
+  /**
+   * Build this match's turn-order table and return the `id` its first position starts at.
+   *
+   * The table is two runs of nine: `id` 0..8 is the match where player 1 moves first in
+   * round one, 9..17 the one where player 2 does, and within a run `id = 2 * (round - 1) +
+   * (first mover has selected ? 1 : 0)`, with 8 (and 17) the finished position after round
+   * four. `select`/`nextRound`/`deselect` only ever step `id` by one and a finished game
+   * stops, so a position stays in the run it started in (only the interactive "end" command
+   * in `input` jumps to 7, and it ends the game). What the entries depend on beyond `id` is
+   * only whether each hand's Leader is Counter-attack, so the table is per match.
+   */
   createBaseGameCache(first = Turn.PLAYER_1) {
+    // Written in index order from empty, so it stays a packed array.
+    const bases: BaseGame[] = [];
     let counterAttack1 = false;
     const l1 = this.h1.getLeader();
     if (l1?.abilityString == "Counter-attack") {
@@ -638,7 +684,7 @@ export default class Game {
           ? (!firstHasSelected ? Turn.PLAYER_1 : Turn.PLAYER_2)
           : (!firstHasSelected ? Turn.PLAYER_2 : Turn.PLAYER_1);
 
-        baseGames[start + i] = {
+        bases[start + i] = {
           day: true,
           round: Math.floor(i / 2) + 1,
           counterAttack1,
@@ -664,11 +710,10 @@ export default class Game {
       start += 9;
     }
 
+    this[BASES] = bases;
     return first === Turn.PLAYER_1 ? 0 : 9;
   }
 }
-
-const battleCache = new Map<string, CachedCardBattle>();
 
 interface BaseGame {
   playingFirst: Turn;
@@ -679,9 +724,6 @@ interface BaseGame {
   day: boolean;
   round: number;
 }
-
-// const baseGames: { [key: number]: BaseGame } = {};
-const baseGames: BaseGame[] = [];
 
 export class GameGenerator {
   static create() {

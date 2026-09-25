@@ -4119,8 +4119,9 @@ The real-process gate runs admissible requests from every rule-10 strict draw: `
 opening SECOND, exact SECOND (including hidden-wager outcomes), and exact blind-second
 decisions, including at least one match on every one of those ten draws. Captures `1061897`
 and `925674` open as SECOND; `1069813` and `1089346` open as FIRST. Each TypeScript
-comparison finishes before another `Game` is constructed because the reference still owns a
-process-global battle cache. Capture `1081463` remains a standalone Rust replay gate: its
+comparison still finishes before the next `Game` is constructed, though since 2026-09-25
+each `Game` owns its battle and turn-order caches, so that only keeps one comparison in
+flight. Capture `1081463` remains a standalone Rust replay gate: its
 battle-rule id is 3, so the rule-10 TypeScript-hosted worker deliberately rejects it before
 launch. Strict draw `970972` is rule 2 and is refused by the Rust replay path itself, so it
 enters neither gate. The three rule-6 strict draws are Dojo records: `830285` and `1294430`

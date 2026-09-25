@@ -86,9 +86,10 @@ const CHOOSER_CLOSE_HOLD_MS = 500;
 /** Work for this long between redraws. One unit is ~30ms at round 2. */
 const SLICE_MS = 120;
 
-// The engine keeps a process-global CachedCardBattle cache keyed by card-index pair
-// (Game.createBattleDataCache), so only one Game may be alive at a time in a process. Every
-// position change therefore drops the running search *before* building the next Game.
+// Every position change drops the running search once the next Game is built: a position
+// has one search, and nothing steps a search it has left. This used to be required as well -
+// the engine kept one process-global CachedCardBattle cache, so building a Game broke every
+// other one - but each Game (and its clones) now owns its caches, so it no longer is.
 type Reconstructed = ReturnType<typeof reconstruct>;
 
 interface Position {
@@ -677,8 +678,8 @@ function startRustForPosition(
  * Cheap identity for the decision on offer: the round being played plus who has committed
  * what in it. Any change of decision point changes this, so an unchanged key means the
  * position is unchanged and no Game need be built - which matters because the client polls
- * several times a second and building one replays the whole game and rebuilds the engine's
- * process-global battle cache.
+ * several times a second and building one replays the whole game and compiles its battle
+ * cache.
  */
 export function positionKey(
   rec: Reconstructed,
@@ -1961,9 +1962,9 @@ async function liveMode(opts: AdvisorOptions) {
           }
           cancelPosition(pos);
         }
-        // buildPosition has already taken the engine's process-global battle cache, so the
-        // previous search must not be stepped again. Nothing else does: the feed reader
-        // never builds a Game, and only this loop steps a search.
+        // The previous search is finished with: only this loop steps a search, and it now
+        // steps the new one. (Stepping the old one would still be correct - each Game owns
+        // its battle cache - it would just be wasted work.)
         // isOurs implies positionKey found a testcase and a side, so `key` is defined.
         pos = {
           key: key!,

@@ -34,8 +34,8 @@ async function run(message: StartMessage) {
       import("../game/Game.ts"),
       import("./Search.ts"),
     ]);
-    // A structured clone keeps the graph but strips prototypes. Every worker has its own
-    // module globals, which is important because the battle cache is process-global.
+    // A structured clone keeps the graph but strips prototypes and the Game's symbol-keyed
+    // per-match caches; Game.from restores the one and rebuilds the other.
     const search = new Search(
       Game.from(message.game),
       message.stride,
