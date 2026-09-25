@@ -15,6 +15,7 @@ import {
   AbilityStat,
   AbilityString,
   AttackStat,
+  BaseCard,
   BaseData,
   BonusStat,
   // CardString,
@@ -33,8 +34,19 @@ interface Infiltration {
   readonly bonus: string;
 }
 
+/**
+ * The card's own base row, which `baseCards[key]` would otherwise look up on every read of
+ * a clan, name or star count. That table is an object keyed by id and level up to 2^19, so
+ * V8 keeps it in dictionary mode, and an optimised keyed load from dictionary elements is
+ * never inlined: each one called the generic KeyedLoadIC, 3.4% of `deno task time-search`.
+ * Keyed by symbol, like Game's tables, so a structured clone drops it and `Card.from`
+ * looks it up again on the far side, exactly as the old getter did.
+ */
+const ROW: unique symbol = Symbol("Card.row");
+
 export default class Card {
   private key: number;
+  private [ROW]: BaseCard;
   played = false;
   /** Set by Game when Clint City is at night: use the night ability / bonus variant. */
   night = false;
@@ -49,9 +61,10 @@ export default class Card {
   constructor(json: CardJSON) {
     this.key = getBaseKey(json.id, json.level);
 
-    if (this.base === undefined) {
+    if (baseCards[this.key] === undefined) {
       registerCardJSON(json);
     }
+    this[ROW] = baseCards[this.key];
 
     this.data = clone(this.base.data);
   }
@@ -66,6 +79,7 @@ export default class Card {
   clone(): Card {
     const c: Card = Object.create(Card.prototype);
     c.key = this.key;
+    c[ROW] = this[ROW];
     c.played = this.played;
     c.night = this.night;
     c.data = { a: this.data.a, b: this.data.b } as BaseData;
@@ -82,15 +96,18 @@ export default class Card {
   withAbility(ability: string): Card {
     const c = this.clone();
     c.key = registerVariant(this.key, { ability, nightAbility: undefined });
+    c[ROW] = baseCards[c.key];
     return c;
   }
 
   static from(o: Card): Card {
-    return Object.setPrototypeOf(o, Card.prototype);
+    Object.setPrototypeOf(o, Card.prototype);
+    o[ROW] = baseCards[o.key];
+    return o;
   }
 
   private get base() {
-    return baseCards[this.key];
+    return this[ROW];
   }
 
   get year() {

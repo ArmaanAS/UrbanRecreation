@@ -61,11 +61,23 @@ function clear(events: Ability[]) {
 export default class Events {
   events = new Array(10).fill(undefined).map<Ability[]>(() => []);
   repeat = new Array(10).fill(undefined).map<Ability[]>(() => []);
+  /**
+   * Bit `t` is set whenever `events[t]` or `repeat[t]` might hold an ability, so CardBattle
+   * can skip the times that have nothing to run. A side usually fills one or two of its ten
+   * times, and an `execute` on an empty time is a pure no-op, so skipping it cannot change a
+   * result. Every push sets the bit (`add`, `addGlobal`, `CachedEvents.merge`); only
+   * `execute` and `executeCancels` clear it, once that time is empty in both arrays. An
+   * array that shrinks elsewhere (`removeGlobal`) leaves a stale bit set, which costs one
+   * no-op `execute` and is then cleared. `Game.unmake` restores the mask it saved, so a
+   * make/unmake pair leaves it exactly as it was.
+   */
+  mask = 0;
 
   clone(): Events {
     const e: Events = Object.create(Events.prototype);
     e.events = this.events.map((arr) => arr.map((a) => a.clone()));
     e.repeat = this.repeat.map((arr) => arr.map((a) => a.clone()));
+    e.mask = this.mask;
     return e;
   }
 
@@ -74,16 +86,24 @@ export default class Events {
 
     o.events = o.events.map((arr) => arr.map(Ability.from));
     o.repeat = o.repeat.map((arr) => arr.map(Ability.from));
+    // Rebuilt from the arrays rather than trusted, so an object that never had one works.
+    let mask = 0;
+    for (let t = 0; t < 10; t++) {
+      if (o.events[t].length !== 0 || o.repeat[t].length !== 0) mask |= 1 << t;
+    }
+    o.mask = mask;
 
     return o;
   }
 
   add(event: EventTime, ability: Ability) {
     this.events[event].push(ability);
+    this.mask |= 1 << event;
   }
 
   addGlobal(event: EventTime, ability: Ability) {
     this.repeat[event].push(ability);
+    this.mask |= 1 << event;
   }
 
   removeGlobal(event: EventTime, ability: Ability) {
@@ -208,6 +228,8 @@ export default class Events {
     // No repeated PRE4 effects are currently known, but preserve execute()'s semantics.
     first.executeRepeat(event, firstData);
     second.executeRepeat(event, secondData);
+    if (first.repeat[event].length === 0) first.mask &= ~(1 << event);
+    if (second.repeat[event].length === 0) second.mask &= ~(1 << event);
   }
 
   execute(event: EventTime, data: BattleData) {
@@ -228,6 +250,7 @@ export default class Events {
     clear(events);
 
     this.executeRepeat(event, data);
+    if (this.repeat[event].length === 0) this.mask &= ~(1 << event);
   }
 
   // executeStart(data: BattleData) {

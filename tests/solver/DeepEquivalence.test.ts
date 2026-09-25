@@ -54,6 +54,10 @@ function fingerprint(g: Game): string {
     [0, 1, 2, 3].map((i) => card(g.h2[i])).join(","),
     g.events1.repeat.map((a) => a.length).join(""),
     g.events2.repeat.map((a) => a.length).join(""),
+    // Which times CardBattle runs: a latch pushes into `repeat` and sets its bit, and an
+    // unmake that only truncated `repeat` would leave that bit behind.
+    g.events1.mask,
+    g.events2.mask,
   ].join("|");
 }
 

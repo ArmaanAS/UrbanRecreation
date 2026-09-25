@@ -64,6 +64,9 @@ export class Undo {
 
   c1i = 0;
   c2i = 0;
+  /** Each side's `Events.mask` before the battle, so unmake restores it exactly. */
+  mask1 = 0;
+  mask2 = 0;
   c1: Card | undefined = undefined;
   c2: Card | undefined = undefined;
 
@@ -268,10 +271,13 @@ export default class Game {
       u.c2i = this.turn === Turn.PLAYER_2 ? index : this.i2![0];
       u.c1 = this.h1[u.c1i];
       u.c2 = this.h2[u.c2i];
-      // `events` is emptied by every execute and all ten times fire per battle, so only
-      // `repeat` - the latched permanents - survives a round and needs saving.
+      // Every time that holds anything fires per battle and empties its `events`, so only
+      // `repeat` - the latched permanents - survives a round and needs saving, with the
+      // mask that says which times to run.
       u.captureRepeat(this.events1, u.rep1);
       u.captureRepeat(this.events2, u.rep2);
+      u.mask1 = this.events1.mask;
+      u.mask2 = this.events2.mask;
     }
 
     this.select(index, pillz, fury, false);
@@ -283,6 +289,8 @@ export default class Game {
     if (u.battled) {
       u.restoreRepeat(this.events1, u.rep1);
       u.restoreRepeat(this.events2, u.rep2);
+      this.events1.mask = u.mask1;
+      this.events2.mask = u.mask2;
       for (let k = 0; k < u.permCount; k++) {
         const a = u.perms[k];
         a.won = u.permWon[k];
