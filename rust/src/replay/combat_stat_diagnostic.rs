@@ -23,11 +23,12 @@ use crate::engine::combat_stat_compiler::{
     classify_defeat_opponent_pillz, classify_defeat_opponent_pillz_gain, classify_defeat_pillz,
     classify_defeat_pillz_and_life, classify_dope_pillz,
     classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
-    classify_heal_life_on_victory, classify_killshot_opponent_life,
-    classify_killshot_pillz_and_life, classify_killshot_post_round,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life, classify_recover_pillz,
-    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
+    classify_hand_clan_gated_post_round, classify_heal_life_on_victory,
+    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
+    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
+    classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
     classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
     classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
@@ -42,10 +43,11 @@ use crate::engine::combat_stat_compiler::{
     has_consume_opponent_pillz_on_victory_shape, has_corrupt_own_life_shape,
     has_defeat_capped_life_shape, has_defeat_life_shape, has_defeat_opponent_pillz_gain_shape,
     has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_dope_pillz_shape,
-    has_equalizer_post_round_shape, has_heal_life_on_victory_shape,
-    has_killshot_opponent_life_shape, has_killshot_post_round_shape,
-    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
-    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    has_equalizer_post_round_shape, has_hand_clan_gated_post_round_shape,
+    has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
+    has_killshot_post_round_shape, has_poison_opponent_life_on_defeat_shape,
+    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
+    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape,
     has_unison_pillz_and_life_shape, has_victory_life_shape, has_victory_opponent_life_shape,
     has_victory_opponent_pillz_and_life_shape, has_victory_opponent_pillz_shape,
@@ -392,7 +394,14 @@ fn downgrade_unmodelled_stop_triggered_sources(prepared: &mut PreparedCombatStat
             for bonus in [false, true] {
                 let card = &mut prepared.compact_plans[player][slot];
                 let plan = if bonus { card.bonus } else { card.ability };
-                if unmodelled_source_context(plan, &own, &opponent).is_none() {
+                if unmodelled_source_context(
+                    plan,
+                    crate::engine::HandSlot::ALL[slot],
+                    &own,
+                    &opponent,
+                )
+                .is_none()
+                {
                     continue;
                 }
                 let CombatStatSourcePlanV1::Execute { source_id, .. } = plan else {
@@ -435,15 +444,24 @@ fn downgrade_ambiguous_clan_gates(
                 };
                 let CombatStatSourcePlanV1::Execute {
                     source_id,
-                    predicate:
-                        CombatStatPredicateV1::OwnerPreviousCardClanIn(set)
-                        | CombatStatPredicateV1::OpponentHandHasClan(set),
+                    predicate,
                     ..
                 } = plan
                 else {
                     continue;
                 };
-                if !crate::engine::clan_gate_is_ambiguous(set, base_rules, &plans) {
+                let source_kind = if bonus {
+                    CombatStatEffectSourceV1::Bonus
+                } else {
+                    CombatStatEffectSourceV1::Ability
+                };
+                if !crate::engine::clan_gate_is_ambiguous(
+                    player,
+                    source_kind,
+                    predicate,
+                    base_rules,
+                    &plans,
+                ) {
                     continue;
                 }
                 let reject = CombatStatSourcePlanV1::RejectIfSelected { source_id };
@@ -1402,6 +1420,20 @@ fn prepare_combat_stat_source(
             predicate,
         ));
     }
+    // Revision 73's `Versus` and `After` gates over the plain Victory bodies. `Versus` is
+    // decided from the opposing hand's canonical clans and `After` from the owner's previous
+    // card, both at resolution.
+    if let Some((post_round_effect, compact_effect, predicate)) =
+        classify_hand_clan_gated_post_round(definition, source_kind)
+    {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            post_round_effect,
+            compact_effect,
+            predicate,
+        ));
+    }
     if let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) {
         let compact_effect = compact_effect(effect).ok_or(
             CombatStatDiagnosticPreparationErrorV1::UnsupportedCompiledShape {
@@ -1695,6 +1727,19 @@ fn prepare_combat_stat_source(
                 || body.starts_with("Toxin ")
                 || body.starts_with("Repris.: Consume "))
         }) || has_clan_gated_post_round_shape(definition);
+    // Revision 73's `Versus` and `After` bodies likewise: either prefix over a Life or Pillz
+    // record that is not a permanent, or the complete gated shape under other text, rejects
+    // when selected. Before, they were inert disabled sources.
+    let unadmitted_hand_clan_gated_post_round = ((source.description.starts_with("Versus [")
+        || source.description.starts_with("After ["))
+        && !input.is_permanent
+        && matches!(
+            input.attribute_affected,
+            AttributeAffectedV1::Life
+                | AttributeAffectedV1::Pillz
+                | AttributeAffectedV1::LifeAndPillz
+        ))
+        || has_hand_clan_gated_post_round_shape(definition);
     let unadmitted_komboka_victory_pillz_and_life = source.id == 1714
         || source.description == "+1 Pillz And Life"
         || (input.side_affected == crate::effect_registry::AffectedSideV1::Player
@@ -1748,10 +1793,17 @@ fn prepare_combat_stat_source(
         || has_dope_pillz_shape(definition)
         // `Unison :` and `Growth:` permanents carry the clan-mates link or `isOverdrive`
         // beside the plain permanent structure, so none of the shapes above reach them;
-        // without this they would be inert disabled sources whose latch replay drops.
+        // without this they would be inert disabled sources whose latch replay drops. Since
+        // revision 73 the Pillz permanents are covered too, so a malformed `Unison : Consume`
+        // or a `Unison :` Combust is a hazard rather than inert.
         || ((source.description.starts_with("Unison") || source.description.starts_with("Growth"))
             && input.is_permanent
-            && input.attribute_affected == AttributeAffectedV1::Life);
+            && matches!(
+                input.attribute_affected,
+                AttributeAffectedV1::Life
+                    | AttributeAffectedV1::Pillz
+                    | AttributeAffectedV1::LifeAndPillz
+            ));
     let reason = if attempted_control {
         CombatStatDisabledReasonV1::UnsupportedPromisedControl { registry_reasons }
     } else if selected_hazard {
@@ -1783,6 +1835,7 @@ fn prepare_combat_stat_source(
         || unadmitted_round_scaled_post_round
         || unadmitted_bet_gated_post_round
         || unadmitted_clan_gated_post_round
+        || unadmitted_hand_clan_gated_post_round
         || unadmitted_heal_life
         || unadmitted_backlash
     {
@@ -1831,6 +1884,7 @@ fn prepare_combat_stat_source(
         || unadmitted_round_scaled_post_round
         || unadmitted_bet_gated_post_round
         || unadmitted_clan_gated_post_round
+        || unadmitted_hand_clan_gated_post_round
         || unadmitted_heal_life
         || unadmitted_backlash
     {

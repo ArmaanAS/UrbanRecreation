@@ -440,6 +440,33 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ("Corrupt N Min. M", &[5286]),
     ("Night: -4 Opp Power, Min 4 (identity)", &[5391]),
     ("revision 72 union", &[1719, 1785, 4661, 5286, 5391]),
+    // Revision 73, measured 2026-09-25: the Oculus ambiguity scoped to the hand each clan
+    // gate reads (`2461` is refused by nothing else), the `Versus [clan:..] : ` prefix over
+    // the plain Victory Life, opponent-Life and Life-per-Damage bodies and over `Copy: Opp.
+    // Damage`, the `After [clan:..]` prefix over the plain Victory Life, Pillz and
+    // opponent-Life bodies, and the two `Unison :` permanents on the existing latch.
+    ("Oculus ambiguity scoped per gate (Versus 2461)", &[2461]),
+    (
+        "Versus post-round Victory (Life, Opp. Life, Life per Damage)",
+        &[3545, 4887, 5283, 5505],
+    ),
+    ("Versus Copy: Opp. Damage", &[4956]),
+    (
+        "After post-round Victory (Life, Pillz, Opp. Life)",
+        &[5602, 5670, 5700, 5701, 5723],
+    ),
+    ("Unison : Toxin / Unison : Consume", &[4695, 5316]),
+    (
+        "Unison: Defeat: +N Life (slot-disjoint floor)",
+        &[4015, 5312],
+    ),
+    (
+        "revision 73 union",
+        &[
+            2461, 3545, 4015, 4695, 4887, 4956, 5283, 5312, 5316, 5505, 5602, 5670, 5700, 5701,
+            5723,
+        ],
+    ),
 ];
 
 fn root_path(path: &str) -> PathBuf {

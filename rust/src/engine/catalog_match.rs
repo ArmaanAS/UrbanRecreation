@@ -14,12 +14,12 @@ use super::combat_stat_compiler::{
     classify_defeat_life, classify_defeat_opponent_life, classify_defeat_opponent_pillz,
     classify_defeat_opponent_pillz_gain, classify_defeat_pillz, classify_defeat_pillz_and_life,
     classify_dope_pillz, classify_equalizer_opponent_life_on_victory,
-    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
-    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
-    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
-    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
-    classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
-    classify_round_scaled_post_round, classify_support_post_round,
+    classify_equalizer_post_round_gain, classify_hand_clan_gated_post_round,
+    classify_heal_life_on_victory, classify_killshot_opponent_life,
+    classify_killshot_pillz_and_life, classify_killshot_post_round,
+    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
+    classify_poison_opponent_life_on_victory, classify_reanimate_life, classify_recover_pillz,
+    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
     classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
     classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
@@ -578,7 +578,7 @@ impl CatalogCombatStatMatchV1 {
                     (CombatStatEffectSourceV1::Bonus, compact.bonus, &card.bonus),
                 ] {
                     if super::combat_stat_diagnostic::unmodelled_source_context(
-                        plan, &own, &opponent,
+                        plan, slot, &own, &opponent,
                     )
                     .is_none()
                     {
@@ -615,9 +615,10 @@ impl CatalogCombatStatMatchV1 {
             cards: compact_cards
                 .map(|hand| hand.map(|card| card.expect("all eight compact cards were prepared"))),
         };
-        // `After` and `Versus` read canonical clans; where an infiltrating Oculus would make
-        // the canonical and effective readings disagree the gate is unpinned, and it is
-        // refused as the unsupported source it is so the coverage report still counts it.
+        // `After` and `Versus` read canonical clans; where an infiltrating Oculus in the hand
+        // the gate reads would make the canonical and effective readings disagree the gate is
+        // unpinned, and it is refused as the unsupported source it is so the coverage report
+        // still counts it.
         for player in PlayerId::ALL {
             for slot in HandSlot::ALL {
                 let compact = match_spec.cards[player][slot.index()];
@@ -632,17 +633,13 @@ impl CatalogCombatStatMatchV1 {
                     ),
                     (CombatStatEffectSourceV1::Bonus, compact.bonus, &card.bonus),
                 ] {
-                    let CombatStatSourcePlanV1::Execute {
-                        predicate:
-                            CombatStatPredicateV1::OwnerPreviousCardClanIn(set)
-                            | CombatStatPredicateV1::OpponentHandHasClan(set),
-                        ..
-                    } = plan
-                    else {
+                    let CombatStatSourcePlanV1::Execute { predicate, .. } = plan else {
                         continue;
                     };
                     if !super::combat_stat_diagnostic::clan_gate_is_ambiguous(
-                        set,
+                        player,
+                        source_kind,
+                        predicate,
                         &match_spec.base_rules,
                         &match_spec.cards,
                     ) {
@@ -1562,6 +1559,33 @@ fn prepare_catalog_source(
                 description,
                 definition.id(),
                 classify_clan_gated_post_round,
+            );
+        }
+        // Revision 73's `Versus` and `After` gates over the plain Victory bodies, by the same
+        // rule: a printed level must be a structural alias of the definition its text
+        // resolves to, so the same-text levels without a registry definition (Sight Ld
+        // `5430`/`3683`, D-aleq `5280`-`5282`, Frau Vanda `5601`, Noma `5668`/`5669`) stay
+        // closed. `Versus` is judged from the opposing hand's canonical clans and `After` from
+        // the owner's previous card.
+        if classify_hand_clan_gated_post_round(definition, source_kind).is_some() {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                classify_hand_clan_gated_post_round,
             );
         }
         if classify_victory_life(definition, source_kind).is_some() {

@@ -503,8 +503,10 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Revision 52 admits `Defeat: +N Pillz` and `Defeat: +N Pillz And Life`. Kubra's
     // compound pays a surviving loss in 877239/1 (Pillz 12 - 3 + 1 = 10, beside Fridlia's
     // immediate Toxin on the Life side) and nothing when he is knocked out in 877023/1; its
-    // winning rounds pay only his Komboka bonus (876516/3, 876796/1).
-    (877239, 4),
+    // winning rounds pay only his Komboka bonus (876516/3, 876796/1). Two rounds since
+    // revision 73: round 2 selects Sight Ld's `Versus [clan:56][clan:45] : -2 Opp. Life Min
+    // 0`, now admitted but refused as a hazard beside Kubra's on-loss Life gain.
+    (877239, 2),
     (877023, 2),
     (876516, 4),
     // Three rounds since revision 53: Bekum's `Growth: - 1 Opp. Life Min 4` takes
@@ -542,7 +544,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // One round since revision 61: round 1 selects Kontra Ld's `Combust 1, Min 0`, refused
     // as a hazard there because Aurora's `+3 Life` writes the Life it floors.
     (1090096, 1),
-    (1090269, 2),
+    // Three rounds since revision 73, whose scoped Oculus rule no longer refuses Queen
+    // Naliah's `Versus [clan:36][clan:56] : Power +2` for Wachtmann in her own hand.
+    (1090269, 3),
     (1131170, 4),
     // Revision 56 admits the `Bet > N Pillz:` and `Bet < N Pillz:` gates, which compare the
     // owner's `pillzUsed` strictly with N. The Zenith bonus `Bet > 3 Pillz: +3 Life` pays in
@@ -735,6 +739,26 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1065308, 3),
     (1025279, 3),
     (1025413, 3),
+    // Revision 73 scopes the Oculus rule to the hand each clan gate reads, admits the
+    // `Versus [clan:..] : ` prefix over the plain Victory Life, opponent-Life and Life-per-
+    // Damage bodies and over `Copy: Opp. Damage`, and the two `Unison :` latches. Queen
+    // Naliah's Versus is false against an all-Rescue hand in 1090269/2 (9 + 2 Ulu Watu - 1 =
+    // 10, extended above). Wendy's `Versus [clan:3][clan:56][clan:42] : +1 Life Per Damage`
+    // loses against an all-Hive hand in 957565/1. Igniss' `Versus [clan:56][clan:30] : Copy:
+    // Opp. Damage` is false in 1131045/0 (D5 against Spidee) and in 1414342/2, where
+    // Kephren's Courage floors either reading at 2; round 3 of 1414342 selects Ghenom's closed
+    // Min 0 Backlash. Felinite's `Unison : Toxin 1, Min 0` latches in 1078555/0 (12 - 2 - 1 =
+    // 9), pays alone in round 1 (9 to 8) and again in round 2 (8 - 5 - 1 = 2). Musardine's
+    // `Unison : Consume 1, Min 0` latches in 1130381/0 (12 - 6 - 1 = 5) and pays in rounds 1
+    // and 2 (5 - 2 - 1 = 2, 2 - 0 - 1 = 1). Pantherine's `Unison: Defeat: +2 Life` wins
+    // 1023495/0 and pays only the Komboka bonus; Doela Noel's `Symmetry:` reduction sits in
+    // another slot and can never share its round.
+    (957565, 2),
+    (1131045, 4),
+    (1414342, 3),
+    (1078555, 4),
+    (1130381, 4),
+    (1023495, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -6118,6 +6142,187 @@ fn revision_72_sources_execute_and_take_the_two_sided_boundary() {
                 CombatStatSourcePlanV1::Execute { .. }
             ),
             "{id} {field} = {value}"
+        );
+    }
+}
+
+/// Revision 73: the `Versus` and `After` end-of-round bodies, Igniss' `Versus` stat Copy and
+/// the two `Unison :` latches execute in replay from the Ability slot. The gated bodies take
+/// the two-sided boundary: either prefix over a Life or Pillz record that is not a permanent,
+/// and the complete gated shape under other text, reject when selected. A malformed `Unison :`
+/// Pillz permanent is now a selected hazard too, as the Life ones already were.
+#[test]
+fn revision_73_sources_execute_and_take_the_two_sided_boundary() {
+    use urban_recreation_rust::engine::{ClanSetV1, CombatStatAttributeV1, CombatStatEffectV1};
+    let catalog = catalog();
+    let registry = registry();
+    let selected_slot = {
+        let source = replay(875032, &catalog);
+        usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        )
+    };
+    let plan = |registry: &EffectRegistryV1, id: u32, text: &str, bonus: bool| {
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let modifier = Some(SourceModifier {
+            id,
+            description: text.to_owned(),
+        });
+        if bonus {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, registry, PROJECTION).unwrap();
+        let plans = prepared.new_game().card_plans()[PlayerId::P1][selected_slot];
+        if bonus {
+            plans.bonus
+        } else {
+            plans.ability
+        }
+    };
+    let set = |ids: &[u32]| ClanSetV1::from_ids(ids).unwrap();
+    let versus = |ids: &[u32]| CombatStatPredicateV1::OpponentHandHasClan(set(ids));
+    let after = |ids: &[u32]| CombatStatPredicateV1::OwnerPreviousCardClanIn(set(ids));
+    for (id, text, predicate, effect) in [
+        (
+            3545,
+            "Versus [clan:51][clan:49][clan:30][clan:45] : +2 Life",
+            versus(&[51, 49, 30, 45]),
+            CombatStatEffectV1::GainLifeOnVictory { life: 2 },
+        ),
+        (
+            5505,
+            "Versus [clan:56][clan:45] : -2 Opp. Life Min 0",
+            versus(&[56, 45]),
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 2,
+                minimum: 0,
+            },
+        ),
+        (
+            4887,
+            "Versus [clan:3][clan:56][clan:42] : +1 Life Per Damage",
+            versus(&[3, 56, 42]),
+            CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: 1,
+                maximum: 0,
+            },
+        ),
+        (
+            5602,
+            "After [clan:4][clan:30] : -4 Opp. Life Min 0",
+            after(&[4, 30]),
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 4,
+                minimum: 0,
+            },
+        ),
+        (
+            5670,
+            "After [clan:47]: +2 Life",
+            after(&[47]),
+            CombatStatEffectV1::GainLifeOnVictory { life: 2 },
+        ),
+        (
+            5700,
+            "After [clan:54][clan:57]: +2 Pillz",
+            after(&[54, 57]),
+            CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+        ),
+        (
+            4956,
+            "Versus [clan:56][clan:30] : Copy: Opp. Damage",
+            versus(&[56, 30]),
+            CombatStatEffectV1::CopyOpponentPrintedCombatStat {
+                stat: CombatStatAttributeV1::Damage,
+            },
+        ),
+        (
+            5316,
+            "Unison : Toxin 1, Min 0",
+            CombatStatPredicateV1::OwnerHandUnison,
+            CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+                life: 1,
+                minimum: 0,
+            },
+        ),
+        (
+            4695,
+            "Unison : Consume 1, Min 0",
+            CombatStatPredicateV1::OwnerHandUnison,
+            CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+                pillz: 1,
+                minimum: 0,
+            },
+        ),
+    ] {
+        assert_eq!(
+            plan(&registry, id, text, false),
+            CombatStatSourcePlanV1::Execute {
+                source_id: id,
+                predicate,
+                effect,
+            },
+            "{text}"
+        );
+        assert!(
+            !matches!(
+                plan(&registry, id, text, true),
+                CombatStatSourcePlanV1::Execute { .. }
+            ),
+            "{text} as a bonus"
+        );
+    }
+    let source: serde_json::Value =
+        serde_json::from_reader(File::open(root_path("captures/abilities.json")).unwrap()).unwrap();
+    // The printed text over a wrong structure.
+    for (id, field, value) in [
+        ("3545", "valueMin", serde_json::json!(1)),
+        ("3545", "currentRoundRequirement", serde_json::json!("lose")),
+        ("5505", "valueMax", serde_json::json!(3)),
+        ("4887", "valueMax", serde_json::json!(6)),
+        ("5700", "previousRoundRequirement", serde_json::json!("win")),
+        ("5701", "positionRequirement", serde_json::json!("attacker")),
+        ("4695", "isImmediatePermanent", serde_json::json!(false)),
+        ("5316", "indexRequirement", serde_json::json!("symmetry")),
+    ] {
+        let mut malformed = source.clone();
+        malformed[id]["abilityData"][field] = value.clone();
+        let text = malformed[id]["description"].as_str().unwrap().to_owned();
+        let malformed = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&malformed, id, &text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{id} {field} = {value}"
+        );
+    }
+    // The complete gated shape, or the Unison latch, under other text.
+    for (id, text) in [
+        (
+            "3545",
+            "Versus [clan:51][clan:49][clan:30][clan:45] : +3 Life",
+        ),
+        ("5700", "After [clan:54][clan:57] : +2 Pillz Max. 9"),
+        ("5602", "Anew [clan:4][clan:30] : -4 Opp. Life Min 0"),
+        ("4695", "Unison : Consume 1, Min 1"),
+    ] {
+        let mut retexted = source.clone();
+        retexted[id]["description"] = serde_json::json!(text);
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&retexted, id, text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{id} as {text:?}"
         );
     }
 }

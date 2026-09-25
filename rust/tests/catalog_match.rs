@@ -4991,3 +4991,195 @@ fn strict_catalog_match_refuses_revision_72_sources_in_unpinned_contexts() {
         "{result:?}"
     );
 }
+
+/// Revision 73: every draw the slice unlocks prepares from its captured hands. Queen Naliah's
+/// `Versus` numeric is no longer refused for Wachtmann in her own hand; Wendy's `Versus` Life
+/// per Damage and Azhdar's `After` Pillz are end-of-round plans under their gates; Igniss'
+/// `Versus` stat Copy is a combat-stat Copy under the opposing-hand gate; Felinite's and
+/// Musardine's `Unison :` latches carry the one-clan gate; and Pantherine's Unison Defeat
+/// Life passes beside Doela Noel's slot-disjoint `Symmetry:` reduction.
+#[test]
+fn strict_catalog_match_admits_revision_73_versus_after_and_unison_latches() {
+    use urban_recreation_rust::effect_registry::{AffectedSideV1, CombatStatV1, StatOperationV1};
+    let catalog = catalog();
+    let registry = registry();
+    let set = |ids: &[u32]| ClanSetV1::from_ids(ids).unwrap();
+    let prepared = |capture: u64| {
+        CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+            .unwrap_or_else(|error| panic!("{capture}: {error:?}"))
+    };
+    let abilities = |capture: u64| {
+        let prepared = prepared(capture);
+        [PlayerId::P1, PlayerId::P2]
+            .into_iter()
+            .flat_map(|player| prepared.preparation()[player].iter())
+            .map(|card| card.ability.clone())
+            .collect::<Vec<_>>()
+    };
+    // Combat-stat plans: Queen Naliah's numeric and Igniss' Copy.
+    for (capture, id, expected) in [
+        (
+            1090269,
+            2461,
+            (
+                SupportedEffectV1::ModifyCombatStat {
+                    side: AffectedSideV1::Player,
+                    stat: CombatStatV1::Power,
+                    operation: StatOperationV1::Increase,
+                    value: 2,
+                    minimum: None,
+                    maximum: None,
+                    multiplier: MagnitudeMultiplierV1::Fixed,
+                },
+                CombatStatPredicateV1::OpponentHandHasClan(set(&[36, 56])),
+            ),
+        ),
+        (
+            1131045,
+            4956,
+            (
+                SupportedEffectV1::CopyOpponentPrintedCombatStat {
+                    stat: CombatStatV1::Damage,
+                },
+                CombatStatPredicateV1::OpponentHandHasClan(set(&[56, 30])),
+            ),
+        ),
+    ] {
+        let found = abilities(capture)
+            .into_iter()
+            .filter_map(|ability| match ability {
+                CatalogCombatStatSourceDispositionV1::Execute {
+                    identity,
+                    effect,
+                    predicate,
+                } if identity.registry_definition_id == id => {
+                    assert_eq!(identity.catalog_id, Some(id), "{capture}");
+                    Some((effect, predicate))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(found, vec![expected], "{capture} {id}");
+    }
+    // End-of-round plans.
+    for (capture, id, expected) in [
+        (
+            957565,
+            4887,
+            (
+                CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                    life_per_damage: 1,
+                    maximum: 0,
+                },
+                CombatStatPredicateV1::OpponentHandHasClan(set(&[3, 56, 42])),
+            ),
+        ),
+        (
+            1414992,
+            5700,
+            (
+                CombatStatPostRoundEffectV1::GainPillzOnVictory { pillz: 2 },
+                CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[54, 57])),
+            ),
+        ),
+        (
+            1078555,
+            5316,
+            (
+                CombatStatPostRoundEffectV1::ToxinOpponentLifeOnVictory {
+                    life: 1,
+                    minimum: 0,
+                },
+                CombatStatPredicateV1::OwnerHandUnison,
+            ),
+        ),
+        (
+            1130381,
+            4695,
+            (
+                CombatStatPostRoundEffectV1::ConsumeOpponentPillzOnVictory {
+                    pillz: 1,
+                    minimum: 0,
+                },
+                CombatStatPredicateV1::OwnerHandUnison,
+            ),
+        ),
+        (
+            1023495,
+            4015,
+            (
+                CombatStatPostRoundEffectV1::GainLifeOnDefeat { life: 2 },
+                CombatStatPredicateV1::OwnerHandUnison,
+            ),
+        ),
+    ] {
+        let found = abilities(capture)
+            .into_iter()
+            .filter_map(|ability| match ability {
+                CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                    identity,
+                    effect,
+                    predicate,
+                } if identity.registry_definition_id == id => {
+                    assert_eq!(identity.catalog_id, Some(id), "{capture}");
+                    Some((effect, predicate))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(found, vec![expected], "{capture} {id}");
+    }
+}
+
+/// The contexts revision 73 refuses rather than guesses. Sight Ld's `Versus` opponent-Life
+/// reduction faces Kubra's `Defeat: +1 Pillz And Life` on the Life it floors (877239), and
+/// Ashara's and Bazalt's gains face Uuber's `Victory Or Defeat: - 1 Opp. Life Min 1`, which
+/// lands on their owner's win (924669, 926071) - the 1093173/1 order question. Azhdar's
+/// `After` in 1414400 reads his own previous card while Dark Kaizerin infiltrates Oblivion in
+/// that hand, the ambiguity no round separates. And Queen Naliah's `Versus`, admitted with
+/// Wachtmann in her own hand, is refused again once the opposing hand holds a Copy of
+/// abilities (Zlatar Cr), which would judge the adopted gate against her hand.
+#[test]
+fn strict_catalog_match_refuses_revision_73_sources_in_unpinned_contexts() {
+    let catalog = catalog();
+    let registry = registry();
+    for (capture, text) in [
+        (877239, "Versus [clan:56][clan:45] : -2 Opp. Life Min 0"),
+        (
+            924669,
+            "Versus [clan:51][clan:49][clan:30][clan:45] : +2 Life",
+        ),
+        (926071, "After [clan:54][clan:44]: +3 Life"),
+        (1414400, "After [clan:54][clan:57]: +2 Pillz"),
+    ] {
+        let result =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION);
+        assert!(
+            matches!(
+                &result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { description, .. })
+                    if description == text
+            ),
+            "{capture}: {result:?}"
+        );
+    }
+    // 1090269 with Aurora (whose `+3 Life` would trip Wachtmann's `/ Life Lost` rule beside
+    // a Copy) replaced: a Rescue card leaves the match admitted, Zlatar Cr's Copy refuses it.
+    let mut base = captured_input(1090269);
+    assert_eq!(base.players[PlayerId::P1].hand[0], CardKey::new(559, 5));
+    base.players[PlayerId::P1].hand[0] = CardKey::new(1089, 2);
+    assert!(
+        CatalogCombatStatMatchV1::new(base.clone(), &catalog, &registry, PROJECTION).is_ok(),
+        "Sue in Aurora's place"
+    );
+    base.players[PlayerId::P1].hand[0] = CardKey::new(167, 4);
+    let result = CatalogCombatStatMatchV1::new(base, &catalog, &registry, PROJECTION);
+    assert!(
+        matches!(
+            &result,
+            Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { description, .. })
+                if description == "Versus [clan:36][clan:56] : Power +2"
+        ),
+        "Zlatar Cr in Aurora's place: {result:?}"
+    );
+}

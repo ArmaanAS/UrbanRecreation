@@ -988,6 +988,14 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// shows the server's cross-owner order is not the engine's, and no round shows a clan
     /// gate judged for a copier.
     ClanGatedPostRoundAgainstUnpinnedEffect,
+    /// A revision-73 `Versus` or `After` end-of-round source beside a write to the same
+    /// resource that can land in the round it pays - an opposing one, or an order-sensitive
+    /// one from the card's other slot or an own latch - or beside an opposing Copy.
+    HandClanGatedPostRoundAgainstUnpinnedEffect,
+    /// A revision-73 `Unison :` Toxin or Consume beside another latch of its family that
+    /// could target the same player. The server prints that a second latch replaces the
+    /// first while the engine stacks them, and which it is remains an open decision.
+    UnisonLatchAgainstSameFamilyLatch,
     VictoryOpponentPillzSource,
     VictoryOpponentPillzMagnitude,
     VictoryOpponentPillzPredicate,
@@ -1527,7 +1535,7 @@ fn validate_stop_triggered_context(
             own[hand_slot.index()].bonus,
         ),
     ] {
-        if let Some(reason) = unmodelled_source_context(plan, own, opponent) {
+        if let Some(reason) = unmodelled_source_context(plan, hand_slot, own, opponent) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -1548,6 +1556,7 @@ fn validate_stop_triggered_context(
 /// unsupported source, replay as a selected hazard, the engine as an invalid plan).
 pub(crate) fn unmodelled_source_context(
     plan: CombatStatSourcePlanV1,
+    hand_slot: HandSlot,
     own: &[CombatStatCardPlanV1; HAND_SIZE],
     opponent: &[CombatStatCardPlanV1; HAND_SIZE],
 ) -> Option<InvalidCombatStatPlanReasonV1> {
@@ -1790,6 +1799,41 @@ pub(crate) fn unmodelled_source_context(
         } if clan_gated_post_round_meets_unpinned_effect(effect, opponent) => {
             Some(InvalidCombatStatPlanReasonV1::ClanGatedPostRoundAgainstUnpinnedEffect)
         }
+        // Revision 73's `Versus` and `After` end-of-round sources are newly admitted writes, so
+        // they carry the 1093173/1 order rule as new effects must, and no round shows either
+        // gate judged for a copier.
+        CombatStatSourcePlanV1::Execute {
+            predicate:
+                CombatStatPredicateV1::OpponentHandHasClan(_)
+                | CombatStatPredicateV1::OwnerPreviousCardClanIn(_),
+            effect,
+            ..
+        } if hand_clan_gated_post_round_meets_unpinned_effect(plan, effect, own, opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::HandClanGatedPostRoundAgainstUnpinnedEffect)
+        }
+        // Revision 73's `Unison :` latches. The server prints that a second Poison or Toxin
+        // (or a second Consume) replaces the first, while the engine stacks them, and no round
+        // separates the two (docs/replay-triage.md, "Same-family permanents", an open
+        // decision). So the new forms are admitted only where no second latch of their family
+        // could target the same player: none elsewhere in the owner's hand, none an own Copy
+        // could import from the opposing hand, and no opposing Copy that could take the
+        // Unison latch to the other side.
+        CombatStatSourcePlanV1::Execute {
+            predicate: CombatStatPredicateV1::OwnerHandUnison,
+            effect:
+                effect @ (CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. }
+                | CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. }),
+            ..
+        } if opposing_copy_can_take(plan, own, opponent)
+            || source_plans(own)
+                .filter(|&own_plan| same_latch_family(own_plan, effect))
+                .count()
+                > 1
+            || (hand_has_copy(own)
+                && source_plans(opponent).any(|opposing| same_latch_family(opposing, effect))) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::UnisonLatchAgainstSameFamilyLatch)
+        }
         // The Victory Or Defeat own gains are uncapped and pay whatever the outcome, so an
         // opposing floor on their resource, an own cap on it, or a Copy meets them in an order
         // no round pins.
@@ -1813,7 +1857,9 @@ pub(crate) fn unmodelled_source_context(
         }
         // The Unison Life gains are uncapped, so they commute with other uncapped gains, but
         // an opposing floor on the resource, an own cap or revival on it, or a Copy meets
-        // them in an order no round pins. The compound meets both resources.
+        // them in an order no round pins. The compound meets both resources. Since revision
+        // 73 an opposing floor counts only where it can land in a round the gain pays
+        // (`opposing_floor_can_meet_unison_gain`).
         CombatStatSourcePlanV1::Execute {
             effect: effect @ CombatStatEffectV1::GainLifeOnDefeat { .. },
             predicate: CombatStatPredicateV1::OwnerHandUnison,
@@ -1823,7 +1869,16 @@ pub(crate) fn unmodelled_source_context(
             effect: effect @ CombatStatEffectV1::GainPillzAndLifeOnVictory { .. },
             ..
         } if opposing_copy_can_take(plan, own, opponent)
-            || source_plans(opponent).any(|opposing| life_writes(opposing).opposing_floor)
+            || opponent.iter().enumerate().any(|(index, card)| {
+                [card.ability, card.bonus].into_iter().any(|opposing| {
+                    life_writes(opposing).opposing_floor
+                        && opposing_floor_can_meet_unison_gain(
+                            opposing,
+                            index == hand_slot.index(),
+                            effect,
+                        )
+                })
+            })
             || source_plans(own).any(|own_plan| life_writes(own_plan).own_order_sensitive)
             || (hand_has_copy(own)
                 && source_plans(opponent)
@@ -1956,6 +2011,153 @@ fn clan_gated_post_round_meets_unpinned_effect(
         _ => return false,
     };
     meets || hand_has_copy(opponent)
+}
+
+/// Whether a revision-73 `Versus` or `After` end-of-round `plan` meets another write to the
+/// resource it writes in an order no round pins (1093173/1 shows the server's cross-owner
+/// order is not the engine's P1-then-P2), or an opposing Copy, which could take it or import
+/// a writer (`life_writes` and `pillz_writes` report nothing for a Copy). Every combat-stat
+/// plan under either gate - the numerics, `Stop Opp. Bonus` and the stat Copy - answers false.
+/// - the opponent-Life reduction floors the opposing Life on its owner's win, so an opposing
+///   own Life gain or order-sensitive own Life write landing on the opposing loss (or every
+///   round, for a permanent) meets it;
+/// - the uncapped Life gains commute with other uncapped gains, but not with an opposing
+///   floor on the owner's Life landing on the opposing loss, nor with an order-sensitive own
+///   Life write (a cap, a revival, a floor) from the card's other slot or an own latch;
+/// - the Pillz gain likewise meets an opposing floor on the owner's Pillz on the opposing
+///   loss, or an own capped Pillz gain from the other slot or an own latch.
+///
+/// Reading `write_outcomes` rather than every opposing floor keeps a Victory-only floor,
+/// which can only land on the opposing win, from refusing a gain that pays on the owner's.
+fn hand_clan_gated_post_round_meets_unpinned_effect(
+    plan: CombatStatSourcePlanV1,
+    effect: CombatStatEffectV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let on_opposing_loss = |plan: CombatStatSourcePlanV1| write_outcomes(plan).on_loss;
+    let meets = match effect {
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory { .. } => {
+            source_plans(opponent).any(|opposing| {
+                let life = life_writes(opposing);
+                on_opposing_loss(opposing) && (life.own_gain || life.own_order_sensitive)
+            })
+        }
+        CombatStatEffectV1::GainLifeOnVictory { .. }
+        | CombatStatEffectV1::GainLifePerFinalDamageOnVictory { .. } => {
+            source_plans(opponent)
+                .any(|opposing| on_opposing_loss(opposing) && life_writes(opposing).opposing_floor)
+                || own_write_meets(plan, own, opponent, |own_plan| {
+                    life_writes(own_plan).own_order_sensitive
+                })
+        }
+        CombatStatEffectV1::GainPillzOnVictory { .. } => {
+            source_plans(opponent)
+                .any(|opposing| on_opposing_loss(opposing) && pillz_writes(opposing).opposing_floor)
+                || own_write_meets(plan, own, opponent, |own_plan| {
+                    pillz_writes(own_plan).own_capped
+                })
+        }
+        _ => return false,
+    };
+    meets || hand_has_copy(opponent)
+}
+
+/// `same_owner_meets` with an own Copy judged by what it could import rather than by being a
+/// Copy: the other slot of the card carrying `plan` answers `writes` itself, or is a Copy
+/// whose slot kind holds an opposing plan that does; and any own latch answers `writes`, or
+/// any own Copy could import an opposing latch that does, since an imported latch pays every
+/// round after it latches. The adopted plan runs as the copier's own, so `writes` reads it
+/// from the copier's side unchanged.
+fn own_write_meets(
+    plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+    writes: impl Fn(CombatStatSourcePlanV1) -> bool,
+) -> bool {
+    let importable = |copied: CopiedSourceKindV1, latches_only: bool| {
+        opponent.iter().any(|card| {
+            let opposing = match copied {
+                CopiedSourceKindV1::Ability => card.ability,
+                CopiedSourceKindV1::Bonus => card.bonus,
+            };
+            (!latches_only || is_latch(opposing)) && writes(opposing)
+        })
+    };
+    let other_slot = |other: CombatStatSourcePlanV1| match other {
+        CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } => importable(copied, false),
+        _ => writes(other),
+    };
+    own.iter().any(|card| {
+        (card.ability == plan && other_slot(card.bonus))
+            || (card.bonus == plan && other_slot(card.ability))
+    }) || source_plans(own).any(|own_plan| match own_plan {
+        CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } => importable(copied, true),
+        _ => is_latch(own_plan) && writes(own_plan),
+    })
+}
+
+/// Whether `plan` is a latch of the same family as the Unison `latch`: Poison or Toxin for a
+/// Toxin, which the server's replacement note names together, and Consume for a Consume.
+/// Combust, which also floors the opposing Pillz, is counted with Consume to stay on the
+/// safe side of the open question.
+fn same_latch_family(plan: CombatStatSourcePlanV1, latch: CombatStatEffectV1) -> bool {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
+        return false;
+    };
+    let Some(PostRoundSourceEffect::Fixed(
+        PostRoundEffect::LatchOnVictory(latched)
+        | PostRoundEffect::LatchOnDefeat(latched)
+        | PostRoundEffect::LatchOnKillshot(latched),
+    )) = shared_post_round_effect(effect)
+    else {
+        return false;
+    };
+    match latch {
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. } => matches!(
+            latched,
+            LatchedEffectV1::PoisonOpponentLife { .. } | LatchedEffectV1::ToxinOpponentLife { .. }
+        ),
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. } => matches!(
+            latched,
+            LatchedEffectV1::ConsumeOpponentPillz { .. }
+                | LatchedEffectV1::CombustOpponentLifeAndPillz { .. }
+        ),
+        _ => false,
+    }
+}
+
+/// Whether an opposing floor on a Unison gain's Life can land in a round the gain pays. A latch
+/// pays every round after it latches, so it always can. Otherwise both the floor's slot
+/// predicate and its outcome must allow the round: `Symmetry:` fires only when the two
+/// selected cards share a slot and `Asymmetry:` only when they differ, and the floor must
+/// write on the outcome the gain pays on - a Defeat gain on its owner's loss, the opposing
+/// win, and the Victory compound on the opposing loss. `same_slot` says whether the floor's
+/// card sits in the gain's slot. Everything else answers true, so this only ever drops a
+/// floor that provably cannot coincide (1023495: Doela Noel's `Symmetry:` reduction in slot 0
+/// against Pantherine in slot 3).
+fn opposing_floor_can_meet_unison_gain(
+    opposing: CombatStatSourcePlanV1,
+    same_slot: bool,
+    gain: CombatStatEffectV1,
+) -> bool {
+    if is_latch(opposing) {
+        return true;
+    }
+    let CombatStatSourcePlanV1::Execute { predicate, .. } = opposing else {
+        return true;
+    };
+    let slot_allows = match predicate {
+        CombatStatPredicateV1::SelectedHandSlotsMatch => same_slot,
+        CombatStatPredicateV1::SelectedHandSlotsDiffer => !same_slot,
+        _ => true,
+    };
+    let outcomes = write_outcomes(opposing);
+    let outcome_allows = match gain {
+        CombatStatEffectV1::GainLifeOnDefeat { .. } => outcomes.on_win,
+        _ => outcomes.on_loss,
+    };
+    slot_allows && outcome_allows
 }
 
 /// True when the Life a `/ Life Lost` source reads could rise during the match. Its owner
@@ -2353,8 +2555,8 @@ fn opponent_defeats_resource_cancellation(
 /// `After` and `Versus` read canonical clans, as the printed rules text says ("the Oculus,
 /// even when infiltrated ..., do not activate this condition"). No captured round separates
 /// that from the effective clan, so a match where the two readings would disagree - an
-/// infiltrating Oculus in either hand whose effective clan and Oculus itself fall on
-/// opposite sides of the list - is refused rather than executed on an unpinned rule.
+/// infiltrating Oculus in the hand the gate reads whose effective clan and Oculus itself fall
+/// on opposite sides of the list - is refused rather than executed on an unpinned rule.
 fn validate_clan_gate_context(
     player: PlayerId,
     hand_slot: HandSlot,
@@ -2367,15 +2569,13 @@ fn validate_clan_gate_context(
     ] {
         let CombatStatSourcePlanV1::Execute {
             source_id,
-            predicate:
-                CombatStatPredicateV1::OwnerPreviousCardClanIn(set)
-                | CombatStatPredicateV1::OpponentHandHasClan(set),
+            predicate,
             ..
         } = plan
         else {
             continue;
         };
-        if clan_gate_is_ambiguous(set, &spec.base_rules, &spec.cards) {
+        if clan_gate_is_ambiguous(player, source, predicate, &spec.base_rules, &spec.cards) {
             return Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -2388,13 +2588,38 @@ fn validate_clan_gate_context(
     Ok(())
 }
 
+/// Whether a `Versus` or `After` gate on a plan in `owner`'s `source` slot could read an
+/// infiltrating Oculus whose canonical and effective clans fall on opposite sides of the
+/// gate's list. Since revision 73 it looks only at the hand the gate reads: `Versus` reads
+/// the opposing hand and `After` the owner's own previous card, so an Oculus elsewhere cannot
+/// change either. An opposing Copy of the slot kind carrying the plan widens it to both
+/// hands, because an adopted plan keeps its predicate but is judged from the copier's seat -
+/// a copied `Versus` reads the original owner's hand, a copied `After` the copier's previous
+/// card. Every other predicate answers false.
 pub fn clan_gate_is_ambiguous(
-    set: ClanSetV1,
+    owner: PlayerId,
+    source: CombatStatEffectSourceV1,
+    predicate: CombatStatPredicateV1,
     base_rules: &BaseRulesMatchSpec,
     cards: &ByPlayer<[CombatStatCardPlanV1; HAND_SIZE]>,
 ) -> bool {
     const OCULUS: u32 = 56;
-    PlayerId::ALL.into_iter().any(|side| {
+    let (set, read) = match predicate {
+        CombatStatPredicateV1::OpponentHandHasClan(set) => (set, owner.other()),
+        CombatStatPredicateV1::OwnerPreviousCardClanIn(set) => (set, owner),
+        _ => return false,
+    };
+    let copied = match source {
+        CombatStatEffectSourceV1::Ability => CopiedSourceKindV1::Ability,
+        CombatStatEffectSourceV1::Bonus => CopiedSourceKindV1::Bonus,
+    };
+    let adoptable = source_plans(&cards[owner.other()]).any(|plan| {
+        matches!(
+            plan,
+            CombatStatSourcePlanV1::CopyOpponentSource { copied: kind, .. } if kind == copied
+        )
+    });
+    let infiltrated = |side: PlayerId| {
         (0..HAND_SIZE).any(|index| {
             let canonical = base_rules.players[side].hand[index].clan_id;
             let effective = cards[side][index].effective_clan_id;
@@ -2402,7 +2627,8 @@ pub fn clan_gate_is_ambiguous(
                 && effective != OCULUS
                 && set.contains(OCULUS) != set.contains(effective)
         })
-    })
+    };
+    infiltrated(read) || (adoptable && infiltrated(read.other()))
 }
 
 fn validate_copy_targets(
@@ -2837,14 +3063,16 @@ fn validate_combat_stat_source_plan(
             // Revision 70 puts the owner-clan gate on Toxin (`5613`) and the gate with
             // Reprisal's second move on Consume (`5275`); each is its own grammar's only
             // gated form, and both are card abilities.
+            // Revision 73 puts the one-clan hand gate on both (`5316`, `4695`).
             let clan_gated = matches!(
                 (effect, predicate),
                 (
                     CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. },
-                    CombatStatPredicateV1::OwnerClanIn(_),
+                    CombatStatPredicateV1::OwnerClanIn(_) | CombatStatPredicateV1::OwnerHandUnison,
                 ) | (
                     CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. },
-                    CombatStatPredicateV1::OwnerClanInAnd(_, ClanConjunctV1::OwnerMovesSecond),
+                    CombatStatPredicateV1::OwnerClanInAnd(_, ClanConjunctV1::OwnerMovesSecond)
+                        | CombatStatPredicateV1::OwnerHandUnison,
                 )
             );
             if source != CombatStatEffectSourceV1::Ability
@@ -2971,14 +3199,17 @@ fn validate_combat_stat_source_plan(
             ));
         }
         // `Night: -N Opp. Life Min M` (Lyra's `4750`) puts the match constant on it since
-        // revision 69, and Phalloide Ld's `[clan:..] - 2 Opp. Life Min 2` (`5392`) the
-        // owner-clan gate since revision 70.
+        // revision 69, Phalloide Ld's `[clan:..] - 2 Opp. Life Min 2` (`5392`) the
+        // owner-clan gate since revision 70, and the `Versus` and `After` gates (`5505`,
+        // `5283`, `5602`) since revision 73.
         if !matches!(
             predicate,
             CombatStatPredicateV1::Always
                 | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
                 | CombatStatPredicateV1::MatchIsNight
                 | CombatStatPredicateV1::OwnerClanIn(_)
+                | CombatStatPredicateV1::OpponentHandHasClan(_)
+                | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
         ) {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -3324,7 +3555,8 @@ fn validate_combat_stat_source_plan(
             ));
         }
         // The plain grammar is unconditional; the three reviewed prefixed forms carry one
-        // already-resolved predicate each, and all are card abilities only.
+        // already-resolved predicate each, and all are card abilities only - as are the
+        // revision-73 `Versus` and `After` gates (`3545`; `5670`, `5701`, `5723`).
         // `Bet > N Pillz:` is the one gate a clan bonus prints on it (the Zenith bonus).
         let bet_gate = matches!(predicate, CombatStatPredicateV1::OwnerPillzUsedAbove(_));
         if !(bet_gate
@@ -3334,6 +3566,8 @@ fn validate_combat_stat_source_plan(
                     | CombatStatPredicateV1::OwnerWonPreviousRound
                     | CombatStatPredicateV1::SelectedHandSlotsDiffer
                     | CombatStatPredicateV1::OwnerMovesFirst
+                    | CombatStatPredicateV1::OpponentHandHasClan(_)
+                    | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
             ))
             || (predicate != CombatStatPredicateV1::Always
                 && !bet_gate
@@ -3370,12 +3604,14 @@ fn validate_combat_stat_source_plan(
         }
         // The plain grammar is unconditional; the two reviewed prefixed forms carry the
         // previous-round predicate `Confidence:` names or the first move `Courage:` names,
-        // and all are card abilities only.
+        // and revision 73's `After` gate (`5700`) the previous card's clan. All are card
+        // abilities only.
         if !matches!(
             predicate,
             CombatStatPredicateV1::Always
                 | CombatStatPredicateV1::OwnerWonPreviousRound
                 | CombatStatPredicateV1::OwnerMovesFirst
+                | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
         ) {
             return Err(invalid_combat_stat_execute(
                 player,
@@ -3801,12 +4037,14 @@ fn validate_combat_stat_source_plan(
             ));
         }
         // A cap has only ever been printed without a previous-round prefix, so the two
-        // must never arrive together on one plan.
+        // must never arrive together on one plan. Revision 73's `Versus` gate (`4887`) is
+        // uncapped too.
         if !matches!(
             predicate,
             CombatStatPredicateV1::Always
                 | CombatStatPredicateV1::OwnerLostPreviousRound
                 | CombatStatPredicateV1::OwnerWonPreviousRound
+                | CombatStatPredicateV1::OpponentHandHasClan(_)
         ) || (maximum > 0 && predicate != CombatStatPredicateV1::Always)
         {
             return Err(invalid_combat_stat_execute(
@@ -3951,7 +4189,13 @@ fn validate_combat_stat_source_plan(
                 | CombatStatPredicateV1::SelectedHandSlotsMatch
                 | CombatStatPredicateV1::SelectedHandSlotsDiffer
                 | CombatStatPredicateV1::OwnerHandUnison
-        );
+        )
+        // Revision 73: `Versus [clan:..] : Copy: Opp. Damage` (`4956`), a Copy only.
+        || (matches!(
+            effect,
+            CombatStatEffectV1::CopyOpponentPrintedCombatStat { .. }
+        ) && source == CombatStatEffectSourceV1::Ability
+            && matches!(predicate, CombatStatPredicateV1::OpponentHandHasClan(_)));
     if !matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. })
         && predicate != CombatStatPredicateV1::Always
         && !conditional_stop

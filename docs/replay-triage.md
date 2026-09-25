@@ -489,6 +489,11 @@ or Consume latching over an older one, which the text says stops the old one pay
 round), cross-kind replacement (Toxin over Poison) and a weaker newcomer replacing a stronger
 latch are all unobserved.
 
+Rust semantic revision 73 admits `Unison : Toxin` and `Unison : Consume` without touching this
+question: construction refuses either one wherever a second latch of its family could target
+the same player (`UnisonLatchAgainstSameFamilyLatch`), which costs no draw. Unison Poison
+(`4033`) stays closed, since its only draw, 926226, is exactly the replacement case.
+
 ### Inactive clan bonuses — nothing to do
 Across the captures there are 23 played rounds where the server sends no clan bonus, and in
 every one the card is the only member of its clan in the hand. Most of those games already

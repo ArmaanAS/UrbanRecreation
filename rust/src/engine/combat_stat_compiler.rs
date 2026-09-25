@@ -149,6 +149,46 @@ fn without_owner_clan_gate(input: &StructuredEffectV1) -> StructuredEffectV1 {
     plain
 }
 
+/// The `Versus [clan:..] : ` or `After [clan:..] : ` gate read from the record, the rule
+/// revision 54 set for `classify_clan_gated`: exactly one of `oppClanRequirement` and
+/// `previousClanRequirement` set, the owner-clan list empty, and the text after the exact
+/// printed prefix rebuilt from that list - `After` in both of its printed spacings. Returns
+/// the predicate, the body and the record with that list cleared, so the ungated grammar's
+/// own shape can judge everything else about it (revision 73).
+fn hand_clan_gate<'a>(
+    input: &StructuredEffectV1,
+    description: &'a str,
+) -> Option<(CombatStatPredicateV1, &'a str, StructuredEffectV1)> {
+    if !input.clan_requirement.is_empty() {
+        return None;
+    }
+    let mut plain = input.clone();
+    let opposing = input.opponent_clan_requirement.as_slice();
+    let previous = input.previous_clan_requirement.as_slice();
+    let (predicate, body) = match (opposing.is_empty(), previous.is_empty()) {
+        (false, true) => {
+            let tags: String = opposing.iter().map(|id| format!("[clan:{id}]")).collect();
+            plain.opponent_clan_requirement = ClanIdsV1::default();
+            (
+                CombatStatPredicateV1::OpponentHandHasClan(ClanSetV1::from_ids(opposing)?),
+                description.strip_prefix(&format!("Versus {tags} : "))?,
+            )
+        }
+        (true, false) => {
+            let tags: String = previous.iter().map(|id| format!("[clan:{id}]")).collect();
+            plain.previous_clan_requirement = ClanIdsV1::default();
+            (
+                CombatStatPredicateV1::OwnerPreviousCardClanIn(ClanSetV1::from_ids(previous)?),
+                description
+                    .strip_prefix(&format!("After {tags} : "))
+                    .or_else(|| description.strip_prefix(&format!("After {tags}: ")))?,
+            )
+        }
+        _ => return None,
+    };
+    Some((predicate, body, plain))
+}
+
 /// `[clan:A][clan:B] Copy: Opp. Ability` and its `Asy. :` form: the adoption happens only
 /// when the copier's own effective clan is listed, and for `Asy. :` also only when the two
 /// selected cards sit in different slots. The record must be the ungated grammar's once the
@@ -195,7 +235,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 72;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 73;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -3060,6 +3100,154 @@ pub(crate) fn has_clan_gated_post_round_shape(definition: &EffectDefinitionV1) -
             && unconditional_latch(&both))
 }
 
+/// Revision 73: the `Versus [clan:..] : ` and `After [clan:..] : ` gates over the plain
+/// Victory bodies the projection already executes, each by the ungated grammar's exact text
+/// and complete unconditional shape once the gate's list is cleared (`hand_clan_gate`), so no
+/// existing shape is loosened. Card abilities only.
+/// - `+N Life` (Ashara's `Versus` `3545`; Noma's, Azhdar's and Bazalt's `After` `5670`,
+///   `5701`, `5723`);
+/// - `-N Opp. Life Min M` (Sight Ld's and D-aleq's `Versus` `5505`, `5283`; Frau Vanda's
+///   `After` `5602`), never over an identity-locked id;
+/// - `+N Life Per Damage`, uncapped and under `Versus` only (Wendy's `4887`);
+/// - `+N Pillz`, under `After` only (Azhdar's `5700`).
+///
+/// The gate is decided at resolution: `Versus` from the opposing hand's canonical clans,
+/// `After` from the canonical clan of the card the owner played in the previous round.
+/// Returns the public effect, the compact effect and the predicate.
+pub(crate) fn classify_hand_clan_gated_post_round(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(
+    CombatStatPostRoundEffectV1,
+    CombatStatEffectV1,
+    CombatStatPredicateV1,
+)> {
+    if source_kind != CombatStatEffectSourceV1::Ability
+        || victory_opponent_life_id_is_identity_locked(definition.id())
+    {
+        return None;
+    }
+    let input = definition.structured_input();
+    let (predicate, body, plain) = hand_clan_gate(input, definition.description())?;
+    let versus = matches!(predicate, CombatStatPredicateV1::OpponentHandHasClan(_));
+    let (value, minimum) = (plain.value, plain.value_min);
+    if value == 0 {
+        return None;
+    }
+    if shape_matches(&plain, POST_ROUND_SHAPE) && body == format!("+{value} Life") {
+        return Some((
+            CombatStatPostRoundEffectV1::GainLifeOnVictory { life: value },
+            CombatStatEffectV1::GainLifeOnVictory { life: value },
+            predicate,
+        ));
+    }
+    if victory_opponent_life_shape_matches(&plain, value, minimum, CombatStatPredicateV1::Always)
+        && body == format!("-{value} Opp. Life Min {minimum}")
+    {
+        return Some((
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory {
+                life: value,
+                minimum,
+            },
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: value,
+                minimum,
+            },
+            predicate,
+        ));
+    }
+    if versus
+        && shape_matches(
+            &plain,
+            PostRoundShapeV1 {
+                special: SpecialActionV1::ConvertDamageToLife,
+                ..POST_ROUND_SHAPE
+            },
+        )
+        && body == format!("+{value} Life Per Damage")
+    {
+        return Some((
+            CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: value,
+                maximum: 0,
+            },
+            CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                life_per_damage: value,
+                maximum: 0,
+            },
+            predicate,
+        ));
+    }
+    if !versus
+        && shape_matches(
+            &plain,
+            PostRoundShapeV1 {
+                attribute: AttributeAffectedV1::Pillz,
+                ..POST_ROUND_SHAPE
+            },
+        )
+        && body == format!("+{value} Pillz")
+    {
+        return Some((
+            CombatStatPostRoundEffectV1::GainPillzOnVictory { pillz: value },
+            CombatStatEffectV1::GainPillzOnVictory { pillz: value },
+            predicate,
+        ));
+    }
+    None
+}
+
+/// Structural half of the `Versus`/`After` end-of-round boundary: a record carrying only one
+/// of the two hand-clan gates that is, once the gate is cleared, the complete unconditional
+/// shape of one of the bodies above - whatever its text says.
+pub(crate) fn has_hand_clan_gated_post_round_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    if !input.clan_requirement.is_empty()
+        || input.opponent_clan_requirement.is_empty() == input.previous_clan_requirement.is_empty()
+        || input.value == 0
+    {
+        return false;
+    }
+    let mut plain = input.clone();
+    plain.opponent_clan_requirement = ClanIdsV1::default();
+    plain.previous_clan_requirement = ClanIdsV1::default();
+    shape_matches(&plain, POST_ROUND_SHAPE)
+        || victory_opponent_life_shape_matches(
+            &plain,
+            plain.value,
+            plain.value_min,
+            CombatStatPredicateV1::Always,
+        )
+        || shape_matches(
+            &plain,
+            PostRoundShapeV1 {
+                special: SpecialActionV1::ConvertDamageToLife,
+                ..POST_ROUND_SHAPE
+            },
+        )
+        || shape_matches(
+            &plain,
+            PostRoundShapeV1 {
+                attribute: AttributeAffectedV1::Pillz,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
+/// The `Unison :` gate over a latch (revision 73): the record is the plain unconditional
+/// permanent with only its clan-mates link set, which is how the registry marks Unison. The
+/// returned copy has the link cleared, so the ungated shape judges everything else. Only
+/// `Unison : Toxin` and `Unison : Consume` ask; Unison Poison, Heal, Regen and Combust stay
+/// closed, since `permanent_life_neutral_shape_matches` still refuses the link.
+fn unison_permanent(input: &StructuredEffectV1) -> Option<StructuredEffectV1> {
+    if !input.is_clanmates_count_linked {
+        return None;
+    }
+    let mut plain = input.clone();
+    plain.is_clanmates_count_linked = false;
+    (permanent_condition(&plain) == Some((CombatStatPredicateV1::Always, ""))).then_some(plain)
+}
+
 /// True for every predicate a permanent's plan may carry.
 pub(crate) fn permanent_predicate_admitted(predicate: CombatStatPredicateV1) -> bool {
     matches!(
@@ -3146,12 +3334,24 @@ pub(crate) fn has_poison_opponent_life_on_defeat_shape(definition: &EffectDefini
 }
 
 /// `Toxin N, Min M`: Poison that also pays in its latching round. Card abilities only.
-/// Returns `(life, minimum)`.
+/// Since revision 73 also `Unison : Toxin N, Min M` (Felinite's `5316`), the same latch under
+/// the one-clan hand gate (`unison_permanent`). Returns `(life, minimum)`.
 pub(crate) fn classify_toxin_opponent_life_on_victory(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(u16, u16, CombatStatPredicateV1)> {
     let input = definition.structured_input();
+    if let Some(plain) = unison_permanent(input) {
+        return (source_kind == CombatStatEffectSourceV1::Ability
+            && permanent_opponent_life_shape_matches(&plain, true)
+            && definition.description()
+                == format!("Unison : Toxin {}, Min {}", input.value, input.value_min))
+        .then_some((
+            input.value,
+            input.value_min,
+            CombatStatPredicateV1::OwnerHandUnison,
+        ));
+    }
     let (predicate, prefix) = permanent_condition(input)?;
     (source_kind == CombatStatEffectSourceV1::Ability
         && has_toxin_opponent_life_on_victory_shape(definition)
@@ -3174,6 +3374,18 @@ pub(crate) fn classify_consume_opponent_pillz_on_victory(
     source_kind: CombatStatEffectSourceV1,
 ) -> Option<(u16, u16, CombatStatPredicateV1)> {
     let input = definition.structured_input();
+    // Revision 73: `Unison : Consume N, Min M` (Musardine's `4695`).
+    if let Some(plain) = unison_permanent(input) {
+        return (source_kind == CombatStatEffectSourceV1::Ability
+            && consume_opponent_pillz_shape_matches(&plain)
+            && definition.description()
+                == format!("Unison : Consume {}, Min {}", input.value, input.value_min))
+        .then_some((
+            input.value,
+            input.value_min,
+            CombatStatPredicateV1::OwnerHandUnison,
+        ));
+    }
     let (predicate, prefix) = permanent_condition(input)?;
     (source_kind == CombatStatEffectSourceV1::Ability
         && has_consume_opponent_pillz_on_victory_shape(definition)
@@ -3388,6 +3600,7 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_support_post_round(definition, source_kind).is_some()
         || classify_equalizer_post_round_gain(definition, source_kind).is_some()
         || classify_clan_gated_post_round(definition, source_kind).is_some()
+        || classify_hand_clan_gated_post_round(definition, source_kind).is_some()
     {
         return None;
     }
@@ -3873,6 +4086,25 @@ pub(crate) fn classify_conditional_stat_copy(
         ),
         _ => return None,
     };
+    // Revision 73: `Versus [clan:..] : ` over a stat Copy (Igniss' `Versus [clan:56][clan:30]
+    // : Copy: Opp. Damage`, `4956`). The record is the unconditional Copy once the opposing
+    // clan list is cleared; an Exchange or an `After` gate has no record and stays closed.
+    if let Some((predicate, gated_body, plain)) = hand_clan_gate(input, definition.description()) {
+        let shape = PostRoundShapeV1 {
+            value: ShapeFieldV1::Exact(0),
+            current_round: CurrentRoundRequirementV1::Any,
+            side: AffectedSideV1::Player,
+            attribute: input.attribute_affected,
+            action: AttributeActionV1::Copy,
+            special: SpecialActionV1::None,
+            ..POST_ROUND_SHAPE
+        };
+        return (matches!(predicate, CombatStatPredicateV1::OpponentHandHasClan(_))
+            && input.side_affected == AffectedSideV1::Player
+            && shape_matches(&plain, shape)
+            && gated_body == body)
+            .then_some((effect, predicate));
+    }
     let (predicate, prefix) = if input.is_clanmates_count_linked {
         if !neutral_except_clanmates_count(input)
             || input.value != 0
@@ -6441,9 +6673,9 @@ mod tests {
                 definition
             ));
         }
-        // The Unison and clan-gated Consume records and the other Pillz permanents are other
-        // grammars.
-        for id in [4695, 5275, 1451, 3796, 2582, 5286] {
+        // The clan-gated Consume record and the other Pillz permanents are other grammars.
+        // The Unison Consume `4695` is admitted since revision 73 (tested there).
+        for id in [5275, 1451, 3796, 2582, 5286] {
             let definition = registry.get(id).expect("registry definition");
             assert_eq!(
                 classify_consume_opponent_pillz_on_victory(
@@ -10202,10 +10434,10 @@ mod tests {
             Some((1, 17, CombatStatPredicateV1::SelectedHandSlotsDiffer))
         );
         // Every other prefixed form is another text with another structured condition.
+        // `Unison : Toxin` (`5316`) is admitted since revision 73 and tested there.
         for (id, description) in [
             (2497, "Killshot: Toxin 1, Min 0"),
             (4210, "Victory Or Defeat: Toxin 1, Min 0"),
-            (5316, "Unison : Toxin 1, Min 0"),
             (
                 5613,
                 "[clan:55][clan:50][clan:49][clan:44][clan:60] Toxin 1, Min 1",
@@ -10699,5 +10931,381 @@ mod tests {
             classify_combat_stat_effect(registry.get(616).unwrap(), ability),
             Some((SupportedEffectV1::ModifyCombatStat { .. }, _))
         ));
+    }
+
+    /// Revision 73: the `Versus [clan:..] : ` and `After [clan:..] : ` gates over the plain
+    /// Victory bodies, by the ungated grammar's exact text and complete unconditional shape once
+    /// the gate's list is cleared, card abilities only. `Versus` takes Life, opponent Life and
+    /// Life per Damage; `After` takes Life, opponent Life and Pillz.
+    #[test]
+    fn hand_clan_gated_post_round_bodies_are_admitted_by_exact_text_over_the_ungated_shape() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        let versus = |ids: &[u32]| CombatStatPredicateV1::OpponentHandHasClan(clan_set(ids));
+        let after = |ids: &[u32]| CombatStatPredicateV1::OwnerPreviousCardClanIn(clan_set(ids));
+        let life = |life| {
+            (
+                CombatStatPostRoundEffectV1::GainLifeOnVictory { life },
+                CombatStatEffectV1::GainLifeOnVictory { life },
+            )
+        };
+        let opponent_life = |life, minimum| {
+            (
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+                CombatStatEffectV1::ReduceOpponentLifeOnVictory { life, minimum },
+            )
+        };
+        let cases = [
+            (3545, life(2), versus(&[51, 49, 30, 45])),
+            (5505, opponent_life(2, 0), versus(&[56, 45])),
+            (5283, opponent_life(2, 0), versus(&[36, 56, 41])),
+            (
+                4887,
+                (
+                    CombatStatPostRoundEffectV1::GainLifePerFinalDamageOnVictory {
+                        life_per_damage: 1,
+                        maximum: 0,
+                    },
+                    CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                        life_per_damage: 1,
+                        maximum: 0,
+                    },
+                ),
+                versus(&[3, 56, 42]),
+            ),
+            (5602, opponent_life(4, 0), after(&[4, 30])),
+            (5670, life(2), after(&[47])),
+            (5701, life(2), after(&[54, 57])),
+            (5723, life(3), after(&[54, 44])),
+            (
+                5700,
+                (
+                    CombatStatPostRoundEffectV1::GainPillzOnVictory { pillz: 2 },
+                    CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+                ),
+                after(&[54, 57]),
+            ),
+        ];
+        for (id, (effect, compact), predicate) in cases {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_hand_clan_gated_post_round(definition, ability),
+                Some((effect, compact, predicate)),
+                "{id}"
+            );
+            assert!(has_hand_clan_gated_post_round_shape(definition), "{id}");
+            assert_eq!(
+                classify_hand_clan_gated_post_round(definition, CombatStatEffectSourceV1::Bonus),
+                None,
+                "{id} as a bonus"
+            );
+            assert_eq!(
+                classify_combat_stat_effect(definition, ability),
+                None,
+                "{id}"
+            );
+            // The ungated grammars still see the gate and refuse it.
+            assert_eq!(classify_victory_life(definition, ability), None, "{id}");
+            assert_eq!(classify_victory_pillz(definition, ability), None, "{id}");
+            assert_eq!(
+                classify_victory_opponent_life(definition, ability),
+                None,
+                "{id}"
+            );
+            assert_eq!(
+                classify_victory_life_per_damage(definition, ability),
+                None,
+                "{id}"
+            );
+            assert_eq!(
+                classify_clan_gated_post_round(definition, ability),
+                None,
+                "{id}"
+            );
+        }
+        // The closed neighbours stay closed: the `Versus` Toxin `5563`, the `After` compound
+        // `5702`, the `After` Protection `5708`, the combat-stat gates `2461`/`5681`, the
+        // owner-clan gate `2317`, and Igniss' Versus stat Copy, which is a combat stat.
+        for id in [5563, 5702, 5708, 2461, 5681, 2317, 4956] {
+            let definition = registry.get(id).expect("registry definition");
+            assert_eq!(
+                classify_hand_clan_gated_post_round(definition, ability),
+                None,
+                "{id}"
+            );
+        }
+        for id in [5563, 5702, 5708, 2461, 5681, 2317, 4956] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(!has_hand_clan_gated_post_round_shape(definition), "{id}");
+        }
+        for (id, field, value) in [
+            ("3545", "value", serde_json::json!(3)),
+            ("3545", "valueMin", serde_json::json!(1)),
+            ("3545", "currentRoundRequirement", serde_json::json!("lose")),
+            ("3545", "positionRequirement", serde_json::json!("attacker")),
+            ("3545", "previousRoundRequirement", serde_json::json!("win")),
+            ("3545", "isPermanent", serde_json::json!(true)),
+            ("3545", "oppClanRequirement", serde_json::json!("51,49,30")),
+            ("3545", "clanRequirement", serde_json::json!("51")),
+            ("3545", "previousClanRequirement", serde_json::json!("51")),
+            ("5505", "valueMin", serde_json::json!(1)),
+            ("5505", "valueMax", serde_json::json!(3)),
+            ("5505", "indexRequirement", serde_json::json!("symmetry")),
+            ("4887", "valueMax", serde_json::json!(6)),
+            (
+                "4887",
+                "previousRoundRequirement",
+                serde_json::json!("lose"),
+            ),
+            ("4887", "specialAction", serde_json::json!("none")),
+            ("5700", "attributeAffected", serde_json::json!("life")),
+            ("5700", "isClanmatesCountLinked", serde_json::json!(true)),
+            ("5700", "previousClanRequirement", serde_json::json!("54")),
+            ("5602", "sideAffected", serde_json::json!("player")),
+        ] {
+            let malformed = with_field(id, field, value.clone());
+            assert_eq!(
+                classify_hand_clan_gated_post_round(
+                    malformed.get(id.parse().unwrap()).unwrap(),
+                    ability
+                ),
+                None,
+                "{id} {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            (
+                "3545",
+                "Versus [clan:51][clan:49][clan:30][clan:45]: +2 Life",
+            ),
+            ("3545", "Versus [clan:51][clan:49][clan:30] : +2 Life"),
+            (
+                "3545",
+                "After [clan:51][clan:49][clan:30][clan:45] : +2 Life",
+            ),
+            ("3545", "[clan:51][clan:49][clan:30][clan:45] +2 Life"),
+            (
+                "3545",
+                "Versus [clan:51][clan:49][clan:30][clan:45] : +3 Life",
+            ),
+            ("5505", "Versus [clan:56][clan:45] : -2 Opp. Life, Min 0"),
+            ("5505", "Versus [clan:56][clan:45] : - 2 Opp. Life Min 0"),
+            (
+                "4887",
+                "Versus [clan:3][clan:56][clan:42] : +1 Life Per Dmg.",
+            ),
+            ("5700", "After [clan:54][clan:57]: +2 Pillz Max. 9"),
+            ("5700", "Versus [clan:54][clan:57] : +2 Pillz"),
+            ("5701", "After [clan:57][clan:54]: +2 Life"),
+        ] {
+            let retexted = with_text(id, text);
+            assert_eq!(
+                classify_hand_clan_gated_post_round(
+                    retexted.get(id.parse().unwrap()).unwrap(),
+                    ability
+                ),
+                None,
+                "{id} as {text:?}"
+            );
+        }
+        // Both printed `After` spacings are the prefix, rebuilt from the record's list.
+        let spaced = with_text("5701", "After [clan:54][clan:57] : +2 Life");
+        assert_eq!(
+            classify_hand_clan_gated_post_round(spaced.get(5701).unwrap(), ability),
+            Some((
+                CombatStatPostRoundEffectV1::GainLifeOnVictory { life: 2 },
+                CombatStatEffectV1::GainLifeOnVictory { life: 2 },
+                after(&[54, 57]),
+            ))
+        );
+        // The Life-per-Damage body has no `After` record and the Pillz body no `Versus`
+        // record, so neither gate is taken over the other's body.
+        let mut source = abilities_source().clone();
+        source["4887"]["abilityData"]["oppClanRequirement"] = serde_json::json!("");
+        source["4887"]["abilityData"]["previousClanRequirement"] = serde_json::json!("3,56,42");
+        source["4887"]["description"] =
+            serde_json::json!("After [clan:3][clan:56][clan:42] : +1 Life Per Damage");
+        let retargeted = EffectRegistryV1::from_reader(source.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_hand_clan_gated_post_round(retargeted.get(4887).unwrap(), ability),
+            None
+        );
+    }
+
+    /// Revision 73: `Versus [clan:..] : Copy: Opp. Damage` (Igniss' `4956`) is the
+    /// unconditional stat Copy under the opposing-hand gate, a card ability only.
+    #[test]
+    fn versus_stat_copy_is_the_unconditional_copy_under_the_opposing_hand_gate() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        let definition = registry.get(4956).expect("registry definition");
+        let expected = (
+            SupportedEffectV1::CopyOpponentPrintedCombatStat {
+                stat: CombatStatV1::Damage,
+            },
+            CombatStatPredicateV1::OpponentHandHasClan(clan_set(&[56, 30])),
+        );
+        assert_eq!(
+            classify_conditional_stat_copy(definition, ability),
+            Some(expected)
+        );
+        assert_eq!(
+            classify_combat_stat_effect(definition, ability),
+            Some(expected)
+        );
+        assert_eq!(
+            classify_conditional_stat_copy(definition, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        for (field, value) in [
+            ("value", serde_json::json!(1)),
+            ("positionRequirement", serde_json::json!("attacker")),
+            ("previousRoundRequirement", serde_json::json!("win")),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("sideAffected", serde_json::json!("both")),
+            ("isClanmatesCountLinked", serde_json::json!(true)),
+            ("clanRequirement", serde_json::json!("56")),
+            ("previousClanRequirement", serde_json::json!("56,30")),
+        ] {
+            let malformed = with_field("4956", field, value.clone());
+            assert_eq!(
+                classify_conditional_stat_copy(malformed.get(4956).unwrap(), ability),
+                None,
+                "4956 {field} = {value}"
+            );
+        }
+        for text in [
+            "Versus [clan:56][clan:30]: Copy: Opp. Damage",
+            "Versus [clan:56] : Copy: Opp. Damage",
+            "Versus [clan:56][clan:30] : Copy: Opp. Power",
+            "Versus [clan:56][clan:30] : Damage Exchange",
+            "Copy: Opp. Damage",
+        ] {
+            let retexted = with_text("4956", text);
+            assert_eq!(
+                classify_conditional_stat_copy(retexted.get(4956).unwrap(), ability),
+                None,
+                "{text:?}"
+            );
+        }
+        // An `After` gate over a stat Copy has no record and stays closed.
+        let mut source = abilities_source().clone();
+        source["4956"]["abilityData"]["oppClanRequirement"] = serde_json::json!("");
+        source["4956"]["abilityData"]["previousClanRequirement"] = serde_json::json!("56,30");
+        source["4956"]["description"] =
+            serde_json::json!("After [clan:56][clan:30] : Copy: Opp. Damage");
+        let after = EffectRegistryV1::from_reader(source.to_string().as_bytes()).unwrap();
+        assert_eq!(
+            classify_conditional_stat_copy(after.get(4956).unwrap(), ability),
+            None
+        );
+    }
+
+    /// Revision 73: `Unison : Toxin N, Min M` (`5316`) and `Unison : Consume N, Min M`
+    /// (`4695`) are the plain latches with only the clan-mates link set, card abilities only.
+    /// Unison Poison (`4033`) stays closed, and the shared permanent predicate list does not
+    /// gain the Unison gate.
+    #[test]
+    fn unison_toxin_and_consume_are_the_plain_latches_under_the_one_clan_gate() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        let unison = CombatStatPredicateV1::OwnerHandUnison;
+        let toxin = registry.get(5316).expect("registry definition");
+        assert_eq!(
+            classify_toxin_opponent_life_on_victory(toxin, ability),
+            Some((1, 0, unison))
+        );
+        let consume = registry.get(4695).expect("registry definition");
+        assert_eq!(
+            classify_consume_opponent_pillz_on_victory(consume, ability),
+            Some((1, 0, unison))
+        );
+        for definition in [toxin, consume] {
+            assert_eq!(
+                classify_toxin_opponent_life_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Bonus
+                ),
+                None
+            );
+            assert_eq!(
+                classify_consume_opponent_pillz_on_victory(
+                    definition,
+                    CombatStatEffectSourceV1::Bonus
+                ),
+                None
+            );
+            assert_eq!(classify_combat_stat_effect(definition, ability), None);
+            assert_eq!(
+                classify_poison_opponent_life_on_victory(definition, ability),
+                None
+            );
+            assert_eq!(
+                classify_combust_opponent_life_and_pillz_on_victory(definition, ability),
+                None
+            );
+        }
+        assert!(!permanent_predicate_admitted(unison));
+        let poison = registry.get(4033).expect("registry definition");
+        assert_eq!(
+            classify_poison_opponent_life_on_victory(poison, ability),
+            None
+        );
+        assert_eq!(
+            classify_toxin_opponent_life_on_victory(poison, ability),
+            None
+        );
+        for (id, field, value) in [
+            ("5316", "isImmediatePermanent", serde_json::json!(false)),
+            (
+                "5316",
+                "previousRoundRequirement",
+                serde_json::json!("lose"),
+            ),
+            ("5316", "indexRequirement", serde_json::json!("symmetry")),
+            ("5316", "positionRequirement", serde_json::json!("defender")),
+            ("5316", "valueMax", serde_json::json!(3)),
+            ("5316", "clanRequirement", serde_json::json!("4")),
+            ("5316", "isOverdrive", serde_json::json!(true)),
+            ("4695", "attributeAffected", serde_json::json!("life")),
+            ("4695", "isImmediatePermanent", serde_json::json!(false)),
+            ("4695", "previousRoundRequirement", serde_json::json!("win")),
+            ("4695", "oppClanRequirement", serde_json::json!("41")),
+        ] {
+            let malformed = with_field(id, field, value.clone());
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_toxin_opponent_life_on_victory(definition, ability),
+                None,
+                "{id} {field} = {value}"
+            );
+            assert_eq!(
+                classify_consume_opponent_pillz_on_victory(definition, ability),
+                None,
+                "{id} {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            ("5316", "Unison: Toxin 1, Min 0"),
+            ("5316", "Toxin 1, Min 0"),
+            ("5316", "Unison : Poison 1, Min 0"),
+            ("5316", "Unison : Toxin 1, Min 1"),
+            ("4695", "Unison: Consume 1, Min 0"),
+            ("4695", "Unison : Consume 1, Min 1"),
+            ("4695", "Consume 1, Min 0"),
+        ] {
+            let retexted = with_text(id, text);
+            let definition = retexted.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_toxin_opponent_life_on_victory(definition, ability),
+                None,
+                "{id} as {text:?}"
+            );
+            assert_eq!(
+                classify_consume_opponent_pillz_on_victory(definition, ability),
+                None,
+                "{id} as {text:?}"
+            );
+        }
     }
 }

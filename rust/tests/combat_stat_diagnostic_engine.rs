@@ -7559,14 +7559,45 @@ fn unison_life_gains_are_refused_beside_an_unpinned_effect_on_their_resource() {
         copied: CopiedSourceKindV1::Ability,
         predicate: CombatStatPredicateV1::Always,
     };
+    // Since revision 73 an opposing floor counts only where it can land in a round the gain
+    // pays: the Victory compound pays on the opposing loss, where a Victory-only floor never
+    // writes, and a `Symmetry:` floor fires only when the two selected slots match.
+    let defeat_floor = execute(
+        5434,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnDefeat {
+            life: 2,
+            minimum: 1,
+        },
+    );
+    let symmetry_floor = execute(
+        4708,
+        CombatStatPredicateV1::SelectedHandSlotsMatch,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 4,
+            minimum: 0,
+        },
+    );
+    let poison = execute(
+        206,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+            life: 1,
+            minimum: 3,
+        },
+    );
     for (source, own, opposing, refused) in [
         (unison_defeat_life, None, Some(life_floor), true),
         (unison_defeat_life, Some(heal), None, true),
         (unison_defeat_life, None, Some(copy), true),
         (unison_defeat_life, Some(life_gain), Some(life_gain), false),
         (unison_defeat_life, None, Some(pillz_floor), false),
+        (unison_defeat_life, None, Some(defeat_floor), false),
+        (unison_defeat_life, None, Some(poison), true),
         (compound, None, Some(pillz_floor), true),
-        (compound, None, Some(life_floor), true),
+        (compound, None, Some(life_floor), false),
+        (compound, None, Some(defeat_floor), true),
+        (compound, None, Some(poison), true),
         (compound, None, Some(life_gain), false),
         (plain_defeat_life, None, Some(life_floor), false),
     ] {
@@ -7600,6 +7631,34 @@ fn unison_life_gains_are_refused_beside_an_unpinned_effect_on_their_resource() {
         } else {
             assert!(result.is_ok(), "{source:?} / {own:?} / {opposing:?}");
         }
+    }
+    // 1023495: Doela Noel's `Symmetry: - 4 Opp. Life Min 0` in another slot can never share
+    // Pantherine's round; in the same slot it can.
+    for (floor_slot, refused) in [(2, false), (0, true)] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = unison_defeat_life;
+        cards[PlayerId::P2][floor_slot].ability = symmetry_floor;
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        assert_eq!(
+            matches!(
+                result,
+                Err(CombatStatPlanErrorV1::InvalidExecute {
+                    reason: InvalidCombatStatPlanReasonV1::UnisonGainAgainstUnpinnedEffect,
+                    ..
+                })
+            ),
+            refused,
+            "Symmetry floor in slot {floor_slot}"
+        );
+        assert_eq!(
+            result.is_ok(),
+            !refused,
+            "Symmetry floor in slot {floor_slot}"
+        );
     }
 }
 
@@ -8052,6 +8111,104 @@ fn clan_gates_read_the_owner_card_the_opposing_hand_and_the_previous_card() {
             ..
         })
     ));
+
+    // Revision 73 scopes the rule to the hand the gate reads: `Versus` the opposing hand,
+    // `After` the owner's own. An Oculus in the other hand cannot change the gate - unless the
+    // other side holds a Copy of the gated slot's kind, which judges the adopted plan from its
+    // own seat and so reads the first hand again (1090269: Wachtmann infiltrates Ulu Watu in
+    // Queen Naliah's own hand, and her `Versus` reads only the all-Rescue opposing hand).
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    let bonus_copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 764,
+        copied: CopiedSourceKindV1::Bonus,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    for (predicate, oculus_owner, opposing_copy, refused) in [
+        // `Versus [11]` on P1: an Oculus infiltrating 11 in P1's own hand.
+        (
+            CombatStatPredicateV1::OpponentHandHasClan(set(&[11])),
+            PlayerId::P1,
+            None,
+            false,
+        ),
+        (
+            CombatStatPredicateV1::OpponentHandHasClan(set(&[11])),
+            PlayerId::P1,
+            Some(copy),
+            true,
+        ),
+        // A Copy of the other slot kind cannot adopt the gated ability.
+        (
+            CombatStatPredicateV1::OpponentHandHasClan(set(&[11])),
+            PlayerId::P1,
+            Some(bonus_copy),
+            false,
+        ),
+        // `After [11]` on P1 reads P1's own previous card.
+        (
+            CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[11])),
+            PlayerId::P1,
+            None,
+            true,
+        ),
+        (
+            CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[11])),
+            PlayerId::P2,
+            None,
+            false,
+        ),
+        (
+            CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[11])),
+            PlayerId::P2,
+            Some(copy),
+            true,
+        ),
+    ] {
+        let (mut base, mut cards) = clan_gate_spec();
+        base.players[oculus_owner].hand[3].clan_id = 56;
+        cards[oculus_owner][3].effective_clan_id = 11;
+        cards[PlayerId::P1][0].ability = power_up_under(predicate);
+        if let Some(plan) = opposing_copy {
+            match plan {
+                CombatStatSourcePlanV1::CopyOpponentSource {
+                    copied: CopiedSourceKindV1::Ability,
+                    ..
+                } => {
+                    cards[PlayerId::P2][1].ability = plan;
+                    cards[PlayerId::P2][1].source_ability_support_count = 1;
+                }
+                _ => {
+                    cards[PlayerId::P2][1].bonus = plan;
+                    cards[PlayerId::P2][1].source_bonus_support_count = 1;
+                }
+            }
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason: InvalidCombatStatPlanReasonV1::AmbiguousOculusClanGate,
+                        ..
+                    })
+                ),
+                "{predicate:?} / Oculus in {oculus_owner:?} / {opposing_copy:?}"
+            );
+        } else {
+            assert!(
+                result.is_ok(),
+                "{predicate:?} / Oculus in {oculus_owner:?} / {opposing_copy:?}: {result:?}"
+            );
+        }
+    }
 }
 
 /// The post-round gates and magnitudes of revision 58: `Support:` scales a Victory Life or
@@ -9942,5 +10099,443 @@ fn corrupt_is_refused_beside_unpinned_writes_to_its_owners_life() {
             }
         }
         assert_eq!(refusal(spec), expected, "Corrupt beside {other_plan:?}");
+    }
+}
+
+/// Revision 73: the `Versus` and `After` end-of-round sources carry the 1093173/1 order rule
+/// as new admissions must. The opponent-Life reduction is refused where the opposing hand can
+/// write its own Life on the opposing loss (877239: Kubra's `Defeat: +1 Pillz And Life`
+/// against Sight Ld), the Life gains beside an opposing floor that can land on the owner's
+/// win or an order-sensitive own write from the other slot or an own latch, the Pillz gain
+/// beside an opposing Pillz floor on the owner's win, and all of them beside an opposing Copy.
+/// A Victory-only opposing floor never lands on the owner's win and is not refused (957565).
+#[test]
+fn hand_clan_gated_post_round_sources_are_refused_beside_an_unpinned_effect() {
+    let set = |ids: &[u32]| ClanSetV1::from_ids(ids).unwrap();
+    let versus = CombatStatPredicateV1::OpponentHandHasClan(set(&[11]));
+    let after = CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[2]));
+    let reduction = execute(
+        5505,
+        versus,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 2,
+            minimum: 0,
+        },
+    );
+    let life = execute(
+        3545,
+        versus,
+        CombatStatEffectV1::GainLifeOnVictory { life: 2 },
+    );
+    let per_damage = execute(
+        4887,
+        versus,
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+            life_per_damage: 1,
+            maximum: 0,
+        },
+    );
+    let pillz = execute(
+        5700,
+        after,
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+    );
+    let after_life = execute(
+        5701,
+        after,
+        CombatStatEffectV1::GainLifeOnVictory { life: 2 },
+    );
+    let defeat_gain = execute(
+        1716,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzAndLifeOnDefeat { amount: 1 },
+    );
+    let victory_floor = execute(
+        1399,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 5,
+            minimum: 5,
+        },
+    );
+    let either_floor = execute(
+        1628,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+            life: 1,
+            minimum: 1,
+        },
+    );
+    let defeat_pillz_floor = execute(
+        912,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnDefeat {
+            pillz: 1,
+            minimum: 3,
+        },
+    );
+    let victory_pillz_floor = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let heal = execute(
+        3118,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 18,
+        },
+    );
+    let dope = execute(
+        4932,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::DopePillzOnVictory {
+            pillz: 3,
+            maximum: 4,
+        },
+    );
+    let plain_gain = execute(
+        377,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    // (gated source, own card's other slot, own latch elsewhere, opposing plan, refused)
+    for (source, other_slot, own_latch, opposing, refused) in [
+        (reduction, None, None, Some(defeat_gain), true),
+        (reduction, None, None, Some(plain_gain), false),
+        (reduction, None, None, Some(victory_floor), false),
+        (reduction, None, None, Some(copy), true),
+        (life, None, None, Some(either_floor), true),
+        (life, None, None, Some(victory_floor), false),
+        (life, None, Some(heal), None, true),
+        (life, Some(plain_gain), None, None, false),
+        (life, None, None, Some(copy), true),
+        (per_damage, None, None, Some(either_floor), true),
+        (per_damage, None, None, Some(victory_floor), false),
+        (after_life, None, Some(heal), None, true),
+        (pillz, None, None, Some(defeat_pillz_floor), true),
+        (pillz, None, None, Some(victory_pillz_floor), false),
+        (pillz, None, Some(dope), None, true),
+        (pillz, None, None, Some(copy), true),
+        (pillz, None, None, Some(either_floor), false),
+    ] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].ability = source;
+        if let Some(plan) = other_slot {
+            cards[PlayerId::P1][0].bonus = plan;
+            cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        }
+        if let Some(plan) = own_latch {
+            cards[PlayerId::P1][1].ability = plan;
+        }
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][2].ability = plan;
+            if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+                cards[PlayerId::P2][2].source_ability_support_count = 1;
+            }
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason:
+                            InvalidCombatStatPlanReasonV1::HandClanGatedPostRoundAgainstUnpinnedEffect,
+                        ..
+                    })
+                ),
+                "{source:?} / {other_slot:?} / {own_latch:?} / {opposing:?}: {result:?}"
+            );
+        } else {
+            assert!(
+                result.is_ok(),
+                "{source:?} / {other_slot:?} / {own_latch:?} / {opposing:?}: {result:?}"
+            );
+        }
+    }
+    // An own Copy in the gated card's other slot counts only for what it could import
+    // (1414992: Azhdar's Oblivion Copy faces Skeelz abilities that write no Pillz).
+    for (opposing, refused) in [(None, false), (Some(dope), true)] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].ability = pillz;
+        cards[PlayerId::P1][0].bonus = CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 2918,
+            copied: CopiedSourceKindV1::Ability,
+            predicate: CombatStatPredicateV1::Always,
+        };
+        cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][2].ability = plan;
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        assert_eq!(result.is_ok(), !refused, "{opposing:?}: {result:?}");
+    }
+    // The gates are card abilities only on these bodies, and the Life-per-Damage gate is
+    // uncapped.
+    for (plan, bonus) in [
+        (life, true),
+        (pillz, true),
+        (
+            execute(
+                4887,
+                versus,
+                CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                    life_per_damage: 1,
+                    maximum: 6,
+                },
+            ),
+            false,
+        ),
+        (
+            execute(
+                5700,
+                versus,
+                CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+            ),
+            false,
+        ),
+        (
+            execute(
+                4887,
+                after,
+                CombatStatEffectV1::GainLifePerFinalDamageOnVictory {
+                    life_per_damage: 1,
+                    maximum: 0,
+                },
+            ),
+            false,
+        ),
+    ] {
+        let (base, mut cards) = clan_gate_spec();
+        if bonus {
+            cards[PlayerId::P1][0].bonus = plan;
+            cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        } else {
+            cards[PlayerId::P1][0].ability = plan;
+        }
+        assert!(
+            CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            })
+            .is_err(),
+            "{plan:?} as bonus {bonus}"
+        );
+    }
+}
+
+/// Revision 73: the `Versus` Victory Life gate pays only while the opposing hand holds a
+/// listed clan (924669/3: Ashara wins against an all-Hive hand and pays 2), and the `After`
+/// Pillz gate only after the owner played a listed clan the round before (1414400/1: Azhdar
+/// after Viperine, 4 - 0 + 2 = 6) - never in round 0.
+#[test]
+fn hand_clan_gated_post_round_sources_pay_only_under_their_gate() {
+    let set = |ids: &[u32]| ClanSetV1::from_ids(ids).unwrap();
+    for (listed, pays) in [(13, true), (60, false)] {
+        let (base, mut cards) = clan_gate_spec();
+        cards[PlayerId::P1][0].ability = execute(
+            3545,
+            CombatStatPredicateV1::OpponentHandHasClan(set(&[listed])),
+            CombatStatEffectV1::GainLifeOnVictory { life: 2 },
+        );
+        let mut diag = game(base, cards);
+        let (report, _) = diag
+            .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+            .unwrap();
+        assert_eq!(
+            report.players[PlayerId::P1].life,
+            if pays { 22 } else { 20 },
+            "Versus {listed}"
+        );
+    }
+    let gated = execute(
+        5700,
+        CombatStatPredicateV1::OwnerPreviousCardClanIn(set(&[1])),
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 2 },
+    );
+    // Round 0 selects the gated card and wins: there is no previous card, so no pay.
+    let (base, mut cards) = clan_gate_spec();
+    cards[PlayerId::P1][1].ability = gated;
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].pillz, 18);
+    // After slot 0 (clan 1) the gate holds and a win pays; after slot 1 (clan 2) it does not.
+    let (base, mut cards) = clan_gate_spec();
+    cards[PlayerId::P1][1].ability = gated;
+    cards[PlayerId::P1][2].ability = gated;
+    let mut diag = game(base, cards);
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    let before = report.players[PlayerId::P1].pillz;
+    let (report, _) = diag
+        .make(input(PlayerId::P2, (1, 3, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].pillz, before - 3 + 2);
+    let before = report.players[PlayerId::P1].pillz;
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (2, 3, false), (2, 0, false)))
+        .unwrap();
+    assert_eq!(report.players[PlayerId::P1].pillz, before - 3);
+}
+
+/// Revision 73: the `Unison :` latches are admitted only where no second latch of their family
+/// could target the same player, since the server prints replacement and the engine stacks.
+#[test]
+fn unison_latches_are_refused_beside_a_second_latch_of_their_family() {
+    let toxin = execute(
+        5316,
+        CombatStatPredicateV1::OwnerHandUnison,
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+            life: 1,
+            minimum: 0,
+        },
+    );
+    let consume = execute(
+        4695,
+        CombatStatPredicateV1::OwnerHandUnison,
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 0,
+        },
+    );
+    let poison = execute(
+        206,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+            life: 1,
+            minimum: 3,
+        },
+    );
+    let plain_toxin = execute(
+        1508,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+            life: 1,
+            minimum: 0,
+        },
+    );
+    let plain_consume = execute(
+        5871,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 2,
+        },
+    );
+    let heal = execute(
+        3118,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 18,
+        },
+    );
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Ability,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    // (Unison latch, own other card, own Copy, opposing plan, refused)
+    for (source, own, own_copy, opposing, refused) in [
+        (toxin, None, false, None, false),
+        (toxin, Some(poison), false, None, true),
+        (toxin, Some(plain_toxin), false, None, true),
+        (toxin, Some(plain_consume), false, None, false),
+        (toxin, Some(heal), false, None, false),
+        (toxin, None, true, Some(poison), true),
+        (toxin, None, true, Some(heal), false),
+        (toxin, None, false, Some(copy), true),
+        (toxin, None, false, Some(poison), false),
+        (consume, None, false, None, false),
+        (consume, Some(plain_consume), false, None, true),
+        (consume, Some(poison), false, None, false),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = source;
+        if let Some(plan) = own {
+            cards[PlayerId::P1][1].ability = plan;
+        }
+        if own_copy {
+            cards[PlayerId::P1][2].ability = copy;
+            cards[PlayerId::P1][2].source_ability_support_count = 1;
+        }
+        if let Some(plan) = opposing {
+            cards[PlayerId::P2][2].ability = plan;
+            if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+                cards[PlayerId::P2][2].source_ability_support_count = 1;
+            }
+        }
+        let result = CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+            base_rules: base,
+            cards,
+        });
+        if refused {
+            assert!(
+                matches!(
+                    result,
+                    Err(CombatStatPlanErrorV1::InvalidExecute {
+                        reason: InvalidCombatStatPlanReasonV1::UnisonLatchAgainstSameFamilyLatch,
+                        ..
+                    })
+                ),
+                "{source:?} / {own:?} / copy {own_copy} / {opposing:?}: {result:?}"
+            );
+        } else {
+            assert!(
+                result.is_ok(),
+                "{source:?} / {own:?} / copy {own_copy} / {opposing:?}: {result:?}"
+            );
+        }
+    }
+    // The Unison gate rides on Toxin and Consume only.
+    for plan in [
+        execute(
+            4033,
+            CombatStatPredicateV1::OwnerHandUnison,
+            CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+                life: 1,
+                minimum: 2,
+            },
+        ),
+        execute(
+            5315,
+            CombatStatPredicateV1::OwnerHandUnison,
+            CombatStatEffectV1::HealLifeOnVictory {
+                life: 1,
+                maximum: 14,
+            },
+        ),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = plan;
+        assert!(
+            CombatStatDiagnosticV1::new(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            })
+            .is_err(),
+            "{plan:?}"
+        );
     }
 }

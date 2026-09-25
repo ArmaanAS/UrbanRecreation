@@ -3151,6 +3151,205 @@ Left closed, as priced:
 - the other Night numerics with a stray bound do not exist in the registry, and `numeric_effect`
   keeps refusing a `valueMax` on any other decrease.
 
+Semantic revision 73 takes three things from card abilities only, each by exact text over the
+complete structured shape. The first scopes revision 54's Oculus ambiguity rule to the hand
+each gate reads. The second puts the `Versus [clan:..] : ` and `After [clan:..] : ` gates over
+end-of-round bodies the projection already executes, and `Versus` over `Copy: Opp. Damage`.
+The third admits `Unison : Toxin N, Min M` (Felinite's `5316`) and `Unison : Consume N, Min M`
+(Musardine's `4695`) on the existing latch. The family lines read 1 for the scoping, 3 for
+`Versus` over end-of-round bodies, 1 for the `Versus` Copy, 3 for `After`, 2 for the Unison
+latches and 2 for the optional Unison Defeat Life narrowing, 12 together. Measured part by
+part, the slice took eligibility from 282 to 283, then 287, then 288, then 289 of 383. The
+eligible-set diff adds seven draws and removes none:
+- `1090269` (the scoping);
+- `957565` (`Versus` Life per Damage) and `1131045` (`Versus` Copy);
+- `1414992` (`After` Pillz);
+- `1078555` (Unison Toxin) and `1130381` (Unison Consume);
+- `1023495` (the Unison Defeat Life narrowing).
+
+The five draws the lines name that stay closed are all refusals, and each was expected:
+- 877239, 924669 and 926071 are the new cross-owner refusal below;
+- 1414400 is a genuine Oculus ambiguity in the owner's own hand;
+- 926470 is the standing floor-order decision of revision 65.
+
+**The Oculus rule, scoped.** `clan_gate_is_ambiguous` used to scan both hands for an
+infiltrating Oculus whose effective clan and Oculus itself fall on opposite sides of the gate's
+list. `Versus` reads only the opposing hand's canonical clans, though, and `After` only the
+owner's own previous card, so an Oculus in the other hand cannot change either reading. The
+function now takes the owner, the slot kind and the predicate, and scans the hand the gate
+reads: the opposing hand for `Versus`, the owner's hand for `After`. It widens to both hands
+when the other side holds a Copy of the gated slot's kind. An adopted plan keeps its predicate
+but is judged from the copier's seat, so a copied `Versus` reads the original owner's hand and
+a copied `After` the copier's previous card. The three call sites (the plan validator, catalog
+construction and the replay downgrade) pass the same three facts. This is a soundness
+tightening of the relaxation rather than a new rule, and it unlocks 1090269. There, Wachtmann
+infiltrates Ulu Watu in Queen Naliah's own hand, and her `Versus [clan:36][clan:56] : Power
++2` (`2461`) reads only the all-Rescue opposing hand. The catalog test swaps Aurora for Zlatar
+Cr's `Copy: Opp. Ability` in that hand and sees the refusal return. 924890 and 925999 stay
+refused, because their Oculus is in the owner's own hand under an `After` gate, as revision 55
+found.
+
+**The `Versus` and `After` bodies.** `hand_clan_gate` reads the gate the revision-54 way.
+Exactly one of the opposing or previous-card lists is set, the owner-clan list is empty, and
+the printed prefix is rebuilt from that list: `Versus {tags} : `, or `After {tags} : ` and
+`After {tags}: `, both of which are printed. It returns the predicate, the body and the record
+with the list cleared. `classify_hand_clan_gated_post_round` then asks the plain grammar's
+complete unconditional shape about the cleared record, and the ungated classifiers still see
+the gate and refuse it. It takes:
+- `+N Life` under either gate (Ashara's `Versus` `3545`; Noma's, Azhdar's and Bazalt's
+  `After` `5670`, `5701`, `5723`);
+- `-N Opp. Life Min M` under either gate (Sight Ld's and D-aleq's `Versus` `5505`, `5283`;
+  Frau Vanda's `After` `5602`), never over an identity-locked id;
+- uncapped `+N Life Per Damage` under `Versus` only (Wendy's `4887`);
+- `+N Pillz` under `After` only (Azhdar's `5700`).
+
+No other gate-and-body pair has a registry record. The `Versus` stat Copy is a branch of
+`classify_conditional_stat_copy`: the unconditional Copy record once the opposing list is
+cleared, the Copy only, never an Exchange or an `After` gate. The plan validator admits the two
+predicates per effect, Ability slot only, with the Life-per-Damage gate uncapped. The catalog
+routes the end-of-round bodies through `require_catalog_alias`, so the same-text levels with no
+registry definition stay closed (Sight Ld `5430`/`3683`, D-aleq `5280`-`5282`, Frau Vanda
+`5601`, Noma `5668`/`5669`). There is no engine change: the plans are `CombatStatEffectV1`
+variants the engine already runs, and the predicate goes through the shared `predicate_matches`.
+In replay each body takes the two-sided boundary. Either prefix over a Life or Pillz record
+that is not a permanent, and the complete gated shape under other text, now reject when
+selected. Before, they were inert disabled sources.
+
+**Evidence strength, stated per sub-grammar.** No round shows either gate on a firing
+opponent-Life reduction, a firing Life per Damage or a firing Copy. Those rest on the plain
+grammars and the pinned predicates, and every draw they unlock has its predicate constantly
+false.
+- `Versus` `+N Life` has one paying round. In 924669/3 Ashara wins 54 against 42 against an
+  all-Hive hand, and her owner goes from 13 to 16: the raw post list is a non-permanent +2 and
+  Pere Barali's permanent +1 Heal. Its one draw, 924669, is refused below.
+- `Versus` `-N Opp. Life Min M` is composition only. It is selected with the gate false in
+  877239/2 and 901400/1, both losses.
+- `Versus` `+N Life Per Damage` is composition only. 957565/1 is a loss against an all-Hive
+  hand, with the gate false.
+- `Versus` `Copy: Opp. Damage` is composition only. It is false in 1131045/0, 1414342/2 and
+  1414458/3. In 1131045/0 Igniss shows his own 5 Damage, and Spidee's Reprisal Stop is also
+  live there. In 1414342/2 Kephren's Courage floors either reading at 2.
+- `After` `+N Life` pays twice, and a false gate on a win pays nothing:
+  - 1093569/2: Azhdar L4 wins after Latifa (Oblivion), 9 to 11;
+  - 926071/2: Bazalt wins after Betul (Komboka), 11 to 15, with the Komboka bonus's 1;
+  - 946810/2: Frau Vanda's `After` reduction, gate false, wins 18-18 and takes only her 2
+    Damage (12 to 10).
+- `After` `+N Pillz` pays once and does not pay on a true-gate loss:
+  - 1414400/1: Azhdar L3 wins after Viperine, 4 - 0 + 2 = 6;
+  - 1414992/1: Azhdar loses 80 against 90 after Hann, and his owner's Pillz go 10 - 9 = 1.
+- `After` `-N Opp. Life Min M` under a true gate is never observed, so it is composition only.
+- `Unison : Toxin 1, Min 0` has three paying rounds in 1078555, where the owner's hand is all
+  Pussycats. Round 0 is the latch: 12 - 2 - 1 = 9. In round 1 the target wins and the latch
+  alone takes 9 to 8, and in round 2 it goes 8 - 5 - 1 = 2. The raw capture posts one
+  permanent -1 in each of those rounds.
+- `Unison : Consume 1, Min 0` has three paying rounds and a binding floor in 1130381, where the
+  owner's hand is all GHEIST: 12 - 6 - 1 = 5, then 5 - 2 - 1 = 2, then 2 - 0 - 1 = 1, and round
+  3 leaves 0 alone. The raw capture posts one permanent -1 in each paying round.
+
+**Refusals.** Two refusals are new, and one context rule is narrowed.
+- `HandClanGatedPostRoundAgainstUnpinnedEffect`. These are newly admitted writes, so they
+  carry the 1093173/1 order rule, as rev 65, 67, 70 and 71 did for theirs. The
+  opponent-Life reduction is refused where the opposing hand can write its own Life on the
+  opposing loss: an own gain or an order-sensitive own write, or any write every round, for a
+  permanent. The Life gains are refused beside an opposing floor on the owner's Life that
+  writes on the opposing loss, and beside an order-sensitive own Life write from the card's
+  other slot or an own latch. The Pillz gain is refused beside an opposing Pillz floor on the
+  opposing loss, and beside an own capped Pillz gain from the other slot or an own latch. Each
+  is refused beside an opposing Copy.
+
+  Reading `write_outcomes` rather than every opposing floor keeps 957565. There, Mou's `-5 Opp.
+  Life Min 5` and Hal Gladius' Equalizer reduction pay only on the opposing win. An own Copy is
+  judged by what it could import (`own_write_meets`) rather than by being a Copy, which keeps
+  1414992: Azhdar's Oblivion Copy faces Skeelz abilities, none of which writes Pillz. The older
+  `same_owner_meets` of revisions 71 and 72 is unchanged.
+
+  The refusal costs three draws, measured by disabling it (292 of 383):
+  - 877239: Kubra's `Defeat: +1 Pillz And Life` raises Sight Ld's target on the round Sight Ld
+    would floor it;
+  - 924669: Uuber's `Victory Or Defeat: - 1 Opp. Life Min 1` floors Ashara's owner on her win,
+    and Pere Barali's Heal latch writes the same Life;
+  - 926071: Uuber's floor again, against Bazalt.
+- `UnisonLatchAgainstSameFamilyLatch`. The server prints that a second Poison or Toxin (or a
+  second Consume) replaces the first, while the engine stacks them. Which it is remains open
+  (docs/replay-triage.md, "Same-family permanents"). So the new forms are admitted only where
+  no second latch of their family could target the same player. That means no other Poison or
+  Toxin (for the Toxin) and no other Consume or Combust (for the Consume) anywhere in the
+  owner's hand, none an own Copy could import from the opposing hand, and no opposing Copy of
+  the slot. It costs nothing, and it keeps these two independent of the open decision.
+  Stacking is not changed.
+- The Unison Defeat Life refusal of revision 65 counted every opposing Life floor. It now
+  counts one only where the floor can land in a round the gain pays
+  (`opposing_floor_can_meet_unison_gain`). A latch always can. Otherwise the floor must write
+  on the gain's outcome: the opposing win for the Defeat gain, the opposing loss for the
+  Victory compound. A `Symmetry:` floor fires only in the gain's slot, and an `Asymmetry:`
+  floor only in another slot. `unmodelled_source_context` gains the source's `HandSlot`, and
+  its three callers already had it. This admits 1023495: Doela Noel's `Symmetry: - 4 Opp. Life
+  Min 0` sits in slot 0 and can never meet Pantherine's `Unison: Defeat: +2 Life` in slot 3. It
+  composes pinned pieces (Pantherine pays on a loss in 1066077/2 and 1066337/1, and wins
+  1023495/0 paying only the Komboka bonus). 926470 keeps the refusal, because Mou and Uuber do
+  meet Chiropterine.
+
+The replay hazard clause for `Unison :` and `Growth:` permanents now covers Pillz permanents
+too, so a malformed `Unison : Consume` or a `Unison :` Combust rejects when selected. Before,
+it was inert in replay (the catalog refused it independently). The catalog-context policy
+revision stays at 5. Only the compiler revision moves, as it did when revision 54 put the
+ambiguity refusal into catalog construction.
+
+The gate grows from 854 to 874 rounds, by the rounds the slice newly reaches in the throwaway
+prefix scan:
+- 1090269 is extended from two rounds to three (Queen Naliah's false `Versus`);
+- 957565 is added at two (Wendy's loss);
+- 1131045 is added at four (Igniss);
+- 1414342 is added at three (Igniss in round 2; round 3 selects Ghenom's closed Min 0
+  Backlash);
+- 1078555 is added at four (Felinite's latch);
+- 1130381 is added at four (Musardine's latch);
+- 1023495 is added at four.
+
+**One fixture shrinks, and says why.** 877239 goes from four rounds to two. Its round 2
+selects Sight Ld, now admitted but refused as a hazard beside Kubra, where before it was an
+inert unadmitted source. With it the gate loses the only execution of Valhala Cr's `Damage
+Exchange` (`1588`, 877239/3), so the pinned execute ids lose `1588`.
+
+The pinned execute ids gain the six slice ids first reached (`2461`, `4695`, `4887`, `4956`,
+`5283`, `5316`) and eleven ordinary ids first reached in the new rounds:
+- `235`, Leviatonn Cr's Stop Opp. Bonus;
+- `574`, Draheera's `Support: Power +1`;
+- `712`, Diana's `+3 Life`;
+- `961`, Kephren's Courage;
+- `1490`, ARN 2000's Brawl;
+- `1603`, Sir Lambda's `Degrowth: +1 Life`;
+- `1635`, Schredder's `-5 Opp. Life Min 0`;
+- `1712`, XU-Dr0ne's Stop Opp. Bonus;
+- `1724`, Duygu's Growth reduction;
+- `2295`, Lena's Protection;
+- `4616`, Miss Denna's `Cards` Attack.
+
+The disabled ids lose `4695` (now executing in 1089001/0 and 1130381), `5283` (901400/1) and
+`5505` (877239/2, no longer reached), and gain `5563` (Gheistling's `Versus` Toxin, 1414342/1).
+The absent dispositions are unchanged.
+
+Left closed, as priced:
+- Unison Poison `4033` (926226 is the replacement case, not a paying round);
+- `Support: Dope` `2000`;
+- the `Versus` Toxin `5563`;
+- the `After` Protections `5708`/`5757`;
+- the `After` compound `5702`;
+- every gate-and-body pair without a registry record (`Versus` Pillz, `After` Life per Damage,
+  `Versus` Heal).
+
+Three questions are left for the owner:
+- A statically dead `Versus` exemption would skip the new refusal where the immutable opposing
+  hand cannot satisfy the gate and no opposing Copy of the slot exists. `OpponentHandHasClan`
+  reads only that hand, so it is sound, but it is new policy. It would bring back 877239 and
+  that fixture's two rounds, `1588` among them.
+- An `After` gate beside the owner's own infiltrating Oculus (1414400, 924890, 925999) needs a
+  captured round where the canonical and effective readings disagree.
+- `Unison : Toxin 1, Min 0` inherits the plain Toxin's unrefused exposure to the target's own
+  Life gains (Aurora's `+3 Life` and Anita's conversion in 1078555). The two orders differ only
+  at target Life 1, where a Min 0 Toxin meets the unpinned knockout-and-gain question. Refusing
+  it for the new form would cost 1078555.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and
