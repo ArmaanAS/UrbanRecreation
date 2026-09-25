@@ -97,7 +97,10 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    unchanged 20-round base set plus 20 audited additions. It trusts captured active bonus
    identity for replay preparation only; do not use its source-bonus Support grouping as a
    catalog-only/effective-clan solver rule. Night bonus id 1442 remains deferred.
-   The separate Rust `CombatStatDiagnosticV1` gate is fixed at 318 unique sequential prefix rounds.
+   The separate Rust `CombatStatDiagnosticV1` gate is 905 curated sequential prefix rounds at
+   semantic revision 76 (the count is pinned in `rust/tests/expect/combat_stat_gate_rounds.txt`;
+   what follows describes the slices up to revision 37 - revisions 38-76 are written up at the
+   end of `docs/rust-migration.md`).
    It admits fixed ordinary combat stats with Always/Courage/Reprisal and numeric
    Symmetry/Asymmetry (immutable original hand-slot equality/inequality), round-scaled
    Growth/Degrowth, selected-opponent-level Equalizer, ordinary unconditional Support
@@ -186,7 +189,7 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
   adapter come before engine parity; engine parity comes before porting current solver policy.
 - `rust/src/engine/` keeps base rules and projected effect models separate. The 20-round
   base gate proves replay/combat plumbing, the 40-round clan diagnostic executes its bounded
-  bonus slice, and the 299-round combat-stat diagnostic adds fixed ordinary abilities,
+  bonus slice, and the combat-stat diagnostic (905 rounds at revision 76) adds fixed ordinary abilities,
   numeric hand-slot predicates, round-scaled magnitudes, combat-stat Equalizer, exact
   Equalizer opponent-Life, Anita's identity-locked final-damage Courage Life conversion,
   unconditional and reviewed conditional Victory opponent-Life, unconditional, Reprisal/Revenge and Asymmetry source Copy, unconditional stat Copy, the three reviewed Protection grammars, Attack per opposing Damage, Defeat opponent-Life, the four latched plain permanent Life grammars (plain or under one Symmetry/Asymmetry/Revenge/Confidence prefix), plain own and opposing Victory Pillz, Pillz per Damage, Life per Damage capped and uncapped, and ordinary numeric Support abilities without claiming general condition or full-effect parity.
