@@ -7136,12 +7136,14 @@ fn consume_and_combust_latch_on_a_win_and_floor_each_resource_on_its_own() {
 /// the order of an uncapped Pillz gain against one is unpinned, and 1093173/1 shows the
 /// server's is not the engine's P1-then-P2 - and beside an opposing Copy of the slot it sits
 /// in, which no round has shown taking one. A Copy of the other slot and an opposing gain
-/// are admitted, and so is revision 8's `Defeat: Recover 2 Pillz Out Of 3` in every context.
+/// are admitted, and so is revision 8's `Defeat: Recover 2 Pillz Out Of 3` in every context -
+/// since revision 76 under its own identities only (Arnie's `729` here): the same ratio under
+/// any other id is refused like every other Recover.
 #[test]
 fn recovery_is_refused_beside_an_opposing_pillz_floor_or_a_copy_of_its_slot() {
-    let recover = |numerator, denominator, victory| {
+    let recover_as = |id, numerator, denominator, victory| {
         execute(
-            3459,
+            id,
             CombatStatPredicateV1::Always,
             if victory {
                 CombatStatEffectV1::RecoverPaidPillzOnVictory {
@@ -7156,6 +7158,8 @@ fn recovery_is_refused_beside_an_opposing_pillz_floor_or_a_copy_of_its_slot() {
             },
         )
     };
+    let recover =
+        |numerator, denominator, victory| recover_as(3459, numerator, denominator, victory);
     let victory_floor = execute(
         339,
         CombatStatPredicateV1::Always,
@@ -7193,11 +7197,17 @@ fn recovery_is_refused_beside_an_opposing_pillz_floor_or_a_copy_of_its_slot() {
         ),
         (recover(1, 2, false), copy(CopiedSourceKindV1::Bonus), false),
         (recover(1, 2, false), gain, false),
-        (recover(2, 3, false), victory_floor, false),
+        (recover_as(729, 2, 3, false), victory_floor, false),
+        (
+            recover_as(729, 2, 3, false),
+            copy(CopiedSourceKindV1::Ability),
+            false,
+        ),
+        (recover(2, 3, false), victory_floor, true),
         (
             recover(2, 3, false),
             copy(CopiedSourceKindV1::Ability),
-            false,
+            true,
         ),
     ] {
         let base = base_spec(6, 3);
@@ -11673,6 +11683,927 @@ fn killshot_opponent_pillz_and_life_pays_on_the_ratio_with_separate_floors() {
                 })
             ),
             "{plan:?} bonus {bonus}"
+        );
+    }
+}
+
+// Revision 76: a hardening revision. Each test builds the fail-open context an audit of the
+// construction refusals found, asserts the refusal, and keeps the legitimate neighbour
+// admitted. None of these contexts occurs in an eligible draw.
+
+/// The verdict of construction: `None` when admitted, the refusal otherwise. Any other error
+/// is a malformed test plan and fails loudly.
+fn revision_76_verdict(
+    spec: CombatStatDiagnosticMatchSpecV1,
+) -> Option<InvalidCombatStatPlanReasonV1> {
+    match CombatStatDiagnosticV1::new(spec) {
+        Ok(_) => None,
+        Err(CombatStatPlanErrorV1::InvalidExecute { reason, .. }) => Some(reason),
+        Err(error) => panic!("{error:?}"),
+    }
+}
+
+/// An unconditional Copy of `copied`: `Copy: Opp. Ability` (Ch4d 0Sage's `4487`) or `Copy:
+/// Opp. Bonus` (`764`).
+fn revision_76_copy(copied: CopiedSourceKindV1) -> CombatStatSourcePlanV1 {
+    CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: match copied {
+            CopiedSourceKindV1::Ability => 4487,
+            CopiedSourceKindV1::Bonus => 764,
+        },
+        copied,
+        predicate: CombatStatPredicateV1::Always,
+    }
+}
+
+/// Puts `plan` in a slot with the Support context construction expects of it: a Bonus, and an
+/// ability Copy, carry the count of the hand's cards sharing the slot's effective clan (every
+/// card in these hands is a distinct character).
+fn revision_76_place(
+    cards: &mut ByPlayer<[CombatStatCardPlanV1; 4]>,
+    player: PlayerId,
+    slot: usize,
+    bonus: bool,
+    plan: CombatStatSourcePlanV1,
+) {
+    let clan = cards[player][slot].effective_clan_id;
+    let count = cards[player]
+        .iter()
+        .filter(|card| card.effective_clan_id == clan)
+        .count() as u16;
+    let card = &mut cards[player][slot];
+    if bonus {
+        card.bonus = plan;
+        card.source_bonus_support_count = count;
+    } else {
+        card.ability = plan;
+        if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+            card.source_ability_support_count = count;
+        }
+    }
+}
+
+fn revision_76_heal() -> CombatStatSourcePlanV1 {
+    execute(3526, CombatStatPredicateV1::Always, HEAL)
+}
+
+fn revision_76_freaks_poison() -> CombatStatSourcePlanV1 {
+    execute(206, CombatStatPredicateV1::Always, POISON)
+}
+
+/// Solykra L2's `-2 Opp. Pillz And Life, Min 4` sits in an active-Vortex hand, so her Bonus is
+/// the Vortex `Defeat: Recover 2 Pillz Out Of 3`. An opposing `Copy: Opp. Bonus` adopts that
+/// Recover and runs it on the copier's loss, the round the compound floors the copier's Pillz
+/// - the 1093173/1 order. The compound (and its Killshot form) is refused beside a Copy of
+/// either kind, and admitted with none.
+#[test]
+fn revision_76_the_opposing_compound_is_refused_beside_a_copy_of_either_kind() {
+    let reason = Some(InvalidCombatStatPlanReasonV1::OpponentPillzAndLifeAgainstUnpinnedEffect);
+    let victory = execute(
+        5893,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory {
+            amount: 2,
+            minimum: 4,
+        },
+    );
+    let killshot = execute(
+        5575,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot {
+            amount: 2,
+            minimum: 2,
+        },
+    );
+    let vortex = execute(
+        577,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+            numerator: 2,
+            denominator: 3,
+        },
+    );
+    for compound in [victory, killshot] {
+        for (copy, expected) in [
+            (None, None),
+            (Some(CopiedSourceKindV1::Bonus), reason),
+            (Some(CopiedSourceKindV1::Ability), reason),
+        ] {
+            let base = base_spec(6, 3);
+            let mut cards = plans(&base);
+            cards[PlayerId::P1][0].ability = compound;
+            revision_76_place(&mut cards, PlayerId::P1, 0, true, vortex);
+            if let Some(copied) = copy {
+                revision_76_place(&mut cards, PlayerId::P2, 2, false, revision_76_copy(copied));
+            }
+            assert_eq!(
+                revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                    base_rules: base,
+                    cards,
+                }),
+                expected,
+                "{compound:?} beside {copy:?}"
+            );
+        }
+    }
+}
+
+/// Strigoi's Backlash beside Ch4d 0Sage's `Copy: Opp. Ability`, facing Lianah Ld's Heal: the
+/// Copy wins, latches the Heal as its owner's, and the Heal's cap meets the Backlash floor on
+/// that Life every later round. Corrupt, the capped Defeat Life and Senestra's Victory Or
+/// Defeat Life per Damage meet it the same way. A Copy of Bonuses, which cannot reach the Heal,
+/// and the Heal with no own Copy are admitted.
+#[test]
+fn revision_76_an_own_copy_importing_an_opposing_latch_meets_the_owners_life_writes() {
+    let vod_per_damage =
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { life_per_damage: 1 };
+    for (effect, reason) in [
+        (
+            BACKLASH,
+            InvalidCombatStatPlanReasonV1::BacklashLifeAgainstUnpinnedEffect,
+        ),
+        (
+            CORRUPT,
+            InvalidCombatStatPlanReasonV1::CorruptLifeAgainstUnpinnedEffect,
+        ),
+        (
+            CAPPED_DEFEAT_LIFE,
+            InvalidCombatStatPlanReasonV1::CappedDefeatLifeAgainstUnpinnedEffect,
+        ),
+        (
+            vod_per_damage,
+            InvalidCombatStatPlanReasonV1::VictoryOrDefeatGainAgainstUnpinnedEffect,
+        ),
+    ] {
+        for (own_copy, expected) in [
+            (None, None),
+            (Some(CopiedSourceKindV1::Ability), Some(reason)),
+            (Some(CopiedSourceKindV1::Bonus), None),
+        ] {
+            let mut spec = revision_72_spec(effect, 12, 12);
+            spec.cards[PlayerId::P2][2].ability = revision_76_heal();
+            if let Some(copied) = own_copy {
+                revision_76_place(
+                    &mut spec.cards,
+                    PlayerId::P1,
+                    1,
+                    false,
+                    revision_76_copy(copied),
+                );
+            }
+            assert_eq!(
+                revision_76_verdict(spec),
+                expected,
+                "{effect:?} beside an own {own_copy:?} Copy"
+            );
+        }
+    }
+}
+
+/// A `Copy: Opp. Bonus` that adopts the owner's own Freaks `Poison 2, Min 3` bonus latches it
+/// on the owner, and it floors the owner's Life every later round beside Senestra's Victory Or
+/// Defeat Life per Damage or a Unison Defeat Life gain. A plain floor in the gain card's own
+/// Bonus slot meets it in the same round. A plain floor on another card, which cannot share the
+/// gain's round, and the Poison with no opposing Copy are admitted.
+#[test]
+fn revision_76_an_opposing_copy_adopting_an_own_floor_meets_the_uncapped_life_gains() {
+    let vod_per_damage = execute(
+        5071,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { life_per_damage: 1 },
+    );
+    let unison_defeat_life = execute(
+        4015,
+        CombatStatPredicateV1::OwnerHandUnison,
+        CombatStatEffectV1::GainLifeOnDefeat { life: 2 },
+    );
+    let berzerk = execute(
+        680,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 2,
+            minimum: 2,
+        },
+    );
+    for (gain, reason) in [
+        (
+            vod_per_damage,
+            InvalidCombatStatPlanReasonV1::VictoryOrDefeatGainAgainstUnpinnedEffect,
+        ),
+        (
+            unison_defeat_life,
+            InvalidCombatStatPlanReasonV1::UnisonGainAgainstUnpinnedEffect,
+        ),
+    ] {
+        // (the own floor, its slot, an opposing `Copy: Opp. Bonus`, verdict)
+        for (floor, slot, copy, expected) in [
+            (revision_76_freaks_poison(), 1, true, Some(reason)),
+            (revision_76_freaks_poison(), 1, false, None),
+            (berzerk, 0, true, Some(reason)),
+            (berzerk, 1, true, None),
+        ] {
+            let base = base_spec(6, 3);
+            let mut cards = plans(&base);
+            cards[PlayerId::P1][0].ability = gain;
+            revision_76_place(&mut cards, PlayerId::P1, slot, true, floor);
+            if copy {
+                revision_76_place(
+                    &mut cards,
+                    PlayerId::P2,
+                    2,
+                    false,
+                    revision_76_copy(CopiedSourceKindV1::Bonus),
+                );
+            }
+            assert_eq!(
+                revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                    base_rules: base,
+                    cards,
+                }),
+                expected,
+                "{gain:?} beside {floor:?} in slot {slot}, copy {copy}"
+            );
+        }
+    }
+}
+
+/// A Killshot reads `0 >= 2 x 0` as paying when both final Attacks reach 0. Revision 76 counts
+/// every way there: an unfloored reduction (which resolution saturates at 0), an own-side
+/// reduction to 0 on its own card, and a Min 0 cut a Copy could adopt - Firmin's Oblivion Copy
+/// taking an opposing Attack cut, or an opposing `Copy: Opp. Bonus` taking the Killshot card's
+/// own Bonus cut. A cut on one side only, or a floored one, is admitted.
+#[test]
+fn revision_76_killshot_zero_attack_refusal_sees_unfloored_own_side_and_copied_cuts() {
+    let killshot = execute(
+        2250,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnKillshot { pillz: 3 },
+    );
+    let cut = |side, stat, minimum: Option<u16>| {
+        execute(
+            7,
+            CombatStatPredicateV1::Always,
+            modifier(
+                side,
+                stat,
+                CombatStatOperationV1::Decrease,
+                3,
+                minimum,
+                None,
+                CombatStatMagnitudeV1::Fixed,
+            ),
+        )
+    };
+    let own_growth_cut = |minimum| {
+        execute(
+            1676,
+            CombatStatPredicateV1::Always,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Power,
+                CombatStatOperationV1::Decrease,
+                1,
+                Some(minimum),
+                None,
+                CombatStatMagnitudeV1::Growth,
+            ),
+        )
+    };
+    let opposing = CombatStatAffectedSideV1::Opponent;
+    let attack = CombatStatAttributeV1::Attack;
+    let power = CombatStatAttributeV1::Power;
+    let refused = Some(InvalidCombatStatPlanReasonV1::KillshotAgainstZeroAttacks);
+    // (P1 ability of slot 1, P1 bonus of the Killshot card, P2 ability of slot 1, verdict)
+    for (own, own_bonus, opposing_plan, expected) in [
+        // Unfloored cuts on each side.
+        (
+            Some(cut(opposing, power, None)),
+            None,
+            Some(cut(opposing, power, None)),
+            refused,
+        ),
+        (Some(cut(opposing, power, None)), None, None, None),
+        (
+            Some(cut(opposing, power, None)),
+            None,
+            Some(cut(opposing, power, Some(1))),
+            None,
+        ),
+        // An own-side reduction to 0 zeroes the Killshot owner's own card.
+        (
+            Some(own_growth_cut(0)),
+            Some(cut(opposing, attack, Some(0))),
+            None,
+            refused,
+        ),
+        (
+            Some(own_growth_cut(4)),
+            Some(cut(opposing, attack, Some(0))),
+            None,
+            None,
+        ),
+        // Firmin's Oblivion Copy adopts the opposing Min 0 Attack cut.
+        (
+            None,
+            Some(revision_76_copy(CopiedSourceKindV1::Ability)),
+            Some(cut(opposing, attack, Some(0))),
+            refused,
+        ),
+        (
+            None,
+            Some(revision_76_copy(CopiedSourceKindV1::Ability)),
+            Some(cut(opposing, attack, Some(2))),
+            None,
+        ),
+        // An opposing `Copy: Opp. Bonus` adopts the Killshot card's own Bonus cut.
+        (
+            None,
+            Some(cut(opposing, attack, Some(0))),
+            Some(revision_76_copy(CopiedSourceKindV1::Bonus)),
+            refused,
+        ),
+        (
+            None,
+            Some(cut(opposing, attack, Some(0))),
+            Some(revision_76_copy(CopiedSourceKindV1::Ability)),
+            None,
+        ),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = killshot;
+        if let Some(plan) = own {
+            revision_76_place(&mut cards, PlayerId::P1, 1, false, plan);
+        }
+        if let Some(plan) = own_bonus {
+            revision_76_place(&mut cards, PlayerId::P1, 0, true, plan);
+        }
+        if let Some(plan) = opposing_plan {
+            revision_76_place(&mut cards, PlayerId::P2, 1, false, plan);
+        }
+        assert_eq!(
+            revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            expected,
+            "{own:?} / {own_bonus:?} / {opposing_plan:?}"
+        );
+    }
+}
+
+/// Revision 8's Recover exemption is its identities, not its ratio. Sasl Lovelace's `2475`
+/// prints the same `Defeat: Recover 2 Pillz Out Of 3` but was never revision 8's, so an
+/// opposing Pillz floor or `Copy: Opp. Ability` refuses it; the abilities `729`/`1418` and the
+/// Vortex bonus `577` keep the exemption, and `577` claimed from an Ability slot does not.
+#[test]
+fn revision_76_the_revision_8_recover_exemption_is_keyed_on_identity() {
+    let recover = |id| {
+        execute(
+            id,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::RecoverPaidPillzOnDefeat {
+                numerator: 2,
+                denominator: 3,
+            },
+        )
+    };
+    let pillz_floor = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let refused = Some(InvalidCombatStatPlanReasonV1::RecoveryAgainstUnpinnedEffect);
+    for (id, bonus, opposing, expected) in [
+        (2475, false, pillz_floor, refused),
+        (
+            2475,
+            false,
+            revision_76_copy(CopiedSourceKindV1::Ability),
+            refused,
+        ),
+        (1418, false, pillz_floor, None),
+        (
+            729,
+            false,
+            revision_76_copy(CopiedSourceKindV1::Ability),
+            None,
+        ),
+        (577, true, pillz_floor, None),
+        (577, false, pillz_floor, refused),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        revision_76_place(&mut cards, PlayerId::P1, 0, bonus, recover(id));
+        revision_76_place(&mut cards, PlayerId::P2, 2, false, opposing);
+        assert_eq!(
+            revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            expected,
+            "{id} bonus {bonus} facing {opposing:?}"
+        );
+    }
+}
+
+/// The Oblivion clan bonus runs the ability it adopts from its own Bonus slot. Revision 76
+/// refuses there every source the validator locks out of a Bonus slot by identity or grammar:
+/// Carnibox's Komboka alias `3356` (and `1714`), Argos' `1158`, the conditional Victory
+/// opponent-Life identities, revision 75's conditional cancels and Reprisal Protection and its
+/// capped Power increase, a `Stop:` numeric and El Cazador's Equalizer grammar. The
+/// server-pinned neighbours stay admitted: Viperine's copied `-5 Opp. Life Min 0`
+/// (1414237/0), a copied Courage numeric (1414237/3), an unconditional Stop (924669/3), the
+/// reviewed Equalizer opponent-Life `1415`, and an Ability-slot Copy of the same sources.
+#[test]
+fn revision_76_a_bonus_slot_copy_refuses_every_ability_locked_source() {
+    let refused = Some(InvalidCombatStatPlanReasonV1::BonusSlotCopyOfUnpinnedSource);
+    let komboka = |id| {
+        execute(
+            id,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainOnePillzAndLifeOnVictory,
+        )
+    };
+    let power_and_damage = CombatStatAttributeV1::PowerAndDamage;
+    let locked = [
+        komboka(3356),
+        komboka(1714),
+        execute(
+            1158,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven,
+        ),
+        execute(
+            4708,
+            CombatStatPredicateV1::SelectedHandSlotsMatch,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 4,
+                minimum: 0,
+            },
+        ),
+        execute(
+            3103,
+            CombatStatPredicateV1::OwnerMovesSecond,
+            CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: power_and_damage,
+            },
+        ),
+        execute(
+            5805,
+            CombatStatPredicateV1::SelectedHandSlotsDiffer,
+            CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                stat: CombatStatAttributeV1::Power,
+            },
+        ),
+        execute(
+            2434,
+            CombatStatPredicateV1::OwnerMovesSecond,
+            CombatStatEffectV1::ProtectOwnCombatStat {
+                stat: power_and_damage,
+            },
+        ),
+        execute(
+            2969,
+            CombatStatPredicateV1::Always,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Power,
+                CombatStatOperationV1::Increase,
+                6,
+                None,
+                Some(8),
+                CombatStatMagnitudeV1::Fixed,
+            ),
+        ),
+        // `Stop: Damage +4`: in the copier's Bonus slot its own ability can be stopped while
+        // the adopted numeric lives.
+        execute(
+            1474,
+            CombatStatPredicateV1::OwnerAbilityStopped,
+            modifier(
+                CombatStatAffectedSideV1::Player,
+                CombatStatAttributeV1::Damage,
+                CombatStatOperationV1::Increase,
+                4,
+                None,
+                None,
+                CombatStatMagnitudeV1::Fixed,
+            ),
+        ),
+        // El Cazador's Equalizer grammar, whose Bonus provenance is the reviewed pair's alone.
+        execute(
+            5793,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                per_star: 1,
+                minimum: 0,
+            },
+        ),
+    ];
+    let pinned = [
+        execute(
+            1635,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                life: 5,
+                minimum: 0,
+            },
+        ),
+        execute(
+            991,
+            CombatStatPredicateV1::OwnerMovesFirst,
+            own(CombatStatAttributeV1::PowerAndDamage, 1),
+        ),
+        execute(
+            877,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::StopOpponentAbility,
+        ),
+        // The reviewed Equalizer opponent-Life identity is open to both slots.
+        execute(
+            1415,
+            CombatStatPredicateV1::Always,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars {
+                per_star: 1,
+                minimum: 2,
+            },
+        ),
+    ];
+    for (plan, locked) in locked
+        .into_iter()
+        .map(|plan| (plan, true))
+        .chain(pinned.into_iter().map(|plan| (plan, false)))
+    {
+        for copy_in_bonus in [true, false] {
+            let base = base_spec(6, 3);
+            let mut cards = plans(&base);
+            cards[PlayerId::P1][0].ability = plan;
+            revision_76_place(
+                &mut cards,
+                PlayerId::P2,
+                2,
+                copy_in_bonus,
+                revision_76_copy(CopiedSourceKindV1::Ability),
+            );
+            let verdict = revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            });
+            if locked && copy_in_bonus {
+                assert_eq!(verdict, refused, "{plan:?} under a Bonus-slot Copy");
+            } else {
+                assert_ne!(
+                    verdict, refused,
+                    "{plan:?}, Bonus-slot Copy {copy_in_bonus}"
+                );
+            }
+        }
+        // Unchallenged, every one of them is admitted.
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = plan;
+        assert_eq!(
+            revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            None,
+            "{plan:?} alone"
+        );
+    }
+}
+
+/// A latched Dope pays every round, so an opposing Copy that adopts one of the owner's own
+/// writes onto the owner's Pillz - a fresh `-3 Opp Pillz. Min 4`, or a gift - meets it in an
+/// order no round pins. A Copy of the other slot kind cannot reach that write and is admitted.
+#[test]
+fn revision_76_dope_is_refused_beside_an_opposing_copy_that_imports_an_own_pillz_write() {
+    let dope = execute(
+        4931,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::DopePillzOnVictory {
+            pillz: 3,
+            maximum: 4,
+        },
+    );
+    let pillz_floor = execute(
+        339,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let gift = execute(3223, CombatStatPredicateV1::Always, PILLZ_GIFT);
+    let dope_reason = Some(InvalidCombatStatPlanReasonV1::DopeAgainstUnpinnedEffect);
+    for (own_write, copied, expected) in [
+        (pillz_floor, CopiedSourceKindV1::Ability, dope_reason),
+        (gift, CopiedSourceKindV1::Ability, dope_reason),
+        (pillz_floor, CopiedSourceKindV1::Bonus, None),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = dope;
+        cards[PlayerId::P1][1].ability = own_write;
+        revision_76_place(&mut cards, PlayerId::P2, 2, false, revision_76_copy(copied));
+        assert_eq!(
+            revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            expected,
+            "{own_write:?} under {copied:?}"
+        );
+    }
+}
+
+/// Revision 60's `Killshot: Toxin 1, Min 0` now keeps the two rules the later Toxin forms keep:
+/// no second Poison or Toxin latch that could target the same player (in the owner's hand, one
+/// an own Copy could import, or the latch taken by an opposing Copy of its slot), and no
+/// opposing own Life write or opposing Copy, which its every-round floor meets. A Heal beside
+/// it and an opposing Pillz gain are admitted, as Madrat's 1080007 is.
+#[test]
+fn revision_76_the_killshot_toxin_keeps_the_family_and_order_rules() {
+    let killshot_toxin = execute(
+        2497,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ToxinOpponentLifeOnKillshot {
+            life: 1,
+            minimum: 0,
+        },
+    );
+    let family = Some(InvalidCombatStatPlanReasonV1::KillshotToxinLatchAgainstSameFamilyLatch);
+    let order = Some(InvalidCombatStatPlanReasonV1::KillshotToxinLatchAgainstUnpinnedEffect);
+    let victory_life = execute(
+        377,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainLifeOnVictory { life: 3 },
+    );
+    let pillz_gain = execute(
+        337,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::GainPillzOnVictory { pillz: 3 },
+    );
+    let toxin = execute(4730, CombatStatPredicateV1::Always, TOXIN);
+    let ability_copy = revision_76_copy(CopiedSourceKindV1::Ability);
+    let bonus_copy = revision_76_copy(CopiedSourceKindV1::Bonus);
+    // (own slot-1 placement and whether it is the Bonus, opposing slot-2 ability, verdict)
+    for (own, opposing, expected) in [
+        (Some((toxin, false)), None, family),
+        (Some((revision_76_freaks_poison(), true)), None, family),
+        (Some((ability_copy, false)), Some(toxin), family),
+        (None, Some(ability_copy), family),
+        (None, Some(bonus_copy), order),
+        (None, Some(victory_life), order),
+        (Some((revision_76_heal(), false)), Some(pillz_gain), None),
+        (None, None, None),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = killshot_toxin;
+        if let Some((plan, bonus)) = own {
+            revision_76_place(&mut cards, PlayerId::P1, 1, bonus, plan);
+        }
+        if let Some(plan) = opposing {
+            revision_76_place(&mut cards, PlayerId::P2, 2, false, plan);
+        }
+        assert_eq!(
+            revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            expected,
+            "{own:?} / {opposing:?}"
+        );
+    }
+}
+
+/// Revision 70's clan-gated latches - Dark Eloxia's `[clan..] Toxin 1, Min 1` and Dunkelstern's
+/// `[clan..] Repris.: Consume 1, Min 4` - now keep revision 73's replacement rule: no second
+/// latch of their family in the owner's hand or importable by an own Copy. Alone they are
+/// admitted, as 948108 and 1065673 are. (An opposing Consume or Combust, or an opposing Copy,
+/// is refused beside the gated Consume by the older Consume rule already.)
+#[test]
+fn revision_76_the_clan_gated_latches_keep_the_same_family_rule() {
+    let set = ClanSetV1::from_ids(&[1]).unwrap();
+    let toxin = execute(
+        5613,
+        CombatStatPredicateV1::OwnerClanIn(set),
+        CombatStatEffectV1::ToxinOpponentLifeOnVictory {
+            life: 1,
+            minimum: 1,
+        },
+    );
+    let consume = execute(
+        5275,
+        CombatStatPredicateV1::OwnerClanInAnd(set, ClanConjunctV1::OwnerMovesSecond),
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 4,
+        },
+    );
+    let plain_toxin = execute(4730, CombatStatPredicateV1::Always, TOXIN);
+    let plain_consume = execute(
+        5871,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 2,
+        },
+    );
+    let family = Some(InvalidCombatStatPlanReasonV1::ClanGatedLatchAgainstSameFamilyLatch);
+    let ability_copy = revision_76_copy(CopiedSourceKindV1::Ability);
+    // (gated latch, own slot-1 placement and whether it is the Bonus, opposing slot-2 ability,
+    // verdict)
+    for (gated, own, opposing, expected) in [
+        (toxin, None, None, None),
+        (toxin, Some((plain_toxin, false)), None, family),
+        (
+            toxin,
+            Some((revision_76_freaks_poison(), true)),
+            None,
+            family,
+        ),
+        (
+            toxin,
+            Some((ability_copy, false)),
+            Some(plain_toxin),
+            family,
+        ),
+        (consume, None, None, None),
+        (consume, Some((plain_consume, false)), None, family),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        cards[PlayerId::P1][0].ability = gated;
+        if let Some((plan, bonus)) = own {
+            revision_76_place(&mut cards, PlayerId::P1, 1, bonus, plan);
+        }
+        if let Some(plan) = opposing {
+            revision_76_place(&mut cards, PlayerId::P2, 2, false, plan);
+        }
+        assert_eq!(
+            revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            expected,
+            "{gated:?} beside {own:?} / {opposing:?}"
+        );
+    }
+}
+
+/// The validator's Bonus-slot predicate checks are exhaustive since revision 76. A Bonus-slot
+/// Copy admits no condition at all (both clan bonuses that print one are unconditional), and a
+/// Bonus-slot numeric admits exactly the day/night constants and `After` under any magnitude
+/// and the previous-round and hand-slot predicates over a fixed one.
+#[test]
+fn revision_76_bonus_slot_predicates_are_refused_unless_named() {
+    let set = ClanSetV1::from_ids(&[1]).unwrap();
+    let conditional = Some(InvalidCombatStatPlanReasonV1::ConditionalBonus);
+    for (predicate, expected) in [
+        (CombatStatPredicateV1::Always, None),
+        (CombatStatPredicateV1::OwnerHandUnison, conditional),
+        (CombatStatPredicateV1::OwnerMovesSecond, conditional),
+        (CombatStatPredicateV1::MatchIsNight, conditional),
+        (CombatStatPredicateV1::OwnerPillzUsedAbove(4), conditional),
+        (
+            CombatStatPredicateV1::OwnerPreviousCardClanIn(set),
+            conditional,
+        ),
+        (CombatStatPredicateV1::OwnerAbilityStopped, conditional),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        revision_76_place(
+            &mut cards,
+            PlayerId::P1,
+            0,
+            true,
+            CombatStatSourcePlanV1::CopyOpponentSource {
+                source_id: 2918,
+                copied: CopiedSourceKindV1::Ability,
+                predicate,
+            },
+        );
+        assert_eq!(
+            revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            expected,
+            "Bonus-slot Copy under {predicate:?}"
+        );
+    }
+    for (predicate, multiplier, expected) in [
+        (
+            CombatStatPredicateV1::MatchIsNight,
+            CombatStatMagnitudeV1::Fixed,
+            None,
+        ),
+        (
+            CombatStatPredicateV1::OwnerPreviousCardClanIn(set),
+            CombatStatMagnitudeV1::Fixed,
+            None,
+        ),
+        (
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            CombatStatMagnitudeV1::Fixed,
+            None,
+        ),
+        (
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            CombatStatMagnitudeV1::SourceBonusSupport,
+            conditional,
+        ),
+        (
+            CombatStatPredicateV1::OwnerMovesFirst,
+            CombatStatMagnitudeV1::Fixed,
+            conditional,
+        ),
+        (
+            CombatStatPredicateV1::OwnerHandUnison,
+            CombatStatMagnitudeV1::Fixed,
+            conditional,
+        ),
+    ] {
+        let base = base_spec(6, 3);
+        let mut cards = plans(&base);
+        revision_76_place(
+            &mut cards,
+            PlayerId::P1,
+            0,
+            true,
+            execute(
+                1553,
+                predicate,
+                modifier(
+                    CombatStatAffectedSideV1::Player,
+                    CombatStatAttributeV1::Power,
+                    CombatStatOperationV1::Increase,
+                    2,
+                    None,
+                    None,
+                    multiplier,
+                ),
+            ),
+        );
+        assert_eq!(
+            revision_76_verdict(CombatStatDiagnosticMatchSpecV1 {
+                base_rules: base,
+                cards,
+            }),
+            expected,
+            "numeric Bonus under {predicate:?} and {multiplier:?}"
+        );
+    }
+}
+
+/// The admitted Brawl capped gain (`Brawl: +1 Pillz, Max. 9`) carries the capped Victory Pillz
+/// refusal since revision 76: an opposing write to its owner's Pillz on the opposing loss (a
+/// `Defeat: -N Opp. Pillz`) or an opposing Copy that could take it. The uncapped `Brawl: +1
+/// Pillz` commutes with such writes' gains and is left as it was.
+#[test]
+fn revision_76_the_capped_brawl_pillz_gain_carries_the_capped_victory_pillz_refusal() {
+    let capped = CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport {
+        per_count: 1,
+        maximum: 9,
+    };
+    let uncapped = CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport {
+        per_count: 1,
+        maximum: 0,
+    };
+    let defeat_floor = execute(
+        912,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::ReduceOpponentPillzOnDefeat {
+            pillz: 2,
+            minimum: 4,
+        },
+    );
+    let refused = Some(InvalidCombatStatPlanReasonV1::CappedVictoryPillzAgainstUnpinnedEffect);
+    for (effect, opposing, expected) in [
+        (capped, None, None),
+        (capped, Some(defeat_floor), refused),
+        (
+            capped,
+            Some(revision_76_copy(CopiedSourceKindV1::Ability)),
+            refused,
+        ),
+        (uncapped, Some(defeat_floor), None),
+    ] {
+        let mut spec = brawl_post_round_spec(effect, 4);
+        if let Some(plan) = opposing {
+            revision_76_place(&mut spec.cards, PlayerId::P2, 2, false, plan);
+        }
+        assert_eq!(
+            revision_76_verdict(spec),
+            expected,
+            "{effect:?} facing {opposing:?}"
         );
     }
 }

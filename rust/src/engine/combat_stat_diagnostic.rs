@@ -1034,6 +1034,17 @@ pub enum InvalidCombatStatPlanReasonV1 {
     /// the same player (Heal or Regen for the Heal, Poison or Toxin for the Poison), or an
     /// opposing Copy of its slot: the same open replacement question as revision 73's.
     GrowthLatchAgainstSameFamilyLatch,
+    /// A revision-70 clan-gated Toxin or Consume beside another latch of its family that could
+    /// target the same player, or an opposing Copy of its slot: revision 73's open replacement
+    /// question, applied to the older gated latches since revision 76.
+    ClanGatedLatchAgainstSameFamilyLatch,
+    /// Revision 60's `Killshot: Toxin` beside another Poison or Toxin latch that could target
+    /// the same player, or an opposing Copy of its slot (revision 76).
+    KillshotToxinLatchAgainstSameFamilyLatch,
+    /// Revision 60's `Killshot: Toxin` beside an opposing own Life gain or order-sensitive own
+    /// Life write, which its every-round floor meets in the 1093173/1 order, or beside an
+    /// opposing Copy (revision 76).
+    KillshotToxinLatchAgainstUnpinnedEffect,
     /// A revision-74 `Growth:` permanent beside another write to the Life it moves that can
     /// land in a round it pays - the target's own write for the Poison, any opposing write or
     /// another own gain for the capped Heal - or beside an opposing Copy. The latch pays every
@@ -1620,16 +1631,10 @@ pub(crate) fn unmodelled_source_context(
         // (924669/3), but no round shows Anita's conversion there - its identity lock names
         // the printed Ability - or a conditional Stop, which the validator admits from the
         // Ability slot only. An ability-slot Copy of Anita is older and left as it was.
-        CombatStatSourcePlanV1::Execute {
-            source_id,
-            predicate,
-            effect,
-        } if opposing_bonus_copy_can_take(plan, own, opponent)
-            && (source_id == 274
-                || (matches!(
-                    effect,
-                    CombatStatEffectV1::StopOpponentAbility | CombatStatEffectV1::StopOpponentBonus
-                ) && predicate != CombatStatPredicateV1::Always)) =>
+        // Since revision 76 the same holds for every other source the validator locks out of
+        // a Bonus slot (`bonus_slot_copy_takes_unpinned_source`).
+        CombatStatSourcePlanV1::Execute { .. }
+            if bonus_slot_copy_takes_unpinned_source(plan, own, opponent) =>
         {
             Some(InvalidCombatStatPlanReasonV1::BonusSlotCopyOfUnpinnedSource)
         }
@@ -1703,12 +1708,15 @@ pub(crate) fn unmodelled_source_context(
         // one where both orders agree). Nor has any round shown a Copy taking a Recover. So
         // either in the opposing hand refuses it - except revision 8's `Defeat: Recover 2
         // Pillz Out Of 3`, admitted before either question was found and left as it was.
+        // Since revision 76 that exemption is revision 8's identities, not the ratio: the
+        // Vortex bonus `577` and the abilities `729`/`1418`. Revision 63's same-text Recovers
+        // (Sasl Lovelace's `2475` and the rest) meet both refusals.
         CombatStatSourcePlanV1::Execute {
             effect:
-                effect @ (CombatStatEffectV1::RecoverPaidPillzOnDefeat { .. }
-                | CombatStatEffectV1::RecoverPaidPillzOnVictory { .. }),
+                CombatStatEffectV1::RecoverPaidPillzOnDefeat { .. }
+                | CombatStatEffectV1::RecoverPaidPillzOnVictory { .. },
             ..
-        } if effect != REVISION_8_RECOVERY
+        } if !is_revision_8_recovery(plan, own)
             && (opposing_copy_can_take(plan, own, opponent)
                 || source_plans(opponent).any(floors_opposing_pillz)) =>
         {
@@ -1722,12 +1730,15 @@ pub(crate) fn unmodelled_source_context(
         // Revision 75's Killshot form pays on the attack ratio rather than the win, which in
         // an admitted match is a win (the 0-0 tie is refused below), so the same order rule
         // applies to it unchanged.
+        // Since revision 76 any opposing Copy refuses it, as the doc always said: a Copy of the
+        // other slot kind can adopt the compound card's own on-loss writer (Solykra's Vortex
+        // Recover under `Copy: Opp. Bonus`), and `write_outcomes` reports nothing for a Copy.
         CombatStatSourcePlanV1::Execute {
             effect:
                 CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. }
                 | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { .. },
             ..
-        } if opposing_copy_can_take(plan, own, opponent)
+        } if hand_has_copy(opponent)
             || source_plans(opponent).any(|opposing| {
                 let life = life_writes(opposing);
                 write_outcomes(opposing).on_loss
@@ -1747,8 +1758,14 @@ pub(crate) fn unmodelled_source_context(
         // an opposing Copy could take the gain, or import an own write onto the owner's Pillz
         // (`pillz_writes` reports nothing for a Copy). The owner's own writes are not refused:
         // Argos (1093451) pins the owner's bonus before its ability.
+        // Since revision 76 the admitted Brawl capped gain (`Brawl: +N Pillz, Max. M`, a
+        // non-zero maximum) carries the same refusal: it lowers to the same capped engine arm,
+        // and its cap is just as order-sensitive. Revision 69 left it to the owner, measured
+        // at no cost.
         CombatStatSourcePlanV1::Execute {
-            effect: CombatStatEffectV1::GainPillzOnVictoryMax { .. },
+            effect:
+                CombatStatEffectV1::GainPillzOnVictoryMax { .. }
+                | CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { maximum: 1.., .. },
             ..
         } if opposing_copy_can_take(plan, own, opponent)
             || (hand_has_copy(opponent)
@@ -1781,7 +1798,7 @@ pub(crate) fn unmodelled_source_context(
                     && (life_writes(opposing).opposing_floor
                         || life_beneficiary(opposing) == Some(LifeBeneficiaryV1::Both))
             })
-            || same_owner_meets(plan, own, writes_own_life) =>
+            || same_owner_meets(plan, own, opponent, writes_own_life) =>
         {
             Some(InvalidCombatStatPlanReasonV1::BacklashLifeAgainstUnpinnedEffect)
         }
@@ -1809,7 +1826,7 @@ pub(crate) fn unmodelled_source_context(
                         }
                     )
             })
-            || same_owner_meets(plan, own, writes_own_life) =>
+            || same_owner_meets(plan, own, opponent, writes_own_life) =>
         {
             Some(InvalidCombatStatPlanReasonV1::CorruptLifeAgainstUnpinnedEffect)
         }
@@ -1827,7 +1844,7 @@ pub(crate) fn unmodelled_source_context(
                     && (life_writes(opposing).opposing_floor
                         || life_beneficiary(opposing) == Some(LifeBeneficiaryV1::Both))
             })
-            || same_owner_meets(plan, own, writes_own_life) =>
+            || same_owner_meets(plan, own, opponent, writes_own_life) =>
         {
             Some(InvalidCombatStatPlanReasonV1::CappedDefeatLifeAgainstUnpinnedEffect)
         }
@@ -1843,7 +1860,7 @@ pub(crate) fn unmodelled_source_context(
             || source_plans(opponent).any(|opposing| {
                 write_outcomes(opposing).on_win && pillz_writes(opposing).own_capped
             })
-            || same_owner_meets(plan, own, floors_opposing_pillz) =>
+            || same_owner_meets(plan, own, opponent, floors_opposing_pillz) =>
         {
             Some(InvalidCombatStatPlanReasonV1::DefeatOpponentPillzGiftAgainstUnpinnedEffect)
         }
@@ -1892,6 +1909,44 @@ pub(crate) fn unmodelled_source_context(
                 && source_plans(opponent).any(|opposing| same_latch_family(opposing, effect))) =>
         {
             Some(InvalidCombatStatPlanReasonV1::UnisonLatchAgainstSameFamilyLatch)
+        }
+        // Revision 70's clan-gated latches - Dark Eloxia's Toxin (`5613`, `OwnerClanIn`) and
+        // Dunkelstern's Reprisal Consume (`5275`, `OwnerClanInAnd`) - were admitted before
+        // revision 73 wrote the replacement rule down. Since revision 76 they keep it too: no
+        // second latch of their family elsewhere in the owner's hand, none an own Copy could
+        // import, and no opposing Copy of the slot.
+        CombatStatSourcePlanV1::Execute {
+            predicate:
+                CombatStatPredicateV1::OwnerClanIn(_) | CombatStatPredicateV1::OwnerClanInAnd(..),
+            effect:
+                effect @ (CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. }
+                | CombatStatEffectV1::ConsumeOpponentPillzOnVictory { .. }),
+            ..
+        } if latch_meets_same_family_latch(plan, effect, own, opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::ClanGatedLatchAgainstSameFamilyLatch)
+        }
+        // Revision 60's `Killshot: Toxin 1, Min 0` (`2497`) latches a Toxin like the plain one,
+        // and predates both rules the later Toxin forms carry. Since revision 76 it keeps the
+        // replacement rule above, and the 1093173/1 order rule the clan-gated Toxin keeps: the
+        // latch floors the opposing Life every round after it latches, so any opposing own Life
+        // gain or order-sensitive own Life write meets it on some outcome, as does an opposing
+        // Copy, which could take the latch or import a writer.
+        CombatStatSourcePlanV1::Execute {
+            effect: effect @ CombatStatEffectV1::ToxinOpponentLifeOnKillshot { .. },
+            ..
+        } if latch_meets_same_family_latch(plan, effect, own, opponent) => {
+            Some(InvalidCombatStatPlanReasonV1::KillshotToxinLatchAgainstSameFamilyLatch)
+        }
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ToxinOpponentLifeOnKillshot { .. },
+            ..
+        } if hand_has_copy(opponent)
+            || source_plans(opponent).any(|opposing| {
+                let life = life_writes(opposing);
+                life.own_gain || life.own_order_sensitive
+            }) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::KillshotToxinLatchAgainstUnpinnedEffect)
         }
         // Revision 74's `Growth:` permanents keep the same replacement question out: no second
         // latch of their family - Heal or Regen for the Heal, Poison or Toxin for the Poison -
@@ -1988,12 +2043,23 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::VictoryOrDefeatGainAgainstUnpinnedEffect)
         }
+        // Since revision 76 the Life-per-Damage form also refuses a Copy that could bring such a
+        // write in: an own Copy adopting an opposing order-sensitive writer (a Heal latch it
+        // then owns), and an opposing Copy adopting one of the owner's own floors on the other
+        // side of the round - a latch, which then floors the owner every round, or the gain
+        // card's other slot (`life_writes` reports nothing for a Copy).
         CombatStatSourcePlanV1::Execute {
             effect: CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { .. },
             ..
         } if opposing_copy_can_take(plan, own, opponent)
             || source_plans(opponent).any(|opposing| life_writes(opposing).opposing_floor)
-            || source_plans(own).any(|own_plan| life_writes(own_plan).own_order_sensitive) =>
+            || source_plans(own).any(|own_plan| life_writes(own_plan).own_order_sensitive)
+            || copy_can_import(own, opponent, |opposing| {
+                life_writes(opposing).own_order_sensitive
+            })
+            || opposing_copy_can_import_own(plan, own, opponent, |own_plan| {
+                life_writes(own_plan).opposing_floor
+            }) =>
         {
             Some(InvalidCombatStatPlanReasonV1::VictoryOrDefeatGainAgainstUnpinnedEffect)
         }
@@ -2001,7 +2067,9 @@ pub(crate) fn unmodelled_source_context(
         // an opposing floor on the resource, an own cap or revival on it, or a Copy meets
         // them in an order no round pins. The compound meets both resources. Since revision
         // 73 an opposing floor counts only where it can land in a round the gain pays
-        // (`opposing_floor_can_meet_unison_gain`).
+        // (`opposing_floor_can_meet_unison_gain`). Since revision 76 so does an opposing Copy
+        // that could adopt one of the owner's own floors - a Freaks Poison bonus under `Copy:
+        // Opp. Bonus` - and latch it on the owner (`opposing_copy_can_import_own`).
         CombatStatSourcePlanV1::Execute {
             effect: effect @ CombatStatEffectV1::GainLifeOnDefeat { .. },
             predicate: CombatStatPredicateV1::OwnerHandUnison,
@@ -2026,7 +2094,12 @@ pub(crate) fn unmodelled_source_context(
                 && source_plans(opponent)
                     .any(|opposing| life_writes(opposing).own_order_sensitive))
             || (matches!(effect, CombatStatEffectV1::GainPillzAndLifeOnVictory { .. })
-                && source_plans(opponent).any(floors_opposing_pillz)) =>
+                && source_plans(opponent).any(floors_opposing_pillz))
+            || opposing_copy_can_import_own(plan, own, opponent, |own_plan| {
+                life_writes(own_plan).opposing_floor
+                    || (matches!(effect, CombatStatEffectV1::GainPillzAndLifeOnVictory { .. })
+                        && floors_opposing_pillz(own_plan))
+            }) =>
         {
             Some(InvalidCombatStatPlanReasonV1::UnisonGainAgainstUnpinnedEffect)
         }
@@ -2036,6 +2109,9 @@ pub(crate) fn unmodelled_source_context(
         // another such effect, so the match is refused wherever one could meet it - another
         // own gain in the hand (or one an own Copy could take from the opposing hand), any
         // opposing write to the owner's Pillz, or an opposing Copy of the Dope's slot.
+        // Since revision 76 also an opposing Copy that could adopt one of the owner's own
+        // writes onto the owner's Pillz (a fresh `-N Opp Pillz` or gift) and run it as its own
+        // in a round the latched Dope pays (`pillz_writes` reports nothing for a Copy).
         CombatStatSourcePlanV1::Execute {
             effect:
                 CombatStatEffectV1::DopePillzOnVictory { .. }
@@ -2051,6 +2127,11 @@ pub(crate) fn unmodelled_source_context(
             || source_plans(opponent).any(|opposing| {
                 let writes = pillz_writes(opposing);
                 writes.opposing_gain || writes.opposing_floor
+            })
+            || source_plans(own).any(|own_plan| {
+                let writes = pillz_writes(own_plan);
+                (writes.opposing_gain || writes.opposing_floor)
+                    && opposing_copy_can_take(own_plan, own, opponent)
             }) =>
         {
             Some(InvalidCombatStatPlanReasonV1::DopeAgainstUnpinnedEffect)
@@ -2100,13 +2181,11 @@ pub(crate) fn unmodelled_source_context(
         // would not (its Life and Pillz modifiers default to a win), and no round separates
         // them - so a match where both final Attacks could reach 0, by a Min 0 Attack or
         // Power reduction on each side or by a `Cards` one that reduces both, is refused.
+        // Since revision 76 (`killshot_attacks_can_both_reach_zero`) an unfloored reduction
+        // counts as Min 0, an own-side reduction to 0 counts against its own card, and a
+        // reduction a Copy could adopt counts for the copier.
         CombatStatSourcePlanV1::Execute { effect, .. }
-            if is_killshot(effect)
-                && ((source_plans(own).any(zeroes_opposing_attack)
-                    && source_plans(opponent).any(zeroes_opposing_attack))
-                    || source_plans(own)
-                        .chain(source_plans(opponent))
-                        .any(zeroes_both_attacks)) =>
+            if is_killshot(effect) && killshot_attacks_can_both_reach_zero(own, opponent) =>
         {
             Some(InvalidCombatStatPlanReasonV1::KillshotAgainstZeroAttacks)
         }
@@ -2239,18 +2318,38 @@ fn own_write_meets(
     })
 }
 
+/// Revision 73's replacement rule for a gated latch `plan` of family `latch`: whether a second
+/// latch of that family could target the same player - another one elsewhere in the owner's
+/// hand, one an own Copy could import from the opposing hand's copied slot kind, or the latch
+/// itself taken to the other side by an opposing Copy of its slot.
+fn latch_meets_same_family_latch(
+    plan: CombatStatSourcePlanV1,
+    latch: CombatStatEffectV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    opposing_copy_can_take(plan, own, opponent)
+        || source_plans(own)
+            .filter(|&own_plan| same_latch_family(own_plan, latch))
+            .count()
+            > 1
+        || copy_can_import(own, opponent, |opposing| same_latch_family(opposing, latch))
+}
+
 /// Whether `plan` is a latch of the same family as the Unison `latch`: Poison or Toxin for a
 /// Toxin, which the server's replacement note names together, and Consume for a Consume.
 /// Combust, which also floors the opposing Pillz, is counted with Consume to stay on the
 /// safe side of the open question.
 /// Since revision 74 also for a `Growth:` latch: Heal or Regen for the Heal, which the server's
-/// note names together, and Poison or Toxin for the Poison.
+/// note names together, and Poison or Toxin for the Poison. Since revision 76 also for the
+/// revision-70 clan-gated Toxin and Consume and for the Killshot Toxin, Poison or Toxin.
 fn same_latch_family(plan: CombatStatSourcePlanV1, latch: CombatStatEffectV1) -> bool {
     let Some(latched) = latched_effect(plan) else {
         return false;
     };
     match latch {
         CombatStatEffectV1::ToxinOpponentLifeOnVictory { .. }
+        | CombatStatEffectV1::ToxinOpponentLifeOnKillshot { .. }
         | CombatStatEffectV1::PoisonOpponentLifeOnVictoryPerRound { .. } => matches!(
             latched,
             LatchedEffectV1::PoisonOpponentLife { .. } | LatchedEffectV1::ToxinOpponentLife { .. }
@@ -2357,9 +2456,13 @@ fn source_plans(
 /// anywhere in the owner's hand, which pays every round after it latches. Another own card's
 /// fresh effects cannot share `plan`'s round. A Copy in the other slot could import any
 /// opposing writer, so it answers true.
+/// Since revision 76 an own Copy anywhere in the hand counts too wherever the opposing slot
+/// kind it copies holds a latch that answers `writes`: winning with the adopted latch makes it
+/// the owner's own, and it pays every later round (an opposing plain Heal meeting a Backlash).
 fn same_owner_meets(
     plan: CombatStatSourcePlanV1,
     own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
     writes: impl Fn(CombatStatSourcePlanV1) -> bool,
 ) -> bool {
     let other_slot = |other: CombatStatSourcePlanV1| {
@@ -2369,6 +2472,52 @@ fn same_owner_meets(
         (card.ability == plan && other_slot(card.bonus))
             || (card.bonus == plan && other_slot(card.ability))
     }) || source_plans(own).any(|own_plan| is_latch(own_plan) && writes(own_plan))
+        || copy_can_import(own, opponent, |opposing| {
+            is_latch(opposing) && writes(opposing)
+        })
+}
+
+/// Whether an opposing Copy could adopt an own plan answering `writes` and run it, as its own,
+/// in a round `plan` pays: an own latch from anywhere in the hand, which then pays every later
+/// round, or the other slot of the card carrying `plan`, which meets the Copy in the same round.
+/// `writes` reads the adopted plan from its printed owner's side, so an own opposing floor is
+/// a floor on the owner once the Copy runs it.
+fn opposing_copy_can_import_own(
+    plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+    writes: impl Fn(CombatStatSourcePlanV1) -> bool,
+) -> bool {
+    let beside_plan = |other: CombatStatSourcePlanV1| {
+        own.iter().any(|card| {
+            (card.ability == plan && card.bonus == other)
+                || (card.bonus == plan && card.ability == other)
+        })
+    };
+    copy_can_import(opponent, own, |own_plan| {
+        writes(own_plan) && (is_latch(own_plan) || beside_plan(own_plan))
+    })
+}
+
+/// Whether a Copy in `copier`'s hand could adopt a plan of `source`'s hand that answers
+/// `adopted`: a Copy of Abilities meets `source`'s ability slots, a Copy of Bonuses its bonus
+/// slots. The adopted plan runs as the copier's own, so `adopted` reads it from its printed
+/// owner's side unchanged.
+fn copy_can_import(
+    copier: &[CombatStatCardPlanV1; HAND_SIZE],
+    source: &[CombatStatCardPlanV1; HAND_SIZE],
+    adopted: impl Fn(CombatStatSourcePlanV1) -> bool,
+) -> bool {
+    let copies = |kind| {
+        source_plans(copier).any(|plan| {
+            matches!(
+                plan,
+                CombatStatSourcePlanV1::CopyOpponentSource { copied, .. } if copied == kind
+            )
+        })
+    };
+    (copies(CopiedSourceKindV1::Ability) && source.iter().any(|card| adopted(card.ability)))
+        || (copies(CopiedSourceKindV1::Bonus) && source.iter().any(|card| adopted(card.bonus)))
 }
 
 /// Whether an end-of-round `plan` writes its own owner's Life in any way.
@@ -2515,8 +2664,9 @@ fn opposing_copy_can_take(
     })
 }
 
-/// Whether an opposing Bonus-slot Copy could take `plan` and run it from its Bonus slot.
-fn opposing_bonus_copy_can_take(
+/// Whether an opposing Bonus-slot Copy (the Oblivion clan bonus) could take `plan` and run it
+/// from its Bonus slot, where no round pins it (`bonus_slot_copy_is_unpinned`).
+fn bonus_slot_copy_takes_unpinned_source(
     plan: CombatStatSourcePlanV1,
     own: &[CombatStatCardPlanV1; HAND_SIZE],
     opponent: &[CombatStatCardPlanV1; HAND_SIZE],
@@ -2529,10 +2679,87 @@ fn opposing_bonus_copy_can_take(
             )
         })
     };
-    own.iter().any(|card| {
-        (card.ability == plan && copies(CopiedSourceKindV1::Ability))
-            || (card.bonus == plan && copies(CopiedSourceKindV1::Bonus))
-    })
+    bonus_slot_copy_is_unpinned(plan)
+        && own.iter().any(|card| {
+            (card.ability == plan && copies(CopiedSourceKindV1::Ability))
+                || (card.bonus == plan && copies(CopiedSourceKindV1::Bonus))
+        })
+}
+
+/// The sources the validator locks to the Ability slot by identity or by grammar, which a
+/// Bonus-slot Copy would otherwise run from its own Bonus slot unchecked. Revision 68 named
+/// Anita's `274` and the conditional Stops. Revision 76 adds the rest of the identity and
+/// slot locks:
+/// - the Komboka compound (`1714`, and Carnibox's `3356`), whose Bonus-slot form belongs to an
+///   effective Komboka card alone;
+/// - Argos' `Defeat: +2 Pillz Max. 11` (`1158`) and the Ability-slot Victory opponent-Life
+///   identities (`3016`, `3314`, `4301`, `4531`, `4532`, `4533`, `4708`);
+/// - every control (Stop, cancel, Protection) under any condition, as revision 68 refused
+///   the conditional Stops;
+/// - revision 75's Ability-only grammars: the conditional cancels and Reprisal Protection,
+///   the `Stop:` trigger, the capped fixed Power increase and the Killshot compound (with the
+///   Victory compound beside it);
+/// - a `Stop:` source of any kind, numerics included: in a Bonus slot the copier's own
+///   ability can be stopped while the adopted source lives, which the projection's
+///   never-firing model of `Stop:` does not cover (an ability-slot Copy is stopped with it);
+/// - the Equalizer post-round grammar beyond the reviewed `1415`/`4458` (El Cazador's `5793`
+///   and the per-star gains), whose Bonus provenance the validator reserves for those two;
+/// - any other non-numeric source under a condition the Bonus slot does not admit.
+///
+/// It is not the whole Bonus-slot validator. The server pins a copied `-5 Opp. Life Min 0`
+/// (1414237/0) and copied conditional numerics (1025470/0, 1414237/3, 1414400/3) in a Bonus
+/// slot, which that validator would refuse, and revision 68 recorded the plain effects as
+/// pinned there.
+fn bonus_slot_copy_is_unpinned(plan: CombatStatSourcePlanV1) -> bool {
+    let CombatStatSourcePlanV1::Execute {
+        source_id,
+        predicate,
+        effect,
+    } = plan
+    else {
+        return false;
+    };
+    let bonus_slot_predicate = matches!(
+        predicate,
+        CombatStatPredicateV1::Always
+            | CombatStatPredicateV1::MatchIsNight
+            | CombatStatPredicateV1::MatchIsDay
+            | CombatStatPredicateV1::OwnerPreviousCardClanIn(_)
+    );
+    let control = matches!(
+        effect,
+        CombatStatEffectV1::StopOpponentAbility
+            | CombatStatEffectV1::StopOpponentBonus
+            | CombatStatEffectV1::CancelOpponentCombatStatModifiers { .. }
+            | CombatStatEffectV1::CancelOpponentResourceModifiers { .. }
+            | CombatStatEffectV1::ProtectOwnCombatStat { .. }
+            | CombatStatEffectV1::ProtectOwnAbility
+            | CombatStatEffectV1::ProtectOwnBonus
+    );
+    source_id == 274
+        || (control && predicate != CombatStatPredicateV1::Always)
+        || predicate == CombatStatPredicateV1::OwnerAbilityStopped
+        || komboka_victory_pillz_and_life_id_is_reserved(source_id)
+        || (victory_opponent_life_id_is_reserved(source_id) && source_id != 680)
+        || (!matches!(effect, CombatStatEffectV1::ModifyCombatStat { .. }) && !bonus_slot_predicate)
+        || match effect {
+            CombatStatEffectV1::GainOnePillzAndLifeOnVictory
+            | CombatStatEffectV1::GainTwoPillzOnDefeatMaxEleven
+            | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. }
+            | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnKillshot { .. } => true,
+            CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerOpponentStars { .. }
+            | CombatStatEffectV1::GainLifeOnVictoryPerOpponentStars { .. }
+            | CombatStatEffectV1::GainPillzOnVictoryPerOpponentStars { .. } => {
+                !equalizer_opponent_life_id_is_reserved(source_id)
+            }
+            CombatStatEffectV1::ModifyCombatStat {
+                operation: CombatStatOperationV1::Increase,
+                maximum: Some(_),
+                multiplier: CombatStatMagnitudeV1::Fixed,
+                ..
+            } => true,
+            _ => false,
+        }
 }
 
 fn hand_has_copy(hand: &[CombatStatCardPlanV1; HAND_SIZE]) -> bool {
@@ -2578,8 +2805,37 @@ fn writes_floored_resource(plan: CombatStatSourcePlanV1, permanent: CombatStatEf
     }
 }
 
-/// A reduction that can take the opposing card's Attack to 0: a Min 0 cut of its Attack, or
-/// of its Power, on either the opposing side alone or both.
+/// Whether both final Attacks of a round could reach 0 (a Killshot then reads `0 >= 2 x 0`).
+/// The own card's Attack can reach 0 by an opposing reduction of the opposing side or by an own
+/// reduction of its own side (a `Cards` one does both), and likewise the opposing card's; a
+/// Copy in either hand could adopt any such reduction from the other hand's copied slot kind
+/// and run it as its own, so it counts for the copier.
+fn killshot_attacks_can_both_reach_zero(
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let zeroes_other = |hand: &[CombatStatCardPlanV1; HAND_SIZE],
+                        other: &[CombatStatCardPlanV1; HAND_SIZE]| {
+        source_plans(hand).any(zeroes_opposing_attack)
+            || copy_can_import(hand, other, zeroes_opposing_attack)
+    };
+    let zeroes_itself = |hand: &[CombatStatCardPlanV1; HAND_SIZE],
+                         other: &[CombatStatCardPlanV1; HAND_SIZE]| {
+        source_plans(hand).any(zeroes_own_attack) || copy_can_import(hand, other, zeroes_own_attack)
+    };
+    let own_attack = zeroes_other(opponent, own) || zeroes_itself(own, opponent);
+    let opposing_attack = zeroes_other(own, opponent) || zeroes_itself(opponent, own);
+    own_attack && opposing_attack
+}
+
+/// Whether a decrease's floor lets the stat reach 0: `Min 0`, or no floor at all, which the
+/// resolution saturates at 0.
+const fn floor_reaches_zero(minimum: Option<u16>) -> bool {
+    matches!(minimum, None | Some(0))
+}
+
+/// A reduction that can take the opposing card's Attack to 0: a cut of its Attack, or of its
+/// Power, floored at 0 or not at all, on either the opposing side alone or both.
 fn zeroes_opposing_attack(plan: CombatStatSourcePlanV1) -> bool {
     matches!(
         plan,
@@ -2590,30 +2846,31 @@ fn zeroes_opposing_attack(plan: CombatStatSourcePlanV1) -> bool {
                     | CombatStatAttributeV1::Power
                     | CombatStatAttributeV1::PowerAndDamage,
                 operation: CombatStatOperationV1::Decrease,
-                minimum: Some(0),
+                minimum,
                 ..
             },
             ..
-        }
+        } if floor_reaches_zero(minimum)
     )
 }
 
-/// A `Cards` reduction to Min 0, which can take both Attacks to 0 on its own.
-fn zeroes_both_attacks(plan: CombatStatSourcePlanV1) -> bool {
+/// A reduction that can take its own card's Attack to 0: an own-side (or `Cards`) cut of
+/// Attack or Power floored at 0 or not at all.
+fn zeroes_own_attack(plan: CombatStatSourcePlanV1) -> bool {
     matches!(
         plan,
         CombatStatSourcePlanV1::Execute {
             effect: CombatStatEffectV1::ModifyCombatStat {
-                side: CombatStatAffectedSideV1::Both,
+                side: CombatStatAffectedSideV1::Player | CombatStatAffectedSideV1::Both,
                 stat: CombatStatAttributeV1::Attack
                     | CombatStatAttributeV1::Power
                     | CombatStatAttributeV1::PowerAndDamage,
                 operation: CombatStatOperationV1::Decrease,
-                minimum: Some(0),
+                minimum,
                 ..
             },
             ..
-        }
+        } if floor_reaches_zero(minimum)
     )
 }
 
@@ -2622,6 +2879,26 @@ const REVISION_8_RECOVERY: CombatStatEffectV1 = CombatStatEffectV1::RecoverPaidP
     numerator: 2,
     denominator: 3,
 };
+
+/// Whether `plan` is revision 8's own Recover: that ratio under one of the identities it was
+/// locked to, the Vortex bonus `577` from an owner card's Bonus slot or the abilities
+/// `729`/`1418` from its Ability slot. The ratio alone is not enough.
+fn is_revision_8_recovery(
+    plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> bool {
+    let CombatStatSourcePlanV1::Execute {
+        source_id, effect, ..
+    } = plan
+    else {
+        return false;
+    };
+    effect == REVISION_8_RECOVERY
+        && own.iter().any(|card| {
+            (card.bonus == plan && source_id == 577)
+                || (card.ability == plan && matches!(source_id, 729 | 1418))
+        })
+}
 
 /// Whose Pillz an end-of-round `plan` writes, from its own owner's side.
 /// `PostRoundSourceEffect::pillz_writes` is exhaustive, so a later grammar cannot slip past
@@ -2708,20 +2985,20 @@ fn cancels_damage_modifiers(plan: CombatStatSourcePlanV1) -> bool {
     )
 }
 
-/// A Power reduction whose floor is 0, from either side's opposing phase.
+/// A Power reduction whose floor is 0 (or which has none), from either side's opposing phase
+/// or, since revision 76, an own-side one.
 fn reduces_power_to_zero(plan: CombatStatSourcePlanV1) -> bool {
     matches!(
         plan,
         CombatStatSourcePlanV1::Execute {
             effect: CombatStatEffectV1::ModifyCombatStat {
-                side: CombatStatAffectedSideV1::Opponent | CombatStatAffectedSideV1::Both,
                 stat: CombatStatAttributeV1::Power | CombatStatAttributeV1::PowerAndDamage,
                 operation: CombatStatOperationV1::Decrease,
-                minimum: Some(0),
+                minimum,
                 ..
             },
             ..
-        }
+        } if floor_reaches_zero(minimum)
     )
 }
 
@@ -3091,13 +3368,12 @@ fn validate_combat_stat_source_plan(
                 InvalidCombatStatPlanReasonV1::CopyOpponentSourceIdentity,
             ))
         } else if source == CombatStatEffectSourceV1::Bonus
-            && matches!(
-                predicate,
-                CombatStatPredicateV1::OwnerClanIn(_) | CombatStatPredicateV1::OwnerClanInAnd(..)
-            )
+            && predicate != CombatStatPredicateV1::Always
         {
             // The clan-gated Copies (revision 70) are printed abilities; no clan bonus
-            // prints a clan gate over a Copy.
+            // prints a clan gate over a Copy. Since revision 76 no condition at all is
+            // admitted on a Bonus-slot Copy: the two clan bonuses that print one (764 and
+            // 2918) are unconditional.
             Err(invalid_combat_stat_execute(
                 player,
                 hand_slot,
@@ -4591,27 +4867,32 @@ fn validate_combat_stat_source_plan(
             InvalidCombatStatPlanReasonV1::CompoundPredicateAndMagnitude,
         ));
     }
-    if source == CombatStatEffectSourceV1::Bonus
-        && (matches!(
-            predicate,
-            CombatStatPredicateV1::OwnerMovesFirst
-                | CombatStatPredicateV1::OwnerMovesSecond
-                | CombatStatPredicateV1::OwnerHandUnison
-                | CombatStatPredicateV1::OwnerAbilityStopped
-                | CombatStatPredicateV1::OwnerClanIn(_)
-                | CombatStatPredicateV1::OpponentHandHasClan(_)
-                | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
-                | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
-                | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
-                | CombatStatPredicateV1::OwnerClanInAnd(..)
-        ) || (matches!(
-            predicate,
-            CombatStatPredicateV1::SelectedHandSlotsMatch
-                | CombatStatPredicateV1::SelectedHandSlotsDiffer
-                | CombatStatPredicateV1::OwnerWonPreviousRound
-                | CombatStatPredicateV1::OwnerLostPreviousRound
-        ) && multiplier != CombatStatMagnitudeV1::Fixed))
-    {
+    // Exhaustive since revision 76, so a predicate added later is refused from a Bonus slot
+    // until it is named here: the day/night constants and `After` (GhosTown, Tolvack) under
+    // any magnitude, and the previous-round and hand-slot predicates over a fixed one only.
+    let conditional_bonus = match predicate {
+        CombatStatPredicateV1::Always
+        | CombatStatPredicateV1::MatchIsNight
+        | CombatStatPredicateV1::MatchIsDay
+        | CombatStatPredicateV1::OwnerPreviousCardClanIn(_) => false,
+        CombatStatPredicateV1::SelectedHandSlotsMatch
+        | CombatStatPredicateV1::SelectedHandSlotsDiffer
+        | CombatStatPredicateV1::OwnerWonPreviousRound
+        | CombatStatPredicateV1::OwnerLostPreviousRound => {
+            multiplier != CombatStatMagnitudeV1::Fixed
+        }
+        CombatStatPredicateV1::OwnerMovesFirst
+        | CombatStatPredicateV1::OwnerMovesSecond
+        | CombatStatPredicateV1::OwnerHandUnison
+        | CombatStatPredicateV1::OwnerAbilityStopped
+        | CombatStatPredicateV1::OwnerClanIn(_)
+        | CombatStatPredicateV1::OpponentHandHasClan(_)
+        | CombatStatPredicateV1::OwnerPillzUsedAbove(_)
+        | CombatStatPredicateV1::OwnerPillzUsedBelow(_)
+        | CombatStatPredicateV1::OwnerWonPreviousRoundAtNight
+        | CombatStatPredicateV1::OwnerClanInAnd(..) => true,
+    };
+    if source == CombatStatEffectSourceV1::Bonus && conditional_bonus {
         return Err(invalid_combat_stat_execute(
             player,
             hand_slot,
@@ -7542,5 +7823,47 @@ mod tests {
                 .unwrap();
             assert_eq!(report.players[PlayerId::P1].life, expected, "mono {mono}");
         }
+    }
+
+    /// Every Dope and every write to the opposing Pillz is a card ability today, so a Copy that
+    /// could adopt the owner's own write could also take the Dope, and the older clause refuses
+    /// the match. Revision 76 keys the refusal on the write itself as well, so it holds for a
+    /// write the validator would one day admit from a Bonus slot: here the own `-3 Opp Pillz.
+    /// Min 4` sits in a Bonus slot, reachable only by an opposing `Copy: Opp. Bonus`.
+    #[test]
+    fn revision_76_dope_refuses_an_opposing_copy_that_can_adopt_an_own_pillz_write() {
+        let base = base_spec(20);
+        let mut own = base.players[PlayerId::P1].hand.map(absent);
+        let mut opponent = base.players[PlayerId::P2].hand.map(absent);
+        let dope = execute(
+            CombatStatEffectV1::DopePillzOnVictory {
+                pillz: 3,
+                maximum: 4,
+            },
+            4931,
+        );
+        own[0].ability = dope;
+        own[1].bonus = execute(
+            CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+                pillz: 3,
+                minimum: 4,
+            },
+            339,
+        );
+        let copy = |copied| CombatStatSourcePlanV1::CopyOpponentSource {
+            source_id: 764,
+            copied,
+            predicate: CombatStatPredicateV1::Always,
+        };
+        let slot = HandSlot::ALL[0];
+        opponent[2].ability = copy(CopiedSourceKindV1::Bonus);
+        assert_eq!(
+            unmodelled_source_context(dope, slot, &own, &opponent),
+            Some(InvalidCombatStatPlanReasonV1::DopeAgainstUnpinnedEffect)
+        );
+        // Without the write the Copy of Bonuses has nothing of the owner's to adopt, and the
+        // Dope itself sits in an Ability slot it cannot reach, so the match is admitted.
+        own[1].bonus = CombatStatSourcePlanV1::Absent;
+        assert_eq!(unmodelled_source_context(dope, slot, &own, &opponent), None);
     }
 }

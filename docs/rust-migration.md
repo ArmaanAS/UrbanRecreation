@@ -3741,6 +3741,137 @@ Two questions are left for the owner:
 - Carnibox's liveness under Stop Opp. Ability and Stop Bonus is composition from the plan's slot.
   A round with Carnibox facing a Stop would pin it.
 
+Semantic revision 76 (catalog-context revision 7) is a hardening revision. It admits nothing.
+It closes eighteen latent fail-open gaps that an adversarial audit of the construction refusals
+found at revision 75. A skeptic checked each one, and each was measured at no cost.
+Eligibility stays at 302 of 383, and the eligible-set diff is empty. The strict coverage report
+reads line for line as it did at revision 75. The gate stays at 905 rounds, and no fixture
+shrinks.
+
+Most of these gaps are the revision-68 caveat coming due. `life_writes`, `pillz_writes` and
+`write_outcomes` report nothing for a Copy, so a refusal without its own Copy clause could not
+see what a Copy imports. The shared answers are three helpers:
+- `copy_can_import` asks whether a Copy in one hand could adopt a plan of the other hand's
+  copied slot kind;
+- `opposing_copy_can_import_own` asks whether an opposing Copy could adopt one of the owner's
+  own writers and run it on the owner;
+- `same_owner_meets` now also counts an own Copy that could import an opposing latch.
+
+Each line below names the test that builds the context and asserts the refusal beside the
+neighbour that stays admitted. Tests are in `combat_stat_diagnostic_engine.rs` unless named
+otherwise.
+- **The opposing Pillz-and-Life compound** and its Killshot form now refuse any opposing Copy,
+  as revision 67's text already said. A `Copy: Opp. Bonus` could adopt the compound card's own
+  on-loss writer, Solykra's Vortex Recover
+  (`revision_76_the_opposing_compound_is_refused_beside_a_copy_of_either_kind`). This closes two
+  audit findings.
+- **Backlash, Corrupt, the capped Defeat Life and the Defeat Pillz gift** (`same_owner_meets`)
+  count an own Copy anywhere in the hand that could import an opposing latch writing the owner's
+  resource. The audit's case is an opposing plain Heal meeting Strigoi's Backlash. Senestra's
+  Victory Or Defeat Life per Damage counts an own Copy that could import an order-sensitive
+  writer (`revision_76_an_own_copy_importing_an_opposing_latch_meets_the_owners_life_writes`).
+  Two findings.
+- **The Victory Or Defeat Life per Damage and the Unison Life gains** count an opposing Copy that
+  could adopt one of the owner's own floors and latch or run it on the owner. That floor is
+  either a latch anywhere in the hand (the Freaks `Poison 2, Min 3` bonus under `Copy: Opp.
+  Bonus`) or the gain card's other slot
+  (`revision_76_an_opposing_copy_adopting_an_own_floor_meets_the_uncapped_life_gains`). Two
+  findings. The Ability-kind scenarios the audit named first were already refused, through the
+  gain's own slot.
+- **`KillshotAgainstZeroAttacks`** (`killshot_attacks_can_both_reach_zero`) counts three more
+  ways to 0: an unfloored reduction (resolution saturates it at 0), an own-side reduction to 0
+  against its own card, and a cut that a Copy in either hand could adopt, such as Firmin's
+  Oblivion Copy taking Sheshko Cr's `-10 Opp Attack, Min 0`. The Tune Out refusal's Power check
+  reads floors the same way
+  (`revision_76_killshot_zero_attack_refusal_sees_unfloored_own_side_and_copied_cuts`). Two
+  findings.
+- **Revision 8's Recover exemption** is keyed on its identities, not the `2/3` ratio: the Vortex
+  `577` from a Bonus slot and `729`/`1418` from an Ability slot. Sasl Lovelace's `2475` now
+  meets `RecoveryAgainstUnpinnedEffect`
+  (`revision_76_the_revision_8_recover_exemption_is_keyed_on_identity`). In `catalog_match.rs`,
+  `strict_catalog_match_refuses_revision_76_fail_open_contexts` sets Sasl L4 against Thorpah Cr
+  and against Ch4d 0Sage and sees the refusal, while Arnie L4's `729` is still admitted.
+  Revision 63's `recovery_is_refused_beside_an_opposing_pillz_floor_or_a_copy_of_its_slot` had
+  pinned the exemption on a same-ratio plan under another id; it now labels its exempt cases
+  with `729` and refuses the other id. Two findings. 877983, the one eligible `2475` draw, has
+  neither a Pillz floor nor a Copy opposite.
+- **`BonusSlotCopyOfUnpinnedSource`** (`bonus_slot_copy_is_unpinned`) now covers more than
+  Anita's `274` and the conditional Stops. It covers every source the validator locks out of a
+  Bonus slot by identity or by a revision 69-75 grammar:
+  - the Komboka compound (`1714`, and Carnibox's `3356`);
+  - Argos' `1158`;
+  - the Ability-kind Victory opponent-Life identities;
+  - every control under a condition (Stop, cancel and Protection, including `3103`, `5805` and
+    `2434`/`5082`);
+  - any `Stop:` source, because in a Bonus slot the copier's own ability can be stopped while
+    the adopted source lives (an Ability-slot Copy is stopped with it);
+  - the capped fixed Power increase and both opposing compounds;
+  - the Equalizer post-round grammar beyond `1415`/`4458`, such as El Cazador's `5793`;
+  - any other non-numeric source under a condition a Bonus slot does not admit.
+
+  The test is `revision_76_a_bonus_slot_copy_refuses_every_ability_locked_source`. In
+  `catalog_match.rs`, `strict_catalog_match_refuses_revision_76_fail_open_contexts` sets Carnibox
+  L2 against 1025470's Oblivion hand and sees the refusal, while an Ability-slot Copy of Carnibox
+  stays admitted. Three findings. This is deliberately not the whole Bonus-slot validator. Plain
+  grammars and conditional numerics copied into a Bonus slot rest on server rounds (1414237/0,
+  1025470/0, 1414237/3, 1414400/3) and on revision 68's adopt-into-the-copier's-slot rule, so
+  they stay admitted.
+- **Dope** now also refuses an opposing Copy that could adopt one of the owner's own writes onto
+  the owner's Pillz. The clause is keyed on the write, not on the Dope's slot. Every such write
+  is a card ability today, so the Ability-kind scenario the audit named was already refused
+  through the Dope's own slot. The in-module
+  `revision_76_dope_refuses_an_opposing_copy_that_can_adopt_an_own_pillz_write` puts the write
+  in a Bonus slot to exercise the new clause, and
+  `revision_76_dope_is_refused_beside_an_opposing_copy_that_imports_an_own_pillz_write` walks
+  the reachable cases.
+- **Revision 60's `Killshot: Toxin 1, Min 0`** (`2497`) now follows the same-family latch rule
+  (`KillshotToxinLatchAgainstSameFamilyLatch`) and the clan-gated Toxin's 1093173/1 order rule
+  (`KillshotToxinLatchAgainstUnpinnedEffect`)
+  (`revision_76_the_killshot_toxin_keeps_the_family_and_order_rules`). Madrat's 1080007 stays
+  eligible.
+- **Revision 70's clan-gated Toxin (`5613`) and Reprisal Consume (`5275`)** now follow revision
+  73's same-family rule (`ClanGatedLatchAgainstSameFamilyLatch`,
+  `revision_76_the_clan_gated_latches_keep_the_same_family_rule`). 948108 and 1065673 stay
+  eligible.
+- **The catalog** sends a conditional Stop or conditional stat Copy that has no catalog id
+  through the full conjunction in `require_catalog_alias_or_night_variant`: a night match,
+  `Night: ` text and `MatchIsNight`. That function's comment always said the conditional Stops
+  followed this rule, and now they do. This is catalog-context policy revision 7
+  (`strict_catalog_match_admits_an_idless_conditional_stop_only_as_a_night_variant` in
+  `catalog_match.rs`). Marshal Cr's and Skeletrezar's `Night: Stop Opp. Ability` still pass at
+  night.
+- **The validator's Bonus-slot predicate checks** are now exhaustive. A Bonus-slot Copy admits no
+  condition at all. A Bonus-slot numeric admits the day/night constants and `After` under any
+  magnitude, and the previous-round and hand-slot predicates only over a fixed magnitude. A
+  predicate added later is refused there until someone names it
+  (`revision_76_bonus_slot_predicates_are_refused_unless_named`).
+
+**The admitted Brawl capped gain** (`Brawl: +N Pillz, Max. M`, `GainPillzOnVictoryPerAntiSupport`
+with a non-zero maximum) now carries revision 69's `CappedVictoryPillzAgainstUnpinnedEffect`.
+Revision 69 left that question to the owner. The gain lowers to the same capped engine arm, and
+its cap is just as order-sensitive. The change costs nothing, as revision 69 measured. The
+uncapped `Brawl: +1 Pillz` commutes with the writes the refusal names, and stays as it was
+(`revision_76_the_capped_brawl_pillz_gain_carries_the_capped_victory_pillz_refusal`).
+
+`deno task pins:update` moves exactly two files. The compiler policy revision pin goes from 75
+to 76, and `tests/expect/rust-provenance.json` records compiler revision 76 and catalog-context
+revision 7. Everything else is unchanged: the eligible and scanned draws, the 905 gate rounds,
+the execute and disabled ids, the 69 absent dispositions and both data fingerprints.
+
+Two audit findings are left for the owner, because closing them costs eligible draws:
+- **An Ability-slot Copy of Anita's `274`.** Revision 68 named 874837, 875032 and 875155. The
+  audit found the same shape in two draws that became eligible later: 1059269 (Ch4d 0Sage L3)
+  and 1130425 (Korakine L3's Unison Copy in an all-Riots hand). Closing the gap would mean
+  switching the `274` clause from the Bonus-slot Copy to `opposing_copy_can_take`. That costs
+  all five eligible draws, taking eligibility from 302 to 297, and no gate round, because replay
+  refuses Copy provenance.
+- **Reprisal Stop `1310`'s card-key lock** (Spidee L4) does not apply to an Ability-slot Copy,
+  which adopts the Stop under the copier's own seat. This cannot change a result. The copied
+  Stop fires only when the copier moves second, which is when Spidee moves first and its own
+  Reprisal Stop is already inert, and Spidee's Bonus is untouched. Refusing it would cost
+  1069721, 1087884, 1088480 and 1130425 for no semantic gain. It is recorded here as inert by
+  construction rather than closed.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and
@@ -3787,42 +3918,110 @@ hand, and the advisor reconciles life and pillz against the server's snapshot ra
 recomputing the rounds already played, so a decision can be sound in a draw that is not.
 
 `rust/tests/partial_admission_report.rs` measures it by retiring each already-played slot
-with a neutral filler and retrying construction, over the 355 replayable draws and the 1,222
+with a neutral filler and retrying construction. Its first run, over 355 draws and 1,222
+decisions, read 21.3% for the whole-draw rule; slices have long since overtaken that. It was
+measured again at revision 75 (`c08d80f`), over the 376 replayable draws and the 1,301
 decisions in them:
 
 | rule | decisions | share |
 | --- | --- | --- |
-| whole draw (today) | 260 | 21.3% |
-| remaining cards executable | 388 | 31.8% |
-| remaining cards, no persistent history | 338 | 27.7% |
+| whole draw (today) | 1,034 | 79.5% |
+| remaining cards executable, as reported | 1,121 | 86.2% |
+| remaining cards executable, same-clan fillers | about 1,104 | about 84.9% |
+| remaining cards, no persistent history, as reported | 1,073 | 82.5% |
+| remaining cards, no persistent history, same-clan fillers | about 1,065 | about 81.9% |
 
-The middle row is the optimistic bound - it assumes everything already played has finished
-paying - and the last row subtracts every decision where an already-played card prints text
-that could still be paying out. The real rule has to be at least as strict as the last row,
-because a latched permanent is not history: an unsupported card that latched a Poison keeps
-taking Life in every later round, and a projection that forgot it would be quietly wrong
-rather than loudly absent.
+The reported rows overstate the gain, because the report's neutral filler is not neutral.
+Clan membership, the active bonus and the Support counts all come from the whole draw, played
+cards included. Swapping a played slot for a filler therefore changes the context of the cards
+still in hand. It did so in 86 of the 87 decisions, spread over 47 draws, that the reported
+remaining-cards row gains. For 48 of them a
+remaining card's active bonus or effective clan changed, and for 38 more only a Support count
+changed. Re-running those 87 decisions with fillers of the same clan and no ability, which keeps
+the context, gives this:
+- 70 still construct;
+- 5 are rejected on a remaining card, so they were false gains;
+- 12 are unknown (10 had no suitable filler, and 2 hit another error).
 
-The gain concentrates late, as it must, because round one is the whole draw by definition:
+That puts the optimistic rule at about 1,104 decisions, and at most 1,116. The same check on the
+stricter rule's 39 gains gives 31 that construct, 3 rejected and 5 unknown, so that rule sits at
+about 1,065 decisions, and at most 1,070. The last row is the one a real rule would have to
+meet, because a latched permanent is not history. An unsupported card that latched a Poison
+keeps taking Life in every later round, and a projection that forgot it would be quietly wrong
+rather than loudly absent. **So the honest gain is about +31 to +70 decisions: roughly +2.4
+points on the conservative rule and at most +5.4 on the optimistic one.**
 
-| round | decisions | remaining | no persistent history |
-| --- | --- | --- | --- |
-| 1 | 353 | 75 | 75 |
-| 2 | 350 | 92 | 87 |
-| 3 | 300 | 100 | 88 |
-| 4 | 219 | 121 | 88 |
+The gain comes late, as it must, since round one is the whole draw by definition. The columns
+are round, decisions, whole draw, remaining (reported), clean (reported), remaining with
+same-clan fillers and clean with same-clan fillers:
 
-Counted in games rather than decisions it reads better than the decision share suggests:
-**76 draws are usable today, and 163 would have at least one usable decision**, because a
-draw with one unsupported card usually becomes readable once that card is spent.
+| round | decisions | whole draw | remaining | clean | remaining, same clan | clean, same clan |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 374 | 296 | 296 | 296 | 296 | 296 |
+| 2 | 371 | 293 | 314 | 307 | 308 | 303 |
+| 3 | 320 | 255 | 286 | 269 | 281 | 268 |
+| 4 | 236 | 190 | 225 | 201 | 219 | 198 |
 
-What it would cost: a second `CatalogCombatStatProjectionV1` variant that takes the played
-slots as input, a compiler answer to "can this unsupported source still be paying?" that is
-better than the report's keyword scan (the scan is a measurement heuristic and must not
-become a semantic rule), the played-slot set threaded through the JSONL protocol and its
-provenance, and a visible marker wherever a partially-informed recommendation is shown. The
-fail-closed property has to survive all of it: an unsupported source is still never a no-op,
-it is a reason to refuse the decision it can reach.
+The same-clan columns leave out their unknown cases: 3, 4 and 5 in rounds 2-4 for the
+remaining rule, and 2, 1 and 2 for the clean rule.
+
+**The proposal, costed.** To accept a round-`r` decision (rounds 2-4) when every unplayed card
+in both hands executes in its real whole-draw context, even if a card played earlier does not,
+the work would be:
+- **A projection variant.** Add `RequireExecutableRemainingCards { played }`. It derives clan,
+  bonus, Support, Oculus and day/night from the real eight cards and never from fillers, and it
+  requires only unplayed slots to compile. An unsupported played slot becomes a never-selectable
+  `Spent { footprint }`, and the projection kind and the played set go into the provenance.
+- **A footprint classifier.** `CrossRoundFootprintV1` (`None`, `Latches`, `AltersFutureCards` or
+  `Unknown`) would carry its own policy revision. It would be an allowlist, with `None` only for
+  reviewed one-round shapes and `Unknown` for everything else, including every permanent,
+  Growth/Degrowth counter, Reanimate and Leader. It replaces the report's keyword scan, which
+  must never become a semantic rule. A played unsupported source that is not `None` refuses
+  every later decision in that match.
+- **Reconciled history.** A history round whose two cards are both executable is replayed with
+  `make`, as today. A round with a `Spent` card is set from the server's snapshot instead, meaning
+  life, pillz, winner and played slots, through a checked `reconcile_round` entry that `unmake`
+  never walks back past. The round is refused outright if either card in it latches or depends
+  on history, since the latch's liveness can hinge on the unsupported card's Stop, Protection or
+  Copy.
+- **Protocol V4.** Each history round would carry the server's post-round result, the request
+  would name its admission kind, and the provenance would gain admission and footprint policy
+  revisions and a fingerprint over the reconciled history. The host would check that
+  fingerprint when it is echoed back. `--rust=use` would accept only complete V4 results, the
+  view would mark partially informed advice, and V3 requests would stay byte-compatible.
+- **Evidence gates.** Strict replay grading would be extended to partial decisions, with the
+  admitted set pinned under `rust/tests/expect`. It would also need a few captures where only
+  already-played cards are unsupported, and a report rewritten to construct in the real context.
+
+The estimate is 6-8 focused days. The recommended order was to build the classifier and a
+real-context report first, about 2 days, and to continue only if the gain holds at about 3
+points or more.
+
+**What blocks it today:**
+- The projection has only `RequireFullyExecutableDraws`, which rejects on the first
+  unsupported source in any slot.
+- Filler construction is unsound, as measured above. Construction has to use the real eight
+  cards and exempt only the played slots.
+- Nothing answers whether an unsupported source could still act in a later round. The keyword
+  scan is a heuristic, and the allowlist classifier has not been built or reviewed.
+- The engine has no way to set a position from a server snapshot. `latched`,
+  `previous_round_winner` and `previous_round_slots` come only from replayed `make` calls.
+- A reconciled round's latch liveness is undecidable when the opposing unsupported card could
+  Stop, Protect or Copy, so such rounds would have to be refused.
+- V3 uses `deny_unknown_fields` and has no field for post-round results, the admission kind or
+  reconciled rounds. Any change forces V4, in the Rust worker and in `RustAdvisor.ts` /
+  `RustAdvisorInput.ts` alike.
+- Provenance and the information-set identity would need the new revisions and the history
+  fingerprint.
+- No gate covers a partially informed decision yet.
+- The view has to mark such advice, and `--rust=use` has to tell it apart from whole-draw
+  results.
+
+**Conclusion: not worth building now.** It would buy about 31 to 70 decisions (+2.4 to +5.4
+points) for 6-8 days of work. It would also weaken a guarantee: for reconciled rounds the worker
+would trust the host's snapshot instead of proving the current life and pillz from its own
+rules. And each ability slice shrinks the payoff further. Revisit it only if the whole-draw
+share stops rising and a real-context measurement still shows a gain of 3 points or more.
 
 ### 4. Port current solver semantics
 

@@ -3008,7 +3008,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 6);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 7);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -5585,5 +5585,144 @@ fn strict_catalog_match_refuses_revision_75_sources_in_unpinned_contexts() {
         input(magnar, rescue, false),
         "Reprisal: Protect. Power And Damage",
         "Magnar L5",
+    );
+}
+
+/// Revision 76 (catalog-context revision 7) sends a conditional Stop or conditional stat Copy
+/// that has no catalog id through the night-variant bridge's full conjunction: a night match,
+/// `Night: ` text and the `MatchIsNight` predicate. Before it, a missing id alone let any such
+/// text borrow the definition of whatever level owns it, by day or night. Today only night
+/// variants lack an id, so Marshal Cr's and Skeletrezar's `Night: Stop Opp. Ability` is the
+/// one row the rule has to keep, and it does - at night only.
+#[test]
+fn strict_catalog_match_admits_an_idless_conditional_stop_only_as_a_night_variant() {
+    let registry = registry();
+    let (filler, rescue) = fully_supported_hands();
+    let card = filler[0];
+    for text in [
+        "Unison : Stop Opp. Ability",
+        "Courage: Stop Opp. Ability",
+        "Confidence: Copy: Opp. Power",
+        "Reprisal: Copy: Opp. Damage",
+    ] {
+        let catalog = catalog_with_ability_alias(card, 0, text);
+        for night in [false, true] {
+            let result = CatalogCombatStatMatchV1::new(
+                input(filler, rescue, night),
+                &catalog,
+                &registry,
+                PROJECTION,
+            );
+            assert!(
+                matches!(
+                    &result,
+                    Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                        player: PlayerId::P1,
+                        source_kind: CombatStatEffectSourceV1::Ability,
+                        catalog_id: None,
+                        description,
+                        ..
+                    }) if description == text
+                ),
+                "{text:?} at night = {night}: {result:?}"
+            );
+        }
+    }
+    let catalog = catalog_with_ability_alias(card, 0, "Night: Stop Opp. Ability");
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(input(filler, rescue, false), &catalog, &registry, PROJECTION),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            catalog_id: None,
+            ref description,
+            ..
+        }) if description == "Night: Stop Opp. Ability"
+    ));
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(filler, rescue, true), &catalog, &registry, PROJECTION)
+            .unwrap();
+    assert!(matches!(
+        prepared.match_spec().cards[PlayerId::P1][0].ability,
+        CombatStatSourcePlanV1::Execute {
+            predicate: CombatStatPredicateV1::MatchIsNight,
+            effect: CombatStatEffectV1::StopOpponentAbility,
+            ..
+        }
+    ));
+}
+
+/// The catalog-reachable fail-open contexts revision 76 closes, each beside the neighbour
+/// that stays admitted:
+/// - Sasl Lovelace L4's `2475` prints revision 8's Recover text but was never revision 8's,
+///   so Thorpah Cr's `-2 Opp Pillz. Min 1` or Ch4d 0Sage's `Copy: Opp. Ability` refuses it,
+///   while Arnie L4's audited `729` keeps the exemption against the same floor;
+/// - Carnibox L2's Komboka alias `3356` faces the active Oblivion bonus of 1025470's hand,
+///   which would run it from a non-Komboka Bonus slot, while an ability-slot Copy of it (Ch4d
+///   0Sage, the shape 877167/1 and 876574/0 pin) is admitted.
+#[test]
+fn strict_catalog_match_refuses_revision_76_fail_open_contexts() {
+    let catalog = catalog();
+    let registry = registry();
+    let (filler, rescue) = fully_supported_hands();
+    let prepare = |p1: [CardKey; 4], p2: [CardKey; 4], night: bool| {
+        CatalogCombatStatMatchV1::new(input(p1, p2, night), &catalog, &registry, PROJECTION)
+    };
+    let refused = |result: Result<CatalogCombatStatMatchV1, CatalogCombatStatMatchErrorV1>,
+                   text: &str,
+                   label: &str| {
+        assert!(
+            matches!(
+                &result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player: PlayerId::P1,
+                    source_kind: CombatStatEffectSourceV1::Ability,
+                    description,
+                    ..
+                }) if description == text
+            ),
+            "{label}: {result:?}"
+        );
+    };
+    let thorpah = CardKey::new(1030, 5); // `-2 Opp Pillz. Min 1`
+    let ch4d = CardKey::new(2538, 2); // `Copy: Opp. Ability`
+    let with = |card: CardKey| [card, rescue[1], rescue[2], rescue[3]];
+    let recover = |card: CardKey| [card, filler[1], filler[2], filler[3]];
+    let sasl = CardKey::new(1178, 4);
+    let arnie = CardKey::new(907, 4);
+    let text = "Defeat: Recover 2 Pillz Out Of 3";
+    assert!(prepare(recover(sasl), rescue, false).is_ok(), "Sasl alone");
+    refused(
+        prepare(recover(sasl), with(thorpah), false),
+        text,
+        "Sasl facing Thorpah",
+    );
+    refused(
+        prepare(recover(sasl), with(ch4d), false),
+        text,
+        "Sasl facing Ch4d",
+    );
+    assert!(
+        prepare(recover(arnie), with(thorpah), false).is_ok(),
+        "Arnie facing Thorpah"
+    );
+
+    let carnibox = [CardKey::new(2344, 2), filler[1], filler[2], filler[3]];
+    let oblivion = [
+        CardKey::new(2257, 3), // Alter Ld
+        CardKey::new(2248, 3), // Firmin
+        CardKey::new(2295, 3), // Pere Barali
+        CardKey::new(2273, 2), // Wez Cr
+    ];
+    assert!(
+        prepare(filler, oblivion, true).is_ok(),
+        "filler facing Oblivion"
+    );
+    refused(
+        prepare(carnibox, oblivion, true),
+        "+1 Pillz And Life",
+        "Carnibox facing Oblivion",
+    );
+    assert!(
+        prepare(carnibox, with(ch4d), false).is_ok(),
+        "Carnibox facing Ch4d"
     );
 }

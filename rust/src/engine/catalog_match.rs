@@ -164,7 +164,10 @@ const COPY_OPPONENT_ABILITY_DESCRIPTION: &str = "Copy: Opp. Ability";
 /// Revision 6 (compiler revision 75) lets `+1 Pillz And Life` execute from a card's Ability
 /// slot where the printed ability id is a structural alias of its definition (Carnibox L2's
 /// `3356`); the Komboka clan requirement stays on the Bonus slot alone.
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 6;
+/// Revision 7 (compiler revision 76) sends a conditional Stop or conditional stat Copy with
+/// no catalog id through the night-variant bridge's full conjunction instead of admitting it
+/// on the missing id alone.
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 7;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -1496,13 +1499,16 @@ fn prepare_catalog_source(
         // A conditional Stop is admitted by grammar, so a printed card level must be a
         // structural alias of the definition its text resolves to rather than borrowing it.
         // A night variant has no catalog id at all; its text is the only identity it has,
-        // as for the Night numerics.
-        if catalog_id.is_some()
-            && (classify_conditional_stop(definition, source_kind).is_some()
-                || classify_conditional_stat_copy(definition, source_kind).is_some())
+        // as for the Night numerics - but since revision 7 only under the night-variant
+        // bridge's full conjunction (a night match, `Night: ` text, `MatchIsNight`), never on
+        // a missing catalog id alone.
+        if let Some((_, predicate)) = classify_conditional_stop(definition, source_kind)
+            .or_else(|| classify_conditional_stat_copy(definition, source_kind))
         {
-            require_catalog_alias(
+            require_catalog_alias_or_night_variant(
                 match_.alias_ids(),
+                night,
+                predicate,
                 player,
                 hand_slot,
                 source_kind,
