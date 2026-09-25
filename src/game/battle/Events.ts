@@ -38,6 +38,26 @@ function hasPendingBlocker(
   return false;
 }
 
+function minClamp(a: Ability) {
+  const m = a.mods[0] as { min?: number } | undefined;
+  return m?.min === undefined || !Number.isFinite(m.min) ? -Infinity : m.min;
+}
+
+function byMinDescending(a: Ability, b: Ability) {
+  return minClamp(b) - minClamp(a);
+}
+
+/**
+ * Empty a bucket without assigning `length`. `length` is an accessor with a C++ setter, so
+ * `arr.length = 0` leaves optimised code through the StoreIC on every call - even on an
+ * already empty array - and shrinks the backing store that the next push must regrow.
+ * With twenty buckets cleared per battle, avoiding it halved `deno task time-search`
+ * (1.27 s -> 0.64 s). `pop()` is inlined by TurboFan and keeps the capacity.
+ */
+function clear(events: Ability[]) {
+  while (events.length !== 0) events.pop();
+}
+
 export default class Events {
   events = new Array(10).fill(undefined).map<Ability[]>(() => []);
   repeat = new Array(10).fill(undefined).map<Ability[]>(() => []);
@@ -182,8 +202,8 @@ export default class Events {
       remaining--;
     }
 
-    firstEvents.length = 0;
-    secondEvents.length = 0;
+    clear(firstEvents);
+    clear(secondEvents);
 
     // No repeated PRE4 effects are currently known, but preserve execute()'s semantics.
     first.executeRepeat(event, firstData);
@@ -195,19 +215,17 @@ export default class Events {
     // the server in descending order of their Min clamp: Miss Stella (ability -8 Min 11,
     // bonus -8 Min 3) on 18 → 11 → 3; Don Cr (bonus -12 Min 8, ability -4 Min 2) on 18
     // → 8 → 4. Captured battles 875272, 901613, 901292.
-    if (event === EventTime.PRE1 || event === EventTime.POST2) {
-      const min = (a: Ability) => {
-        const m = a.mods[0] as { min?: number } | undefined;
-        return m?.min === undefined || !Number.isFinite(m.min)
-          ? -Infinity
-          : m.min;
-      };
-      this.events[event].sort((a, b) => min(b) - min(a));
+    const events = this.events[event];
+    if (
+      events.length > 1 &&
+      (event === EventTime.PRE1 || event === EventTime.POST2)
+    ) {
+      events.sort(byMinDescending);
     }
-    for (const ability of this.events[event]) {
+    for (const ability of events) {
       ability.apply(data);
     }
-    this.events[event].length = 0;
+    clear(events);
 
     this.executeRepeat(event, data);
   }
