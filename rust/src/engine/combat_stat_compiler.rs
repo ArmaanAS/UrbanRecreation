@@ -195,7 +195,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 70;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 71;
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry
@@ -876,6 +876,114 @@ pub(crate) fn classify_defeat_opponent_pillz(
 pub(crate) fn has_defeat_opponent_pillz_shape(definition: &EffectDefinitionV1) -> bool {
     let input = definition.structured_input();
     input.value > 0 && defeat_opponent_pillz_shape_matches(input)
+}
+
+/// Recognize `Backlash: - N Life Min M` for M of one or more: the Min-clamped Life reduction
+/// turned on its own owner, paid when the owner wins the round. `Backlash` is not a trigger
+/// of its own: the record carries the outcome in `currentRoundRequirement` and the target in
+/// `sideAffected: player`, which no other admitted reduction names. The server pays it on a
+/// win only (945871/1 and 946913/0 pay, 945724/0 and 1414458/2 are losses and do not) and
+/// names the owner as the payer, a knocked-out opponent notwithstanding (1131144/2). A `Min
+/// 0` record could knock its own owner out, which no round shows, so it is refused here and
+/// replay rejects it when selected. Exact text rebuilt from the record's own numbers, card
+/// abilities only: no clan bonus prints one. The `Defeat: Backlash:` form (`2417`), the
+/// Pillz form (`1401`) and the own-Life Poison (`4124`) are other structures and stay
+/// closed. Returns `(life, minimum)`.
+pub(crate) fn classify_backlash_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && input.value_min > 0
+        && has_backlash_life_shape(definition)
+        && definition.description()
+            == format!("Backlash: - {} Life Min {}", input.value, input.value_min))
+    .then_some((input.value, input.value_min))
+}
+
+/// Structural half of the Backlash Life boundary, `Min 0` included, so replay preparation
+/// rejects the complete shape under malformed text, and the refused `Min 0` records, instead
+/// of disabling them.
+pub(crate) fn has_backlash_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_min: ShapeFieldV1::Read,
+                action: AttributeActionV1::Decrease,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
+/// Recognize the capped `Defeat: +N Life, Max. M`: a loser the round has not knocked out
+/// gains N Life, never past M, and an owner already at or above M gains nothing - the Defeat
+/// Life grammar with Heal's cap. The server binds the cap (1131114/0: Tiwi Ld's owner goes 14
+/// - 5 = 9 and is paid 2, not 3, stopping at 11) and reaches it exactly (1130977/3: Lola Cr's
+/// 12 - 5 + 3 = 10), and a win pays nothing (925204/1). `valueMin` is 1, as on every Defeat
+/// Life record, and `valueMax` must exceed the gain; the uncapped grammar requires `valueMax`
+/// 0, so neither can pass for the other. Exact text, card abilities only. Returns `(life,
+/// maximum)`.
+pub(crate) fn classify_defeat_capped_life(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<(u16, u16)> {
+    let input = definition.structured_input();
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_defeat_capped_life_shape(definition)
+        && definition.description()
+            == format!("Defeat: +{} Life, Max. {}", input.value, input.value_max))
+    .then_some((input.value, input.value_max))
+}
+
+/// Structural half of the capped Defeat Life boundary.
+pub(crate) fn has_defeat_capped_life_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && input.value_max > input.value
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                value_min: ShapeFieldV1::Exact(1),
+                value_max: ShapeFieldV1::Read,
+                current_round: CurrentRoundRequirementV1::Lose,
+                ..POST_ROUND_SHAPE
+            },
+        )
+}
+
+/// Recognize `Defeat: +N Opp. Pillz`: the owner lost the round, so the opposing player gains
+/// N Pillz. It is the losing-side opposing Pillz reduction's channel with the opposite
+/// action and no floor, and the one round that selects it pins both of its unusual halves:
+/// 1130425/2 pays from an owner the round has just knocked out (Pr SenQ, 3 to 0) into a
+/// player whose bet has emptied their pool (Sue, 3 - 3 = 0, then 1). Exact text, card
+/// abilities only. Returns the Pillz.
+pub(crate) fn classify_defeat_opponent_pillz_gain(
+    definition: &EffectDefinitionV1,
+    source_kind: CombatStatEffectSourceV1,
+) -> Option<u16> {
+    let pillz = definition.structured_input().value;
+    (source_kind == CombatStatEffectSourceV1::Ability
+        && has_defeat_opponent_pillz_gain_shape(definition)
+        && definition.description() == format!("Defeat: +{pillz} Opp. Pillz"))
+    .then_some(pillz)
+}
+
+/// Structural half of the Defeat opposing Pillz gift boundary.
+pub(crate) fn has_defeat_opponent_pillz_gain_shape(definition: &EffectDefinitionV1) -> bool {
+    let input = definition.structured_input();
+    input.value > 0
+        && shape_matches(
+            input,
+            PostRoundShapeV1 {
+                current_round: CurrentRoundRequirementV1::Lose,
+                side: AffectedSideV1::Opponent,
+                attribute: AttributeAffectedV1::Pillz,
+                ..POST_ROUND_SHAPE
+            },
+        )
 }
 
 /// Recognize the `+1 Pillz Per Damage` conversion and its `Symmetry:` form: the winner's
@@ -3169,6 +3277,9 @@ pub(crate) fn classify_combat_stat_effect(
         || classify_reanimate_life(definition, source_kind).is_some()
         || classify_defeat_pillz(definition, source_kind).is_some()
         || classify_defeat_pillz_and_life(definition, source_kind).is_some()
+        || classify_backlash_life(definition, source_kind).is_some()
+        || classify_defeat_capped_life(definition, source_kind).is_some()
+        || classify_defeat_opponent_pillz_gain(definition, source_kind).is_some()
     {
         return None;
     }
@@ -10109,5 +10220,165 @@ mod tests {
             malformed.lookup_capture(1714, "+1 Life And Pillz").unwrap(),
             CombatStatEffectSourceV1::Bonus,
         ));
+    }
+
+    /// Revision 71: Backlash Life on the Victory channel for a Min of at least 1, the capped
+    /// Defeat Life and the Defeat opposing Pillz gift, each by exact text over the complete
+    /// shape, card abilities only. The `Min 0` Backlash records keep the structural shape, so
+    /// replay rejects them when selected, but the classifier refuses them.
+    #[test]
+    fn revision_71_post_round_grammars_are_admitted_by_exact_text_and_shape() {
+        let registry = registry();
+        let ability = CombatStatEffectSourceV1::Ability;
+        for (id, expected) in [
+            (1058, (3, 1)),
+            (1351, (3, 2)),
+            (5410, (1, 3)),
+            (2853, (3, 3)),
+        ] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(has_backlash_life_shape(definition), "{id}");
+            assert_eq!(classify_backlash_life(definition, ability), Some(expected));
+            assert_eq!(
+                classify_backlash_life(definition, CombatStatEffectSourceV1::Bonus),
+                None
+            );
+            assert_eq!(classify_combat_stat_effect(definition, ability), None);
+        }
+        for id in [3092, 1667] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(has_backlash_life_shape(definition), "{id}");
+            assert_eq!(classify_backlash_life(definition, ability), None, "{id}");
+        }
+        // `Defeat: Backlash:`, the Pillz form, the own-Life Poison and `Corrupt` are other
+        // structures.
+        for id in [2417, 1401, 4124, 5286] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(!has_backlash_life_shape(definition), "{id}");
+            assert_eq!(classify_backlash_life(definition, ability), None, "{id}");
+        }
+        for (id, expected) in [(1217, (2, 12)), (5083, (3, 11)), (5574, (3, 10))] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(has_defeat_capped_life_shape(definition), "{id}");
+            assert_eq!(
+                classify_defeat_capped_life(definition, ability),
+                Some(expected)
+            );
+            assert_eq!(
+                classify_defeat_capped_life(definition, CombatStatEffectSourceV1::Bonus),
+                None
+            );
+            // Never the uncapped grammar.
+            assert_eq!(classify_defeat_life(definition, ability), None);
+            assert!(!has_defeat_life_shape(definition));
+            assert_eq!(classify_combat_stat_effect(definition, ability), None);
+        }
+        let gift = registry.get(3223).expect("registry definition");
+        assert!(has_defeat_opponent_pillz_gain_shape(gift));
+        assert_eq!(classify_defeat_opponent_pillz_gain(gift, ability), Some(1));
+        assert_eq!(
+            classify_defeat_opponent_pillz_gain(gift, CombatStatEffectSourceV1::Bonus),
+            None
+        );
+        assert_eq!(classify_defeat_opponent_pillz(gift, ability), None);
+        assert_eq!(classify_combat_stat_effect(gift, ability), None);
+        // `Defeat: +1 Opp. Life`, the plain Defeat gains and the Defeat Pillz reduction are
+        // other grammars.
+        for id in [1762, 912, 2221] {
+            let definition = registry.get(id).expect("registry definition");
+            assert!(!has_defeat_opponent_pillz_gain_shape(definition), "{id}");
+            assert!(!has_defeat_capped_life_shape(definition), "{id}");
+        }
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value =
+            serde_json::from_reader(File::open(&path).unwrap()).unwrap();
+        let malformed = |id: &str, field: &str, value: serde_json::Value| {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value;
+            EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap()
+        };
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("valueMin", serde_json::json!(2)),
+            ("valueMax", serde_json::json!(5)),
+            ("currentRoundRequirement", serde_json::json!("lose")),
+            ("currentRoundRequirement", serde_json::json!("any")),
+            ("sideAffected", serde_json::json!("opponent")),
+            ("attributeAffected", serde_json::json!("pillz")),
+            ("attributeAction", serde_json::json!("increase")),
+            ("isPermanent", serde_json::json!(true)),
+            ("previousRoundRequirement", serde_json::json!("win")),
+        ] {
+            let registry = malformed("1058", field, value.clone());
+            let definition = registry.get(1058).unwrap();
+            assert_eq!(
+                classify_backlash_life(definition, ability),
+                None,
+                "1058 {field} = {value}"
+            );
+        }
+        for (field, value) in [
+            ("value", serde_json::json!(3)),
+            ("valueMin", serde_json::json!(0)),
+            ("valueMax", serde_json::json!(0)),
+            ("valueMax", serde_json::json!(11)),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("isPermanent", serde_json::json!(true)),
+            ("isClanmatesCountLinked", serde_json::json!(true)),
+        ] {
+            let registry = malformed("1217", field, value.clone());
+            let definition = registry.get(1217).unwrap();
+            assert_eq!(
+                classify_defeat_capped_life(definition, ability),
+                None,
+                "1217 {field} = {value}"
+            );
+        }
+        for (field, value) in [
+            ("value", serde_json::json!(2)),
+            ("valueMin", serde_json::json!(1)),
+            ("currentRoundRequirement", serde_json::json!("win")),
+            ("sideAffected", serde_json::json!("player")),
+            ("attributeAffected", serde_json::json!("life")),
+            ("attributeAction", serde_json::json!("decrease")),
+        ] {
+            let registry = malformed("3223", field, value.clone());
+            let definition = registry.get(3223).unwrap();
+            assert_eq!(
+                classify_defeat_opponent_pillz_gain(definition, ability),
+                None,
+                "3223 {field} = {value}"
+            );
+        }
+        for (id, text) in [
+            ("1058", "Backlash: -3 Life Min 1"),
+            ("1058", "Backlash: - 3 Life, Min 1"),
+            ("1058", "- 3 Life Min 1"),
+            ("1217", "Defeat: +2 Life Max. 12"),
+            ("1217", "Defeat: +2 Life"),
+            ("3223", "Defeat: +1 Opp Pillz"),
+            ("3223", "+1 Opp. Pillz"),
+        ] {
+            let mut retexted = source.clone();
+            retexted[id]["description"] = serde_json::json!(text);
+            let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+            let definition = retexted.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_backlash_life(definition, ability),
+                None,
+                "{text:?}"
+            );
+            assert_eq!(
+                classify_defeat_capped_life(definition, ability),
+                None,
+                "{text:?}"
+            );
+            assert_eq!(
+                classify_defeat_opponent_pillz_gain(definition, ability),
+                None,
+                "{text:?}"
+            );
+        }
     }
 }

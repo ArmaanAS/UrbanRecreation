@@ -4748,3 +4748,101 @@ fn strict_catalog_match_keeps_clan_gated_text_under_a_foreign_id_closed() {
         );
     }
 }
+
+/// Revision 71: every draw the slice unlocks prepares from its captured hands, with the
+/// Backlash, capped Defeat Life or gift source executable as the end-of-round plan its exact
+/// text names, unconditionally.
+#[test]
+fn strict_catalog_match_admits_revision_71_backlash_capped_defeat_life_and_gift() {
+    let catalog = catalog();
+    let registry = registry();
+    let backlash =
+        |life, minimum| CombatStatPostRoundEffectV1::ReduceOwnLifeOnVictory { life, minimum };
+    for (capture, registry_id, expected) in [
+        (945724, 1058, backlash(3, 1)),
+        (945871, 1058, backlash(3, 1)),
+        (1080662, 5410, backlash(1, 3)),
+        (
+            1130977,
+            5574,
+            CombatStatPostRoundEffectV1::GainLifeOnDefeatMax {
+                life: 3,
+                maximum: 10,
+            },
+        ),
+        (
+            1130425,
+            3223,
+            CombatStatPostRoundEffectV1::GainOpponentPillzOnDefeat { pillz: 1 },
+        ),
+    ] {
+        let prepared =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+                .unwrap_or_else(|error| panic!("{capture}: {error:?}"));
+        let found = [PlayerId::P1, PlayerId::P2]
+            .into_iter()
+            .flat_map(|player| prepared.preparation()[player].iter())
+            .filter_map(|card| match &card.ability {
+                CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                    identity,
+                    effect,
+                    predicate,
+                } if identity.registry_definition_id == registry_id => {
+                    assert_eq!(identity.catalog_id, Some(registry_id), "{capture}");
+                    assert_eq!(*predicate, CombatStatPredicateV1::Always, "{capture}");
+                    Some(*effect)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(found, vec![expected], "{capture}");
+    }
+}
+
+/// The contexts revision 71 refuses rather than guesses. 946913 holds Uuber's Victory Or
+/// Defeat floor opposite Strigoi's Backlash, and 925204 Mou's Victory floor opposite El Papa
+/// Gallo's capped Defeat Life: the floor lands in the round the source pays, and no round pins
+/// the order. 1131144 holds Tinomor's `Min 0` Backlash, which the classifier refuses. Sylvia
+/// Ld level 1 prints level 2's text under catalog id `5491`, which no definition owns.
+#[test]
+fn strict_catalog_match_refuses_revision_71_sources_in_unpinned_contexts() {
+    let catalog = catalog();
+    let registry = registry();
+    for (capture, text) in [
+        (946913, "Backlash: - 3 Life Min 2"),
+        (925204, "Defeat: +2 Life, Max. 12"),
+        (1131144, "Backlash: - 2 Life Min 0"),
+    ] {
+        let result =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION);
+        assert!(
+            matches!(
+                &result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource { description, .. })
+                    if description == text
+            ),
+            "{capture}: {result:?}"
+        );
+    }
+    let (p1, p2) = fully_supported_hands();
+    for (text, foreign_id) in [
+        ("Backlash: - 1 Life Min 3", 5491),
+        ("Defeat: +3 Life, Max. 11", 5421),
+    ] {
+        let catalog = catalog_with_ability_alias(p1[0], foreign_id, text);
+        let result =
+            CatalogCombatStatMatchV1::new(input(p1, p2, false), &catalog, &registry, PROJECTION);
+        assert!(
+            matches!(
+                result,
+                Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player: PlayerId::P1,
+                    source_kind: CombatStatEffectSourceV1::Ability,
+                    ref description,
+                    ..
+                }) if description == text
+            ),
+            "{text:?} under {foreign_id}: {result:?}"
+        );
+    }
+}

@@ -15,18 +15,19 @@ use crate::effect_registry::{
 };
 use crate::engine::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_bet_gated_post_round, classify_both_players_life_reduction, classify_brawl_post_round,
-    classify_clan_gated_post_round, classify_combat_stat_effect,
+    classify_backlash_life, classify_bet_gated_post_round, classify_both_players_life_reduction,
+    classify_brawl_post_round, classify_clan_gated_post_round, classify_combat_stat_effect,
     classify_combust_opponent_life_and_pillz_on_victory,
-    classify_consume_opponent_pillz_on_victory, classify_defeat_life,
-    classify_defeat_opponent_life, classify_defeat_opponent_pillz, classify_defeat_pillz,
-    classify_defeat_pillz_and_life, classify_dope_pillz,
-    classify_equalizer_opponent_life_on_victory, classify_equalizer_post_round_gain,
-    classify_heal_life_on_victory, classify_killshot_opponent_life,
-    classify_killshot_pillz_and_life, classify_killshot_post_round,
-    classify_komboka_victory_pillz_and_life, classify_poison_opponent_life_on_defeat,
-    classify_poison_opponent_life_on_victory, classify_reanimate_life, classify_recover_pillz,
-    classify_regen_life_on_victory, classify_round_scaled_post_round, classify_support_post_round,
+    classify_consume_opponent_pillz_on_victory, classify_defeat_capped_life, classify_defeat_life,
+    classify_defeat_opponent_life, classify_defeat_opponent_pillz,
+    classify_defeat_opponent_pillz_gain, classify_defeat_pillz, classify_defeat_pillz_and_life,
+    classify_dope_pillz, classify_equalizer_opponent_life_on_victory,
+    classify_equalizer_post_round_gain, classify_heal_life_on_victory,
+    classify_killshot_opponent_life, classify_killshot_pillz_and_life,
+    classify_killshot_post_round, classify_komboka_victory_pillz_and_life,
+    classify_poison_opponent_life_on_defeat, classify_poison_opponent_life_on_victory,
+    classify_reanimate_life, classify_recover_pillz, classify_regen_life_on_victory,
+    classify_round_scaled_post_round, classify_support_post_round,
     classify_toxin_opponent_life_on_victory, classify_unison_defeat_life,
     classify_unison_pillz_and_life, classify_victory_life, classify_victory_life_per_damage,
     classify_victory_life_per_opponent_damage, classify_victory_opponent_life,
@@ -34,15 +35,17 @@ use crate::engine::combat_stat_compiler::{
     classify_victory_or_defeat_both_players_gain, classify_victory_or_defeat_life,
     classify_victory_or_defeat_life_per_damage, classify_victory_or_defeat_pillz,
     classify_victory_or_defeat_pillz_amount, classify_victory_pillz, classify_victory_pillz_max,
-    classify_victory_pillz_per_damage, compact_effect, has_bet_gated_post_round_shape,
-    has_both_players_life_reduction_shape, has_brawl_post_round_shape,
-    has_clan_gated_post_round_shape, has_combust_opponent_life_and_pillz_on_victory_shape,
-    has_consume_opponent_pillz_on_victory_shape, has_defeat_life_shape,
-    has_defeat_opponent_pillz_shape, has_defeat_pillz_shape, has_dope_pillz_shape,
-    has_equalizer_post_round_shape, has_heal_life_on_victory_shape,
-    has_killshot_opponent_life_shape, has_killshot_post_round_shape,
-    has_poison_opponent_life_on_defeat_shape, has_poison_opponent_life_on_victory_shape,
-    has_reanimate_life_shape, has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
+    classify_victory_pillz_per_damage, compact_effect, has_backlash_life_shape,
+    has_bet_gated_post_round_shape, has_both_players_life_reduction_shape,
+    has_brawl_post_round_shape, has_clan_gated_post_round_shape,
+    has_combust_opponent_life_and_pillz_on_victory_shape,
+    has_consume_opponent_pillz_on_victory_shape, has_defeat_capped_life_shape,
+    has_defeat_life_shape, has_defeat_opponent_pillz_gain_shape, has_defeat_opponent_pillz_shape,
+    has_defeat_pillz_shape, has_dope_pillz_shape, has_equalizer_post_round_shape,
+    has_heal_life_on_victory_shape, has_killshot_opponent_life_shape,
+    has_killshot_post_round_shape, has_poison_opponent_life_on_defeat_shape,
+    has_poison_opponent_life_on_victory_shape, has_reanimate_life_shape,
+    has_regen_life_on_victory_shape, has_round_scaled_post_round_shape,
     has_support_post_round_shape, has_toxin_opponent_life_on_victory_shape,
     has_unison_pillz_and_life_shape, has_victory_life_shape, has_victory_opponent_life_shape,
     has_victory_opponent_pillz_and_life_shape, has_victory_opponent_pillz_shape,
@@ -1191,6 +1194,35 @@ fn prepare_combat_stat_source(
             CombatStatPredicateV1::Always,
         ));
     }
+    // Backlash and the two Defeat corners of revision 71 carry no condition beyond the
+    // outcome the engine resolves.
+    if let Some((life, minimum)) = classify_backlash_life(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::ReduceOwnLifeOnVictory { life, minimum },
+            CombatStatEffectV1::ReduceOwnLifeOnVictory { life, minimum },
+            CombatStatPredicateV1::Always,
+        ));
+    }
+    if let Some((life, maximum)) = classify_defeat_capped_life(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainLifeOnDefeatMax { life, maximum },
+            CombatStatEffectV1::GainLifeOnDefeatMax { life, maximum },
+            CombatStatPredicateV1::Always,
+        ));
+    }
+    if let Some(pillz) = classify_defeat_opponent_pillz_gain(definition, source_kind) {
+        return Ok(executes_post_round(
+            identity,
+            source.id,
+            CombatStatPostRoundEffectV1::GainOpponentPillzOnDefeat { pillz },
+            CombatStatEffectV1::GainOpponentPillzOnDefeat { pillz },
+            CombatStatPredicateV1::Always,
+        ));
+    }
     // The generic structural classifier makes malformed Reanimate records fail-closed, but
     // the executable replay slice remains restricted to Lobo's captured identity.
     if source.id == LOBO_REANIMATE_REGISTRY_ID {
@@ -1492,7 +1524,27 @@ fn prepare_combat_stat_source(
         );
     let unadmitted_defeat_life = (source.description.contains("Defeat")
         && losing_own_life_increase)
-        || has_defeat_life_shape(definition);
+        || has_defeat_life_shape(definition)
+        || has_defeat_capped_life_shape(definition);
+    // Backlash turns an end-of-round effect on its owner. Its Life form on the Victory channel
+    // is admitted for a Min of at least 1 since revision 71. Every other non-permanent
+    // `Backlash:` record over Life or Pillz - the refused `Min 0` forms (`3092`, `1667`),
+    // `Defeat: Backlash:` (`2417`), Hercule's Pillz form (`1401`), a wrong slot or a
+    // malformed structure - and the complete Backlash shape under other text reject when
+    // selected rather than act as inert disabled sources. Pinch's own-Life Poison (`4124`) is
+    // a permanent and keeps its visible-but-disabled record with the other prefixed
+    // permanents: its one selected round, 1011430/0, is a gate round whose loss latches nothing.
+    let unadmitted_backlash = ((source.description.starts_with("Backlash: ")
+        || source.description.starts_with("Defeat: Backlash: "))
+        && !input.is_permanent
+        && !input.is_immediate_permanent
+        && matches!(
+            input.attribute_affected,
+            AttributeAffectedV1::Life
+                | AttributeAffectedV1::Pillz
+                | AttributeAffectedV1::LifeAndPillz
+        ))
+        || has_backlash_life_shape(definition);
     let unadmitted_reanimate_life = (source.description.contains("Reanimate")
         && losing_own_life_increase)
         || has_reanimate_life_shape(definition);
@@ -1586,7 +1638,8 @@ fn prepare_combat_stat_source(
     // text, rejects when selected; before revision 52 it fell through to an inert source.
     let unadmitted_defeat_pillz = (source.description.starts_with("Defeat: +")
         && definition.structured_input().attribute_affected == AttributeAffectedV1::Pillz)
-        || has_defeat_pillz_shape(definition);
+        || has_defeat_pillz_shape(definition)
+        || has_defeat_opponent_pillz_gain_shape(definition);
     // A `Growth:`/`Degrowth:` text over a Life or Pillz record that is not a permanent, or
     // the complete round-scaled shape under other text, rejects when selected. Before
     // revision 53 these were inert disabled sources in replay.
@@ -1639,9 +1692,10 @@ fn prepare_combat_stat_source(
     // here as the same case, but they are not: Growth carries `isOverdrive` and Unison the
     // clan-mates link, so no admitted shape reaches them and they get a clause of their own
     // at the end of this one rather than falling through to an inert disabled source.
-    // `Defeat`, `Symmetry`, `Asymmetry`, `Perfect`, `Backlash`, Victory-or-Defeat and
-    // clan-gated forms differ in their structured fields and keep the visible-but-disabled
-    // record every other permanent has; a `Killshot` permanent is admitted or a selected
+    // `Defeat`, `Symmetry`, `Asymmetry`, `Perfect`, `Backlash` (Pinch's `4124`, which the
+    // Backlash clause above leaves alone), Victory-or-Defeat and clan-gated forms differ in
+    // their structured fields and keep the visible-but-disabled record every other
+    // permanent has; a `Killshot` permanent is admitted or a selected
     // hazard by the Killshot clause above.
     let unadmitted_heal_life = source.description.starts_with("Heal ")
         || source.description.starts_with("Regen ")
@@ -1714,6 +1768,7 @@ fn prepare_combat_stat_source(
         || unadmitted_bet_gated_post_round
         || unadmitted_clan_gated_post_round
         || unadmitted_heal_life
+        || unadmitted_backlash
     {
         CombatStatDisabledReasonV1::UnsupportedPostRoundResourceEffect { registry_reasons }
     } else if unadmitted_post_round_recovery {
@@ -1760,6 +1815,7 @@ fn prepare_combat_stat_source(
         || unadmitted_bet_gated_post_round
         || unadmitted_clan_gated_post_round
         || unadmitted_heal_life
+        || unadmitted_backlash
     {
         CombatStatSourcePlanV1::RejectIfSelected {
             source_id: source.id,

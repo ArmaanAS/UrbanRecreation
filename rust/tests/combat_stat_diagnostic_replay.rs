@@ -484,7 +484,9 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     // Four rounds since revision 57, whose round 2 has Giovanni's `-2 Cards Damage, Min 1`
     // take his own 6 to 4 before Dobbs' Reprisal takes it to 2, and Dobbs' 5 to 3.
     (901613, 4),
-    (1130977, 3),
+    // Four rounds since revision 71: Lola Cr's `Defeat: +3 Life, Max. 10` pays her losing
+    // owner in round 3, 12 - 5 + 3 = 10, exactly the Max.
+    (1130977, 4),
     // Revision 51 admits the `Per Pillz Left` and `Per Pillz Lost` Attack magnitudes and
     // `+N Life Per Opp. Damage`. Pillz Left reads the owner's Pillz before the round's bet:
     // El Divino Cr's `+1 Atk Per Pillz Left` adds 12 in 1065557/0 (after the bet it would be
@@ -699,6 +701,16 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1065673, 4),
     (1073107, 4),
     (1091381, 3),
+    // Revision 71 admits Backlash Life on the Victory channel for a Min of at least 1, the
+    // capped `Defeat: +N Life, Max. M` and `Defeat: +N Opp. Pillz`. Proffer Man's `Backlash:
+    // - 3 Life Min 1` takes his winning owner from 10 to 7 in 945871/1, the Min far away, and
+    // Christopher's Growth Life pays 4 in round 3. Tiwi Ld's `Defeat: +3 Life, Max. 11` meets
+    // its cap in 1131114/0: 14 - 5 = 9, and the server pays 2, not 3, stopping at 11; round 2
+    // selects Forjoten's closed `Reprisal: Protect. Power And Damage`. Sylvia Ld's Backlash is
+    // stopped by Spidee's Reprisal Stop in 1080662/3 and cancelled by Fletcher's `Cancel Opp.
+    // Life Modif.` in 1337265/0, both rounds already in the gate and now executing it.
+    (945871, 4),
+    (1131114, 2),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -5765,6 +5777,153 @@ fn clan_gated_post_round_bodies_execute_and_take_the_two_sided_boundary() {
                 plan(&retexted, id, text, false),
                 CombatStatSourcePlanV1::RejectIfSelected { source_id } if source_id == id
             ),
+            "{text}"
+        );
+    }
+}
+
+/// Revision 71: Backlash Life (Min 1 or more), the capped Defeat Life and the Defeat opposing
+/// Pillz gift execute in replay from the Ability slot, and take the two-sided boundary: the
+/// printed text over a wrong slot or structure, or the complete shape under other text,
+/// rejects when selected. Every other non-permanent `Backlash:` record - the refused `Min 0`
+/// forms, `Defeat: Backlash:` and the Pillz form - rejects too, while Pinch's permanent
+/// `Backlash: Poison 1, Min 3` keeps its visible-but-disabled record.
+#[test]
+fn revision_71_post_round_grammars_execute_and_take_the_two_sided_boundary() {
+    use urban_recreation_rust::engine::CombatStatEffectV1;
+    let catalog = catalog();
+    let registry = registry();
+    let selected_slot = {
+        let source = replay(875032, &catalog);
+        usize::from(
+            source.rounds[0]
+                .plays
+                .iter()
+                .find(|play| play.engine_player == EnginePlayer::P1)
+                .unwrap()
+                .hand_index,
+        )
+    };
+    let plan = |registry: &EffectRegistryV1, id: u32, text: &str, bonus: bool| {
+        let mut source = replay(875032, &catalog);
+        clear_sources(&mut source);
+        let modifier = Some(SourceModifier {
+            id,
+            description: text.to_owned(),
+        });
+        if bonus {
+            source.players[0].hand[selected_slot].source_bonus = modifier;
+        } else {
+            source.players[0].hand[selected_slot].source_ability = modifier;
+        }
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, registry, PROJECTION).unwrap();
+        let plans = prepared.new_game().card_plans()[PlayerId::P1][selected_slot];
+        if bonus {
+            plans.bonus
+        } else {
+            plans.ability
+        }
+    };
+    for (id, text, expected) in [
+        (
+            1058,
+            "Backlash: - 3 Life Min 1",
+            CombatStatEffectV1::ReduceOwnLifeOnVictory {
+                life: 3,
+                minimum: 1,
+            },
+        ),
+        (
+            5410,
+            "Backlash: - 1 Life Min 3",
+            CombatStatEffectV1::ReduceOwnLifeOnVictory {
+                life: 1,
+                minimum: 3,
+            },
+        ),
+        (
+            5083,
+            "Defeat: +3 Life, Max. 11",
+            CombatStatEffectV1::GainLifeOnDefeatMax {
+                life: 3,
+                maximum: 11,
+            },
+        ),
+        (
+            3223,
+            "Defeat: +1 Opp. Pillz",
+            CombatStatEffectV1::GainOpponentPillzOnDefeat { pillz: 1 },
+        ),
+    ] {
+        assert_eq!(
+            plan(&registry, id, text, false),
+            CombatStatSourcePlanV1::Execute {
+                source_id: id,
+                predicate: CombatStatPredicateV1::Always,
+                effect: expected,
+            },
+            "{text}"
+        );
+        assert_eq!(
+            plan(&registry, id, text, true),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{text} as a bonus"
+        );
+    }
+    // The other non-permanent Backlash records reject when selected; the permanent stays
+    // visible-but-disabled, as it is in gate round 1011430/0.
+    for (id, text) in [
+        (3092, "Backlash: - 2 Life Min 0"),
+        (1667, "Backlash: - 3 Life Min 0"),
+        (2417, "Defeat: Backlash: - 1 Life Min 0"),
+        (1401, "Backlash: - 1 Pillz Min 4"),
+    ] {
+        assert_eq!(
+            plan(&registry, id, text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{text}"
+        );
+    }
+    assert_eq!(
+        plan(&registry, 4124, "Backlash: Poison 1, Min 3", false),
+        CombatStatSourcePlanV1::Disabled { source_id: 4124 }
+    );
+    let source: serde_json::Value =
+        serde_json::from_reader(File::open(root_path("captures/abilities.json")).unwrap()).unwrap();
+    // The printed text over a wrong structure.
+    for (id, field, value) in [
+        ("1058", "valueMin", serde_json::json!(2)),
+        ("1058", "sideAffected", serde_json::json!("opponent")),
+        ("5083", "valueMax", serde_json::json!(12)),
+        ("5083", "valueMin", serde_json::json!(0)),
+        ("3223", "value", serde_json::json!(2)),
+        ("3223", "sideAffected", serde_json::json!("player")),
+    ] {
+        let mut malformed = source.clone();
+        malformed[id]["abilityData"][field] = value.clone();
+        let text = malformed[id]["description"].as_str().unwrap().to_owned();
+        let malformed = EffectRegistryV1::from_reader(malformed.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&malformed, id, &text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
+            "{id} {field} = {value}"
+        );
+    }
+    // The complete shape under other text.
+    for (id, text) in [
+        ("1058", "Recoil: - 3 Life Min 1"),
+        ("5083", "Loss: +3 Life, Max. 11"),
+        ("3223", "Loss: +1 Opp. Pillz"),
+    ] {
+        let mut retexted = source.clone();
+        retexted[id]["description"] = serde_json::json!(text);
+        let retexted = EffectRegistryV1::from_reader(retexted.to_string().as_bytes()).unwrap();
+        let id = id.parse().unwrap();
+        assert_eq!(
+            plan(&retexted, id, text, false),
+            CombatStatSourcePlanV1::RejectIfSelected { source_id: id },
             "{text}"
         );
     }

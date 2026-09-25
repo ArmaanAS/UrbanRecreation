@@ -9225,3 +9225,373 @@ fn clan_gated_post_round_sources_are_refused_beside_an_unpinned_opposing_effect(
         Some(InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect)
     );
 }
+
+const BACKLASH: CombatStatEffectV1 = CombatStatEffectV1::ReduceOwnLifeOnVictory {
+    life: 3,
+    minimum: 1,
+};
+const CAPPED_DEFEAT_LIFE: CombatStatEffectV1 = CombatStatEffectV1::GainLifeOnDefeatMax {
+    life: 3,
+    maximum: 11,
+};
+const PILLZ_GIFT: CombatStatEffectV1 = CombatStatEffectV1::GainOpponentPillzOnDefeat { pillz: 1 };
+
+/// P1 holds `effect` as the ability of slot 0 and starts on `p1_life`; P2 starts on
+/// `p2_life`. Both hands are 6/3 with 20 Pillz, and every other source is absent.
+fn revision_71_spec(
+    effect: CombatStatEffectV1,
+    p1_life: u16,
+    p2_life: u16,
+) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].initial_life = p1_life;
+    base.players[PlayerId::P2].initial_life = p2_life;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(9100, CombatStatPredicateV1::Always, effect);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+/// Revision 71's three plans are card abilities only, unconditional and positive; Backlash
+/// needs a Min of at least 1 and the capped Defeat Life a cap above its gain.
+#[test]
+fn revision_71_plans_are_ability_only_positive_and_unconditional() {
+    for (effect, source, magnitude, predicate, bad_magnitudes) in [
+        (
+            BACKLASH,
+            InvalidCombatStatPlanReasonV1::BacklashLifeSource,
+            InvalidCombatStatPlanReasonV1::BacklashLifeMagnitude,
+            InvalidCombatStatPlanReasonV1::BacklashLifePredicate,
+            vec![
+                CombatStatEffectV1::ReduceOwnLifeOnVictory {
+                    life: 0,
+                    minimum: 1,
+                },
+                // `Min 0` could knock its own owner out, which no round shows.
+                CombatStatEffectV1::ReduceOwnLifeOnVictory {
+                    life: 3,
+                    minimum: 0,
+                },
+            ],
+        ),
+        (
+            CAPPED_DEFEAT_LIFE,
+            InvalidCombatStatPlanReasonV1::DefeatLifeSource,
+            InvalidCombatStatPlanReasonV1::DefeatLifeMagnitude,
+            InvalidCombatStatPlanReasonV1::DefeatLifePredicate,
+            vec![
+                CombatStatEffectV1::GainLifeOnDefeatMax {
+                    life: 0,
+                    maximum: 11,
+                },
+                CombatStatEffectV1::GainLifeOnDefeatMax {
+                    life: 3,
+                    maximum: 3,
+                },
+            ],
+        ),
+        (
+            PILLZ_GIFT,
+            InvalidCombatStatPlanReasonV1::DefeatOpponentPillzSource,
+            InvalidCombatStatPlanReasonV1::DefeatOpponentPillzMagnitude,
+            InvalidCombatStatPlanReasonV1::DefeatOpponentPillzPredicate,
+            vec![CombatStatEffectV1::GainOpponentPillzOnDefeat { pillz: 0 }],
+        ),
+    ] {
+        assert!(CombatStatDiagnosticV1::new(revision_71_spec(effect, 12, 12)).is_ok());
+        let mut bonus = revision_71_spec(effect, 12, 12);
+        bonus.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+        bonus.cards[PlayerId::P1][0].bonus = execute(9100, CombatStatPredicateV1::Always, effect);
+        bonus.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+        assert_eq!(refusal(bonus), Some(source), "{effect:?} as a bonus");
+        for bad in bad_magnitudes {
+            let spec = revision_71_spec(bad, 12, 12);
+            assert_eq!(refusal(spec), Some(magnitude), "{bad:?}");
+        }
+        for condition in [
+            CombatStatPredicateV1::OwnerMovesFirst,
+            CombatStatPredicateV1::OwnerWonPreviousRound,
+            CombatStatPredicateV1::MatchIsNight,
+        ] {
+            let mut spec = revision_71_spec(effect, 12, 12);
+            spec.cards[PlayerId::P1][0].ability = execute(9100, condition, effect);
+            assert_eq!(
+                refusal(spec),
+                Some(predicate),
+                "{effect:?} under {condition:?}"
+            );
+        }
+    }
+}
+
+/// Backlash takes N from a winning owner, never below Min, leaves an owner at or below Min
+/// alone and pays nothing on a loss. It pays in a round that knocks the opponent out, as
+/// 1131144/2 shows the server doing. 945871/1 is the paying round: 10 - 3 = 7 under Min 1.
+#[test]
+fn backlash_takes_life_from_a_winning_owner_down_to_its_minimum() {
+    for (p1_life, p2_life, p1_wins, expected_p1, expected_p2, status) in [
+        (10, 12, true, 7, 9, MatchStatus::Playing),    // 945871/1
+        (3, 12, true, 1, 9, MatchStatus::Playing),     // 3 - 3 clamps to Min 1
+        (1, 12, true, 1, 9, MatchStatus::Playing),     // at Min: untouched
+        (20, 12, false, 17, 12, MatchStatus::Playing), // a loss pays nothing
+        (20, 3, true, 17, 0, MatchStatus::Won(PlayerId::P1)), // pays beside a knockout
+    ] {
+        let spec = revision_71_spec(BACKLASH, p1_life, p2_life);
+        let mut diag = game(spec.base_rules, spec.cards);
+        let before = diag.position().clone();
+        let round = if p1_wins {
+            input(PlayerId::P1, (0, 5, false), (0, 0, false))
+        } else {
+            input(PlayerId::P1, (0, 0, false), (0, 5, false))
+        };
+        let (report, undo) = diag.make(round).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].won, p1_wins);
+        assert_eq!(report.players[PlayerId::P1].life, expected_p1, "{p1_life}");
+        assert_eq!(report.players[PlayerId::P2].life, expected_p2, "{p1_life}");
+        assert_eq!(diag.position().status, status, "{p1_life}");
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &before);
+    }
+    // An opposing `Stop Opp. Ability` stops it, as Spidee's Reprisal Stop does in 1080662/3.
+    let mut spec = revision_71_spec(BACKLASH, 10, 12);
+    spec.cards[PlayerId::P2][0].ability = execute(
+        877,
+        CombatStatPredicateV1::Always,
+        CombatStatEffectV1::StopOpponentAbility,
+    );
+    let (report, _) = game(spec.base_rules, spec.cards)
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert!(report.cards[PlayerId::P1].won);
+    assert_eq!(report.players[PlayerId::P1].life, 10);
+}
+
+/// The capped Defeat Life pays a living loser, never past its Max and nothing to an owner
+/// already at or above it, and nothing on a win or to a knocked-out loser. 1131114/0 binds the
+/// cap (9 + 3 stops at 11) and 1130977/3 reaches it exactly (7 + 3 = 10 under Max 10).
+#[test]
+fn capped_defeat_life_pays_a_living_loser_up_to_its_cap() {
+    let max_ten = CombatStatEffectV1::GainLifeOnDefeatMax {
+        life: 3,
+        maximum: 10,
+    };
+    for (effect, p1_life, p1_wins, expected, status) in [
+        (CAPPED_DEFEAT_LIFE, 12, false, 11, MatchStatus::Playing), // 1131114/0
+        (max_ten, 10, false, 10, MatchStatus::Playing),            // 1130977/3
+        (CAPPED_DEFEAT_LIFE, 9, false, 9, MatchStatus::Playing),   // 6 + 3
+        (CAPPED_DEFEAT_LIFE, 16, false, 13, MatchStatus::Playing), // 13 is past the cap
+        (CAPPED_DEFEAT_LIFE, 12, true, 12, MatchStatus::Playing),  // a win pays nothing
+        (
+            CAPPED_DEFEAT_LIFE,
+            3,
+            false,
+            0,
+            MatchStatus::Won(PlayerId::P2),
+        ), // never revives
+    ] {
+        let spec = revision_71_spec(effect, p1_life, 12);
+        let mut diag = game(spec.base_rules, spec.cards);
+        let before = diag.position().clone();
+        let round = if p1_wins {
+            input(PlayerId::P1, (0, 5, false), (0, 0, false))
+        } else {
+            input(PlayerId::P1, (0, 0, false), (0, 5, false))
+        };
+        let (report, undo) = diag.make(round).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].won, p1_wins);
+        assert_eq!(report.players[PlayerId::P1].life, expected, "{p1_life}");
+        assert_eq!(diag.position().status, status, "{p1_life}");
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &before);
+    }
+}
+
+/// The gift pays the opposing player on the owner's loss, from a knocked-out owner too and
+/// into an emptied pool, as 1130425/2 does both, and pays nothing on a win.
+#[test]
+fn defeat_opponent_pillz_gift_pays_on_a_loss_even_from_a_knocked_out_owner() {
+    for (p1_life, p2_bet, p1_wins, expected_p2_pillz, status) in [
+        (12, 5, false, 16, MatchStatus::Playing),
+        (3, 19, false, 2, MatchStatus::Won(PlayerId::P2)), // knocked out, still paid
+        (12, 0, true, 20, MatchStatus::Playing),           // a win pays nothing
+        (12, 20, false, 1, MatchStatus::Playing),          // 1130425/2: 20 - 20 = 0, then 1
+    ] {
+        let spec = revision_71_spec(PILLZ_GIFT, p1_life, 12);
+        let mut diag = game(spec.base_rules, spec.cards);
+        let before = diag.position().clone();
+        let round = if p1_wins {
+            input(PlayerId::P1, (0, 5, false), (0, p2_bet, false))
+        } else {
+            input(PlayerId::P1, (0, 0, false), (0, p2_bet, false))
+        };
+        let (report, undo) = diag.make(round).unwrap();
+        assert_eq!(report.cards[PlayerId::P1].won, p1_wins);
+        assert_eq!(
+            report.players[PlayerId::P2].pillz,
+            expected_p2_pillz,
+            "{p2_bet}"
+        );
+        assert_eq!(diag.position().status, status);
+        diag.unmake(undo);
+        assert_eq!(diag.position(), &before);
+    }
+}
+
+/// Each of revision 71's plans is refused wherever another write to its resource can land in
+/// the round it pays and no round pins the order, or beside an opposing Copy.
+#[test]
+fn revision_71_plans_are_refused_beside_unpinned_writes_to_their_resource() {
+    let other = |id, effect| execute(id, CombatStatPredicateV1::Always, effect);
+    let copy = CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied: CopiedSourceKindV1::Bonus,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    let victory_life_floor = other(
+        512,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 2,
+            minimum: 1,
+        },
+    );
+    let defeat_life_floor = other(
+        959,
+        CombatStatEffectV1::ReduceOpponentLifeOnDefeat {
+            life: 2,
+            minimum: 1,
+        },
+    );
+    let uuber = other(
+        1628,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictoryOrDefeat {
+            life: 1,
+            minimum: 1,
+        },
+    );
+    let poison = other(
+        206,
+        CombatStatEffectV1::PoisonOpponentLifeOnVictory {
+            life: 1,
+            minimum: 3,
+        },
+    );
+    let defeat_life = other(2000, CombatStatEffectV1::GainLifeOnDefeat { life: 2 });
+    let victory_life = other(2001, CombatStatEffectV1::GainLifeOnVictory { life: 2 });
+    let heal = other(
+        649,
+        CombatStatEffectV1::HealLifeOnVictory {
+            life: 1,
+            maximum: 15,
+        },
+    );
+    let capped_pillz = other(
+        1139,
+        CombatStatEffectV1::GainPillzOnVictoryMax {
+            pillz: 3,
+            maximum: 9,
+        },
+    );
+    let victory_pillz = other(2002, CombatStatEffectV1::GainPillzOnVictory { pillz: 2 });
+    let pillz_floor = other(
+        339,
+        CombatStatEffectV1::ReduceOpponentPillzOnVictory {
+            pillz: 3,
+            minimum: 4,
+        },
+    );
+    let consume = other(
+        5871,
+        CombatStatEffectV1::ConsumeOpponentPillzOnVictory {
+            pillz: 1,
+            minimum: 2,
+        },
+    );
+    // The Berzerk bonus `-2 Opp. Life Min 2` beside Sylvia Ld's Backlash in 1080662.
+    let berzerk = other(
+        680,
+        CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+            life: 2,
+            minimum: 2,
+        },
+    );
+    #[derive(Clone, Copy)]
+    enum Where {
+        /// P2's slot-2 ability.
+        Opposing,
+        /// The bonus of P1's slot-0 card, beside the plan.
+        OtherSlot,
+        /// P1's slot-1 ability, another card.
+        OwnCard,
+    }
+    let backlash = InvalidCombatStatPlanReasonV1::BacklashLifeAgainstUnpinnedEffect;
+    let capped = InvalidCombatStatPlanReasonV1::CappedDefeatLifeAgainstUnpinnedEffect;
+    let gift = InvalidCombatStatPlanReasonV1::DefeatOpponentPillzGiftAgainstUnpinnedEffect;
+    for (effect, placed, other_plan, expected) in [
+        // Backlash pays on its owner's win, the opposing loss.
+        (BACKLASH, Where::Opposing, defeat_life_floor, Some(backlash)),
+        (BACKLASH, Where::Opposing, uuber, Some(backlash)), // 946913
+        (BACKLASH, Where::Opposing, poison, Some(backlash)),
+        (BACKLASH, Where::Opposing, victory_life_floor, None), // 945724, 945871
+        (BACKLASH, Where::Opposing, defeat_life, None),
+        (BACKLASH, Where::Opposing, copy, Some(backlash)),
+        (BACKLASH, Where::OtherSlot, victory_life, Some(backlash)),
+        (BACKLASH, Where::OtherSlot, berzerk, None), // 1080662
+        (BACKLASH, Where::OtherSlot, copy, Some(backlash)),
+        (BACKLASH, Where::OwnCard, heal, Some(backlash)),
+        (BACKLASH, Where::OwnCard, victory_life, None),
+        // The capped Defeat Life pays on its owner's loss, the opposing win.
+        (
+            CAPPED_DEFEAT_LIFE,
+            Where::Opposing,
+            victory_life_floor,
+            Some(capped),
+        ), // 925204
+        (CAPPED_DEFEAT_LIFE, Where::Opposing, poison, Some(capped)),
+        (CAPPED_DEFEAT_LIFE, Where::Opposing, defeat_life_floor, None),
+        (CAPPED_DEFEAT_LIFE, Where::Opposing, copy, Some(capped)),
+        (
+            CAPPED_DEFEAT_LIFE,
+            Where::OtherSlot,
+            victory_life,
+            Some(capped),
+        ),
+        (CAPPED_DEFEAT_LIFE, Where::OwnCard, heal, Some(capped)),
+        (CAPPED_DEFEAT_LIFE, Where::OwnCard, defeat_life, None),
+        // The gift pays its target on the target's win.
+        (PILLZ_GIFT, Where::Opposing, capped_pillz, Some(gift)),
+        (PILLZ_GIFT, Where::Opposing, victory_pillz, None),
+        (PILLZ_GIFT, Where::Opposing, copy, Some(gift)),
+        (PILLZ_GIFT, Where::OwnCard, consume, Some(gift)),
+        (PILLZ_GIFT, Where::OwnCard, pillz_floor, None),
+    ] {
+        let mut spec = revision_71_spec(effect, 12, 12);
+        let target = match placed {
+            Where::Opposing => &mut spec.cards[PlayerId::P2][2],
+            Where::OtherSlot => &mut spec.cards[PlayerId::P1][0],
+            Where::OwnCard => &mut spec.cards[PlayerId::P1][1],
+        };
+        if matches!(placed, Where::OtherSlot) {
+            target.bonus = other_plan;
+            target.source_bonus_support_count = 1;
+        } else {
+            target.ability = other_plan;
+            if matches!(
+                other_plan,
+                CombatStatSourcePlanV1::CopyOpponentSource { .. }
+            ) {
+                target.source_ability_support_count = 1;
+            }
+        }
+        assert_eq!(refusal(spec), expected, "{effect:?} beside {other_plan:?}");
+    }
+    // The existing refusals see the new plans through the exhaustive helpers: a `Consume`
+    // facing the gift, a Pillz writer, is refused as it is facing any opposing Pillz writer.
+    let mut spec = revision_71_spec(PILLZ_GIFT, 12, 12);
+    spec.cards[PlayerId::P2][2].ability = consume;
+    assert_eq!(
+        refusal(spec),
+        Some(InvalidCombatStatPlanReasonV1::PillzPermanentAgainstOpposingResourceEffect)
+    );
+}

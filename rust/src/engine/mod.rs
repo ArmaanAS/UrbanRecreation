@@ -269,6 +269,10 @@ impl LifeWritesV1 {
         opposing_floor: true,
         ..Self::NONE
     };
+    const OWN_FLOOR: Self = Self {
+        own_order_sensitive: true,
+        ..Self::NONE
+    };
 }
 
 /// Whose Pillz an end-of-round effect writes, and which way. Two effects on one player's
@@ -311,6 +315,10 @@ impl PillzWritesV1 {
     };
     const BOTH_GAIN: Self = Self {
         own_gain: true,
+        opposing_gain: true,
+        ..Self::NONE
+    };
+    const OPPOSING_GAIN: Self = Self {
         opposing_gain: true,
         ..Self::NONE
     };
@@ -657,8 +665,13 @@ impl PostRoundEffect {
             | Self::GainPillzEqualToFinalDamageOnVictory
             | Self::GainPillzOnKillshot(_)
             | Self::GainPillzOnDefeat(_)
-            | Self::GainPillzOnVictoryOrDefeat(_) => PostRoundResourceV1::Pillz,
-            Self::GainLifeEqualToFinalDamageOnCourageVictory
+            | Self::GainPillzOnVictoryOrDefeat(_)
+            | Self::GainOpponentPillzOnDefeat(_) => PostRoundResourceV1::Pillz,
+            // A Life canceller drops an opposing Backlash too: Fletcher's `Cancel Opp. Life
+            // Modif.` leaves Sylvia Ld's owner at 12 after her win in 1337265/0.
+            Self::ReduceOwnLifeOnVictory { .. }
+            | Self::GainLifeOnDefeatMax { .. }
+            | Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictory { .. }
             | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
@@ -787,7 +800,10 @@ impl PostRoundEffect {
             | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
             | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
-            | Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => false,
+            | Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
+            | Self::ReduceOwnLifeOnVictory { .. }
+            | Self::GainLifeOnDefeatMax { .. }
+            | Self::GainOpponentPillzOnDefeat(_) => false,
         }
     }
 }
@@ -826,6 +842,7 @@ impl PostRoundEffect {
             | Self::LatchOnDefeat(latched)
             | Self::LatchOnKillshot(latched) => latched.pillz_writes(),
             Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => PillzWritesV1::BOTH_GAIN,
+            Self::GainOpponentPillzOnDefeat(_) => PillzWritesV1::OPPOSING_GAIN,
             Self::RecoverPaidPillzOnDefeat { .. }
             | Self::RecoverPaidPillzOnVictory { .. }
             | Self::GainOnePillzOnVictoryOrDefeat
@@ -852,7 +869,9 @@ impl PostRoundEffect {
             | Self::ReduceBothPlayersLife { .. }
             | Self::GainLifeOnKillshot { .. }
             | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
-            | Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => PillzWritesV1::NONE,
+            | Self::GainBothPlayersLifeOnVictoryOrDefeat(_)
+            | Self::ReduceOwnLifeOnVictory { .. }
+            | Self::GainLifeOnDefeatMax { .. } => PillzWritesV1::NONE,
         }
     }
 }
@@ -894,7 +913,10 @@ impl PostRoundEffect {
             | Self::GainBothPlayersLifeOnVictoryOrDefeat(_) => LifeWritesV1::OWN_GAIN,
             Self::GainLifePerFinalDamageOnVictory { .. }
             | Self::GainLifeOnKillshot { .. }
-            | Self::ReanimateLife(_) => LifeWritesV1::OWN_CAPPED_GAIN,
+            | Self::ReanimateLife(_)
+            | Self::GainLifeOnDefeatMax { .. } => LifeWritesV1::OWN_CAPPED_GAIN,
+            // Backlash floors its owner's own Life: order-sensitive against any other write.
+            Self::ReduceOwnLifeOnVictory { .. } => LifeWritesV1::OWN_FLOOR,
             Self::ReduceOpponentLifeOnVictoryOrDefeat { .. }
             | Self::ReduceOpponentLifeOnVictory { .. }
             | Self::ReduceOpponentLifeOnDefeat { .. }
@@ -920,7 +942,8 @@ impl PostRoundEffect {
             | Self::GainPillzOnDefeat(_)
             | Self::GainPillzOnKillshot(_)
             | Self::GainPillzOnVictoryOrDefeat(_)
-            | Self::GainBothPlayersPillzOnVictoryOrDefeat(_) => LifeWritesV1::NONE,
+            | Self::GainBothPlayersPillzOnVictoryOrDefeat(_)
+            | Self::GainOpponentPillzOnDefeat(_) => LifeWritesV1::NONE,
         }
     }
 }
@@ -989,7 +1012,8 @@ impl PostRoundEffect {
             | Self::GainPillzOnKillshot(_)
             | Self::GainLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnVictory(_)
-            | Self::ReduceOpponentPillzAndLifeOnVictory { .. } => WriteOutcomesV1::WIN,
+            | Self::ReduceOpponentPillzAndLifeOnVictory { .. }
+            | Self::ReduceOwnLifeOnVictory { .. } => WriteOutcomesV1::WIN,
             Self::RecoverPaidPillzOnDefeat { .. }
             | Self::GainTwoPillzOnDefeatMaxEleven
             | Self::ReduceOpponentPillzOnDefeat { .. }
@@ -997,7 +1021,9 @@ impl PostRoundEffect {
             | Self::ReanimateLife(_)
             | Self::ReduceOpponentLifeOnDefeat { .. }
             | Self::GainPillzOnDefeat(_)
-            | Self::GainPillzAndLifeOnDefeat(_) => WriteOutcomesV1::LOSS,
+            | Self::GainPillzAndLifeOnDefeat(_)
+            | Self::GainLifeOnDefeatMax { .. }
+            | Self::GainOpponentPillzOnDefeat(_) => WriteOutcomesV1::LOSS,
             // A latched permanent pays after every later round, whatever it did.
             Self::GainOnePillzOnVictoryOrDefeat
             | Self::GainLifeOnVictoryOrDefeat { .. }
@@ -1041,6 +1067,7 @@ impl PostRoundEffect {
             | Self::GainPillzAndLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
             | Self::GainLifeOnKillshot { .. }
+            | Self::GainLifeOnDefeatMax { .. }
             | Self::LatchOnKillshot(
                 LatchedEffectV1::HealLife { .. } | LatchedEffectV1::RegenLife { .. },
             )
@@ -1077,6 +1104,8 @@ impl PostRoundEffect {
             | Self::ReduceOpponentLifeOnDefeat { .. }
             | Self::ReduceOpponentLifeOnKillshot { .. }
             | Self::ReduceBothPlayersLife { .. }
+            | Self::ReduceOwnLifeOnVictory { .. }
+            | Self::GainOpponentPillzOnDefeat(_)
             | Self::LatchOnVictory(
                 LatchedEffectV1::PoisonOpponentLife { .. }
                 | LatchedEffectV1::ToxinOpponentLife { .. }
@@ -1231,6 +1260,21 @@ pub(super) enum PostRoundEffect {
         amount: u16,
         minimum: u16,
     },
+    /// `Backlash: - N Life Min M`: the round winner's own Life falls by `life`, never below
+    /// `minimum`, and an owner already at or below it is left alone.
+    ReduceOwnLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// `Defeat: +N Life, Max. M`: a living loser gains `life`, never past `maximum`, and an
+    /// owner already at or above `maximum` gains nothing.
+    GainLifeOnDefeatMax {
+        life: u16,
+        maximum: u16,
+    },
+    /// `Defeat: +N Opp. Pillz`: the losing owner, knocked out or not, gives the opposing
+    /// player `pillz`.
+    GainOpponentPillzOnDefeat(u16),
 }
 
 #[derive(Clone, Copy)]
@@ -1824,6 +1868,47 @@ impl BaseRulesGame {
                         }
                     }
                     PostRoundEffect::ReduceOpponentPillzAndLifeOnVictory { .. } => {}
+                    // Backlash is the Min-clamped opponent-Life reduction turned on its owner:
+                    // the same `> minimum` guard and the same clamp, with the winner as the
+                    // target (945871/1: 10 - 3 = 7). The opponent's knockout changes nothing -
+                    // 1131144/2 charges Tinomor's owner in the round it ends the match - and an
+                    // owner at or below Min is left alone, so the clamp never revives anyone.
+                    PostRoundEffect::ReduceOwnLifeOnVictory { life, minimum }
+                        if owner == winner && position.players[owner].life > minimum =>
+                    {
+                        position.players[owner].life = position.players[owner]
+                            .life
+                            .saturating_sub(life)
+                            .max(minimum);
+                    }
+                    PostRoundEffect::ReduceOwnLifeOnVictory { .. } => {}
+                    // The capped Defeat Life is Defeat Life with Heal's cap, read when it pays:
+                    // a knocked-out loser gains nothing, an owner already at or past Max gains
+                    // nothing, and a gain that would overshoot stops there (1131114/0: 9 + 3
+                    // stops at 11; 1130977/3: 7 + 3 reaches 10 exactly).
+                    PostRoundEffect::GainLifeOnDefeatMax { life, maximum }
+                        if owner == loser && position.players[owner].life > 0 =>
+                    {
+                        let current = position.players[owner].life;
+                        if current < maximum {
+                            position.players[owner].life = current
+                                .checked_add(life)
+                                .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?
+                                .min(maximum);
+                        }
+                    }
+                    PostRoundEffect::GainLifeOnDefeatMax { .. } => {}
+                    // The gift is paid on the owner's loss whether or not the round knocked the
+                    // owner out, into a pool the target's bet may already have emptied
+                    // (1130425/2 does both: 3 - 3 = 0, then 1).
+                    PostRoundEffect::GainOpponentPillzOnDefeat(pillz) if owner == loser => {
+                        let target = owner.other();
+                        position.players[target].pillz = position.players[target]
+                            .pillz
+                            .checked_add(pillz)
+                            .ok_or(BaseRulesError::PillzIncreaseOverflow { player: target })?;
+                    }
+                    PostRoundEffect::GainOpponentPillzOnDefeat(_) => {}
                     // Reanimate is the explicit Life exception: damage has already been
                     // saturated at zero, and revival happens before status is calculated.
                     PostRoundEffect::ReanimateLife(life) if owner == loser => {

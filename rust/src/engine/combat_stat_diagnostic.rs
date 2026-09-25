@@ -466,6 +466,23 @@ pub enum CombatStatPostRoundEffectV1 {
         pillz: u16,
         maximum: u16,
     },
+    /// `Backlash: - N Life Min M`, M of one or more: the winner's own Life falls by `life`,
+    /// never below `minimum`. Ability slot only.
+    ReduceOwnLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// `Defeat: +N Life, Max. M`: a living loser gains `life`, never past `maximum`. Ability
+    /// slot only.
+    GainLifeOnDefeatMax {
+        life: u16,
+        maximum: u16,
+    },
+    /// `Defeat: +N Opp. Pillz`: the losing owner gives the opposing player `pillz`. Ability
+    /// slot only.
+    GainOpponentPillzOnDefeat {
+        pillz: u16,
+    },
 }
 
 /// String-free execution primitives admitted by the first diagnostic projection.
@@ -794,6 +811,23 @@ pub enum CombatStatEffectV1 {
         pillz: u16,
         maximum: u16,
     },
+    /// Backlash: the winner's own Life falls by `life`, never below `minimum`, and an owner
+    /// at or below it is left alone. Ability slot only, unconditional, `minimum` at least 1.
+    ReduceOwnLifeOnVictory {
+        life: u16,
+        minimum: u16,
+    },
+    /// Defeat Life with Heal's cap: a living loser gains `life`, never past `maximum`, and an
+    /// owner already at or above it gains nothing. Ability slot only, unconditional.
+    GainLifeOnDefeatMax {
+        life: u16,
+        maximum: u16,
+    },
+    /// The opposing player gains `pillz` when the owner loses, whether or not the round has
+    /// knocked the owner out. Ability slot only, unconditional.
+    GainOpponentPillzOnDefeat {
+        pillz: u16,
+    },
 }
 
 /// Compact per-source disposition consumed in the engine hot path. Rich descriptions and
@@ -953,6 +987,24 @@ pub enum InvalidCombatStatPlanReasonV1 {
     DefeatLifeSource,
     DefeatLifeMagnitude,
     DefeatLifePredicate,
+    /// Backlash Life: card abilities only, a positive magnitude, a Min of at least 1 (a `Min
+    /// 0` record could knock its own owner out, which no round shows) and no predicate.
+    BacklashLifeSource,
+    BacklashLifeMagnitude,
+    BacklashLifePredicate,
+    /// Backlash Life beside an effect on its owner's Life that can land in the round it
+    /// pays - an opposing one written on the opposing loss, the Backlash card's other slot,
+    /// or an own latched permanent - or beside an opposing Copy. 1093173/1 shows the
+    /// server's cross-owner order is not the engine's, and no round shows the order within
+    /// one owner.
+    BacklashLifeAgainstUnpinnedEffect,
+    /// The capped Defeat Life beside an opposing floor on its owner's Life written on the
+    /// opposing win, a same-owner writer of that Life, or an opposing Copy: the cap makes
+    /// either order observable.
+    CappedDefeatLifeAgainstUnpinnedEffect,
+    /// The Defeat opposing Pillz gift beside a capped own Pillz gain of its target that pays
+    /// on the target's win, a same-owner floor on the target's Pillz, or an opposing Copy.
+    DefeatOpponentPillzGiftAgainstUnpinnedEffect,
     ReanimateLifeSource,
     ReanimateLifeMagnitude,
     ReanimateLifePredicate,
@@ -1617,6 +1669,62 @@ pub(crate) fn unmodelled_source_context(
         {
             Some(InvalidCombatStatPlanReasonV1::CappedVictoryPillzAgainstUnpinnedEffect)
         }
+        // Backlash floors its owner's own Life on the owner's win. Any other write to that Life
+        // landing in the same round meets it at the floor, and no round pins either order:
+        // 1093173/1 shows the server's cross-owner order is not the engine's P1-then-P2, and
+        // 946913/0 shows Uuber's opposing floor beside it without either floor binding. So a
+        // match is refused where an opposing effect can write the owner's Life on the opposing
+        // loss - a floor, or a both-players gain, a latched permanent included since it writes
+        // on every outcome - where the Backlash card's other slot or an own latched permanent
+        // writes the owner's Life, or where the opposing hand holds a Copy, which could take
+        // the Backlash or import a writer (`life_writes` reports nothing for a Copy).
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ReduceOwnLifeOnVictory { .. },
+            ..
+        } if hand_has_copy(opponent)
+            || source_plans(opponent).any(|opposing| {
+                write_outcomes(opposing).on_loss
+                    && (life_writes(opposing).opposing_floor
+                        || life_beneficiary(opposing) == Some(LifeBeneficiaryV1::Both))
+            })
+            || same_owner_meets(plan, own, writes_own_life) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::BacklashLifeAgainstUnpinnedEffect)
+        }
+        // The capped Defeat Life reads its owner's Life when it pays on the owner's loss, so
+        // any other write to that Life in the same round moves the value the cap reads. The
+        // cross-owner order is 1093173/1's question, so an opposing floor written on the
+        // opposing win - or a both-players gain - refuses it, as do the card's other slot or an
+        // own latched permanent writing the owner's Life, and an opposing Copy.
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::GainLifeOnDefeatMax { .. },
+            ..
+        } if hand_has_copy(opponent)
+            || source_plans(opponent).any(|opposing| {
+                write_outcomes(opposing).on_win
+                    && (life_writes(opposing).opposing_floor
+                        || life_beneficiary(opposing) == Some(LifeBeneficiaryV1::Both))
+            })
+            || same_owner_meets(plan, own, writes_own_life) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::CappedDefeatLifeAgainstUnpinnedEffect)
+        }
+        // The gift raises its target's Pillz on the owner's loss, the target's win. An uncapped
+        // gain commutes with the target's own uncapped gains, but not with a capped one that can
+        // pay on that win (Victory Max, Brawl Max, a Dope latch), and not with a floor the gift's
+        // owner puts on the same Pillz from the card's other slot or a latched permanent. Nor
+        // has any round shown a Copy taking it.
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::GainOpponentPillzOnDefeat { .. },
+            ..
+        } if hand_has_copy(opponent)
+            || source_plans(opponent).any(|opposing| {
+                write_outcomes(opposing).on_win && pillz_writes(opposing).own_capped
+            })
+            || same_owner_meets(plan, own, floors_opposing_pillz) =>
+        {
+            Some(InvalidCombatStatPlanReasonV1::DefeatOpponentPillzGiftAgainstUnpinnedEffect)
+        }
         // Revision 70's clan-gated end-of-round sources rest on one firing round each, or on
         // none, so they are admitted only where the order question 1093173/1 raised cannot
         // arise and no Copy is in the opposing hand. `Consume` under its compound gate is
@@ -1845,6 +1953,54 @@ fn source_plans(
     hand: &[CombatStatCardPlanV1; HAND_SIZE],
 ) -> impl Iterator<Item = CombatStatSourcePlanV1> + '_ {
     hand.iter().flat_map(|card| [card.ability, card.bonus])
+}
+
+/// Whether an own effect that can land in the same round as `plan` answers `writes`: the
+/// other slot of a card carrying `plan`, which fires beside it, or a latched permanent from
+/// anywhere in the owner's hand, which pays every round after it latches. Another own card's
+/// fresh effects cannot share `plan`'s round. A Copy in the other slot could import any
+/// opposing writer, so it answers true.
+fn same_owner_meets(
+    plan: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    writes: impl Fn(CombatStatSourcePlanV1) -> bool,
+) -> bool {
+    let other_slot = |other: CombatStatSourcePlanV1| {
+        matches!(other, CombatStatSourcePlanV1::CopyOpponentSource { .. }) || writes(other)
+    };
+    own.iter().any(|card| {
+        (card.ability == plan && other_slot(card.bonus))
+            || (card.bonus == plan && other_slot(card.ability))
+    }) || source_plans(own).any(|own_plan| is_latch(own_plan) && writes(own_plan))
+}
+
+/// Whether an end-of-round `plan` writes its own owner's Life in any way.
+fn writes_own_life(plan: CombatStatSourcePlanV1) -> bool {
+    let life = life_writes(plan);
+    life.own_gain || life.own_order_sensitive
+}
+
+/// A permanent: its owner latches it and it pays every later round.
+fn is_latch(plan: CombatStatSourcePlanV1) -> bool {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
+        return false;
+    };
+    matches!(
+        shared_post_round_effect(effect),
+        Some(PostRoundSourceEffect::Fixed(
+            PostRoundEffect::LatchOnVictory(_)
+                | PostRoundEffect::LatchOnDefeat(_)
+                | PostRoundEffect::LatchOnKillshot(_)
+        ))
+    )
+}
+
+/// Whose Life an end-of-round `plan` can raise, if it is end-of-round work at all.
+fn life_beneficiary(plan: CombatStatSourcePlanV1) -> Option<LifeBeneficiaryV1> {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = plan else {
+        return None;
+    };
+    shared_post_round_effect(effect).map(PostRoundSourceEffect::life_beneficiary)
 }
 
 /// Whether an opposing Copy could take `plan`: one copying the slot, Ability or Bonus, an
@@ -3436,6 +3592,63 @@ fn validate_combat_stat_source_plan(
             None => Ok(()),
         };
     }
+    // Backlash is a card ability with a positive magnitude, a Min of at least 1 and no
+    // predicate beyond the outcome the engine resolves; the classifier refuses `Min 0`, and
+    // the validator keeps a hand-built plan from reaching the self-knockout corner either.
+    if let CombatStatEffectV1::ReduceOwnLifeOnVictory { life, minimum } = effect {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::BacklashLifeSource)
+        } else if life == 0 || minimum == 0 {
+            Some(InvalidCombatStatPlanReasonV1::BacklashLifeMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::BacklashLifePredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
+    }
+    // The capped Defeat Life keeps Defeat Life's guards and adds Heal's: a positive magnitude
+    // strictly below a cap, which every printed record satisfies.
+    if let CombatStatEffectV1::GainLifeOnDefeatMax { life, maximum } = effect {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::DefeatLifeSource)
+        } else if life == 0 || maximum <= life {
+            Some(InvalidCombatStatPlanReasonV1::DefeatLifeMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::DefeatLifePredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
+    }
+    // The Defeat opposing Pillz gift shares the Defeat opposing Pillz reduction's guards.
+    if let CombatStatEffectV1::GainOpponentPillzOnDefeat { pillz } = effect {
+        let reason = if source != CombatStatEffectSourceV1::Ability {
+            Some(InvalidCombatStatPlanReasonV1::DefeatOpponentPillzSource)
+        } else if pillz == 0 {
+            Some(InvalidCombatStatPlanReasonV1::DefeatOpponentPillzMagnitude)
+        } else if predicate != CombatStatPredicateV1::Always {
+            Some(InvalidCombatStatPlanReasonV1::DefeatOpponentPillzPredicate)
+        } else {
+            None
+        };
+        return match reason {
+            Some(reason) => Err(invalid_combat_stat_execute(
+                player, hand_slot, source, source_id, reason,
+            )),
+            None => Ok(()),
+        };
+    }
     if let CombatStatEffectV1::ReduceOpponentPillzOnDefeat { pillz, .. } = effect {
         if source != CombatStatEffectSourceV1::Ability {
             return Err(invalid_combat_stat_execute(
@@ -4350,7 +4563,10 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::GainPillzOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::GainLifePerFinalDamageOnVictoryOrDefeat { .. }
         | CombatStatEffectV1::ReduceOpponentPillzAndLifeOnVictory { .. }
-        | CombatStatEffectV1::GainPillzOnVictoryMax { .. } => return None,
+        | CombatStatEffectV1::GainPillzOnVictoryMax { .. }
+        | CombatStatEffectV1::ReduceOwnLifeOnVictory { .. }
+        | CombatStatEffectV1::GainLifeOnDefeatMax { .. }
+        | CombatStatEffectV1::GainOpponentPillzOnDefeat { .. } => return None,
     })
 }
 
@@ -4616,6 +4832,15 @@ pub(crate) fn shared_post_round_effect(
         }
         CombatStatEffectV1::GainPillzAndLifeOnDefeat { amount } => Some(
             PostRoundSourceEffect::Fixed(PostRoundEffect::GainPillzAndLifeOnDefeat(amount)),
+        ),
+        CombatStatEffectV1::ReduceOwnLifeOnVictory { life, minimum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::ReduceOwnLifeOnVictory { life, minimum }),
+        ),
+        CombatStatEffectV1::GainLifeOnDefeatMax { life, maximum } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::GainLifeOnDefeatMax { life, maximum }),
+        ),
+        CombatStatEffectV1::GainOpponentPillzOnDefeat { pillz } => Some(
+            PostRoundSourceEffect::Fixed(PostRoundEffect::GainOpponentPillzOnDefeat(pillz)),
         ),
         CombatStatEffectV1::ModifyCombatStat { .. }
         | CombatStatEffectV1::StopOpponentAbility

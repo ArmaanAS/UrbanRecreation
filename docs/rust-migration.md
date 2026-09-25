@@ -2875,6 +2875,149 @@ Two questions are left for the owner:
 - The gate-false corner of every grammar here rests on revision 54's numeric rounds, not on
   a round of its own.
 
+Semantic revision 71 admits three end-of-round grammars on the Victory and Defeat channels,
+each by exact text over the complete shape and from card abilities only. The first is
+Backlash Life, `Backlash: - N Life Min M` for M of one or more (`1058`, `1351`, `5410`,
+`2853`): a winning owner loses N of its own Life, never below M, and an owner at or below M is
+left alone. The second is the capped Defeat Life, `Defeat: +N Life, Max. M` (`1217`, `5083`,
+`5574`): a living loser gains N, never past M, and an owner already at or above M gains
+nothing. The third is `Defeat: +N Opp. Pillz` (`3223`): a losing owner gives the opposing
+player N Pillz. The family lines read 4, 2 and 1, 7 together, and the slice unlocked 5 -
+`945724`, `945871`, `1080662`, `1130977` and `1130425` - taking eligibility from 268 to 273
+of 383. The eligible-set diff adds those five and removes none. The two draws the lines name
+that stay closed, 946913 and 925204, are the two refusals below; the price said so in
+advance.
+
+Each grammar is a new `PostRoundEffect` arm with the arithmetic of a sibling already pinned.
+- Backlash is the Min-clamped opponent-Life reduction turned on its owner: the same `>
+  minimum` guard and the same clamp, with the winner as the target. Its record is the plain
+  Victory Life record with `attributeAction: decrease` and `valueMin` read, which no other
+  admitted grammar has, so neither can pass for the other.
+- The capped Defeat Life is plain Defeat Life with Heal's cap, read when it pays, so a
+  knocked-out loser, and an owner at or above the cap, gain nothing. Its record is the Defeat
+  Life record with `valueMax` above the gain; plain Defeat Life requires `valueMax` 0.
+- The gift is the losing-side opposing Pillz reduction's channel with the opposite action and
+  no floor. It pays whether or not the round knocked its owner out, into whatever the target's
+  bet has left.
+
+The exhaustive helpers say what each writes. Backlash is a `Life` resource, so a Life
+canceller drops it; it writes on the win, and `life_writes` marks it an own order-sensitive
+write (an own floor), with no beneficiary. The capped gain is an own capped Life gain written
+on the loss, with its owner as beneficiary, so the `/ Life Lost` refusal covers it. The gift
+is a `Pillz` resource written on the loss, and `pillz_writes` gains an `opposing_gain`-only
+value for it.
+
+**Evidence strength, stated per grammar.**
+- Backlash pays in two Min-1-or-more rounds and two Min 0 rounds, and the clamp is composed,
+  not observed. 945871/1: Proffer Man wins 14 against 7 with 6 Damage, side 1 goes 12 - 6 =
+  6, and his own side 10 - 3 = 7; the raw capture's one post entry is `-3` on his player.
+  946913/0: Strigoi wins 12 against 5 with 7 Damage, and his side goes 12 - 3 - 1 = 8, the 1
+  being Uuber's opposing Victory Or Defeat floor; neither floor binds, so the order is not
+  pinned. Tinomor's Min 0 form pays 9 - 2 = 7 in 1131144/2, in the round that knocks the
+  opponent out, which is why the arm pays beside a knockout, and Ghenom's 8 - 3 = 5 in
+  1414342/3. A loss pays nothing (945724/0, 1414458/2). A Stop removes it: in 1080662/3
+  Sylvia Ld wins with 5 Damage while Spidee's Reprisal Stop is live, and her side stays on 8.
+  A Life canceller removes it: in 1337265/0 Fletcher's `Cancel Opp. Life Modif.` leaves her
+  side on 12, cancelling the Berzerk bonus too. **The Min clamp never binds on Backlash in the
+  corpus.** It is the opposing reduction's clamp, pinned binding in 926367/1, turned onto the
+  owner, and "an owner at or below Min is left alone" comes from that grammar too.
+- The capped Defeat Life has a server-reported clamp. In 1131114/0 Tiwi Ld's owner goes 14 - 5
+  = 9, and the raw post entry pays `+2`, not `+3`, stopping at 11. In 1130977/3 Lola Cr's owner
+  goes 12 - 5 = 7 and is paid 3, exactly her Max of 10. El Papa Gallo wins 925204/1 and pays
+  nothing. An owner already at or above the cap and a knocked-out loser are never observed;
+  they are composed from Heal's cap and plain Defeat Life's living guard (with Kubra's
+  knocked-out rounds 876712/1 and 877023/1).
+- The gift rests on one round, which is direct but thin. In 1130425/2 Sue wins 36 against 28
+  with 3 Damage and knocks Pr SenQ's owner out (3 - 3 = 0). Sue's side bets its last 3 Pillz
+  (3 - 3 = 0) and still receives 1. The raw capture lists `+1` Pillz on each player, the other
+  being Pr SenQ's own Riots bonus. So that one round pins both of the gift's unusual corners:
+  a knocked-out owner pays, and an emptied pool receives. Only Pr SenQ L2 prints the text.
+
+Three refusals are new, one per grammar, because each writes a resource another effect can
+write in the same round, and 1093173/1 shows the server's cross-owner order is not the
+engine's P1-then-P2. Revision 68 noted that `life_writes` and `pillz_writes` report nothing
+for a Copy, and each refusal's answer is to refuse any opposing Copy.
+- `BacklashLifeAgainstUnpinnedEffect` refuses Backlash where an opposing effect writes the
+  owner's Life on the opposing loss - a floor or a both-players gain, a latched permanent
+  included since it writes on every outcome - where the Backlash card's other slot or an own
+  latched permanent writes the owner's Life, or where the opposing hand holds a Copy. A Copy
+  in the other slot counts as a writer, since it could import one. It costs 946913: Uuber's
+  `Victory Or Defeat: - 1 Opp. Life Min 1` floors Strigoi's owner in the round Strigoi wins,
+  and at 4 Life the two orders give 1 and 2. Reading `write_outcomes` rather than every
+  opposing floor keeps 945724 and 945871, whose Hive floors (Hal Gladius' Equalizer reduction
+  and Mou's `-5 Opp. Life Min 5`) only pay on the opposing win.
+- `CappedDefeatLifeAgainstUnpinnedEffect` refuses the capped gain where an opposing floor on
+  its owner's Life, or a both-players gain, is written on the opposing win, where the card's
+  other slot or an own latched permanent writes the owner's Life, or beside an opposing Copy.
+  The cap reads the current Life, so even a floor that does not bind moves what it reads. It
+  costs 925204: Mou's `-5 Opp. Life Min 5` lands on Gallo's owner in the round Gallo's `+2`
+  would pay, and at 6 Life the two orders give 7 and 5.
+- `DefeatOpponentPillzGiftAgainstUnpinnedEffect` refuses the gift where its target has a
+  capped own Pillz gain that can pay on the target's win (capped Victory Pillz, Brawl's capped
+  gain, a Dope latch), where the card's other slot or an own latched permanent floors the
+  target's Pillz, or beside an opposing Copy. An uncapped gain commutes with the target's own
+  uncapped gains, so those are admitted. It costs nothing.
+
+The existing refusals see the new plans through the exhaustive helpers, and each side effect
+was checked against the eligible set, which loses nothing:
+- `Consume` refuses an opposing gift, and `Combust` an opposing Backlash or capped gain,
+  through `writes_floored_resource`;
+- a `Cancel Opp. Pillz & Life Modif.` refuses an opposing gift, since Pillz is not a pinned
+  cancellation;
+- the opposing compound refuses an opposing capped gain, which writes on its loss;
+- capped Victory Pillz and Dope refuse an opposing gift, which raises their owner's Pillz;
+- the same owner's Unison Life gains and Victory Or Defeat Life per Damage refuse beside a
+  Backlash or a capped gain, since both are own order-sensitive writes;
+- the clan-gated opponent-Life reduction refuses an opposing capped gain, and the clan-gated
+  Toxin latch an opposing Backlash or capped gain.
+
+The `Min 0` Backlash forms (`3092`, `1667`) are refused in the classifier, and the plan
+validator refuses a Min of 0 too. A winning owner at N or less would knock itself out, and no
+round shows that. Xantiax's Min 0 could in principle do the same, but that corner is just as
+unobserved, so it is no precedent. That costs 1131144 (Tinomor is its only blocker); 1414342
+and 1414458 would stay refused anyway by `Versus [clan:..] : Copy: Opp. Damage`.
+
+In replay each grammar takes the two-sided boundary. The printed text over a wrong slot or
+structure, and the complete shape under other text, now reject when selected. So does every
+other non-permanent `Backlash:` record over Life or Pillz: the Min 0 forms, `Defeat:
+Backlash:` (`2417`) and Hercule's Pillz form (`1401`), which were inert disabled sources
+before. That shortens two scans outside the gate: 1081234 (whose round 0 selects `2417`) and
+1414458 (round 2 selects `1667`). Pinch's permanent `Backlash: Poison 1, Min 3` (`4124`) is
+kept out of that clause on purpose. It stays a visible-but-disabled permanent, because its one
+selected round, 1011430/0, is a gate round whose loss latches nothing, and 1011430/1 is cited
+`Tune Out` evidence.
+
+The gate grows from 822 to 829 rounds, by the rounds the slice newly reaches in the throwaway
+prefix scan:
+- 945871 is added at four rounds (Proffer Man pays in round 1);
+- 1131114 is added at two (Tiwi Ld's cap binds in round 0; round 2 selects Forjoten's closed
+  `Reprisal: Protect. Power And Damage`);
+- 1130977 is extended from three rounds to four (Lola Cr pays in round 3).
+
+945724 already replayed its two rounds before the slice, so it is not added. The gift's round
+1130425/2 is not reachable in replay, because round 1 selects Korakine's Unison Copy, which the
+replay refuses as dynamic provenance. No fixture shrinks. Sylvia Ld's `5410` (1080662/3,
+stopped) and `2853` (1337265/0, cancelled) now execute in fixtures already in the gate.
+The pinned execute ids gain the five slice ids first reached - `1058`, `2853`, `5083`, `5410`
+and `5574` - and two ordinary ids first reached in the new rounds: Christopher's `Growth: +1
+Life` (`1419`, 945871/3) and Milla's `Attack +9` (`2458`, 1131114/1). The disabled ids lose
+`2853` and `5410`. The absent dispositions are unchanged.
+
+Left closed, as priced:
+- `Defeat: Backlash: - N Life Min M` (`2417`) is Min 0 and has no paying round, and the
+  TypeScript reference never pays it;
+- Backlash Pillz (`1401`) has no selected round, and it needs an own floor in `pillz_writes`;
+- Backlash Poison (`4124`) never latched, and it needs an owner-targeted latch;
+- `Defeat: +N Opp. Life` (`1762`, `1783`) never fires, and it needs an opposing Life gain in
+  `life_writes` and a beneficiary of its own;
+- the printed levels without a registry definition stay closed through the alias rule, among
+  them Sylvia Ld L1 (`5491`), Tiwi Ld L2 (`5421`) and Strigoi L3.
+
+One question is left for the owner: whether to admit the Min 0 Backlash forms on the
+strength of the printed text alone, as Xantiax's Min 0 already is, even though neither
+self-knockout has been seen. Admitting them is a one-line change to the classifier and the
+validator, and would add 1131144.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

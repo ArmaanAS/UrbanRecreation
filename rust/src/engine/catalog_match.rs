@@ -6,12 +6,13 @@
 
 use super::combat_stat_compiler::{
     classify_anita_courage_damage_to_life, classify_argos_defeat_capped_pillz,
-    classify_bet_gated_post_round, classify_both_players_life_reduction, classify_brawl_post_round,
-    classify_clan_gated_post_round, classify_combat_stat_effect,
+    classify_backlash_life, classify_bet_gated_post_round, classify_both_players_life_reduction,
+    classify_brawl_post_round, classify_clan_gated_post_round, classify_combat_stat_effect,
     classify_combust_opponent_life_and_pillz_on_victory, classify_conditional_stat_copy,
     classify_conditional_stop, classify_consume_opponent_pillz_on_victory,
-    classify_copy_opponent_source, classify_defeat_life, classify_defeat_opponent_life,
-    classify_defeat_opponent_pillz, classify_defeat_pillz, classify_defeat_pillz_and_life,
+    classify_copy_opponent_source, classify_defeat_capped_life, classify_defeat_life,
+    classify_defeat_opponent_life, classify_defeat_opponent_pillz,
+    classify_defeat_opponent_pillz_gain, classify_defeat_pillz, classify_defeat_pillz_and_life,
     classify_dope_pillz, classify_equalizer_opponent_life_on_victory,
     classify_equalizer_post_round_gain, classify_heal_life_on_victory,
     classify_killshot_opponent_life, classify_killshot_pillz_and_life,
@@ -1788,6 +1789,59 @@ fn prepare_catalog_source(
                 catalog_id,
                 description,
                 definition.id(),
+            );
+        }
+        // Backlash turns the Min-clamped Life reduction on its owner, and the capped Defeat Life
+        // and the Defeat opposing Pillz gift are the Defeat channel's other two corners. All
+        // three follow the same alias rule, which keeps Sylvia Ld level 1 closed: it prints
+        // level 2's text under catalog id `5491`, which no registry definition owns. Levels
+        // whose text no definition carries - Strigoi level 3, Tiwi Ld level 2 - never resolve
+        // to reach this arm.
+        if classify_backlash_life(definition, source_kind).is_some()
+            || classify_defeat_capped_life(definition, source_kind).is_some()
+            || classify_defeat_opponent_pillz_gain(definition, source_kind).is_some()
+        {
+            require_catalog_alias(
+                match_.alias_ids(),
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+            )?;
+            return prepare_post_round_source(
+                registry,
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition.id(),
+                |definition, source_kind| {
+                    if let Some((life, minimum)) = classify_backlash_life(definition, source_kind) {
+                        return Some((
+                            CombatStatPostRoundEffectV1::ReduceOwnLifeOnVictory { life, minimum },
+                            CombatStatEffectV1::ReduceOwnLifeOnVictory { life, minimum },
+                            CombatStatPredicateV1::Always,
+                        ));
+                    }
+                    if let Some((life, maximum)) =
+                        classify_defeat_capped_life(definition, source_kind)
+                    {
+                        return Some((
+                            CombatStatPostRoundEffectV1::GainLifeOnDefeatMax { life, maximum },
+                            CombatStatEffectV1::GainLifeOnDefeatMax { life, maximum },
+                            CombatStatPredicateV1::Always,
+                        ));
+                    }
+                    let pillz = classify_defeat_opponent_pillz_gain(definition, source_kind)?;
+                    Some((
+                        CombatStatPostRoundEffectV1::GainOpponentPillzOnDefeat { pillz },
+                        CombatStatEffectV1::GainOpponentPillzOnDefeat { pillz },
+                        CombatStatPredicateV1::Always,
+                    ))
+                },
             );
         }
         // The post-round Brawl grammars are the plain Victory reductions and gain with an

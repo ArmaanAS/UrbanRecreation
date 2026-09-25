@@ -415,6 +415,19 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
             4037, 4038, 4132, 4680, 4999, 5072, 5073, 5165, 5275, 5299, 5392, 5613, 5616,
         ],
     ),
+    // Revision 71, measured 2026-09-25: Backlash Life on the Victory channel with Min 1 or
+    // more, the capped Defeat Life and the Defeat opposing Pillz gift. The Min 0 Backlash
+    // forms (`3092`, `1667`) stay refused and are not listed.
+    (
+        "Backlash: - N Life Min M (Victory, Min >= 1)",
+        &[1058, 1351, 2853, 5410],
+    ),
+    ("Defeat: +N Life, Max. M", &[1217, 5083, 5574]),
+    ("Defeat: +N Opp. Pillz", &[3223]),
+    (
+        "revision 71 union",
+        &[1058, 1217, 1351, 2853, 3223, 5083, 5410, 5574],
+    ),
 ];
 
 fn root_path(path: &str) -> PathBuf {
