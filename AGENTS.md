@@ -83,8 +83,8 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    running an older copy and needs it re-pasted. Failures print the round, both cards and the engine-vs-server diff;
    `captures/games/<id>.json` has the full round (moves, abilities, server results,
    post-round effects). Group new failures by ability keyword before fixing anything.
-3. Fix loop: change the engine → replay suite → full `deno test -A --no-check` (two legacy
-   failures are expected: `Game_2 Protection`, `Oculus Infiltrated`) → `deno task pins:update`
+3. Fix loop: change the engine → replay suite → full `deno test -A --no-check` (only the
+   open replay mismatches in the triage table should fail) → `deno task pins:update`
    and read `git diff rust/tests/expect tests/expect`, which is where the derived id sets,
    counts, revisions and provenance fingerprints now live → update the triage doc
    → commit with a subject in the repo's "Add X, Fix Y" style. Never hand-edit a file under
@@ -174,8 +174,9 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 3. Longer term: replace regex ability parsing with the structured `abilityData` the battle
    API returns per card (see any `captures/games/*.json`; the site card DB dump does NOT
    include it), and build a "what do players play" dataset from captured moves and timings.
-4. Engine bugs are addressed only when a replay exposes them; two legacy tests
-   (`Game_2 Protection` — empty card names, `Oculus Infiltrated`) fail and predate this work.
+4. Engine bugs are addressed only when a replay exposes them. The two legacy tests that
+   used to fail were repaired on 2026-09-25 without an engine change (see "Legacy tests" in
+   `docs/replay-triage.md`).
 
 ## Rust revival
 

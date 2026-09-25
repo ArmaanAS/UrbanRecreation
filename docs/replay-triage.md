@@ -581,10 +581,30 @@ The five that arrived with the 2026-09-17 captures are no longer here: 1130425, 
 under Damage Exchange since the first triage pass.
 
 ## Legacy tests
-- `tests/Game_2.test.ts` "Protection" uses empty card names (never passed).
-- `tests/ability/Oculus.test.ts` "Infiltrated" expects the opponent to lose 4 life; the
-  engine's per-phase event ordering (validated by replays) no longer produces that. The
-  expectation is probably stale; verify with a captured Oculus game before changing it.
+Both repaired on 2026-09-25 with no engine change; the full suite now fails only on the
+open replay mismatches above.
+- `tests/ability/Oculus.test.ts` "Infiltrated": the expectation was stale, not the engine.
+  Alekperov (lv3, 6/5) joins three Ulu Watu, which his clan list names, so his "-2 Opp
+  Power, Min 5" takes Tamakuchi (lv4) from 7 to 5; the infiltrated "Power +2" falls to
+  Tamakuchi's Nightmare "Stop Opp. Bonus". 6 x 1 against 5 x 1 + 3 Growth = 8, so p1 takes
+  5 (life 7) rather than p2 taking 4. The old number needed the infiltrated bonus to
+  survive Stop Opp. Bonus (an 8-8 tie that Alekperov wins on fewer stars) and used the
+  Dec 2024 row (6/4, "Min 1"). The captures show the engine's rules: 1131463 r0 and
+  1131373 r2 (Kusm joins a listed clan, its -12 Opp Attack lands, and the Piranas Stop
+  Opp. Bonus cancels the bonus it infiltrated), 1090269 r0 (an Oculus joining three Ulu
+  Watu gets Power +2), and 1022847 r2 (Alekperov joins Tolvack, which is not in his list,
+  so his ability does nothing). The test now also asserts both cards' Power/Damage/Attack,
+  so the ability is visible even though it does not change the winner.
+- `tests/Game_2.test.ts` "Protection" was a copy of Game_1 with its card names blanked
+  and only the first two rounds' move comments rewritten (Madabook against Lianah Ld,
+  Dave against Cybil). The rest was left over: round 3 reused a slot already played, and
+  the pillz assertions went back up. The name never meant anything either, since Game_1's
+  "Protection" has no Protection card in it. It is rebuilt as a whole Ulu Watu against
+  Nightmare game on those cards with pinned levels, renamed for what it checks, and
+  every rule it relies on is in the captures: Stop Opp. Bonus against Power +2
+  (878056, 878120), Stop Opp. Ability stopping Heal from latching (877733 against 878093),
+  Copy: Power And Damage Opp. (1069345 r0), Damage Exchange (1065557 r1, 901004 r0) and
+  Defeat: +2 Life (878120 r1, 1091770 r1).
 
 ## Data notes
 - Battle 1131463 exposed a fifth source of card-definition differences: EFC had rebalanced
