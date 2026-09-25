@@ -337,9 +337,9 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 ## Performance (measured Sept 2026)
 
 `deno task time` went from **40.0s to 17.0s** (2.36x) on the round-2 bench, same tree
-explored (2,303,378 states at the last ply, unchanged), and to about 11.5 s after the
-stat-view and `length = 0` fixes below (2026-09-25; `deno task time-search` 1.69 s -> 0.64 s
-over the same two). Both of the first changes came from profiling,
+explored (2,303,378 states at the last ply, unchanged), and to about 10 s after the
+three 2026-09-25 fixes below (stat views, `length = 0`, empty event times), which took
+`deno task time-search` from 1.69 s to 0.47 s. Both of the first changes came from profiling,
 not from reading the code - the first guess was wrong by 20x, so measure before believing
 anything below. `deno bench -A --no-check tests/CardAccess.bench.ts` holds the micro
 numbers; a full profile is `--v8-flags=--prof,--logfile=<path>` then `node --prof-process`.
@@ -388,12 +388,25 @@ numbers; a full profile is `--v8-flags=--prof,--logfile=<path>` then `node --pro
   unsymbolised `deno.exe` C++ under `Events.execute`/`executeCancels` plus 10% in the
   StoreIC builtins. A `pop()` loop, which TurboFan inlines and which keeps the capacity,
   and skipping the Min-clamp sort below two abilities took `deno task time-search` from
-  1.27 s to 0.64 s and `deno task time` from about 13.8 s to 11.5 s, identical output. The
-  profile is now 97% JS with GC under 1%, spread over `Events.execute`, `CardBattle`,
-  `Policy.opponentFirstValue`, `Game.make`, `Game.battle` and `CachedEvents.merge`. A large
-  `deno.exe` share in a `--prof` Summary means C++ runtime calls (GC is counted
+  1.27 s to 0.64 s and `deno task time` from about 13.8 s to 11.5 s, identical output. A
+  large `deno.exe` share in a `--prof` Summary means C++ runtime calls (GC is counted
   separately): look for accessor stores such as `length`, `delete`, or megamorphic keyed
   access in the caller. Do not reintroduce `length = 0` in engine code.
+- **Empty event times are skipped (2026-09-25).** A battle fills two or three of its
+  twenty event times, yet `CardBattle` called `Events.execute` for all twenty, too big to
+  inline at twenty sites, so each empty time was a real call doing nothing. `Events.mask`
+  has bit t set whenever `events[t]` or `repeat[t]` might hold an ability; `CardBattle`
+  tests it before each call and `CachedEvents.merge` walks only the times it filled. The
+  invariant to keep: **anything that pushes into a bucket must set its bit** (today only
+  `add`, `addGlobal` and `merge` push). A stale bit costs one no-op `execute`; `Undo`
+  saves and restores the mask so make/unmake stays exact. In the same change a `Card`
+  keeps its base row under a symbol key: `baseCards` is a dictionary-mode object (keys up
+  to 2^19), and TurboFan never inlines a dictionary keyed load, so every clan/name/star
+  read was a generic KeyedLoadIC. Do not add hot-path lookups into integer-keyed plain
+  objects. Together: `deno task time-search` 0.645 s -> 0.47 s, `deno task time` about
+  10-20% faster, identical output. The profile left is spread thin: `Policy`'s loops
+  about 16%, make/unmake bookkeeping about 10%, `shiftRange` and its generator 3.5%, the
+  PRE1/POST2 sort 2%.
 
   `iterTree` and `Deep.ts` are deliberately left as-is as the perfect-information reference
   (`tests/solver/DeepEquivalence.test.ts` checks `deepValue` returns the same number *and*
