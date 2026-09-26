@@ -1,10 +1,39 @@
 # Deck builder on the Urban Rivals site: design proposal (draft)
 
-Draft for the owner to react to, 2026-09-26. Nothing in it is built yet. It builds on
+Draft for the owner to react to, 2026-09-26. **Phases 0 and 1 are built** (read-only; see
+"Status" below); everything from phase 2 on is still a proposal. It builds on
 `docs/deck-building.md` (the backlog write-up) and three read-only investigations of the same
 day: `docs/site-api.md` (what the site exposes, from captured traffic), how the userscript and
 log server work, and the solver's coverage and solve costs (the last two are summarised here and
 in `docs/deck-building.md`).
+
+## Status (2026-09-26)
+
+Built the same day, autonomously, after the owner asked for the work to continue; nothing
+writes to the account:
+- **Phase 0**: the log server refuses every origin but the site's and local tools
+  (`140e038`), serves the userscript at http://localhost:8787/ur-logger.user.js for one-click
+  updates, and warns when the browser's copy is out of date.
+- **Phase 1**: `src/decks/` (a port of the site's own validator, deck reports, the deck
+  service), `scripts/DeckCapture.ts` (passive capture in the log server, raw-log stand-ins
+  for the catalog pages) and `deno task deck-data` (`352bbfc`), then the Collection Pro panel
+  in userscript 0.9.0 (`f821484`).
+
+Where it differs from the plan below:
+- The validator is a port of the site's client-side `DeckFormat.parseDeck`, not a
+  reimplementation from the criteria descriptions, and its oracle is better than the
+  deck-name guess: the game client's `collections.decks {deckFormatID}` returns only the decks
+  the **server** calls legal in that format. Ours agrees on all 76 deck-format pairs.
+- The panel reads the deck being edited from the page's own deck list (every card link
+  carries id, level and edition), not from the last `loaddeck`, so it follows unsaved edits.
+- The panel reaches the deck service through the log server's `/decks/` rather than
+  `127.0.0.1:8788` directly: Edge prompts separately for each local address a site calls,
+  and an unanswered prompt froze the tab.
+- The deck service has `/api/deck/:id` and `/api/card/:id` rather than per-level card routes,
+  plus `POST /api/report` for any list of cards.
+
+To use it: update the userscript from http://localhost:8787/ur-logger.user.js, run
+`deno task decks` beside the log server, open Collection Pro and click "UR Lab".
 
 ## What changed since the backlog write-up
 

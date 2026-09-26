@@ -150,9 +150,14 @@ requests=[{"call":"collections.decks","params":{"deckFormatID":54363}}]
      ... ]}}}
 ```
 
-The account had 19 decks (`general.initPlayer`/`refreshPlayer` report `maxDecks: 21`). In every
-capture the `deckFormatID` parameter returned the **same 19 decks with the same fields** (no
-filtering, no validity flag), so the game client presumably validates locally. A deck record is
+The account had 19 decks (`general.initPlayer`/`refreshPlayer` report `maxDecks: 21`).
+**Correction, 2026-09-26:** the `deckFormatID` parameter does filter. That day's captures return
+all 19 decks for `{}`, `0` and Free Fight `57215`, but only the decks legal in the format for
+the others: Tourney `54363` 7, EFC `1` 8, Survivor `55009` 4. That answer is the server's own
+legality verdict, and `scripts/DeckCapture.ts` records it (`legalByFormat` in
+`data/my_decks.json`) as the oracle for `src/decks/DeckFormat.ts`, which agrees on all 76
+deck-format pairs. The earlier reading of "no filtering" came from logs where the same 19
+came back every time. A deck record is
 only `{id, playerId, name, characters[{id, level, state}], isCurrent}`: no format id, no favourite,
 no creation time.
 
@@ -202,8 +207,10 @@ entering (e.g. `collections.decks {deckFormatID:54363}` at t=1789232289516 then
 
 ### 2e. Delete
 
-**Not seen** in either log. Probably a `deletedeck`-style `/ajax/collection/` action from the deck
-list page; needs a live look.
+Not in either log, but in Collection Pro's own code (read live 2026-09-26): the deck list's
+delete button (`.js-deck-delete`, in the "Load a deck" modal) asks "Are you sure you want to
+delete this deck?" in the site's own modal, then posts `action=deletedeck&id=<deck id>` to
+`/ajax/collection/` and expects `{"success":true}` or `{"error"|"fatal_error": "..."}`.
 
 ### 2f. Presets (community decks)
 
@@ -391,6 +398,8 @@ Other endpoints: `GET /api/clientdata/` -> client versions (`{"ur_webgl":"2.0.3-
 
 ## 7. Not found in the logs (needs a live look at the page)
 
+Items 1, 2, 6 and 9 were answered by the live look on 2026-09-26; see section 8.
+
 1. Deck deletion (no call captured) and the deck-list page's own data (`/collection/decks/list.php`
    and `/collection/decks/?id=` are server-rendered HTML; no XHR).
 2. How Collection Pro learns the page count for `collectiondata` and the current deck id it passes
@@ -407,3 +416,59 @@ Other endpoints: `GET /api/clientdata/` -> client versions (`{"ur_webgl":"2.0.3-
    extending the logger to record header names, with values redacted).
 9. Collection Pro's own client-side JS (filters, drag-and-drop) - relevant if the userscript is to
    patch or replace the page UI rather than call the endpoints itself.
+
+## 8. Live look at Collection Pro (2026-09-26, the owner's Edge, read-only)
+
+Taken through Claude in Chrome with nothing saved, sold or evolved.
+
+**Deck editor state.** The loaded deck's id, name and current flag sit on the Save button:
+`.js-deck-save[data-id][data-name][data-iscurrent]`. Each card of the deck being edited, saved
+or not, is an `li` in `.js-deck-cards-list` whose `a.js-load-character` carries
+`data-character-id`, `data-character-level` and `data-character-state`. The format dropdown
+is `select.js-deck-format-filter` (`0` none, `57215`, `54363`, `1`, `55009`); choosing one only
+runs the client-side validator, it sends nothing. Collection rows are
+`tr#accordion-pro-header-<card id>`. The page sets `window.isNight`.
+
+**The site's own validator.** `DeckFormat.parseDeck` in `collection-pro-bundle.min.js` checks a
+deck against a format's criteria in the browser; `src/decks/DeckFormat.ts` is a port. Criteria
+it knows: `min|max_characters`, `min|max_stars` (stars = sum of levels), `max_level1..5_characters`,
+`max_commons|uncommons|rares|ld|cr|mt_characters`, `no_collectors`, `min|max_leaders` (clan 36),
+`min|max_clans` (Leaders excluded), `min|max_character_level`, `min|max_evolving_characters`,
+`min|max_maxxed_characters`, `min|max_release_date`, `no_doubles`, `exclude_elo_forbidden` (the
+card's `efc_banned`), `authorized|contained|forbidden_clan_list`,
+`authorized|contained|forbidden_character_list`, `forbidden_maxed_character_list`,
+`authorized|contained|forbidden_ability_type_list` (the level's ability `typeID`, 0 ignored) and
+`force_balanced_clans`. It ignores any other name silently.
+
+**Other actions in the bundle** (`/ajax/collection/` unless noted): `collectionoptions` (on
+`/ajax/player/`), `collectiondata`, `latestcollectiondata`, `certificatesdata`,
+`characterbankdata`, `deckformatsdata`, `loaddeck`, `savedeck`, `deletedeck`, `setcurrentdeck`,
+and HTML fragments from `/ajaxcontent/decks/my-decks.php`, `autodeck-clans.php`,
+`autodeck-generate.php` and `autodeck-rooms.php`. No request carries a CSRF token; jQuery's
+`$.post` relies on the session cookie.
+
+**Collection changes (documented, never automated).** The card "Manage" window holds two forms:
+- `/ajax/collection` `action=evolve` (or `devolve`, allowed only for Immortal Legacy Edition
+  copies) with `id`, `level`, `state`, `quantity`. It spends XP reserve first, then Clintz, and
+  answers with the updated `collectionCharacter` and `player`.
+- `/ajax/market` `action=sell` with `id`, `level`, `state`, `quantity`, `serial` (a chosen serial
+  number), `price`, `type` (public sale, sell to Kate - the bank - or a private sale) and
+  `recipient` for a private sale.
+Both change the account irreversibly. The deck builder must never call them; its safety rules
+are in `docs/deck-builder-design.md`.
+
+**Editions** (the `only_state` filter): `""` Classic, `p` Prismatic, `s` Savage, `ga` Golden
+Aura, `gs` Golden Savage, `m1` Sapphire Deep Blue, `a1` Andromeda, `k1` Knight Blaze, `v1` Void,
+`c1` Cold, `g1` Glam, `ar1` Arcade, `m2` Frost Platinum, `m3` Wonder Spectrum, `rp` Rampage,
+`i` Immortal Legacy. So `m1`/`m2`/`m3` are three named editions, not tiers of one.
+
+**Local network access.** A page on the site can reach the log server on `localhost:8787`
+(the owner allowed it). The first request to another local port (`8788`) left the tab waiting
+on Edge's local-network prompt with nobody there to answer, freezing its scripts; the deck
+panel therefore goes through the log server's `/decks/` proxy.
+
+**Userscript on Edge.** Tampermonkey needs the extension's "Allow user scripts" toggle; neither
+`chrome-extension://` nor `edge://` pages can be driven by browser automation, so installing or
+updating the script (open http://localhost:8787/ur-logger.user.js) and flipping that toggle are
+the owner's clicks. `__ur.dumpCharacters()` must run in a `/game/play/webgl/` tab, whose private
+API calls it borrows.
