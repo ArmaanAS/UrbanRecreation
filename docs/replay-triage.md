@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 390 captured battles
-(384 replay-ready; 6 ignored because they stopped mid-match): 376 replay exactly and 8
+Status from `deno test -A --no-check tests/replay/` against 394 captured battles
+(388 replay-ready; 6 ignored because they stopped mid-match): 382 replay exactly and 6
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -48,6 +48,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-25 | 368 | 8 | A conditional `Protection: Power And Damage` refuses reductions while its condition holds (no replay moves) |
 | 2026-09-26 | 369 | 8 | Card refresh (2498 cards): 1414087 replays exactly; rebalanced abilities replay with the battle's own text |
 | 2026-09-26 | 376 | 8 | +7 Training captures (Leader test deck); Counter-attack only decides round one (1495980) |
+| 2026-09-26 | 382 | 6 | +4 Training captures (GhosTown/Oculus test deck); the round-one second mover's END effects run first (1093173, 1496283); Perfect pays only on the exact bet (947670, 1496258) |
 
 ## Fixed
 
@@ -461,20 +462,29 @@ rules since semantic revision 63.
 
 ## Previously triaged open rules
 
-### End-of-round gain/reduction order — 1093173
-Round 1 (zero-based) has Goose's `-2 Opp. Pillz And Life, Min 5` beat Dr Web Ld,
-whose Riots bonus is `Victory Or Defeat: +1 Pillz`. DashSmashing starts the round on 7,
-bets 2, and the server finishes on 5. That arithmetic requires the Riots gain to apply
-before Goose's reduction: `7 - 2 + 1 - 2`, clamped to 5. The engine executes internal P1's
-END events first, so it clamps Goose's reduction at 5 and then adds Riots: `7 - 2 - 0 + 1
-= 6`. This is the only captured round found with an opposing Pillz reduction and a
-simultaneous own Pillz gain, so retain it as an ordering hypothesis until a second data
-point confirms the general rule.
+### End-of-round order: the round-one second mover goes first — 1093173, 1496283 (fixed)
+Two rounds with an opposing Pillz reduction and a Pillz gain at the end of the same round,
+and both need the effects of the player who moved *second in round one* (the engine's
+internal P2) before those of the player who moved first:
+- 1093173 r1: Goose's `-2 Opp. Pillz And Life, Min 5` beats Dr Web Ld, whose Riots bonus is
+  `Victory Or Defeat: +1 Pillz`. DashSmashing (internal P2) starts on 7, bets 2 and finishes
+  on 5: `7 - 2 + 1 - 2`, clamped to 5. Goose first would clamp at 5 and then add 1, giving 6.
+- 1496283 r2: DashSmashing's (internal P2) Dark Kaizerin `-2 Opp Pillz. Min 2` beats Naele,
+  whose Vortex bonus `Defeat: Recover 2 Pillz Out Of 3` gives back 1 on a bet of 0. The
+  opponent is on 2 and finishes on 3: the reduction first, clamped to 2, then the recovery.
+  The recovery first would give 3 and the reduction take it back to 2.
+The two rounds disagree on everything else - the effect applied first is the loser's gain in
+one and the winner's reduction in the other, it belongs to the round's first mover in one and
+its second mover in the other, and the owner sits on different capture sides - so the order
+is by round-one seat. `CardBattle` now executes internal P2's END events before P1's,
+which fixes both and changes no other replay. The Rust post-round order was not changed:
+neither round is Rust-eligible, and a Rust round would have to show it first.
 
-The live advisor now reports the disagreement and then replaces replayed life/pillz with
-the server's completed-round totals before solving the next decision. Therefore round 4
-correctly starts with 3 pillz and cannot offer the impossible fourth pill, while the replay
-continues to fail and keeps the engine bug visible.
+In 1496283 the old order also crashed the live advisor: the engine left the opponent 2 pillz
+instead of 3, and replaying their 3-pill bet in round four threw. `buildPosition` now checks
+each resolved round against the server and carries on from the server's totals, keeps the
+latest disagreement on screen, and returns "cannot replay" instead of throwing
+(`tests/solver/Advisor.test.ts`).
 
 ### Same-family permanents: the server text says replace, both engines stack
 The server prints "If two poisons or toxins are applied, the second will replace the first as
@@ -550,10 +560,13 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   active Dominion `Growth: -1 Opp Power, Min 4`, because an opposing reduction is refused when
   the target's stat is cancelled; the server only cancels modifiers whose source is the
   cancelled card.
-- 947670 r3: Akirale's `Perfect: +2 Pillz` pays on a win with more pillz than it needed.
-  `Perfect` is an unknown condition, so it is met unconditionally; `abilityData` names the
-  exact winning bet. This is a negative observation, and the three other selected Perfect
-  rounds are losses.
+- 947670 r3, fixed with 1496258 r0: `Perfect` was an unknown condition, met unconditionally,
+  but the server's text is "If Akirale wins his round with the exact number of pillz needed
+  (Perfect Pillz)" (3674, 4030, 4382, 5594; `currentRoundRequirement: "perfect"`). Akirale won
+  with more than he needed in 947670 r3 and Tatiana won 5 to 2 on 5 pillz in 1496258 r0, and
+  neither `Perfect: +2 Pillz` paid. `ConditionType.PERFECT` now holds when the card won and one
+  pill fewer would not have: one Power less Attack, with the engine's own tie rule. Both
+  observations are negative; no winning exact bet has been captured yet.
 - 1025413 r1: Dark Kaizerin (Oculus) infiltrates GhosTown at night and fights with the night
   bonus `Night: -1 Opp Pow. And Damage, Min 1` (1442); the hand stores the host's day bonus
   before the game switches to night. It is the only such round.
@@ -598,10 +611,11 @@ instead of expecting none.
 
 ## Fresh capture backlog
 
-Nothing is untriaged. The eight remaining mismatches each have an entry above and wait on
-a second capture or an open question: 874712 (Revenge / Damage Impose), 1093173 (end-of-round
-order), 1059149 (Exchange, TypeScript only), 1414749 (an increase to the opposing card), and
-the single points 1079078, 1089974, 947670 and 1025413. The backlog of 39 that the expanded
+Nothing is untriaged. The six remaining mismatches each have an entry above and wait on
+a second capture or an open question: 874712 (Revenge / Damage Impose), 1059149 (Exchange,
+TypeScript only), 1414749 (an increase to the opposing card), and the single points 1079078,
+1089974 and 1025413. 1093173 (end-of-round order) and 947670 (Perfect) were settled by the
+2026-09-26 Training captures. The backlog of 39 that the expanded
 corpus brought on 2026-09-14 and 2026-09-17, and the three from the 2026-09-23 session, are
 fixed above or among those eight. A fourth 2026-09-23 capture, 1414087, deals card 2714
 (Gloria, level 2, `Brawl: Damage + 1`), which the 2026-09-10 character dump predated; since

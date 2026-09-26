@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertNotEquals } from "@std/assert";
+import { assert, assertEquals, assertNotEquals, assertStringIncludes } from "@std/assert";
 import {
   buildPosition,
   parseArgs,
@@ -567,12 +567,33 @@ Deno.test("live advice resynchronises engine pillz to the server between rounds"
   if (!("game" in built)) return;
   assertEquals(built.round, 4);
   assertEquals(built.game.playingPlayer.pillz, 3);
-  assertEquals(
-    built.warning?.includes("your pillz 4 vs server 3"),
-    true,
-  );
+  // 1093173 drifted here ("your pillz 4 vs server 3") until the end-of-round order was fixed
+  // on 2026-09-26; the engine now agrees on its own. The resync itself is pinned by the
+  // tampered capture in the next test.
+  assertEquals(built.warning, undefined);
   assertEquals(
     new Search(built.game).candidates.some((candidate) => candidate.pillz > 3),
     false,
   );
+});
+
+Deno.test("an engine drift in an early round cannot make a later captured bet crash the advisor", async () => {
+  const captured = JSON.parse(
+    await Deno.readTextFile("captures/games/1496283.json"),
+  ) as Parameters<typeof buildPosition>[0];
+  // Pretend the engine got round one wrong: the opponent's round-one bet of 5 replays as 9,
+  // leaving the engine 3 pillz where the server says 7 - fewer than their round-two bet of 5.
+  // Replaying that bet used to throw "pillz must be a non-negative integer" out of the live
+  // loop; now each round carries on from the server's totals and the drift is reported.
+  const tampered = structuredClone(captured);
+  tampered.testcase!.moves[0].s1[1] = 9;
+  const built = buildPosition(tampered);
+  assertEquals("game" in built, false);
+  if ("game" in built) return;
+  assertEquals(built.finished, true);
+  assertStringIncludes(built.warning ?? "", "after round 1");
+  assertStringIncludes(built.warning ?? "", "their pillz 3 vs server 7");
+  // The untouched capture replays exactly, so it carries no warning at all.
+  const clean = buildPosition(captured);
+  assertEquals("game" in clean ? undefined : clean.warning, undefined);
 });

@@ -50,6 +50,7 @@ export enum ConditionType {
   VERSUS = 23,
   AFTER = 24,
   BET = 25,
+  PERFECT = 26,
 }
 
 export default class Condition {
@@ -148,6 +149,21 @@ export default class Condition {
           this.clans.includes(data.round.lastClan);
       case ConditionType.BET:
         return data.betPillz > this.bet;
+      // "If Akirale wins his round with the exact number of pillz needed (Perfect Pillz)"
+      // (captures/abilities.json 3674, 4030, 4382, 5594; currentRoundRequirement "perfect"):
+      // the card won, and one pill fewer would not have won. One pill less takes one Power off
+      // the Attack (Attack = Power x pillz used, and the later phases add or take off flat
+      // amounts); a tie then goes by the engine's own tie rule. Tatiana won 5 to 2 on 5 pillz
+      // in 1496258 r0 and Akirale with more than he needed in 947670 r3, and neither paid.
+      case ConditionType.PERFECT: {
+        if (data.player.won !== true) return false;
+        if (data.betPillz <= 1) return true;
+        const fewer = data.card.attack.final - data.card.power.final;
+        const opp = data.oppCard.attack.final;
+        const winsTie = data.card.stars < data.oppCard.stars ||
+          (data.card.stars === data.oppCard.stars && data.round.first);
+        return fewer < opp || (fewer === opp && !winsTie);
+      }
       case ConditionType.VERSUS:
         return this.clans.find((c) =>
           data.round.oppHand.map((c) => c.clan).includes(c)

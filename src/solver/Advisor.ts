@@ -1063,17 +1063,36 @@ export function buildPosition(rec: Reconstructed): Built {
     };
   }
 
-  for (const m of tc.moves) {
-    game.select(m.s1[0], m.s1[1], m.s1[2], false);
-    game.select(m.s2[0], m.s2[1], m.s2[2], false);
+  // Replay the resolved rounds, checking each against the server and carrying on from the
+  // server's totals. A wrong engine rule used to surface only after the last round, so an
+  // earlier drift could make a later captured bet impossible: in 1496283 the engine left the
+  // opponent 2 pillz instead of 3 after round three, and replaying their 3-pill bet in round
+  // four threw "pillz must be a non-negative integer: -1" and took the advisor down. A replay
+  // that still cannot follow the game now says so instead of crashing.
+  const drift: string[] = [];
+  try {
+    tc.moves.forEach((m, i) => {
+      game.select(m.s1[0], m.s1[1], m.s1[2], false);
+      game.select(m.s2[0], m.s2[1], m.s2[2], false);
+      const disagreement = crossCheck(game, rec, i + 1);
+      if (disagreement !== undefined) drift.push(disagreement);
+      syncObservedResources(game, rec, i + 1);
+    });
+  } catch (error) {
+    return {
+      settled: false,
+      why: `the engine cannot replay this battle (${(error as Error).message}) - advice withheld`,
+    };
   }
   // Engine P1 is whoever moved first in round 0, which is how the testcase is normalised.
   const ourTurn = rec.mySide === rec.firstPlayer
     ? Turn.PLAYER_1
     : Turn.PLAYER_2;
   const round = tc.moves.length; // 0-based index of the round now being played
-  const warning = crossCheck(game, rec, round);
-  syncObservedResources(game, rec, round);
+  // The latest disagreement stays on screen, with a count of any earlier ones.
+  const warning = drift.length
+    ? drift[drift.length - 1] + (drift.length > 1 ? ` (and ${drift.length - 1} earlier)` : "")
+    : undefined;
   const lastRound = resolvedSummary(rec, round);
   // A mid-round forfeit cannot make the replayed engine terminal because there is no
   // second move to resolve. The authoritative result response still ends the live view.

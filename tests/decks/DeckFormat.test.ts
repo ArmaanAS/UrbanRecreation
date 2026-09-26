@@ -112,8 +112,14 @@ Deno.test({
       cards: new Map((siteCards.cards as SiteCard[]).map((c) => [c.id, c])),
       formats: formats.formats as DeckFormatData[],
     };
+    // A deck saved after the server's lists were taken is in none of them, which is not a
+    // verdict (the Lab test decks of 2026-09-26). Deck ids only grow, so skip any deck newer
+    // than every deck the lists name - Free Fight's list holds almost every deck.
+    const lists = Object.values(myDecks.legalByFormat) as { deckIds: number[] }[];
+    const newest = Math.max(...lists.flatMap((l) => l.deckIds));
     let compared = 0;
     for (const deck of myDecks.decks as SiteDeck[]) {
+      if (deck.id > newest) continue;
       for (const verdict of deckReport(deck.characters, catalog).formats) {
         const legal = myDecks.legalByFormat[verdict.formatId];
         if (!legal) continue;

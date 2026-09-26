@@ -3,7 +3,7 @@
   "regenerate": "UR_UPDATE_EXPECT=1 deno test -A --no-check tests/solver/RustAdvisorInput.test.ts",
   "value": {
     "effectiveCatalogFingerprintFnv1a64": "66477dd01875098b",
-    "effectRegistryFingerprintFnv1a64": "2c2ac95cd5b7df39",
+    "effectRegistryFingerprintFnv1a64": "3b4f1f9bb83b9ec7",
     "effectRegistrySchemaVersion": 1,
     "compilerPolicySemanticRevision": 76,
     "catalogContextPolicySemanticRevision": 7,
