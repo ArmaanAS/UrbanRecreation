@@ -168,7 +168,7 @@ async function writeAutoQueue(
 const MANAGED_LOG_ARGS = [
   "run",
   "--allow-net=0.0.0.0:8787",
-  "--allow-read=captures",
+  "--allow-read=captures,ur-logger.user.js",
   "--allow-write=ur_log.jsonl,captures,data",
   "--allow-env=FORCE_COLOR",
   "--allow-sys=osRelease",

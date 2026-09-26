@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         UR logger
 // @namespace    urban-recreation
-// @version      0.7.1
+// @version      0.8.0
 // @description  Mirror Urban Rivals network traffic to a local log server (see log_server.ts)
 // @match        https://www.urban-rivals.com/*
 // @run-at       document-start
 // @grant        none
+// @updateURL    http://localhost:8787/ur-logger.user.js
+// @downloadURL  http://localhost:8787/ur-logger.user.js
 // ==/UserScript==
 //
 // The script is deliberately a dumb pipe: it captures every fetch / XHR / WebSocket
@@ -19,6 +21,9 @@
 //   as 'b64:<base64>' so nothing is lost. Response bodies that are not text are not sent
 //   at all (see respText).
 (() => {
+  // Keep equal to @version above; log_server.ts compares it with the repository copy and
+  // says when this one is out of date.
+  const VERSION = '0.8.0';
   const SERVER_ROOT = 'http://localhost:8787';
   const SERVER = SERVER_ROOT + '/log';
   const CONTROL = SERVER_ROOT + '/control';
@@ -260,5 +265,5 @@
     },
   };
 
-  log('page', { href: location.href, ua: navigator.userAgent });
+  log('page', { href: location.href, ua: navigator.userAgent, version: VERSION });
 })();

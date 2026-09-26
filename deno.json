@@ -4,7 +4,7 @@
     "data": "deno run --env --allow-env=API_KEY,API_SECRET,NODE_EXTRA_CA_CERTS,FORCE_COLOR -RWN --allow-sys=osRelease ./scripts/RequestCards.ts",
     "check": "deno check src/ tests/ scripts/ log_server.ts",
     "compile": "deno run -RW ./scripts/CompileAbilities.js",
-    "log": "deno run --watch --allow-net=0.0.0.0:8787 --allow-read=captures --allow-write=ur_log.jsonl,captures,data --allow-env=FORCE_COLOR --allow-sys=osRelease ./log_server.ts",
+    "log": "deno run --watch --allow-net=0.0.0.0:8787 --allow-read=captures,ur-logger.user.js --allow-write=ur_log.jsonl,captures,data --allow-env=FORCE_COLOR --allow-sys=osRelease ./log_server.ts",
     "cards": "deno run --allow-read --allow-write=data --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/BuildCardData.ts",
     "opening-prior": "deno run --allow-read=captures,src/solver/Search.ts,rust/src/advisor/search.rs --allow-write=src/solver/Search.ts,rust/src/advisor/search.rs ./scripts/OpeningPrior.ts",
     "prune": "deno run --allow-read --allow-write --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/PruneLog.ts",

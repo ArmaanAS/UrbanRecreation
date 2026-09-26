@@ -14,11 +14,27 @@ const CAPTURE_DIR = "captures/battles";
 const PLAYER_ID = "captures/.player-id";
 const SITE_CHARACTERS = "data/site_characters.jsonl";
 const SITE_CLANS = "data/site_clans.json";
+const USERSCRIPT = "ur-logger.user.js";
 const MAX = 160;
+// Only the userscript on the site itself, and local tools (which send no Origin), may talk
+// to this server. It used to answer every origin with `*`, so any page open in the browser
+// could post records here - overwrite data/site_clans.json, truncate
+// data/site_characters.jsonl - or read the live battle feed.
+const SITE_ORIGIN = "https://www.urban-rivals.com";
 const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "*",
+  "Access-Control-Allow-Origin": SITE_ORIGIN,
+  "Access-Control-Allow-Headers": "content-type",
+  "Vary": "Origin",
 };
+
+/** The `@version` of the userscript in the repository, to tell the owner when to update. */
+async function repoUserscriptVersion(): Promise<string | undefined> {
+  try {
+    return /\/\/ @version\s+(\S+)/.exec(await Deno.readTextFile(USERSCRIPT))?.[1];
+  } catch {
+    return undefined;
+  }
+}
 const clip = (s: string) =>
   s.length > MAX ? s.slice(0, MAX) + `… (+${s.length - MAX})` : s;
 const colour: Record<string, string> = {
@@ -179,6 +195,15 @@ let queue: Promise<unknown> = Promise.resolve();
 
 Deno.serve({ port: 8787, onListen: ({ port }) => console.log(`UR log server on :${port} → ${RAW_LOG}, ${CAPTURE_DIR}/`) }, async (r) => {
   const path = new URL(r.url).pathname;
+  // The userscript is repository content, so anything may fetch it: opening this URL in the
+  // browser offers Tampermonkey's install/update page, and its @updateURL points here.
+  if (r.method === "GET" && path === "/" + USERSCRIPT) {
+    return new Response(await Deno.readTextFile(USERSCRIPT), {
+      headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" },
+    });
+  }
+  const origin = r.headers.get("origin");
+  if (origin !== null && origin !== SITE_ORIGIN) return new Response(null, { status: 403 });
   if (r.method === "GET" && path === "/events") return feed();
   if (path === "/control") {
     if (r.method === "GET") {
@@ -277,6 +302,10 @@ async function handle(body: string): Promise<Response> {
       if (!QUIET_WS.test(payload)) print(kind, t, clip(payload));
     } else if (kind === "page") {
       print(kind, t, payload.href);
+      const current = await repoUserscriptVersion();
+      if (current !== undefined && payload.version !== current) {
+        print("page", t, `\x1b[33muserscript ${payload.version ?? "0.7.x or older"} is not the repository's ${current}: open http://localhost:8787/${USERSCRIPT} in the browser to update it${RESET}`);
+      }
     } else if ((payload.u ?? "").includes("/api/private/v2/")) {
       let method = "?", data: unknown = null;
       try {
