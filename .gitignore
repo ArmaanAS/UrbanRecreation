@@ -15,3 +15,8 @@ captures/.player-id
 data/site_cards.json
 data/my_collection.json
 data/my_decks.json
+
+# deck builder: solved hand pairs (keyed by engine and data provenance) and the per-card
+# coverage report; both regenerate from the solver
+cache/
+data/card_coverage.json

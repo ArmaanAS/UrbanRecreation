@@ -6,6 +6,7 @@
 
 pub mod input;
 pub mod jsonl;
+pub mod matchup;
 pub mod policy;
 pub mod search;
 pub mod session;

@@ -40,6 +40,15 @@ the same live report as the panel plus the difference from the saved deck it sta
 Drafts are kept in the browser's local storage and can be exported as JSON. Nothing in it
 talks to the site.
 
+Then the **phase 5 engine**, command line only for now: `urban-recreation-matchup`
+(`rust/src/advisor/matchup.rs`), `src/decks/Matchup.ts`, `deno task matchup` and
+`deno task card-coverage`. Measured: T1 Rescue against T1 Riots, N = 40, took 36 s on 6
+threads (78 solves at about 2.7 s each) and gave 49.5% ± 2.6; a cached rerun takes 0.6 s.
+Coverage at max level: 54.2% of cards exact by day, 55.2% by night. Two things differ from the
+plan: hands are solved in sorted `(id, level)` order, so Symmetry/Asymmetry see one fixed
+arrangement rather than a random deal, and a draw's value is the advisor's top-ranked move's,
+which the rounded-percent ranking can put up to half a point below the best raw average.
+
 To use it: update the userscript from http://localhost:8787/ur-logger.user.js, run
 `deno task decks` beside the log server, open Collection Pro and click "UR Lab", or open
 http://127.0.0.1:8788 for Deck Lab.
@@ -152,8 +161,8 @@ or regenerable.
 | `data/my_decks.json` | `{fetchedAt, maxDecks, decks:[{id, name, isCurrent, characters:[{id, level, state}]}]}` | `collections.decks`, `loaddeck`, `savedeck` | gitignored |
 | `data/deck_history.jsonl` | one line per applied write: `{t, deckId, before, after, siteResponse}` | the apply path | gitignored. This is the undo log. |
 | `data/deck_drafts.json` | your drafts in the own UI: `{draftId, name, targetFormat, characters, notes}` | own UI | gitignored |
-| `data/card_coverage.json` | per `(id, level, day/night)`: `rust_exact`, `ts_only`, `ts_empty` (compiles to nothing), `refused:<reason>`, `missing`, `leader`, plus engine, registry and catalog fingerprints | offline task over a Rust per-card coverage probe and the TS parser | derived: regenerate, commit only if pinned |
-| `cache/handpairs/*.jsonl` | `{handA, handB, firstMover, life, pillz, night, battleRule, fingerprints} -> {value, bestRow, heuristic, ms}`, where hands are sorted `(id, level)` lists | solver runner | gitignored |
+| `data/card_coverage.json` | per `(id, level, day/night)`: `exact`, `bonus_refused`, `bonus_untested`, `refused`, `leader` or `missing`, each refusal classed as uncaptured text, uncaptured id or not executable, plus the binary's provenance | `deno task card-coverage` over the Rust probe (the TS parser column is not built) | gitignored: regenerate |
+| `cache/matchups/v1-<provenance hash>.jsonl` | one `{k, r}` line per solve: key = night, life, pillz and both sorted `(id, level)` hands, first mover's first; result = `{value, worst, best_move, ko_share, koed_share, ms}` or `{refused}`; a `.provenance.json` beside it says what the hash stands for | `src/decks/Matchup.ts` | gitignored |
 | `data/analysis/*.json` | clan matrices and deck evaluations with N, standard error, prior and fingerprints | solver runner | decide per result |
 
 Derived views the service computes on request (not stored):
@@ -215,8 +224,10 @@ legal and every card's full text, with nothing sent to the site that the page di
 
 ### Phase 2: coverage and details everywhere
 
-- `deno task cards:coverage` writes `card_coverage.json` from the throwaway probe, promoted to a
-  real ignored test or task, plus the TS parser's "compiles to nothing" list.
+- `deno task card-coverage` writes `card_coverage.json` from the Rust probe (built): statuses
+  exact / bonus_refused / bonus_untested / refused / leader / missing, and every refusal classed
+  as uncaptured text, uncaptured id or not executable. The TS parser's "compiles to nothing"
+  column is not built.
 - The panel and the service show the badge on every card, and a deck-level coverage line.
 - If the site DOM exposes card ids (live check), hovering a card in the site's own grid shows the
   panel's detail card for it. This targets "doesn't display all the details nicely" directly.
@@ -246,8 +257,9 @@ Needs: the live checks marked (P4), and your agreement on a dedicated deck slot.
 Needs: a batch hand-pair runner on the Rust worker (many draws, parallel across pairs, results
 cached by hand pair and fingerprints), plus coverage from phase 2.
 - **Deck versus deck**: stratified by first mover (always both), N = 100 hand pairs gives about
-  ±1.5 percentage points in 20-30 s on 6 cores. N = 400 gives ±0.75 in 2 min. Measured today:
-  about 1.2-1.9 s per exact solve, zero rejections on meta decks.
+  ±1.5 percentage points. Measured on real decks: about 2.7 s per exact solve (0.7-5.7 s), so
+  N = 100 is about 90 s and N = 400 about 6 min on 6 cores (the first estimate, 1.2-1.9 s,
+  came from easier draws).
 - **Comparisons use common random numbers**: the same opponent hands and first movers for both
   candidates. A one-card swap reuses half its hands from cache.
 - **Delivers**: your decks against each other and against "meta decks" assembled from the
@@ -260,8 +272,9 @@ cached by hand pair and fingerprints), plus coverage from phase 2.
 
 Needs: phase 5, and a representative deck per clan: the best legal mono-clan deck under 32 stars
 from exactly covered cards, chosen by the heuristic, plus a few obvious dual-clan decks.
-- 35 × 34 / 2 = 595 pairs at N = 40 takes 1.4-2 h on 6 cores (±2.4 pp). N = 100 takes an
-  overnight run (3.5-5 h, ±1.5 pp).
+- 35 × 34 / 2 = 595 pairs at N = 40 (±2.4 pp) is 47,600 solves: about 6 h on 6 cores at the
+  measured 2.7 s a solve, so an overnight run. N = 100 (±1.5 pp) is about 15 h, a weekend,
+  unless the solve gets cheaper or the matrix is cut to the clans that matter.
 - **Delivers**: the matrix, its rock-paper-scissors cycles, and next to it the practice numbers
   from the captures as a sanity check.
 - **Caveats printed alongside**: conservative policy rather than equilibrium; the shared opening

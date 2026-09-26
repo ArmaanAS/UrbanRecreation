@@ -42,3 +42,7 @@ path = "src/bin/advisor.rs"
 [[bin]]
 name = "urban-recreation-advisor-jsonl"
 path = "src/bin/advisor_jsonl.rs"
+
+[[bin]]
+name = "urban-recreation-matchup"
+path = "src/bin/matchup.rs"
