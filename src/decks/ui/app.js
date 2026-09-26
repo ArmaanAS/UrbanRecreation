@@ -13,6 +13,8 @@ const state = {
   formats: [],
   decks: [],
   legalByFormat: {},
+  /** Opposing hands seen in the chosen format: card id -> hands it appeared in. */
+  meta: { hands: 0, byId: new Map(), clans: [] },
   shown: PAGE,
   draft: { name: "", sourceId: 0, cards: [] },
 };
@@ -96,6 +98,7 @@ function filteredCards() {
     damage: (r) => -r.card.evos[r.level][1],
     stars: (r) => -r.level,
     release: (r) => -r.card.release,
+    meta: (r) => -(state.meta.byId.get(r.card.id)?.count ?? 0),
   }[sort];
   rows.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : a.card.name.localeCompare(b.card.name)));
   return rows;
@@ -120,13 +123,38 @@ function renderCollection() {
     return `<div class="card${problems.length ? " illegal" : ""}" title="${esc(problems.join(", "))}">` +
       `${picture ? `<img loading="lazy" src="${esc(picture)}" alt="">` : "<span></span>"}` +
       `<div><div class="name">${esc(card.name)}${badges}</div><div class="dim">${esc(card.clan)} · ${esc(card.rarity)}</div>` +
-      `<div class="levels">${levels}</div></div>` +
+      `<div class="levels">${levels}</div>${seenIn(card)}</div>` +
       `<div class="pd">L${level}<br>${power}/${damage}</div>` +
       `<div>${esc(abilityAt(card, level))}</div>` +
       `<div class="dim">${esc(night() && card.nightBonus ? card.nightBonus : card.bonus)}</div>` +
       `<button class="icon" data-add="${card.id}" data-level="${level}" title="Add to the draft">+</button></div>`;
   }).join("");
   $("more").hidden = rows.length <= state.shown;
+}
+
+// ---- meta: what opponents play in the chosen format --------------------------------------
+function seenIn(card) {
+  const seen = state.meta.byId.get(card.id);
+  return seen ? `<div class="dim" title="levels ${esc(Object.entries(seen.levels).map(([l, n]) => `L${l}×${n}`).join(", "))}">` +
+    `seen in ${seen.count} of ${state.meta.hands} opposing hands</div>` : "";
+}
+
+async function loadMeta() {
+  const f = format();
+  if (!f) return;
+  try {
+    const meta = await fetch(`/api/meta?format=${f.id}`).then((r) => r.json());
+    state.meta = { hands: meta.hands, byId: new Map(meta.cards.map((c) => [c.id, c])), clans: meta.clans };
+    const top = meta.clans.slice(0, 6).map((c) => `${esc(c.clan)} ${Math.round((100 * c.count) / (4 * meta.hands))}%`).join(", ");
+    $("meta").innerHTML = meta.hands
+      ? `${esc(f.name)} opponents in the captures: ${meta.hands} hands (${esc(meta.from?.slice(0, 10))} to ${
+        esc(meta.to?.slice(0, 10))
+      }). Most played clans: ${top}.`
+      : `No captured ${esc(f.name)} games yet.`;
+  } catch {
+    state.meta = { hands: 0, byId: new Map(), clans: [] };
+    $("meta").textContent = "";
+  }
 }
 
 // ---- draft ------------------------------------------------------------------------------
@@ -262,7 +290,8 @@ async function main() {
       renderCollection();
     });
   }
-  $("format").addEventListener("change", () => {
+  $("format").addEventListener("change", async () => {
+    await loadMeta();
     renderCollection();
     requestReport();
   });
@@ -317,6 +346,7 @@ async function main() {
   });
 
   loadDraft();
+  await loadMeta();
   renderCollection();
   renderDraft();
   requestReport();

@@ -7,10 +7,13 @@
 // never talks to the site: nothing here can change the owner's account. Kept out of
 // log_server.ts on purpose - that process has to keep up with the game client's polling.
 import "colors";
+import { formatMeta, type GameRecord } from "./Meta.ts";
 import { deckReport } from "./Report.ts";
 import type { DeckCard, DeckFormatData, OwnedCopies, SiteCard, SiteDeck, SiteEvo } from "./SiteData.ts";
 
 const PORT = 8788;
+/** The owner's player id, for the few old captures that do not say which side was theirs. */
+const OWNER_ID = 19309601;
 const SITE_ORIGIN = "https://www.urban-rivals.com";
 const cors = {
   "Access-Control-Allow-Origin": SITE_ORIGIN,
@@ -77,6 +80,22 @@ function validDeck(characters: unknown): DeckCard[] | null {
 }
 
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: cors });
+
+/** The captured games, re-read only when a capture is added or rewritten. */
+const GAMES_DIR = "captures/games";
+let gamesCache: { key: string; games: GameRecord[] } | undefined;
+async function games(): Promise<GameRecord[]> {
+  const files: { name: string; mtime: number }[] = [];
+  for await (const entry of Deno.readDir(GAMES_DIR)) {
+    if (!entry.isFile || !entry.name.endsWith(".json")) continue;
+    files.push({ name: entry.name, mtime: (await Deno.stat(`${GAMES_DIR}/${entry.name}`)).mtime?.getTime() ?? 0 });
+  }
+  const key = `${files.length}:${Math.max(0, ...files.map((f) => f.mtime))}`;
+  if (gamesCache?.key === key) return gamesCache.games;
+  const loaded = await Promise.all(files.map(async (f) => JSON.parse(await Deno.readTextFile(`${GAMES_DIR}/${f.name}`)) as GameRecord));
+  gamesCache = { key, games: loaded };
+  return loaded;
+}
 
 // Deck Lab's static files, served from src/decks/ui/.
 const UI_DIR = new URL("./ui/", import.meta.url);
@@ -151,6 +170,11 @@ export async function handle(r: Request): Promise<Response> {
     });
   }
   if (r.method === "GET" && path === "/api/collection") return json(await collection());
+  if (r.method === "GET" && path === "/api/meta") {
+    const formatId = Number(new URL(r.url).searchParams.get("format"));
+    if (!Number.isInteger(formatId)) return json({ error: "format must be a deck format id" }, 400);
+    return json(formatMeta(await games(), formatId, OWNER_ID));
+  }
   if (r.method === "GET" && path === "/api/status") {
     const [c, decks] = await Promise.all([catalog(), readData(FILES.decks)]);
     return json({
