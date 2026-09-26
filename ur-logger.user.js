@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UR logger
 // @namespace    urban-recreation
-// @version      0.9.0
+// @version      0.9.1
 // @description  Mirror Urban Rivals network traffic to a local log server (see log_server.ts)
 // @match        https://www.urban-rivals.com/*
 // @run-at       document-start
@@ -23,7 +23,7 @@
 (() => {
   // Keep equal to @version above; log_server.ts compares it with the repository copy and
   // says when this one is out of date.
-  const VERSION = '0.9.0';
+  const VERSION = '0.9.1';
   const SERVER_ROOT = 'http://localhost:8787';
   const SERVER = SERVER_ROOT + '/log';
   const CONTROL = SERVER_ROOT + '/control';
@@ -372,6 +372,88 @@
       .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-character-level', 'data-character-state'] });
     document.addEventListener('change', (e) => { if (e.target?.classList?.contains('js-deck-format-filter')) refresh(true); }, true);
   };
+  // ---- game in the whole window (the game page only) --------------------------------------
+  // The site's fullscreen button takes the whole monitor. This fills just the browser window:
+  // the Unity canvas is fixed over the page at the window's size, and Unity, whose render size
+  // follows the canvas's DOM size, re-renders to fit. Everything else on the page is hidden
+  // meanwhile; the canvas's own siblings (Unity's loading bar and warnings) are left alone. A
+  // small button in the bottom-right corner switches it, and this browser remembers the choice.
+  const THEATER_KEY = 'ur-theater';
+  const theaterMode = () => {
+    const style = document.createElement('style');
+    style.textContent = `
+      html.ur-theater, html.ur-theater body { overflow: hidden !important; }
+      html.ur-theater #unity-canvas { position: fixed !important; inset: 0 !important; width: 100vw !important;
+        height: 100vh !important; max-width: none !important; max-height: none !important; margin: 0 !important;
+        border: 0 !important; z-index: 2147482000 !important; background: #000; }
+      html.ur-theater .ur-theater-path { transform: none !important; filter: none !important; contain: none !important;
+        will-change: auto !important; }
+      html.ur-theater .ur-theater-hidden { visibility: hidden !important; }`;
+    document.head.appendChild(style);
+    const host = document.createElement('div');
+    host.id = 'ur-theater-toggle';
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = `<style>
+      :host { all: initial; }
+      button { position: fixed; right: 6px; bottom: 6px; z-index: 2147483000; width: 26px; height: 26px; padding: 0;
+        border: 0; border-radius: 5px; background: #f5c518; color: #111; font: 700 15px/26px system-ui, sans-serif;
+        cursor: pointer; opacity: 0.35; box-shadow: 0 2px 6px #0008; }
+      button:hover { opacity: 1; }
+    </style><button title="Fill the window with the game (UR logger)">⛶</button>`;
+    const button = root.querySelector('button');
+    // Outside <body>, so hiding the rest of the page never hides the button itself.
+    document.documentElement.appendChild(host);
+
+    const remembered = () => {
+      try {
+        return localStorage.getItem(THEATER_KEY) === 'on';
+      } catch {
+        return false;
+      }
+    };
+    const apply = (on) => {
+      document.querySelectorAll('.ur-theater-path, .ur-theater-hidden')
+        .forEach((e) => e.classList.remove('ur-theater-path', 'ur-theater-hidden'));
+      const canvas = document.getElementById('unity-canvas');
+      document.documentElement.classList.toggle('ur-theater', on && !!canvas);
+      if (on && canvas) {
+        for (let e = canvas.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+          e.classList.add('ur-theater-path');
+          for (const sibling of e.parentElement?.children ?? []) {
+            if (sibling !== e && !sibling.id?.startsWith('ur-') && sibling.tagName !== 'SCRIPT') {
+              sibling.classList.add('ur-theater-hidden');
+            }
+          }
+        }
+      }
+      button.textContent = on ? '✕' : '⛶';
+      button.title = on ? 'Back to the normal page (UR logger)' : 'Fill the window with the game (UR logger)';
+      // Unity checks the canvas size every frame; a resize event makes it happen at once.
+      window.dispatchEvent(new Event('resize'));
+    };
+    button.addEventListener('click', () => {
+      const on = !document.documentElement.classList.contains('ur-theater');
+      try {
+        localStorage.setItem(THEATER_KEY, on ? 'on' : 'off');
+      } catch { /* the choice just is not remembered */ }
+      apply(on);
+    });
+    if (remembered()) {
+      // The canvas exists from the start, but let the site's own layout script run first.
+      let tries = 0;
+      const wait = setInterval(() => {
+        if (document.getElementById('unity-canvas') || ++tries > 120) {
+          clearInterval(wait);
+          apply(true);
+        }
+      }, 500);
+    }
+  };
+  if (location.pathname.startsWith('/game/play')) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', theaterMode);
+    else theaterMode();
+  }
+
   if (location.pathname.startsWith('/collection/pro')) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', deckPanel);
     else deckPanel();
