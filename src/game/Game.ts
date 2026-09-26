@@ -126,7 +126,7 @@ export default class Game {
 
   /**
    * Turn order per `id`: 0..8 when player 1 moved first in round one, 9..17 when player 2
-   * did (see `createBaseGameCache`). Depends on the hands' Counter-attack Leaders.
+   * did (see `createBaseGameCache`).
    */
   [BASES]: BaseGame[] = [];
   /** A compiled battle per card pair, at `ci1 * 4 + ci2`; see `createBattleDataCache`. */
@@ -672,8 +672,15 @@ export default class Game {
    * (first mover has selected ? 1 : 0)`, with 8 (and 17) the finished position after round
    * four. `select`/`nextRound`/`deselect` only ever step `id` by one and a finished game
    * stops, so a position stays in the run it started in (only the interactive "end" command
-   * in `input` jumps to 7, and it ends the game). What the entries depend on beyond `id` is
-   * only whether each hand's Leader is Counter-attack, so the table is per match.
+   * in `input` jumps to 7, and it ends the game).
+   *
+   * The first mover alternates every round. A Counter-attack Leader (Ashigaru) only decides
+   * who moves first in round one: "The player who has Ashigaru on his team always plays the
+   * first round in second" (captures/abilities.json 124, `specialAction: "strike_back"`), and
+   * 1495980 alternates normally after it. The server settles that before the first move and
+   * `first` already carries it, so it changes nothing here. This used to keep the
+   * Counter-attack owner second in every round, which the advisor then read as the server
+   * disagreeing with the engine.
    */
   createBaseGameCache(first = Turn.PLAYER_1) {
     // Written in index order from empty, so it stays a packed array.
@@ -711,15 +718,7 @@ export default class Game {
         };
 
         if (i % 2 === 1) {
-          if (counterAttack1 && !counterAttack2) {
-            playingFirst = Turn.PLAYER_2;
-          } else if (counterAttack2 && !counterAttack1) {
-            playingFirst = Turn.PLAYER_1;
-          } else {
-            playingFirst = playingFirst === Turn.PLAYER_1
-              ? Turn.PLAYER_2
-              : Turn.PLAYER_1;
-          }
+          playingFirst = playingFirst === Turn.PLAYER_1 ? Turn.PLAYER_2 : Turn.PLAYER_1;
         }
       }
 

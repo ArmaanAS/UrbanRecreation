@@ -742,7 +742,12 @@ fn strict_catalog_match_executes_audited_ability_recovery_and_restores_undo() {
     };
     assert_eq!(identity.catalog_id, Some(1418));
     assert_eq!(identity.registry_definition_id, 1418);
-    assert_eq!(identity.registry_alias_ids.as_ref(), [577, 729, 1418, 2475]);
+    // `2996` is the same record, first captured 2026-09-26 on Anita level 3 (1496094), whose
+    // ability Administrator's `Hazard` had replaced with it.
+    assert_eq!(
+        identity.registry_alias_ids.as_ref(),
+        [577, 729, 1418, 2475, 2996]
+    );
     assert_eq!(identity.description, "Defeat: Recover 2 Pillz Out Of 3");
     assert!(matches!(
         prepared.match_spec().cards[PlayerId::P1][0].ability,
@@ -848,7 +853,12 @@ fn strict_catalog_match_bridges_only_active_vortex_bonus_and_stop_bonus_disables
     // registry identity is pinned to the capture definition 577 rather than registry id 43.
     assert_eq!(identity.catalog_id, Some(43));
     assert_eq!(identity.registry_definition_id, 577);
-    assert_eq!(identity.registry_alias_ids.as_ref(), [577, 729, 1418, 2475]);
+    // `2996` is the same record, first captured 2026-09-26 on Anita level 3 (1496094), whose
+    // ability Administrator's `Hazard` had replaced with it.
+    assert_eq!(
+        identity.registry_alias_ids.as_ref(),
+        [577, 729, 1418, 2475, 2996]
+    );
     assert!(matches!(
         prepared.match_spec().cards[PlayerId::P1][0].bonus,
         CombatStatSourcePlanV1::Execute {
@@ -3226,12 +3236,34 @@ fn catalog_bonus_derivation_matches_the_complete_capture_corpus_except_dynamic_c
     let mut checked_non_dynamic = 0_usize;
     let mut dynamic_copy_slots = 0_usize;
     let mut dynamic_replacements = 0_usize;
+    let mut leader_pair_slots = 0_usize;
     for replay in &corpus.ready {
         for player in 0..2 {
-            let keys = std::array::from_fn(|slot| replay.players[player].hand[slot].key);
+            let keys: [CardKey; 4] =
+                std::array::from_fn(|slot| replay.players[player].hand[slot].key);
             let derived = derive_catalog_hand(keys, replay.metadata.night, &catalog).unwrap();
+            let is_leader = |key: CardKey| catalog.get(key).is_some_and(|card| card.clan_id == 36);
+            let leaders = keys.iter().filter(|key| is_leader(**key)).count();
             for slot in 0..4 {
                 observations += 1;
+                // Two Leaders in one hand make the Leaders' shared bonus live: `Cancel Leader`,
+                // "Your Leader Abilities are deactivated if you have more than one Leader in
+                // your team" (first captured 2026-09-26, 1495879, 1496119 and 1496142). The
+                // catalog never derives a Leader bonus, and every hand holding a Leader is
+                // refused before its bonuses are read, so these slots are counted, not checked.
+                if leaders >= 2 && is_leader(keys[slot]) {
+                    assert_eq!(
+                        replay.players[player].hand[slot]
+                            .source_bonus
+                            .as_ref()
+                            .map(|bonus| bonus.description.as_str()),
+                        Some("Cancel Leader"),
+                        "battle {} player {player} slot {slot}",
+                        replay.metadata.battle_id
+                    );
+                    leader_pair_slots += 1;
+                    continue;
+                }
                 let expected = derived[slot]
                     .bonus
                     .as_ref()
@@ -3259,6 +3291,7 @@ fn catalog_bonus_derivation_matches_the_complete_capture_corpus_except_dynamic_c
     assert!(checked_non_dynamic >= 2_538);
     assert!(dynamic_copy_slots > 0);
     assert!(dynamic_replacements > 0);
+    assert!(leader_pair_slots >= 6);
 }
 
 #[derive(serde::Deserialize)]

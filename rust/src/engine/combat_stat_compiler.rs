@@ -9757,11 +9757,12 @@ mod tests {
         // spacing, so the ordinary reviewed Confidence grammar picks it up unchanged. The
         // inventory is the only thing that had to learn about it. The same holds for `513`
         // `Confidence: Attack +12`, `644` `Revenge: -2 Opp. Power, Min 5` and `2194`
-        // `Confidence: Power And Damage +2`, which arrived with the 2026-09-23 captures.
+        // `Confidence: Power And Damage +2`, which arrived with the 2026-09-23 captures, and
+        // Kid Teleon's `Revenge: Power +2` (`5146`), with the 2026-09-26 Training captures.
         let admitted = BTreeSet::from([
             463, 465, 478, 513, 520, 553, 555, 556, 560, 585, 591, 634, 644, 784, 801, 859, 883,
             884, 921, 938, 965, 1053, 1091, 1107, 1278, 1286, 1303, 1395, 1417, 1839, 2194, 2628,
-            2657, 3827, 3829, 4316, 4399, 4464, 4623, 4711, 4838, 5406, 5881,
+            2657, 3827, 3829, 4316, 4399, 4464, 4623, 4711, 4838, 5146, 5406, 5881,
         ]);
         // Since revision 47 the `Confidence:` and `Revenge:` Stops are admitted by the
         // conditional-Stop grammar, card abilities only.

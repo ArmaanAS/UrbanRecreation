@@ -142,6 +142,11 @@ string_enum! {
         RecoverPillz => "recover_pillz",
         StopAbility => "stop_ability",
         StopBonus => "stop_bonus",
+        // Ashigaru's `Counter-attack` (124) and Solomon's `Tie-break` (1135), first captured
+        // 2026-09-26. Both are Leader abilities, and every hand holding a Leader is refused
+        // before any of its effects is read, so they need no classification of their own.
+        StrikeBack => "strike_back",
+        TieBreak => "tie_break",
     }
 }
 
@@ -1696,7 +1701,7 @@ mod tests {
                 "stop_modif"
             ]
         );
-        assert_eq!(SpecialActionV1::DOMAIN.len(), 16);
+        assert_eq!(SpecialActionV1::DOMAIN.len(), 18);
     }
 
     #[test]

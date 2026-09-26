@@ -43,8 +43,8 @@ const buildA = () =>
   );
 
 /**
- * Match B: different cards in every slot, and a Counter-attack Leader (Ashigaru), so its
- * turn order differs from A's from round three on as well as its battles.
+ * Match B: different cards in every slot, including a Counter-attack Leader (Ashigaru), which
+ * once changed the turn order too and now, as on the server, only decides round one.
  */
 const buildB = () =>
   quiet(() =>

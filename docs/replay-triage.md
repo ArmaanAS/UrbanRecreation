@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 383 captured battles
-(377 replay-ready; 6 ignored because they stopped mid-match): 369 replay exactly and 8
+Status from `deno test -A --no-check tests/replay/` against 390 captured battles
+(384 replay-ready; 6 ignored because they stopped mid-match): 376 replay exactly and 8
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -47,6 +47,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-25 | 368 | 8 | `/ Life Lost` is Per; conditional Copy gated; Naja and Dope pay after KO; Recover win + floor; stale final rounds attributed |
 | 2026-09-25 | 368 | 8 | A conditional `Protection: Power And Damage` refuses reductions while its condition holds (no replay moves) |
 | 2026-09-26 | 369 | 8 | Card refresh (2498 cards): 1414087 replays exactly; rebalanced abilities replay with the battle's own text |
+| 2026-09-26 | 376 | 8 | +7 Training captures (Leader test deck); Counter-attack only decides round one (1495980) |
 
 ## Fixed
 
@@ -575,17 +576,25 @@ Oculus cards (0 of 766 hands on 2026-09-25), so neither reading is evidenced and
 left as it is. The two engines would disagree on such a draw, and `--rust=compare` would
 report it. A hand with two Oculus cards and a lone clan-mate for the first would settle it.
 
-### Two Leaders and Counter-attack - no capture yet
-The `Game` constructor builds its turn-order table, which is where a Counter-attack Leader
-changes who moves first, before it cancels the ability of a Leader that shares its hand with
-another Leader. `Game.from`, which rebuilds a `Game` inside a search worker, builds the same
-table after that cancellation. So in a hand with two Leaders, one of them Counter-attack, the
-host counts the Counter-attack and a worker does not, and a multi-worker search could rank
-from a different turn order than the position on screen. Which reading the server uses is
-unknown: no captured hand holds two Leaders (11 hands hold one) and none holds a
-Counter-attack Leader. The Rust catalog refuses every Leader, so only TypeScript is exposed.
-A hand with two Leaders, one of them Counter-attack, would settle it; until then the
-constructor and `Game.from` should at least be made to agree.
+### Counter-attack only decides round one - settled 2026-09-26
+The engine kept the owner of a Counter-attack Leader (Ashigaru) second in every round. The
+server's own text is narrower - "The player who has Ashigaru on his team always plays the
+first round in second. If both players have Ashigaru in their team, the order of play is
+decided in the usual way" (`captures/abilities.json` 124, `specialAction: "strike_back"`) - and
+Training capture 1495980 agrees: Ashigaru was the owner's only Leader, the opponent moved
+first in round one and the order then alternated (opponent, owner, opponent, owner). The old
+table replayed round two with the wrong mover and failed, and the live advisor, which checks
+the engine's mover against the server's, lost track of that game (the owner saw it miss the
+end of round three). `createBaseGameCache` now always
+alternates: who moves first in round one is settled by the server before any move, and the
+testcase's first mover already carries it. That also retires the two-Leader worry recorded
+here (the turn order no longer depends on Leaders at all, so the constructor and `Game.from`
+cannot disagree about it). 1495879 held Ashigaru with Administrator, whose shared `Cancel
+Leader` bonus reads "Your Leader Abilities are deactivated if you have more than one Leader in
+your team" (117); the owner moved first there, which fits either reading of one round. That
+bonus is live whenever two Leaders share a hand (1495879, 1496119, 1496142 show it on both), and
+the Rust catalog, which never derives a Leader bonus, now counts those slots in its corpus test
+instead of expecting none.
 
 ## Fresh capture backlog
 

@@ -1170,13 +1170,14 @@ export function buildPosition(rec: Reconstructed): Built {
     }
     game.select(theirs.index, 0, false, false);
     if (game.turn !== ourTurn) {
-      // The engine alternates the first mover each round unless a Counter-attack leader is
-      // in play. If the real game disagrees, every round looks like it is not ours - which
-      // is a whole game with no advice, so say so rather than going quiet.
+      // The engine alternates the first mover every round, as the server does (a
+      // Counter-attack Leader only decides round one). If the real game disagrees, every
+      // round looks like it is not ours - a whole game with no advice - so say so rather
+      // than going quiet.
       return {
         settled: false,
         why: `round ${round + 1}: engine turn order disagrees with the server` +
-          " (Counter-attack leader?) - no advice for this battle",
+          " - no advice for this battle",
       };
     }
   }
