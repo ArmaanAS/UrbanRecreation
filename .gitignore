@@ -9,3 +9,9 @@ data/site_characters.jsonl
 
 # local identity cache used to survive log-server watch restarts
 captures/.player-id
+
+# deck builder: the owner's collection and decks, and the site's full card list (large,
+# regenerate by opening Collection Pro or with `deno task deck-data`)
+data/site_cards.json
+data/my_collection.json
+data/my_decks.json

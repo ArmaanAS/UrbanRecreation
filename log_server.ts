@@ -8,6 +8,7 @@
 // captures/battles/<battleId>.jsonl with all secrets removed, which is the input for
 // scripts/ExtractBattle.ts.
 import { type BattleStatic, type CaptureEntry, expandStatus, extractFromRecord, loadAbilities, newCaptureState, type RawRecord, saveAbilities } from "./scripts/BattleCapture.ts";
+import { absorbRecord, collectionAction, loadDeckStore, rawLogStandIn, saveDeckStore } from "./scripts/DeckCapture.ts";
 
 const RAW_LOG = "ur_log.jsonl";
 const CAPTURE_DIR = "captures/battles";
@@ -45,6 +46,7 @@ const colour: Record<string, string> = {
   api: "\x1b[1;32m",
   battle: "\x1b[1;35m",
   page: "\x1b[1;34m",
+  decks: "\x1b[1;33m",
 };
 const DIM = "\x1b[2m", RESET = "\x1b[0m";
 
@@ -117,6 +119,9 @@ async function loadPlayerId(): Promise<number> {
 }
 
 let n = 0;
+// Collection Pro's collection, formats and decks, kept in the deck builder's data files as
+// the page loads them (scripts/DeckCapture.ts).
+const deckStore = await loadDeckStore();
 const state = newCaptureState(await loadAbilities());
 state.myId = await loadPlayerId();
 const statics = new Map<number, BattleStatic>();
@@ -233,17 +238,27 @@ Deno.serve({ port: 8787, onListen: ({ port }) => console.log(`UR log server on :
 });
 
 async function handle(body: string): Promise<Response> {
-  await Deno.writeTextFile(RAW_LOG, elideBinary(body) + "\n", { append: true });
-
   let rec: RawRecord;
   try {
     rec = JSON.parse(body);
   } catch {
+    await Deno.writeTextFile(RAW_LOG, elideBinary(body) + "\n", { append: true });
     print("raw", Date.now(), clip(body));
     return new Response(null, { status: 204, headers: cors });
   }
+  // A Collection Pro visit loads the whole catalog, 2.7 MB a page; the deck files keep what
+  // matters, so the raw log gets a one-line stand-in instead of 13 MB per visit.
+  const standIn = rawLogStandIn(rec);
+  const logged = standIn ? JSON.stringify({ ...rec, payload: { ...rec.payload, resp: standIn } }) : elideBinary(body);
+  await Deno.writeTextFile(RAW_LOG, logged + "\n", { append: true });
 
   try {
+    if (absorbRecord(rec, deckStore)) {
+      const written = await saveDeckStore(deckStore);
+      const what = collectionAction(rec)?.action ?? "collections.decks";
+      print("decks", rec.t, `${what} → ${written.join(", ") || "no change"}`);
+      return new Response(null, { status: 204, headers: cors });
+    }
     // Card database dump triggered from the browser via __ur.dumpCharacters()
     if (rec.kind === "characters") {
       const { page, since, count, hasNextPage, characters, raw } = rec.payload;
