@@ -33,17 +33,11 @@ export interface RustCardIdentity {
 export type RustWirePlayer = "p1" | "p2";
 
 /**
- * Which evaluator the worker should use at an opening root. Rounds two through four are
- * exact either way, so this only matters before a round has been played.
- */
-export type RustOpeningPolicy = "position_heuristic" | "exact_continuation";
-
-/**
- * Which evaluator actually ran, echoed on every response. An `exact_opening_policy` reply
- * to a request that did not ask for one is a worker/host mismatch, not a better answer.
+ * Which exact evaluation actually ran, echoed on every response. Both solve every leaf; an
+ * opening root also weights the opponent's reply by the captured opening prior. There is no
+ * estimate to ask for: advisor policy revision 2's `opening_estimate` is rejected here.
  */
 export type RustEvaluationKind =
-  | "opening_estimate"
   | "exact_opening_policy"
   | "exact_continuation_policy";
 
@@ -105,11 +99,6 @@ interface RustAdvisorInputBase {
   };
   readonly history: readonly RustHistoryRound[];
   readonly budgetMs: number;
-  /**
-   * How the opening round should be evaluated. Omitted means the historical heuristic,
-   * which keeps every existing caller on exactly the behaviour it already had.
-   */
-  readonly openingPolicy?: RustOpeningPolicy;
 }
 
 export type RustAdvisorInput =
@@ -149,8 +138,6 @@ interface RustAdvisorRequestBase {
     };
   }[];
   readonly budget_ms: number;
-  /** Sent on every request so the worker never has to infer which opening model we want. */
-  readonly opening_policy: RustOpeningPolicy;
 }
 
 export type RustAdvisorRequest =
@@ -385,8 +372,7 @@ function evaluationKind(
   where: string,
 ): RustEvaluationKind {
   if (
-    value === "opening_estimate" || value === "exact_opening_policy" ||
-    value === "exact_continuation_policy"
+    value === "exact_opening_policy" || value === "exact_continuation_policy"
   ) {
     return value;
   }
@@ -416,14 +402,6 @@ function json(value: JsonValue, where: string): JsonValue {
  * The V3 request builder. It validates and copies the supplied DTO but makes no attempt
  * to infer its contents from a capture or the private Advisor reconstruction.
  */
-function openingPolicy(value: RustOpeningPolicy | undefined): RustOpeningPolicy {
-  if (value === undefined) return "position_heuristic";
-  if (value !== "position_heuristic" && value !== "exact_continuation") {
-    fail("openingPolicy must be position_heuristic or exact_continuation");
-  }
-  return value;
-}
-
 export function buildAdvisorRequest(
   input: RustAdvisorInput,
 ): RustAdvisorRequest {
@@ -597,7 +575,6 @@ export function buildAdvisorRequest(
     },
     history,
     budget_ms: boundedInteger(input.budgetMs, "budgetMs", 1, 30_000),
-    opening_policy: openingPolicy(input.openingPolicy),
   };
   if (input.mode === "second") {
     return {
@@ -1380,28 +1357,10 @@ function wireMode(mode: SearchMode): RustAdvisorMode {
 export class CompletedRustSearch extends Search {
   readonly #rustStats: SearchStats;
   readonly #ceilings = new Map<string, number>();
-  /**
-   * True when the opening root was solved rather than estimated. TypeScript has no such
-   * mode, so a caller holding one of these must not compare it against a TS opening: the
-   * two answer different questions. It is false for every other phase and policy.
-   */
-  readonly exactOpening: boolean;
 
-  constructor(
-    game: Game,
-    final: RustAdvisorFinal,
-    requested: RustOpeningPolicy = "position_heuristic",
-  ) {
-    // The base Search carries the display and ranking semantics, so it has to know the
-    // opening was solved: an exact opening shows a win chance and a guaranteed Worst, not
-    // a position score and a descriptive range.
-    super(
-      game,
-      1,
-      0,
-      final.mode === "blind_second",
-      requested === "exact_continuation",
-    );
+  constructor(game: Game, final: RustAdvisorFinal) {
+    // The base Search carries the display and ranking semantics.
+    super(game, 1, 0, final.mode === "blind_second");
     validateCompletedFinal(final);
     if (final.mode !== wireMode(this.mode)) {
       throw new RustAdvisorProtocolError(
@@ -1418,22 +1377,17 @@ export class CompletedRustSearch extends Search {
         "completed Rust adapter requires a complete final response",
       );
     }
-    // The worker must have run the evaluator this host asked for. A response that solved
-    // an opening we did not ask to solve is a host/worker mismatch, not a bonus.
-    // Which evaluator applies is decided by the round, not by how this Search chose to
-    // display itself: `openingEstimate` is already false once an exact opening is asked
-    // for, so keying off it here would expect a continuation policy at an opening root.
+    // The round decides the evaluation: an opening root weights the opponent's reply by
+    // the opening prior and every other root weights it uniformly. A response that says
+    // otherwise was produced under different semantics and is rejected.
     const expected = this.openingPrior
-      ? (requested === "exact_continuation"
-        ? "exact_opening_policy"
-        : "opening_estimate")
+      ? "exact_opening_policy"
       : "exact_continuation_policy";
     if (final.evaluationKind !== expected) {
       throw new RustAdvisorProtocolError(
         "final evaluation_kind does not match the requested TS search phase",
       );
     }
-    this.exactOpening = final.evaluationKind === "exact_opening_policy";
     if (final.unitsTotal !== this.units) {
       throw new RustAdvisorProtocolError(
         "final unit count does not match the TS mode matrix",
@@ -1477,8 +1431,8 @@ export class CompletedRustSearch extends Search {
           candidate.sampleIndexes.push(sampleIndex);
           candidate.sampleFlags.push(outcome.flags);
           candidate.weights.push(
-            // Prior weighting is a property of round one, not of the evaluator, so an
-            // exact opening reconstructs its aggregate with the same weights.
+            // Prior weighting is a property of round one, so the opening reconstructs its
+            // aggregate with the same weights the worker used.
             this.openingPrior
               ? openingReplyWeight(this.opponentMoves[sampleIndex])
               : 1,

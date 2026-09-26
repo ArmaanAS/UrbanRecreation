@@ -9,7 +9,7 @@ import Game from "@/game/Game.ts";
 import { assertAlmostEquals, assertEquals } from "@std/assert";
 import { Turn } from "@/game/types/Types.ts";
 import Analysis from "@/solver/Analysis.ts";
-import Search, { moveCost, SearchMode } from "@/solver/Search.ts";
+import Search, { openingReplyWeight, SearchMode } from "@/solver/Search.ts";
 import type { Node } from "@/solver/Minimax.ts";
 
 const quiet = <T>(f: () => T): T => {
@@ -50,11 +50,11 @@ const runToEnd = (s: Search) =>
     return s;
   });
 
-function opening(alsoSelectFirst: boolean) {
+function opening(alsoSelectFirst: boolean, pillz = 12) {
   return quiet(() => {
     const game = new Game(
-      new Player(12, 12, 0),
-      new Player(12, 12, 1),
+      new Player(12, pillz, 0),
+      new Player(12, pillz, 1),
       HandGenerator.handOf(["Genmaicha", "Orka", "Sando", "Deborah"]),
       HandGenerator.handOf(["Nathan", "El Kuzco", "Noon Steevens", "Strygia"]),
       Turn.PLAYER_1,
@@ -65,28 +65,52 @@ function opening(alsoSelectFirst: boolean) {
   });
 }
 
-Deno.test("round one first-mover search estimates every legal opening bet", () => {
+Deno.test("round one first-mover search covers every legal opening bet", () => {
   const search = new Search(opening(false));
 
   assertEquals(search.mode, SearchMode.FIRST);
-  assertEquals(search.openingEstimate, true);
+  assertEquals(search.openingPrior, true);
   assertEquals(search.candidates.length, 92);
   assertEquals(search.candidates.some((move) => move.pillz > 0), true);
   assertEquals(search.candidates.some((move) => move.fury), true);
-  // Every current-round pairing is cheap because none recursively solves rounds 2–4.
   assertEquals(search.samples, 92);
   assertEquals(search.units, 8464);
 });
 
-Deno.test("the captured opening prior does not rank an all-in first", () => {
-  const search = runToEnd(new Search(opening(false)));
-  const top = search.ranked().slice(0, 3);
+Deno.test("round one solves every leaf and weights replies by the opening prior", () => {
+  // Two pillz each keeps the exact opening small: 12 actions a side, 144 pairings.
+  const search = runToEnd(new Search(opening(false, 2)));
+  assertEquals(search.units, 144);
 
-  assertEquals(top.length, 3);
+  for (const candidate of search.candidates) {
+    assertEquals(candidate.done, search.samples);
+    // A solved line is a win, draw or loss; nothing is a position score any more.
+    for (const value of candidate.values) {
+      assertEquals(
+        [-1, 0, 1].includes(value),
+        true,
+        `${candidate.key}: ${value}`,
+      );
+    }
+    // FIRST samples arrive in reply order, each weighted by what opponents open with.
+    const weights = search.opponentMoves.map(openingReplyWeight);
+    assertEquals(candidate.weights, weights);
+    const mean = candidate.values.reduce((sum, v, i) =>
+      sum + v * weights[i], 0) /
+      weights.reduce((sum, w) => sum + w, 0);
+    assertAlmostEquals(candidate.average, mean, 1e-12);
+    // The Worst column is the real extremum over the opponent's reply.
+    assertEquals(
+      candidate.minimax,
+      search.us === Turn.PLAYER_1
+        ? Math.min(...candidate.values)
+        : Math.max(...candidate.values),
+    );
+  }
+  // The prior is not uniform, so it does move the average.
   assertEquals(
-    top.every((candidate) => moveCost(candidate) < 9),
+    new Set(search.opponentMoves.map(openingReplyWeight)).size > 1,
     true,
-    `opening podium was ${top.map((candidate) => candidate.key).join(", ")}`,
   );
 });
 
@@ -94,7 +118,7 @@ Deno.test("round one second-mover search keeps every hidden opponent bet", () =>
   const search = new Search(opening(true));
 
   assertEquals(search.mode, SearchMode.SECOND);
-  assertEquals(search.openingEstimate, true);
+  assertEquals(search.openingPrior, true);
   assertEquals(search.candidates.length, 92);
   // Their fixed card can carry any of 23 legal hidden bets; none are sampled away.
   assertEquals(search.samples, 23);
@@ -110,7 +134,7 @@ Deno.test("the full move set returns after round one", () => {
   const search = new Search(game);
 
   assertEquals(search.round, 2);
-  assertEquals(search.openingEstimate, false);
+  assertEquals(search.openingPrior, false);
   assertEquals(search.candidates.length, 69);
   assertEquals(search.candidates.some((move) => move.pillz > 0), true);
   assertEquals(search.candidates.some((move) => move.fury), true);
@@ -274,4 +298,13 @@ Deno.test("striding partitions the work exactly once", () => {
     const mean = merged.reduce((a, b) => a + b, 0) / merged.length;
     assertAlmostEquals(mean, c.average, 1e-9, `merged average ${c.key}`);
   }
+});
+
+Deno.test("slices are dealt whole card pairs", () => {
+  // Four cards a side make sixteen pairs of 23 x 23 units each. Three slices take six, five
+  // and five pairs, so no pair's units are split between two continuation caches.
+  const owned = [0, 1, 2].map((offset) =>
+    new Search(opening(false), 3, offset).ownUnits
+  );
+  assertEquals(owned, [6 * 529, 5 * 529, 5 * 529]);
 });

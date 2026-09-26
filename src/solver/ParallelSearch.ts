@@ -31,8 +31,9 @@ interface WorkerState {
 
 /**
  * The same Search split over several Web Workers (separate V8 isolates and CPU threads).
- * Search already assigns every depth-2 state a flat number; stride/offset partitions those
- * states exactly once, so merging the samples reproduces the single-thread result.
+ * Search deals every depth-2 state out by the pair of cards it plays; stride/offset
+ * partitions those pairs exactly once, so merging the samples reproduces the single-thread
+ * result, and each worker's continuation cache sees the positions its pairs repeat.
  */
 export default class ParallelSearch extends Search {
   private readonly states: WorkerState[] = [];

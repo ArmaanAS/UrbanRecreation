@@ -1,17 +1,16 @@
-// Parity gate for the Rust worker's exact opening.
+// Parity gate for round one, which both advisors now solve exactly.
 //
 //   deno task rust:worker
 //   UR_SLOW_PARITY=1 deno test -A --no-check tests/solver/ExactOpeningParity.test.ts
 //
-// The live TypeScript advisor estimates round one, so the ordinary `--rust=compare` path
-// has nothing to compare an exact opening against. `Search`'s `exactOpening` reference mode
-// closes that hole: it runs the same conservative continuation policy from the opening root
-// that both implementations already agree on for rounds two through four, which makes the
-// Rust answer checkable against the reference rather than merely plausible.
+// Round one is the one root where the opponent's reply is weighted by the captured opening
+// prior and the only one whose matrix is 8464 pairings wide, so it gets a gate of its own
+// beside the per-draw worker gate: the same conservative continuation policy from the
+// opening root, in both implementations, compared candidate by candidate for a SECOND and a
+// FIRST information set.
 //
-// It is skipped unless UR_SLOW_PARITY is set. The TypeScript half took about twenty seconds
-// for the SECOND information set used here, and five minutes for FIRST, until the policy's
-// continuation cache (src/solver/Policy.ts) brought them to about two and thirteen.
+// It is skipped unless UR_SLOW_PARITY is set, because the single-threaded TypeScript half
+// takes seconds for SECOND and tens of seconds for FIRST.
 import { assert, assertEquals } from "@std/assert";
 import {
   buildPosition,
@@ -52,7 +51,10 @@ function opening(source: Capture, decision: "first" | "second") {
     const first = round.moves.find((move: { side: number }) =>
       move.side === round.first
     );
-    assert(first !== undefined, "the opening round must contain its first move");
+    assert(
+      first !== undefined,
+      "the opening round must contain its first move",
+    );
     round.moves = [first];
     round.resolution = [null, null];
     round.life = [Number.NaN, Number.NaN];
@@ -68,54 +70,57 @@ function opening(source: Capture, decision: "first" | "second") {
   return { rec, game: built.game };
 }
 
+async function assertOpeningParity(
+  id: number,
+  decision: "first" | "second",
+  mode: SearchMode,
+) {
+  const source: Capture = JSON.parse(
+    await Deno.readTextFile(`captures/games/${id}.json`),
+  );
+  const { rec, game } = opening(source, decision);
+
+  const reference = new Search(game);
+  assertEquals(reference.mode, mode);
+  // Round one solves every leaf and weights the opponent's reply by the opening prior.
+  assertEquals(reference.openingPrior, true);
+
+  const input = await normaliseRustAdvisorInput({
+    rec,
+    game,
+    decision: { mode: reference.mode, us: reference.us },
+    requestId: `exact-opening-parity-${id}`,
+    budgetMs: 30_000,
+  });
+  assert(input.supported, input.supported ? "" : input.reason);
+  if (!input.supported) throw new Error("unreachable");
+
+  const transcript = await runRustAdvisor(
+    new DenoCommandRunner({ command: worker }),
+    input.request,
+    reference.candidates,
+    { timeoutMs: 120_000 },
+  );
+  const rust = new CompletedRustSearch(game, transcript.final);
+  assertEquals(transcript.final.evaluationKind, "exact_opening_policy");
+
+  while (reference.step()) {
+    /* solve the opening in TypeScript; this is the slow half */
+  }
+  // Same evaluator, same weighting, same tie-breaks.
+  assertEquals(compareRustSearches(reference, rust), "rust match");
+}
+
 Deno.test({
-  name: "the Rust exact opening agrees with the TypeScript reference exact opening",
+  name: "the Rust and TypeScript exact openings agree for SECOND (877636)",
   ignore: !workerAvailable || !slowEnabled,
-  async fn() {
-    // 877636 opens SECOND, which is the cheap information set: the opponent's card is
-    // already visible, so this is 2116 pairings rather than 8464.
-    const source: Capture = JSON.parse(
-      await Deno.readTextFile("captures/games/877636.json"),
-    );
-    const { rec, game } = opening(source, "second");
+  // 877636 opens SECOND, the cheap information set: the opponent's card is already
+  // visible, so this is 2116 pairings rather than 8464.
+  fn: () => assertOpeningParity(877636, "second", SearchMode.SECOND),
+});
 
-    const reference = new Search(game, 1, 0, false, true);
-    assertEquals(reference.mode, SearchMode.SECOND);
-    // The reference solves the opening, so it must present a win chance and a guaranteed
-    // Worst, while still weighting the opponent's reply by the captured opening prior.
-    assertEquals(reference.openingEstimate, false);
-    assertEquals(reference.openingPrior, true);
-
-    const input = await normaliseRustAdvisorInput({
-      rec,
-      game,
-      decision: { mode: reference.mode, us: reference.us },
-      requestId: "exact-opening-parity-877636",
-      budgetMs: 30_000,
-      openingPolicy: "exact_continuation",
-    });
-    assert(input.supported, input.supported ? "" : input.reason);
-    if (!input.supported) throw new Error("unreachable");
-
-    const transcript = await runRustAdvisor(
-      new DenoCommandRunner({ command: worker }),
-      input.request,
-      reference.candidates,
-      { timeoutMs: 120_000 },
-    );
-    const rust = new CompletedRustSearch(
-      game,
-      transcript.final,
-      "exact_continuation",
-    );
-    assertEquals(rust.exactOpening, true);
-    assertEquals(rust.openingEstimate, false);
-
-    while (reference.step()) {
-      /* solve the opening in TypeScript; this is the slow half */
-    }
-    // Same evaluator, same weighting, same tie-breaks: this is a real comparison, unlike
-    // an exact opening measured against the live heuristic.
-    assertEquals(compareRustSearches(reference, rust), "rust match");
-  },
+Deno.test({
+  name: "the Rust and TypeScript exact openings agree for FIRST (1089346)",
+  ignore: !workerAvailable || !slowEnabled,
+  fn: () => assertOpeningParity(1089346, "first", SearchMode.FIRST),
 });

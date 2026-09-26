@@ -22,8 +22,11 @@
   `--workers 1` keeps the old main-thread path. Obsolete searches are terminated
   when the battle moves on.
 - `ParallelSearch` uses the existing `stride` / `offset` partition and merges
-  incremental samples. The integration test pins average, minimax, KO, risk and
-  sample counts against a completed single-thread search.
+  incremental samples. Since 2026-09-26 the partition deals whole card pairs
+  rather than single units, so each worker's continuation cache sees the
+  positions its pairs repeat (see `Search.ts`). The integration test pins
+  average, minimax, KO, risk and sample counts against a completed single-thread
+  search.
 - On this six-logical-CPU machine, repeated round-two timings were approximately
   8.4-9.6s (one), 4.8-6.1s (two), 3.2-4.0s (three), 2.6-3.4s (four), and
   2.2-4.2s (five). Three is the default balance: roughly 2.5x throughput while

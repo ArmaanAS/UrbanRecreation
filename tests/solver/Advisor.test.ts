@@ -16,7 +16,6 @@ import type {
   RustAdvisorRequest,
   RustAdvisorRunner,
   RustEvaluationKind,
-  RustOpeningPolicy,
 } from "@/solver/RustAdvisor.ts";
 import type { RustAdvisorInputResult } from "@/solver/RustAdvisorInput.ts";
 import { SearchMode } from "@/solver/Search.ts";
@@ -43,7 +42,7 @@ const wireProvenance = {
 const workerFinal = (
   requestId: string,
   search: Search,
-  evaluationKind: RustEvaluationKind = "opening_estimate",
+  evaluationKind: string = "exact_opening_policy",
 ) =>
   JSON.stringify({
     protocol_version: 3,
@@ -88,7 +87,6 @@ function startFakeRustJob(
   runner: RustAdvisorRunner,
   normalise: () => Promise<RustAdvisorInputResult> = () =>
     Promise.resolve(supportedRequest()),
-  openingPolicy: RustOpeningPolicy = "position_heuristic",
 ) {
   const game = rustJobGame();
   let search: Search = new Search(game);
@@ -105,7 +103,6 @@ function startFakeRustJob(
     normalise,
     runner,
     budgetMs: 50,
-    openingPolicy,
   });
   return {
     game,
@@ -131,7 +128,7 @@ function supportedRequest() {
 
 const successfulRunner = (
   search: () => Search,
-  evaluationKind?: RustEvaluationKind,
+  evaluationKind?: RustEvaluationKind | "opening_estimate",
 ): RustAdvisorRunner => ({
   run(request) {
     const requestId = JSON.parse(request).request_id;
@@ -186,6 +183,16 @@ Deno.test("Rust advisor mode is explicit and fails closed on unknown values", ()
   }
 });
 
+Deno.test("there is no opening evaluator to choose on the command line", () => {
+  let rejected = false;
+  try {
+    parseArgs(["--exact-opening"]);
+  } catch {
+    rejected = true;
+  }
+  assertEquals(rejected, true);
+});
+
 Deno.test("Rust worker eligibility is off by default and covers every search mode", () => {
   assertEquals(rustDecisionEnabled("off", SearchMode.FIRST), false);
   assertEquals(rustDecisionEnabled("off", SearchMode.SECOND), false);
@@ -206,6 +213,7 @@ Deno.test("compare keeps the TypeScript search authoritative", async () => {
   assert(
     state.job.status.startsWith("rust match") ||
       state.job.status.startsWith("rust differs"),
+    state.job.status,
   );
   assertEquals(state.search, ts);
 });
@@ -223,34 +231,17 @@ Deno.test("use atomically replaces TypeScript only after a valid complete Rust r
   );
 });
 
-Deno.test("use accepts an exact opening only when the job asked for one", async () => {
-  const runner = successfulRunner(() => state.search, "exact_opening_policy");
-  const state = startFakeRustJob(
-    "use",
-    runner,
-    undefined,
-    "exact_continuation",
-  );
-  const ts = state.search;
-  await waitFor(() => !state.job.waiting);
-  assertNotEquals(state.search, ts);
-  assertEquals(state.job.status, "rust active · v3:21/3/1");
-});
-
-Deno.test("an opening evaluator the job did not ask for leaves the TypeScript fallback live", async () => {
-  // Both directions of the echo check: an estimate answering an exact-opening request,
-  // and an exact opening answering the default heuristic request.
+Deno.test("an opening answered by an estimate or a later-round evaluation leaves the TypeScript fallback live", async () => {
+  // Advisor policy revision 2's heuristic is no longer a kind this host accepts, and a
+  // round-one root weighted uniformly would be a different model of the opponent.
   for (
-    const [asked, answered] of [
-      ["exact_continuation", "opening_estimate"],
-      ["position_heuristic", "exact_opening_policy"],
-    ] as const
+    const answered of ["opening_estimate", "exact_continuation_policy"] as const
   ) {
     const runner = successfulRunner(() => state.search, answered);
-    const state = startFakeRustJob("use", runner, undefined, asked);
+    const state = startFakeRustJob("use", runner);
     const ts = state.search;
     await waitFor(() => !state.job.waiting);
-    assertEquals(state.search, ts, `${asked} answered by ${answered}`);
+    assertEquals(state.search, ts, `answered by ${answered}`);
     assert(state.job.status.includes("evaluation_kind"), state.job.status);
   }
 });

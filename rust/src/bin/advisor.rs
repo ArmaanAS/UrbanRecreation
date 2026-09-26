@@ -10,11 +10,11 @@ use std::process;
 use std::time::Duration;
 
 use urban_recreation_rust::advisor::input::{
-    parse_args, prepare, AdvisorCommand, AdvisorOptions, PreparedAdvisorInput, USAGE,
+    parse_args, prepare, AdvisorCommand, PreparedAdvisorInput, USAGE,
 };
 use urban_recreation_rust::advisor::search::{
-    default_search_threads, search_with_threads, AdvisorMove, EvaluationKind, OpeningPolicy,
-    SearchConfig, SearchMode, SearchSnapshot,
+    default_search_threads, search_with_threads, AdvisorMove, EvaluationKind, SearchConfig,
+    SearchMode, SearchSnapshot, OPENING_REPLY_PLAYS,
 };
 use urban_recreation_rust::advisor::session::{AdvisorSession, ManualSelection};
 use urban_recreation_rust::advisor::view::{
@@ -109,7 +109,6 @@ fn run_replay(prepared: &PreparedAdvisorInput, output: &mut impl Write) -> io::R
             first_mover,
             mode,
             budget: Duration::from_millis(prepared.options.budget_ms),
-            opening: opening_policy(&prepared.options),
         };
         let snapshot = render_search(prepared, &mut game, config, output)?;
         let played = captured_move(round, replay.us)?;
@@ -222,7 +221,7 @@ fn write_replay_grade(
         .ranked
         .iter()
         .find(|candidate| candidate.samples > 0 && candidate.average.is_finite())
-        .map(|candidate| displayed_score(candidate.average, snapshot.evaluation))
+        .map(|candidate| displayed_percent(candidate.average))
         .unwrap_or_else(|| "--".to_owned());
     writeln!(
         output,
@@ -232,7 +231,7 @@ fn write_replay_grade(
         wager,
         index + 1,
         snapshot.ranked.len(),
-        displayed_score(row.average, snapshot.evaluation),
+        displayed_percent(row.average),
         best,
         if snapshot.complete { "" } else { " · partial" },
     )
@@ -309,26 +308,6 @@ fn displayed_percent(value: f64) -> String {
     format!("{percent}%")
 }
 
-/// The opening round is the only one this can change; later rounds are exact regardless.
-const fn opening_policy(options: &AdvisorOptions) -> OpeningPolicy {
-    if options.exact_opening {
-        OpeningPolicy::ExactContinuation
-    } else {
-        OpeningPolicy::PositionHeuristic
-    }
-}
-
-fn displayed_score(value: f64, evaluation: EvaluationKind) -> String {
-    if evaluation == EvaluationKind::OpeningEstimate {
-        if !value.is_finite() {
-            return "--".to_owned();
-        }
-        (((value.clamp(-1.0, 1.0) + 1.0) * 50.0).round() as i32).to_string()
-    } else {
-        displayed_percent(value)
-    }
-}
-
 fn invalid_replay(message: String) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
@@ -373,9 +352,8 @@ fn run_interactive(
         } else {
             // The live TypeScript advisor begins this provisional work while the opponent
             // chooses. This synchronous terminal path paints the same fixed-reply ranking
-            // immediately before asking the user which card was revealed. Opening advice
-            // remains deliberately absent: its historical estimate is not a replacement
-            // for the later exact blind-second policy.
+            // immediately before asking the user which card was revealed. Round one has no
+            // blind pass, as in the TypeScript advisor and the V3 worker contract.
             if session.game().position().rounds_played >= 1 {
                 render_search(
                     prepared,
@@ -385,7 +363,6 @@ fn run_interactive(
                         first_mover,
                         mode: SearchMode::BlindSecond,
                         budget: Duration::from_millis(prepared.options.budget_ms),
-                        opening: opening_policy(&prepared.options),
                     },
                     output,
                 )?;
@@ -411,7 +388,6 @@ fn run_interactive(
             first_mover,
             mode,
             budget: Duration::from_millis(prepared.options.budget_ms),
-            opening: opening_policy(&prepared.options),
         };
         render_search(prepared, session.game_mut(), config, output)?;
 
@@ -631,7 +607,6 @@ fn search_config(prepared: &PreparedAdvisorInput) -> SearchConfig {
         first_mover: options.first_mover,
         mode,
         budget: Duration::from_millis(options.budget_ms),
-        opening: opening_policy(options),
     }
 }
 
@@ -642,7 +617,6 @@ fn view_model(
     mode: SearchMode,
 ) -> AdvisorViewModel {
     let phase = match snapshot.evaluation {
-        EvaluationKind::OpeningEstimate => "OPENING ESTIMATE",
         EvaluationKind::ExactOpeningPolicy => "EXACT OPENING POLICY",
         EvaluationKind::ExactContinuationPolicy => "EXACT CONTINUATION POLICY",
     };
@@ -655,11 +629,8 @@ fn view_model(
         (_, SearchMode::BlindSecond) => format!(
             "{source}; provisional fixed replies across unknown opponent card, pillz, and Fury; replaced when their card is revealed"
         ),
-        (EvaluationKind::OpeningEstimate, _) => {
-            format!("{source}; weighted opening estimate from 198 historical replies")
-        }
         (EvaluationKind::ExactOpeningPolicy, _) => format!(
-            "{source}; opening solved to the end of the match; opposing replies weighted by 198 historical replies"
+            "{source}; opening solved to the end of the match; opposing replies weighted by {OPENING_REPLY_PLAYS} captured openings"
         ),
         (EvaluationKind::ExactContinuationPolicy, _) => {
             format!("{source}; exact rounds 2-4 policy; current hidden choices uniform")
@@ -732,12 +703,12 @@ fn view_side(
 #[cfg(test)]
 mod tests {
     use super::{
-        displayed_score, read_bounded_line, run_interactive, run_replay, safe_terminal_error,
+        displayed_percent, read_bounded_line, run_interactive, run_replay, safe_terminal_error,
         search_config, AdvisorCommand, PromptLine,
     };
     use std::io::Cursor;
     use urban_recreation_rust::advisor::input::{parse_args, prepare, AdvisorOptions};
-    use urban_recreation_rust::advisor::search::{EvaluationKind, SearchMode};
+    use urban_recreation_rust::advisor::search::SearchMode;
     use urban_recreation_rust::engine::PlayerId;
 
     #[test]
@@ -807,7 +778,7 @@ mod tests {
             .find("OPP CARD 1")
             .expect("revealed-card advice must replace blind advice");
         assert!(blind < reveal && reveal < precise);
-        assert!(output.contains("OPENING ESTIMATE · FIRST"));
+        assert!(output.contains("EXACT OPENING POLICY · FIRST"));
         assert!(output.contains("EXACT CONTINUATION POLICY · SECOND · OPP CARD 1"));
         assert!(output.contains("EXACT CONTINUATION POLICY · FIRST"));
         assert!(output.contains("ROUND 4 RESOLVED"));
@@ -844,7 +815,7 @@ mod tests {
         let mut output = Vec::new();
         run_replay(&prepared, &mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("ROUND 1 · OPENING ESTIMATE · SECOND · OPP CARD 2"));
+        assert!(output.contains("ROUND 1 · EXACT OPENING POLICY · SECOND · OPP CARD 2"));
         assert!(output.contains("ROUND 2 · EXACT CONTINUATION POLICY · FIRST"));
         assert!(output.contains("ROUND 3 · EXACT CONTINUATION POLICY · SECOND · OPP CARD 1"));
         assert!(output.contains("SERVER ROUND 4 VERIFIED"));
@@ -903,27 +874,11 @@ mod tests {
     }
 
     #[test]
-    fn opening_replay_grades_are_scores_not_percentages() {
-        assert_eq!(displayed_score(0.18, EvaluationKind::OpeningEstimate), "59");
-        assert_eq!(
-            displayed_score(0.18, EvaluationKind::ExactContinuationPolicy),
-            "59%"
-        );
-        assert_eq!(
-            displayed_score(0.999, EvaluationKind::OpeningEstimate),
-            "100"
-        );
-        assert_eq!(
-            displayed_score(-0.999, EvaluationKind::OpeningEstimate),
-            "0"
-        );
-        assert_eq!(
-            displayed_score(0.999, EvaluationKind::ExactContinuationPolicy),
-            "99%"
-        );
-        assert_eq!(
-            displayed_score(-0.999, EvaluationKind::ExactContinuationPolicy),
-            "1%"
-        );
+    fn replay_grades_are_win_percentages_in_every_round() {
+        assert_eq!(displayed_percent(0.18), "59%");
+        assert_eq!(displayed_percent(0.999), "99%");
+        assert_eq!(displayed_percent(-0.999), "1%");
+        assert_eq!(displayed_percent(1.0), "100%");
+        assert_eq!(displayed_percent(f64::NAN), "--");
     }
 }

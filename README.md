@@ -76,10 +76,10 @@ terminal ranking. `--interactive` carries the same strict match through four man
 observed rounds. In rounds 2-4 where the opponent moves first, it first shows a provisional
 blind-second ranking over every unplayed opposing card and hidden wager, then asks for the
 revealed card and replaces it with precise second-mover advice. It shows updated resources
-after each resolution. Round 1 remains clearly labelled an opening
-position estimate, weighted by the TypeScript advisor's literal historical table of 198
-round-one replies captured as of 2026-09-13; rounds 2–4 use an exact conservative
-continuation policy that never conditions a reply on hidden pillz or Fury. `--replay` loads a captured battle through the
+after each resolution. Every round, the first included, uses an exact conservative
+continuation policy that never conditions a reply on hidden pillz or Fury; round 1 weights
+the opponent's reply by the literal table of 380 captured opponent round-one plays that both
+advisors share (`deno task opening-prior` regenerates it). `--replay` loads a captured battle through the
 strict catalog boundary, renders and grades every recorded decision, then verifies each
 committed round's power, damage, attack, winner, life, and pillz against the server record.
 Battles `877636`, `877812`, `925674`, `925719`, `1024673`, `1060199`, `1061897`,
@@ -92,8 +92,8 @@ resolved damage to Life, including a Fury win and an inactive losing branch; `92
 Mou's unconditional `-5 Opp. Life Min 5` on victory. Unconditional Copy is modelled for the
 strict solver catalog but is deliberately not replayable: a capture records only what a Copy
 resolved to, never the printed Copy.
-Rust does not yet ingest the live capture stream, refresh that fixed opening table, run
-searches across workers, or claim complete TypeScript policy parity.
+Rust does not yet ingest the live capture stream or claim complete TypeScript policy
+parity.
 
 For the opt-in TypeScript-hosted integration, build the precompiled JSONL worker once with
 `deno task rust:worker`. `deno task advise --rust=compare` keeps TypeScript authoritative

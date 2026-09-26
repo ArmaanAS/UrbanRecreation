@@ -58,11 +58,13 @@ Interactive mode records resolved moves as `SLOT:PILLZ` or `SLOT:PILLZ:F` and al
 explicit first mover. In rounds 2-4 where the opponent moves first, it first renders a
 provisional blind-second ranking across every unplayed opponent card and hidden pillz/Fury
 wager, then asks for the visible card and replaces it with the precise second-mover search.
-Round 1 uses a bounded opening estimate, weighted by the TypeScript advisor's literal table
-of 198 round-one replies captured as of 2026-09-13 (with Laplace +1 for unseen wagers).
-Rounds 2–4 recursively solve exact terminal win/draw/loss values with the conservative pure policy: one response may depend on the
-opponent's visible card, but never on hidden pillz or Fury. Live capture, opening-prior
-refresh, and workers remain outside this manual advisor.
+Every round, the first included, recursively solves exact terminal win/draw/loss values with
+the conservative pure policy: one response may depend on the opponent's visible card, but
+never on hidden pillz or Fury. Round 1 weights the opponent's current reply by a literal
+table of 380 captured opponent round-one plays (with Laplace +1 for unseen wagers), shared
+with the TypeScript advisor and regenerated with `deno task opening-prior`; later rounds
+weight it uniformly. A round-one FIRST solve takes one to two seconds. Live capture remains
+outside this manual advisor.
 Replay `1024673` is a short end-to-end smoke for the strict catalog, unconditional Stop
 Opp. Ability, server verification, move grading, and the round-two knockout path.
 

@@ -26,7 +26,8 @@ use crate::replay::{
 
 pub const DEFAULT_LIFE: u16 = 14;
 pub const DEFAULT_PILLZ: u16 = 12;
-pub const DEFAULT_BUDGET_MS: u64 = 1_000;
+/// Room for a complete round-one FIRST solve, the slowest decision, at one thread.
+pub const DEFAULT_BUDGET_MS: u64 = 10_000;
 pub const DEFAULT_WIDTH: u16 = 80;
 pub const DEFAULT_HEIGHT: u16 = 24;
 /// A generous guardrail for a manual current position. Normal games begin with 12 pillz.
@@ -46,7 +47,7 @@ const DEMO_P2: [CardKey; HAND_SIZE] = [
     CardKey::new(447, 1),
 ];
 
-pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,... | --replay BATTLE_ID] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--exact-opening] [--threads N] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match. --replay grades every recorded decision through the strict Rust engine and solver; it may be combined only with budget/display flags. One-shot second-mover advice requires --second-card. --exact-opening solves round one to the end of the match instead of estimating it, which takes seconds rather than milliseconds. --threads fixes how many threads the root search uses (default: every hardware thread); the result is the same at any count.";
+pub const USAGE: &str = "Usage: advisor [--demo | --p1 id:level,... --p2 id:level,... | --replay BATTLE_ID] [--life N] [--pillz N] [--night] [--us p1|p2] [--first p1|p2] [--second-card 0..3 | --interactive] [--budget-ms N] [--threads N] [--width N] [--height N] [--plain]\n\nWith no arguments, advisor uses the deterministic supported demo draw. --interactive advances a complete manual match. --replay grades every recorded decision through the strict Rust engine and solver; it may be combined only with budget/display flags. One-shot second-mover advice requires --second-card. Every round, the first included, is solved to the end of the match; a round-one FIRST decision can take a few seconds. --threads fixes how many threads the root search uses (default: every hardware thread); the result is the same at any count.";
 
 /// All non-card controls are explicit, while the two hands remain fixed-size card keys.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -61,9 +62,6 @@ pub struct AdvisorOptions {
     /// The opponent's revealed card when we move second, indexed in that player's hand.
     pub second_card: Option<u8>,
     pub budget_ms: u64,
-    /// Solve the opening round exactly instead of estimating it. Rounds two through four
-    /// are exact either way, so this changes nothing once a round is on the board.
-    pub exact_opening: bool,
     /// Root-search worker threads. `None` uses every hardware thread; the ranking is
     /// identical at any count, only the time it takes changes.
     pub threads: Option<NonZeroUsize>,
@@ -89,7 +87,6 @@ impl Default for AdvisorOptions {
             first_mover: PlayerId::P1,
             second_card: None,
             budget_ms: DEFAULT_BUDGET_MS,
-            exact_opening: false,
             threads: None,
             width: DEFAULT_WIDTH,
             height: DEFAULT_HEIGHT,
@@ -332,10 +329,6 @@ where
             "--height" => {
                 mark_once(&mut seen, flag)?;
                 options.height = parse_nonzero(value_after(&arguments, &mut index, flag)?, flag)?;
-            }
-            "--exact-opening" => {
-                mark_once(&mut seen, flag)?;
-                options.exact_opening = true;
             }
             "--threads" => {
                 mark_once(&mut seen, flag)?;

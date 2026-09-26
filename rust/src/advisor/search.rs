@@ -1,9 +1,9 @@
 //! Responsive current-round search for the replay-grounded advisor.
 //!
-//! Every current-round pairing is resolved by the real [`CombatStatDiagnosticV1`] engine.
-//! Round one folds in a bounded opening heuristic; rounds two through four use the exact
-//! information-aware continuation in `policy`. The split is explicit so the UI never
-//! presents an opening estimate as a solved future game.
+//! Every current-round pairing is resolved by the real [`CombatStatDiagnosticV1`] engine,
+//! and every nonterminal pairing is solved to the end of the match by the exact
+//! information-aware continuation in `policy`, round one included. Round one differs only in
+//! weighting the opponent's reply by the captured opening prior.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -20,10 +20,11 @@ use crate::engine::{
 
 use super::policy::{continuation_value, ExactValue, PolicyControl};
 
-/// Semantic identity of the live recommendation policy, including the fixed historical
-/// opening prior below. Bump this whenever ranking, continuation, or opening-weight
-/// semantics change in a way that can change a recommendation.
-pub const ADVISOR_POLICY_SEMANTIC_REVISION_V1: u16 = 2;
+/// Semantic identity of the live recommendation policy, including the literal opening prior
+/// below. Bump this whenever ranking, continuation, or opening-weight semantics change in a
+/// way that can change a recommendation. Revision 3 solves round one exactly and weights it
+/// by the recounted opponent-only prior.
+pub const ADVISOR_POLICY_SEMANTIC_REVISION_V1: u16 = 3;
 
 /// A wager in engine notation. `pillz` excludes the free attack pill and the Fury cost.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -55,60 +56,32 @@ pub enum SearchMode {
     BlindSecond,
 }
 
-/// How the opening round is evaluated. Rounds two through four are always exact, so this
-/// only chooses what happens at the root of a match that has not been played yet.
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub enum OpeningPolicy {
-    /// The bounded one-round position heuristic. Cheap, and the historical default.
-    #[default]
-    PositionHeuristic,
-    /// Solve the opening to the end of the match with the same conservative continuation
-    /// policy the later rounds use. Complete, and far slower: the caller owns that budget.
-    ExactContinuation,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SearchConfig {
     pub us: PlayerId,
     pub first_mover: PlayerId,
     pub mode: SearchMode,
     pub budget: Duration,
-    pub opening: OpeningPolicy,
 }
 
-/// How nonterminal current-round samples are evaluated.
-///
-/// This bundles three separable decisions that happen to agree in the historical pair: how
-/// a nonterminal leaf is scored, how the opponent's current reply is weighted, and whether
-/// the Worst column is a guarantee or a descriptive floor. `ExactOpeningPolicy` splits
-/// them, so read the predicates below rather than comparing variants directly.
+/// Which exact evaluation a root ran. Both solve every nonterminal sample to the end of the
+/// match with the conservative continuation policy, so the Worst column is always a
+/// guarantee over the opponent's current choice; they differ only in how that choice is
+/// weighted.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EvaluationKind {
-    /// Captured-reply-weighted position estimate used for the opening round only.
-    OpeningEstimate,
-    /// An opening solved exactly, still weighted by the captured opening replies. That
-    /// weighting is empirical information about what opponents actually open with, which
-    /// is independent of how the resulting position is then scored.
+    /// The opening root: the opponent's reply is weighted by the captured opening prior,
+    /// which is empirical information about what opponents actually open with.
     ExactOpeningPolicy,
-    /// Exact conservative continuation policy for roots in rounds two through four.
+    /// Roots in rounds two through four: every opposing choice weighs the same.
     ExactContinuationPolicy,
 }
 
 impl EvaluationKind {
-    /// True when a nonterminal leaf is solved rather than estimated. Only then is the Worst
-    /// column a guarantee over the opponent's current choice, and only then does a
-    /// displayed value mean a win chance rather than a position score.
-    pub const fn scores_exactly(self) -> bool {
-        matches!(
-            self,
-            Self::ExactOpeningPolicy | Self::ExactContinuationPolicy
-        )
-    }
-
     /// True when the opponent's current reply is weighted by the captured opening prior
     /// rather than uniformly. That is a property of the round, not of the evaluator.
     pub const fn weights_by_opening_prior(self) -> bool {
-        matches!(self, Self::OpeningEstimate | Self::ExactOpeningPolicy)
+        matches!(self, Self::ExactOpeningPolicy)
     }
 }
 
@@ -117,11 +90,10 @@ pub struct RankedMove {
     pub move_: AdvisorMove,
     /// Mean in our frame: captured-reply weighted in the opening, uniform afterwards.
     pub average: f64,
-    /// Lowest complete opposing sample seen for this move, also in our frame.
-    /// This is a game-theoretic Worst only for exact-continuation rows.
+    /// Lowest complete opposing sample seen for this move, also in our frame: the
+    /// game-theoretic Worst once every opposing choice is in.
     pub worst: f64,
     /// Highest complete opposing sample seen for this move, also in our frame.
-    /// Together with `worst`, opening rows show the observed floor-to-ceiling Range.
     pub best: f64,
     /// Complete opposing samples folded into this result.
     pub samples: usize,
@@ -233,23 +205,47 @@ impl Candidate {
     }
 }
 
-// 198 captured round-one plays as of 2026-09-13. This is intentionally a literal
-// historical table, copied from the TypeScript advisor rather than regenerated from the
-// current capture corpus. Add one Laplace observation to every legal reply so an unseen
-// wager remains possible.
+// The opponent's round-one reply is weighted by what opponents actually opened with. One
+// Laplace observation is added to every legal reply so an unseen wager remains possible. The
+// TypeScript advisor carries the same table, and tests/solver/OpeningPrior.test.ts holds the
+// two literals equal.
+// BEGIN OPENING_REPLY_COUNTS (generated by `deno task opening-prior --write`)
+// 380 captured opponent round-one plays from 380 of the 383 captures
+// up to 2026-09-23T20:58:52.100Z, counted 2026-09-26 by `deno task opening-prior`: every
+// opponent round-one move, every room and battle rule, both movers, keyed by engine pillz
+// (server pillzUsed - 1) and the Fury flag. Rerun that task to refresh it; adding
+// captures does not change it by itself.
 const OPENING_REPLY_COUNTS: &[((u16, bool), u16)] = &[
-    ((0, false), 38),
-    ((1, false), 7),
-    ((2, false), 20),
-    ((3, false), 28),
-    ((4, false), 53),
+    ((0, false), 72),
+    ((0, true), 1),
+    ((1, false), 27),
+    ((2, false), 42),
+    ((3, false), 49),
+    ((4, false), 60),
     ((4, true), 1),
-    ((5, false), 29),
-    ((6, false), 12),
-    ((7, false), 7),
-    ((8, false), 1),
-    ((9, true), 2),
+    ((5, false), 50),
+    ((6, false), 39),
+    ((6, true), 1),
+    ((7, false), 24),
+    ((7, true), 1),
+    ((8, false), 8),
+    ((8, true), 1),
+    ((9, false), 2),
+    ((9, true), 1),
+    ((10, false), 1),
 ];
+// END OPENING_REPLY_COUNTS
+
+/// Captured plays behind [`OPENING_REPLY_COUNTS`], before smoothing.
+pub const OPENING_REPLY_PLAYS: u32 = {
+    let mut total = 0;
+    let mut index = 0;
+    while index < OPENING_REPLY_COUNTS.len() {
+        total += OPENING_REPLY_COUNTS[index].1 as u32;
+        index += 1;
+    }
+    total
+};
 
 fn opening_reply_weight(move_: AdvisorMove) -> u16 {
     OPENING_REPLY_COUNTS
@@ -385,13 +381,10 @@ fn search_with_control(
     policy_control: &mut PolicyControl,
     mut progress: impl FnMut(&SearchSnapshot),
 ) -> SearchSnapshot {
-    let evaluation = match (game.position().rounds_played, config.opening) {
-        (0, OpeningPolicy::PositionHeuristic) => EvaluationKind::OpeningEstimate,
-        (0, OpeningPolicy::ExactContinuation) => EvaluationKind::ExactOpeningPolicy,
-        // The opening policy is about the opening. Once a round is on the board the
-        // continuation policy is the only model there is, and asking for exactness cannot
-        // change it.
-        _ => EvaluationKind::ExactContinuationPolicy,
+    let evaluation = if game.position().rounds_played == 0 {
+        EvaluationKind::ExactOpeningPolicy
+    } else {
+        EvaluationKind::ExactContinuationPolicy
     };
     let opponent = config.us.other();
     let our_moves = legal_moves(game, config.us);
@@ -442,7 +435,6 @@ fn search_with_control(
                 config,
                 our_move,
                 opponent_move,
-                evaluation,
                 policy_control,
             )?);
         }
@@ -633,20 +625,13 @@ fn evaluate_pair(
     config: SearchConfig,
     our_move: AdvisorMove,
     opponent_move: AdvisorMove,
-    evaluation: EvaluationKind,
     policy_control: &mut PolicyControl,
 ) -> Option<Sample> {
     let input = round_input(config.first_mover, config.us, our_move, opponent_move);
     let (_, undo) = game
         .make(input)
         .expect("legal advisor moves must execute in a fully admitted match");
-    let sample = evaluate(
-        game,
-        config.us,
-        evaluation,
-        config.first_mover.other(),
-        policy_control,
-    );
+    let sample = evaluate(game, config.us, config.first_mover.other(), policy_control);
     game.unmake(undo);
     sample
 }
@@ -670,7 +655,6 @@ fn round_input(
 fn evaluate(
     game: &mut CombatStatDiagnosticV1,
     us: PlayerId,
-    evaluation: EvaluationKind,
     next_first_mover: PlayerId,
     policy_control: &mut PolicyControl,
 ) -> Option<Sample> {
@@ -682,17 +666,12 @@ fn evaluate(
         MatchStatus::Won(winner) if winner == us => 1.0,
         MatchStatus::Won(_) => -1.0,
         MatchStatus::Draw => 0.0,
-        MatchStatus::Playing => match evaluation {
-            EvaluationKind::OpeningEstimate => position_heuristic(game, us),
-            EvaluationKind::ExactOpeningPolicy | EvaluationKind::ExactContinuationPolicy => {
-                exact_score(continuation_value(
-                    game,
-                    us,
-                    next_first_mover,
-                    policy_control,
-                )?)
-            }
-        },
+        MatchStatus::Playing => exact_score(continuation_value(
+            game,
+            us,
+            next_first_mover,
+            policy_control,
+        )?),
     };
     Some(Sample {
         value,
@@ -718,32 +697,6 @@ fn sample_weight(evaluation: EvaluationKind, opponent_move: AdvisorMove) -> u16 
     }
 }
 
-/// A deliberately bounded one-round estimate in the asking player's frame.
-///
-/// Life is the primary term, pillz retain nonlinear reserve value, and the base power plus
-/// damage of unplayed cards only breaks otherwise close positions. Future conditional
-/// effects are not projected here; `tanh` keeps the public result strictly inside [-1, 1].
-fn position_heuristic(game: &CombatStatDiagnosticV1, us: PlayerId) -> f64 {
-    let opponent = us.other();
-    let position = game.position();
-    let spec = game.base_rules_spec();
-    let remaining = |player: PlayerId| -> f64 {
-        spec.players[player]
-            .hand
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !position.played[player][*index])
-            .map(|(_, card)| f64::from(card.power) + f64::from(card.damage))
-            .sum()
-    };
-    let life = f64::from(position.players[us].life) - f64::from(position.players[opponent].life);
-    let pillz = 4.0
-        * (f64::from(position.players[us].pillz).sqrt()
-            - f64::from(position.players[opponent].pillz).sqrt());
-    let cards = remaining(us) - remaining(opponent);
-    ((life + pillz + 0.12 * cards) / 12.0).tanh()
-}
-
 fn snapshot(
     candidates: &[Candidate],
     units_done: usize,
@@ -753,7 +706,7 @@ fn snapshot(
     evaluation: EvaluationKind,
 ) -> SearchSnapshot {
     let mut ranked: Vec<_> = candidates.iter().map(Candidate::ranked).collect();
-    ranked.sort_by(|left, right| compare_ranked(left, right, evaluation));
+    ranked.sort_by(compare_ranked);
     SearchSnapshot {
         ranked,
         units_done,
@@ -778,17 +731,12 @@ fn displayed_percent(value: f64) -> i32 {
     }
 }
 
-fn compare_ranked(left: &RankedMove, right: &RankedMove, evaluation: EvaluationKind) -> Ordering {
+fn compare_ranked(left: &RankedMove, right: &RankedMove) -> Ordering {
     // Higher displayed average first. Deliberately ignore sub-percent raw differences:
-    // equal-looking rows should be ordered by the visible tie-breaks. Exact policy rows
-    // then use their game-theoretic Worst; opening rows expose a descriptive Range, never
-    // a guarantee, so deliberately skip that floor.
+    // equal-looking rows should be ordered by the visible tie-breaks, the first of which is
+    // the game-theoretic Worst.
     let average = displayed_percent(right.average).cmp(&displayed_percent(left.average));
-    let worst = if evaluation.scores_exactly() {
-        displayed_percent(right.worst).cmp(&displayed_percent(left.worst))
-    } else {
-        Ordering::Equal
-    };
+    let worst = displayed_percent(right.worst).cmp(&displayed_percent(left.worst));
     average
         .then(worst)
         .then_with(|| share(right.kos, right.samples).total_cmp(&share(left.kos, left.samples)))
@@ -866,14 +814,6 @@ mod tests {
             first_mover: PlayerId::P1,
             mode,
             budget,
-            opening: OpeningPolicy::PositionHeuristic,
-        }
-    }
-
-    fn exact_opening_config(mode: SearchMode, budget: Duration) -> SearchConfig {
-        SearchConfig {
-            opening: OpeningPolicy::ExactContinuation,
-            ..config(mode, budget)
         }
     }
 
@@ -883,20 +823,12 @@ mod tests {
             first_mover: PlayerId::P2,
             mode: SearchMode::BlindSecond,
             budget,
-            opening: OpeningPolicy::PositionHeuristic,
         }
     }
 
-    fn shallow_evaluate(game: &mut CombatStatDiagnosticV1, us: PlayerId) -> Sample {
-        let mut control = PolicyControl::for_budget(Instant::now(), Duration::from_secs(1));
-        evaluate(
-            game,
-            us,
-            EvaluationKind::OpeningEstimate,
-            PlayerId::P1,
-            &mut control,
-        )
-        .unwrap()
+    fn evaluate_now(game: &mut CombatStatDiagnosticV1, us: PlayerId) -> Sample {
+        let mut control = PolicyControl::for_budget(Instant::now(), Duration::from_secs(30));
+        evaluate(game, us, PlayerId::P2, &mut control).unwrap()
     }
 
     #[test]
@@ -930,30 +862,27 @@ mod tests {
     }
 
     #[test]
-    fn opening_reply_table_is_literal_and_laplace_smooths_unknown_wagers() {
+    fn opening_reply_table_laplace_smooths_every_wager() {
+        // The literal itself is held equal to the TypeScript table and to its recount by
+        // tests/solver/OpeningPrior.test.ts; this pins only how it is read.
         assert_eq!(
             OPENING_REPLY_COUNTS
                 .iter()
                 .map(|(_, count)| u32::from(*count))
                 .sum::<u32>(),
-            198,
+            OPENING_REPLY_PLAYS,
         );
-        assert_eq!(
-            opening_reply_weight(AdvisorMove {
-                hand_index: 0,
-                pillz: 4,
-                fury: false,
-            }),
-            54,
-        );
-        assert_eq!(
-            opening_reply_weight(AdvisorMove {
-                hand_index: 0,
-                pillz: 9,
-                fury: true,
-            }),
-            3,
-        );
+        for &((pillz, fury), count) in OPENING_REPLY_COUNTS {
+            assert!(count > 0);
+            assert_eq!(
+                opening_reply_weight(AdvisorMove {
+                    hand_index: 3,
+                    pillz,
+                    fury,
+                }),
+                count + 1,
+            );
+        }
         assert_eq!(
             opening_reply_weight(AdvisorMove {
                 hand_index: 0,
@@ -1034,13 +963,14 @@ mod tests {
         let mut first_updates = 0;
         let first = search(
             &mut game,
-            config(SearchMode::First, Duration::from_secs(1)),
+            config(SearchMode::First, Duration::from_secs(60)),
             |_| first_updates += 1,
         );
+        assert!(first.complete);
         assert_eq!(first.ranked.len(), 20);
         assert_eq!(first.units_total, 400);
         assert_eq!(first_updates, 20);
-        assert_eq!(first.evaluation, EvaluationKind::OpeningEstimate);
+        assert_eq!(first.evaluation, EvaluationKind::ExactOpeningPolicy);
         assert!(first.ranked.iter().all(|candidate| candidate.samples == 20));
         assert!(first
             .ranked
@@ -1054,10 +984,11 @@ mod tests {
                 SearchMode::Second {
                     opponent_hand_index: 2,
                 },
-                Duration::from_secs(1),
+                Duration::from_secs(60),
             ),
             |_| second_updates += 1,
         );
+        assert!(second.complete);
         assert_eq!(second.ranked.len(), 20);
         assert_eq!(second.units_total, 100);
         assert_eq!(second_updates, 5);
@@ -1137,44 +1068,26 @@ mod tests {
     }
 
     #[test]
-    fn the_opening_policy_chooses_the_evaluator_only_at_the_opening_root() {
-        // One pill each: small enough that the exact opening is cheap, big enough that the
-        // two evaluators are distinguishable.
+    fn the_opening_is_solved_exactly_and_only_it_is_weighted_by_the_prior() {
         let mut game = test_game(20, 1, (8, 4), (5, 2));
 
-        let heuristic = search(
+        let exact = search(
             &mut game,
             config(SearchMode::First, Duration::from_secs(30)),
             |_| {},
         );
-        assert_eq!(heuristic.evaluation, EvaluationKind::OpeningEstimate);
-        assert!(!heuristic.evaluation.scores_exactly());
-        assert!(heuristic.evaluation.weights_by_opening_prior());
-
-        let exact = search(
-            &mut game,
-            exact_opening_config(SearchMode::First, Duration::from_secs(30)),
-            |_| {},
-        );
+        assert!(exact.complete);
         assert_eq!(exact.evaluation, EvaluationKind::ExactOpeningPolicy);
-        assert!(exact.evaluation.scores_exactly());
-        // The opening prior is about what opponents actually open with, so it survives the
-        // switch to an exact evaluator. Only the leaf scoring changes.
+        // The opening prior is about what opponents actually open with, so the opening
+        // weights its replies by it while solving every leaf.
         assert!(exact.evaluation.weights_by_opening_prior());
-
-        // Both evaluators see the same legal action set and the same opposing replies.
-        assert_eq!(exact.units_total, heuristic.units_total);
-        assert_eq!(exact.ranked.len(), heuristic.ranked.len());
-        assert!(exact.complete && heuristic.complete);
-        // An exact leaf is a solved match value, so every row lands on a win, draw or loss
-        // boundary once averaged; the heuristic is a continuous position score.
+        // An exact leaf is a solved match value, so every Worst lands on a win, draw or loss.
         assert!(exact
             .ranked
             .iter()
             .all(|row| row.worst == -1.0 || row.worst == 0.0 || row.worst == 1.0));
 
-        // Once a round has been played the opening policy is irrelevant: the continuation
-        // policy is the only model there is.
+        // Once a round has been played every opposing choice weighs the same.
         let mut played = game.clone();
         played
             .make(round_input(
@@ -1192,20 +1105,13 @@ mod tests {
                 },
             ))
             .unwrap();
-        for opening in [
-            OpeningPolicy::PositionHeuristic,
-            OpeningPolicy::ExactContinuation,
-        ] {
-            let result = search(
-                &mut played.clone(),
-                SearchConfig {
-                    opening,
-                    ..config(SearchMode::First, Duration::from_secs(30))
-                },
-                |_| {},
-            );
-            assert_eq!(result.evaluation, EvaluationKind::ExactContinuationPolicy);
-        }
+        let result = search(
+            &mut played,
+            config(SearchMode::First, Duration::from_secs(30)),
+            |_| {},
+        );
+        assert_eq!(result.evaluation, EvaluationKind::ExactContinuationPolicy);
+        assert!(!result.evaluation.weights_by_opening_prior());
     }
 
     #[test]
@@ -1214,14 +1120,13 @@ mod tests {
         let before = game.clone();
         let result = search(
             &mut game,
-            exact_opening_config(SearchMode::First, Duration::from_secs(30)),
+            config(SearchMode::First, Duration::from_secs(30)),
             |_| {},
         );
         assert!(result.complete);
         assert_eq!(game, before);
 
-        // Exact rows break a displayed-percent tie on the guaranteed Worst, which an
-        // opening estimate deliberately ignores because its floor is only descriptive.
+        // Exact rows break a displayed-percent tie on the guaranteed Worst.
         for pair in result.ranked.windows(2) {
             let (left, right) = (&pair[0], &pair[1]);
             if displayed_percent(left.average) == displayed_percent(right.average) {
@@ -1235,9 +1140,9 @@ mod tests {
 
     #[test]
     fn opening_search_weights_opponent_wagers_in_both_modes_and_keeps_a_fixed_top() {
-        // With one pill, the observed 0-pill reply (weight 39) dominates the observed
-        // 1-pill reply (weight 8). The stronger P1 cards make saving the pill the stable
-        // opening recommendation in either visible-information mode.
+        // With one pill, the observed 0-pill reply outweighs the observed 1-pill reply. The
+        // stronger P1 cards make saving the pill the stable opening recommendation in either
+        // visible-information mode.
         let mut game = test_game(20, 1, (8, 4), (5, 2));
         let expected_top = AdvisorMove {
             hand_index: 0,
@@ -1246,7 +1151,7 @@ mod tests {
         };
         let first = search(
             &mut game,
-            config(SearchMode::First, Duration::from_secs(1)),
+            config(SearchMode::First, Duration::from_secs(30)),
             |_| {},
         );
         let second = search(
@@ -1255,12 +1160,22 @@ mod tests {
                 SearchMode::Second {
                     opponent_hand_index: 0,
                 },
-                Duration::from_secs(1),
+                Duration::from_secs(30),
             ),
             |_| {},
         );
-        assert_eq!(first.evaluation, EvaluationKind::OpeningEstimate);
-        assert_eq!(second.evaluation, EvaluationKind::OpeningEstimate);
+        assert!(first.complete && second.complete);
+        assert_eq!(first.evaluation, EvaluationKind::ExactOpeningPolicy);
+        assert_eq!(second.evaluation, EvaluationKind::ExactOpeningPolicy);
+        // Weighted, not uniform: the opening prior makes some averages non-categorical.
+        let prior_weight = |pillz| {
+            opening_reply_weight(AdvisorMove {
+                hand_index: 0,
+                pillz,
+                fury: false,
+            })
+        };
+        assert!(prior_weight(0) > prior_weight(1));
         assert_eq!(first.ranked[0].move_, expected_top);
         assert_eq!(second.ranked[0].move_, expected_top);
         let first_top = first
@@ -1278,7 +1193,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluation_uses_exact_terminal_values_and_a_symmetric_opening_estimate() {
+    fn evaluation_uses_exact_terminal_and_continuation_values() {
         let mut knockout = test_game(1, 0, (10, 2), (1, 1));
         let (_, undo) = knockout
             .make(round_input(
@@ -1296,8 +1211,8 @@ mod tests {
                 },
             ))
             .unwrap();
-        let ours = shallow_evaluate(&mut knockout, PlayerId::P1);
-        let theirs = shallow_evaluate(&mut knockout, PlayerId::P2);
+        let ours = evaluate_now(&mut knockout, PlayerId::P1);
+        let theirs = evaluate_now(&mut knockout, PlayerId::P2);
         assert_eq!((ours.value, ours.ko, ours.koed), (1.0, true, false));
         assert_eq!((theirs.value, theirs.ko, theirs.koed), (-1.0, false, true));
         knockout.unmake(undo);
@@ -1319,10 +1234,15 @@ mod tests {
                 },
             ))
             .unwrap();
-        let p1 = shallow_evaluate(&mut position, PlayerId::P1).value;
-        let p2 = shallow_evaluate(&mut position, PlayerId::P2).value;
-        assert!(p1.abs() < 1.0);
-        assert_eq!(p1, -p2);
+        // A nonterminal position is solved to the end of the match, so it is exactly a win,
+        // draw or loss for whoever asks.
+        for us in [PlayerId::P1, PlayerId::P2] {
+            let value = evaluate_now(&mut position, us).value;
+            assert!(
+                value == -1.0 || value == 0.0 || value == 1.0,
+                "{us:?}: {value}"
+            );
+        }
         position.unmake(undo);
     }
 
@@ -1402,7 +1322,6 @@ mod tests {
                 pillz: 0,
                 fury: false,
             },
-            EvaluationKind::ExactContinuationPolicy,
             &mut expired_policy,
         )
         .is_none(),);
@@ -1629,9 +1548,7 @@ mod tests {
             displayed_percent(cheap.average)
         );
         let mut ranked = vec![expensive, cheap.clone()];
-        ranked.sort_by(|left, right| {
-            compare_ranked(left, right, EvaluationKind::ExactContinuationPolicy)
-        });
+        ranked.sort_by(compare_ranked);
         assert_eq!(ranked[0], cheap);
 
         let mut game = test_game(20, 0, (7, 3), (6, 2));
@@ -1649,7 +1566,7 @@ mod tests {
     }
 
     #[test]
-    fn opening_ranking_ignores_the_observed_floor_but_exact_ranking_keeps_worst() {
+    fn ranking_prefers_the_higher_worst_before_a_knockout() {
         let higher_floor = RankedMove {
             move_: AdvisorMove {
                 hand_index: 0,
@@ -1678,14 +1595,8 @@ mod tests {
             koed: 0,
             hidden_outcomes: Vec::new(),
         };
-        let mut opening = vec![higher_floor.clone(), knockout.clone()];
-        opening.sort_by(|left, right| compare_ranked(left, right, EvaluationKind::OpeningEstimate));
-        assert_eq!(opening[0], knockout);
-
-        let mut exact = vec![higher_floor.clone(), knockout];
-        exact.sort_by(|left, right| {
-            compare_ranked(left, right, EvaluationKind::ExactContinuationPolicy)
-        });
+        let mut exact = vec![knockout, higher_floor.clone()];
+        exact.sort_by(compare_ranked);
         assert_eq!(exact[0], higher_floor);
     }
 
@@ -1750,7 +1661,7 @@ mod tests {
         game
     }
 
-    fn mode_config(mode: SearchMode, opening: OpeningPolicy) -> SearchConfig {
+    fn mode_config(mode: SearchMode) -> SearchConfig {
         SearchConfig {
             us: PlayerId::P1,
             first_mover: match mode {
@@ -1759,7 +1670,6 @@ mod tests {
             },
             mode,
             budget: Duration::from_secs(600),
-            opening,
         }
     }
 
@@ -1812,23 +1722,15 @@ mod tests {
 
     #[test]
     fn a_parallel_complete_search_is_bit_identical_to_one_thread() {
-        let roots: [(&str, CombatStatDiagnosticV1, OpeningPolicy, EvaluationKind); 4] = [
+        let roots: [(&str, CombatStatDiagnosticV1, EvaluationKind); 3] = [
             (
-                "opening estimate",
-                varied_game(12, 5),
-                OpeningPolicy::PositionHeuristic,
-                EvaluationKind::OpeningEstimate,
-            ),
-            (
-                "exact opening",
+                "opening",
                 varied_game(12, 2),
-                OpeningPolicy::ExactContinuation,
                 EvaluationKind::ExactOpeningPolicy,
             ),
             (
                 "round two",
                 played(varied_game(12, 5), &[(PlayerId::P1, 0, 1, 0, 1)]),
-                OpeningPolicy::PositionHeuristic,
                 EvaluationKind::ExactContinuationPolicy,
             ),
             (
@@ -1837,11 +1739,10 @@ mod tests {
                     varied_game(12, 7),
                     &[(PlayerId::P1, 0, 1, 0, 1), (PlayerId::P2, 1, 1, 1, 1)],
                 ),
-                OpeningPolicy::PositionHeuristic,
                 EvaluationKind::ExactContinuationPolicy,
             ),
         ];
-        for (label, mut game, opening, evaluation) in roots {
+        for (label, mut game, evaluation) in roots {
             let unplayed = (0..HAND_SIZE as u8)
                 .find(|&slot| !game.position().played[PlayerId::P2][usize::from(slot)])
                 .unwrap();
@@ -1852,7 +1753,7 @@ mod tests {
                 },
                 SearchMode::BlindSecond,
             ] {
-                let config = mode_config(mode, opening);
+                let config = mode_config(mode);
                 let before = game.clone();
                 let (serial, serial_published) = traced(&mut game, config, 1);
                 assert_eq!(game, before, "{label} {mode:?}: one thread moved the root");
@@ -1902,15 +1803,10 @@ mod tests {
     #[test]
     fn remembered_continuation_values_leave_every_complete_result_bit_identical() {
         let roots = [
-            (
-                "exact opening",
-                varied_game(12, 3),
-                OpeningPolicy::ExactContinuation,
-            ),
+            ("opening", varied_game(12, 3)),
             (
                 "round two",
                 played(varied_game(12, 5), &[(PlayerId::P1, 0, 1, 0, 1)]),
-                OpeningPolicy::PositionHeuristic,
             ),
             (
                 "round three",
@@ -1918,10 +1814,9 @@ mod tests {
                     varied_game(12, 7),
                     &[(PlayerId::P1, 0, 1, 0, 1), (PlayerId::P2, 1, 1, 1, 1)],
                 ),
-                OpeningPolicy::PositionHeuristic,
             ),
         ];
-        for (label, mut game, opening) in roots {
+        for (label, mut game) in roots {
             let unplayed = (0..HAND_SIZE as u8)
                 .find(|&slot| !game.position().played[PlayerId::P2][usize::from(slot)])
                 .unwrap();
@@ -1932,7 +1827,7 @@ mod tests {
                 },
                 SearchMode::BlindSecond,
             ] {
-                let config = mode_config(mode, opening);
+                let config = mode_config(mode);
                 let before = game.clone();
                 let mut run = |mut control: PolicyControl| {
                     let result = search_with_control(
@@ -2006,12 +1901,9 @@ mod tests {
         let before = game.clone();
         let complete = search_with_threads(
             &mut game,
-            mode_config(
-                SearchMode::Second {
-                    opponent_hand_index: 1,
-                },
-                OpeningPolicy::ExactContinuation,
-            ),
+            mode_config(SearchMode::Second {
+                opponent_hand_index: 1,
+            }),
             NonZeroUsize::MIN,
             |_| {},
         );
@@ -2045,7 +1937,7 @@ mod tests {
             },
             SearchMode::BlindSecond,
         ] {
-            let config = mode_config(mode, OpeningPolicy::ExactContinuation);
+            let config = mode_config(mode);
             let replies = match mode {
                 SearchMode::First => legal_moves(&game, PlayerId::P2).len(),
                 _ => 0,
@@ -2106,7 +1998,7 @@ mod tests {
         for mode in [SearchMode::First, SearchMode::BlindSecond] {
             let config = SearchConfig {
                 budget: Duration::from_millis(30),
-                ..mode_config(mode, OpeningPolicy::ExactContinuation)
+                ..mode_config(mode)
             };
             let mut published = Vec::new();
             let result = search_with_threads(

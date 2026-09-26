@@ -108,6 +108,16 @@ Deno.test("Rust JSONL permits a partial progress subset but requires an exact co
     () => decodeRustJsonl(`${JSON.stringify(wrongProvenance)}\n`, expectation),
     RustAdvisorProtocolError,
   );
+  // A worker still on advisor policy revision 2 could answer with its opening heuristic.
+  // That kind no longer exists on this side of the boundary.
+  const estimate = JSON.parse(
+    line("final", 0, [row(actions[0]), row(actions[1])]),
+  );
+  estimate.evaluation_kind = "opening_estimate";
+  assertThrows(
+    () => decodeRustJsonl(`${JSON.stringify(estimate)}\n`, expectation),
+    RustAdvisorProtocolError,
+  );
   assertThrows(
     () =>
       decodeRustJsonl(`${line("final", 0, [row(actions[0])])}\n`, expectation),
@@ -401,7 +411,7 @@ Deno.test("completed Rust FIRST adapter flips requester P2 scores into the TS P1
     kind: "final",
     sequence: 0,
     provenance,
-    evaluationKind: "opening_estimate",
+    evaluationKind: "exact_opening_policy",
     complete: true,
     unitsDone: ts.units,
     unitsTotal: ts.units,
@@ -416,7 +426,7 @@ Deno.test("completed Rust FIRST adapter flips requester P2 scores into the TS P1
   assertEquals(adapter.percent(adapter.candidates[0].average), 75);
   assertStringIncludes(
     render(game, adapter, { size: { columns: 80, rows: 24 } }),
-    "Opening estimates",
+    "Best bets",
   );
 });
 
@@ -439,7 +449,7 @@ Deno.test("completed adapter rejects malformed direct finals and the wrong evalu
     kind: "final",
     sequence: 0,
     provenance,
-    evaluationKind: "opening_estimate",
+    evaluationKind: "exact_opening_policy",
     complete: true,
     unitsDone: ts.units,
     unitsTotal: ts.units,
@@ -448,14 +458,21 @@ Deno.test("completed adapter rejects malformed direct finals and the wrong evalu
     opponentHandIndex: null,
     ranked,
   };
-  assertThrows(
-    () =>
-      new CompletedRustSearch(game, {
-        ...base,
-        evaluationKind: "exact_continuation_policy",
-      }),
-    RustAdvisorProtocolError,
-  );
+  // Round one is weighted by the opening prior, so a uniformly weighted answer is the
+  // wrong model, and advisor policy revision 2's heuristic is no answer at all.
+  for (
+    const evaluationKind of ["exact_continuation_policy", "opening_estimate"]
+  ) {
+    assertThrows(
+      () =>
+        new CompletedRustSearch(game, {
+          ...base,
+          evaluationKind: evaluationKind as RustAdvisorFinal["evaluationKind"],
+        }),
+      RustAdvisorProtocolError,
+    );
+  }
+  new CompletedRustSearch(game, base);
   assertThrows(
     () =>
       new CompletedRustSearch(game, {
@@ -524,7 +541,7 @@ Deno.test("completed Rust SECOND adapter restores hidden-wager outcomes for the 
     kind: "final",
     sequence: 0,
     provenance,
-    evaluationKind: "opening_estimate",
+    evaluationKind: "exact_opening_policy",
     complete: true,
     unitsDone: ts.units,
     unitsTotal: ts.units,
@@ -567,7 +584,7 @@ Deno.test("completed Rust BLIND_SECOND adapter keeps the provisional view shape"
     kind: "final",
     sequence: 0,
     provenance,
-    evaluationKind: "opening_estimate",
+    evaluationKind: "exact_opening_policy",
     complete: true,
     unitsDone: ts.units,
     unitsTotal: ts.units,

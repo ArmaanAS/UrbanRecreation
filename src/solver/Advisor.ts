@@ -43,7 +43,6 @@ import {
   type RustAdvisorRequest,
   type RustAdvisorRunner,
   RustAdvisorTimeoutError,
-  type RustOpeningPolicy,
 } from "./RustAdvisor.ts";
 import {
   normaliseRustAdvisorInput,
@@ -316,25 +315,17 @@ export interface AdvisorOptions {
   resultStyle: ResultStyle;
   /** Seconds to spend per decision before settling for the partial ranking. */
   budget: number;
-  /** Visible recommendations. When omitted, the opening gets 10 and later rounds get 8. */
+  /** Visible recommendations. When omitted, 8. */
   top?: number;
   /** CPU workers used by each solve. One keeps the old in-process path. */
   workers: number;
   /** Experimental Rust worker policy. TypeScript remains the default and fallback. */
   rust: "off" | "compare" | "use";
-  /**
-   * Ask the Rust worker to solve round one instead of estimating it. This costs seconds
-   * rather than milliseconds and has no effect once a round has been played, because
-   * later rounds are exact under either policy. TypeScript has no equivalent mode, so a
-   * `--rust=compare` run reports these decisions as not comparable rather than differing.
-   */
-  exactOpening: boolean;
 }
 
 export function parseArgs(argv: string[]): AdvisorOptions {
   const opts: AdvisorOptions = {
     feed: FEED,
-    exactOpening: false,
     budget: 0,
     workers: 3,
     rust: "off",
@@ -355,8 +346,6 @@ export function parseArgs(argv: string[]): AdvisorOptions {
         throw new Error("--rust must be one of: off, compare, use");
       }
       opts.rust = value;
-    } else if (a === "--exact-opening") {
-      opts.exactOpening = true;
     } else if (a === "--preview-safe") opts.preview = "safe";
     else if (a === "--preview-results") opts.preview = "results";
     else if (a === "--result-style") {
@@ -386,9 +375,8 @@ const createSearch = (
   workers: number,
   blindSecond = false,
 ): Search =>
-  // The shallow opening pass is only a few thousand battle resolutions; worker startup
-  // costs more than it saves and needlessly occupies every configured core.
-  workers === 1 || game.round === 1
+  // Every round, the first included, is an exact solve, so every round gets the pool.
+  workers === 1
     ? new Search(game, 1, 0, blindSecond)
     : new ParallelSearch(game, workers, 100, blindSecond);
 
@@ -422,8 +410,11 @@ export async function rustWorkerCommand(): Promise<string> {
   return Deno.build.os === "windows" ? exe : portable;
 }
 
+// Without a --budget the TypeScript search runs to the end, so the worker gets the most the
+// protocol allows; it answers as soon as its solve is complete, which for an exact opening
+// takes seconds rather than the milliseconds later rounds need.
 const rustBudgetMs = (opts: AdvisorOptions) =>
-  Math.min(30_000, opts.budget > 0 ? opts.budget * 1000 : 1_000);
+  Math.min(30_000, opts.budget > 0 ? opts.budget * 1000 : 30_000);
 
 const boundedRustStatus = (status: string) =>
   status.replace(/[\x00-\x1f\x7f-\x9f]+/g, " ").slice(0, 110);
@@ -469,8 +460,6 @@ export interface RustDecisionJobOptions {
   readonly runner: RustAdvisorRunner | (() => Promise<RustAdvisorRunner>);
   readonly budgetMs: number;
   readonly changed?: () => void;
-  /** Which opening evaluator was asked for; the response must echo the matching kind. */
-  readonly openingPolicy: RustOpeningPolicy;
 }
 
 function rustRevisionTag(request: RustAdvisorRequest): string {
@@ -523,14 +512,10 @@ export class RustDecisionJob {
       const rust = new CompletedRustSearch(
         this.options.game,
         this.#transcript.final,
-        this.options.openingPolicy,
       );
-      // An exact opening and a TypeScript opening estimate answer different questions, so
-      // there is nothing here to agree or disagree about. Saying "differs" would read as a
-      // defect and saying "match" would be a lie; report what actually ran instead.
-      this.#status = (rust.exactOpening
-        ? "rust exact opening · not comparable"
-        : compareRustSearches(search, rust)) + ` · ${this.#revisionTag}`;
+      this.#status = `${
+        compareRustSearches(search, rust)
+      } · ${this.#revisionTag}`;
     } catch (error) {
       this.#status = boundedRustStatus(
         `rust rejected · ${this.#revisionTag}; TS fallback: ${
@@ -588,7 +573,6 @@ export class RustDecisionJob {
         const replacement = new CompletedRustSearch(
           this.options.game,
           transcript.final,
-          this.options.openingPolicy,
         );
         if (!this.current()) return;
         const previous = this.options.getSearch();
@@ -641,13 +625,8 @@ function startRustForPosition(
   // the strict capture normaliser and worker protocol before it can replace TypeScript.
   if (!rustDecisionEnabled(opts.rust, pos.search.mode)) return;
   const mode: "compare" | "use" = opts.rust;
-  // The opening policy only reaches an opening root; later rounds are exact either way.
-  const openingPolicy: RustOpeningPolicy = opts.exactOpening
-    ? "exact_continuation"
-    : "position_heuristic";
   const job: RustDecisionJob = new RustDecisionJob({
     mode,
-    openingPolicy,
     key: pos.key,
     requestId: `rust:${pos.key}`,
     game: pos.game,
@@ -661,7 +640,6 @@ function startRustForPosition(
         decision: { mode: pos.search.mode, us: pos.search.us },
         requestId: `rust:${pos.key}`,
         budgetMs: rustBudgetMs(opts),
-        openingPolicy,
       }),
     runner,
     budgetMs: rustBudgetMs(opts),

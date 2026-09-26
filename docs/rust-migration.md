@@ -4045,11 +4045,12 @@ The second vertical slice adds a manual four-round session and exact continuatio
 mover, and requests the revealed opposing card before second-mover advice. From round 2,
 nonterminal samples recurse to exact win/draw/loss values with the same essential
 information-set rule as `Policy.ts`: our response can vary by visible card but not by hidden
-pillz or Fury. Cancellation unwinds every made round before returning. Round 1 keeps the
-captured-reply-weighted opening estimate; rounds 2–4 use the conservative exact continuation
-policy. The opening prior is the literal 198-play `OPENING_REPLY_COUNTS` table from the
-TypeScript advisor, captured as of 2026-09-13, with Laplace +1 for unseen wagers. It is
-historical provenance, not a table regenerated from the current corpus. The round-two slice
+pillz or Fury. Cancellation unwinds every made round before returning. Round 1 then kept a
+captured-reply-weighted opening estimate while rounds 2–4 used the conservative exact
+continuation policy, with the literal 198-play `OPENING_REPLY_COUNTS` table copied from the
+TypeScript advisor. Since advisor policy revision 3 (2026-09-26) round 1 is solved exactly
+too and the table is a recount of the opponents' plays; see "The exact opening" and "The
+opening prior" below. The round-two slice
 also adds a blind-second pass in manual sessions: in rounds 2-4 while the
 opponent chooses, every unplayed opponent card and hidden wager is a hypothesis and every
 row remains one fixed reply. A full hypothesis column is committed transactionally, so a
@@ -4071,8 +4072,8 @@ requires complete server card evidence. Before every recorded move it renders th
 and grades that move against the current ranking. It then commits the actual pair of moves
 and checks power, damage, attack, winner, life, and pillz before advancing. Across these
 gates it covers complete matches up to all four rounds and both FIRST and SECOND information
-opening heuristic and exact rounds 2–4 policy. It is captured replay, not yet the live
-capture stream or full TypeScript opening policy.
+sets, under the exact policy in every round. It is captured replay, not yet the live
+capture stream.
 
 Do not revive the old perfect-information recommendation model as the live advisor. Port
 the current TypeScript behavior deliberately:
@@ -4081,7 +4082,7 @@ the current TypeScript behavior deliberately:
 - depth-2 work units and cancellation (Rust splits its root into transactional row or
   column blocks run on several threads, see "The exact opening"; it has no finer units);
 - the conservative information-aware policy for hidden pillz and Fury;
-- opening-prior refresh from later captures;
+- opening-prior refresh from later captures (done 2026-09-26, see "The opening prior");
 - blind-second handling (manual slice landed);
 - visible-percent, knockout, safety, then cost ranking.
 
@@ -4118,7 +4119,13 @@ The real-process gate runs admissible requests from every rule-10 strict draw: `
 `1089346`. It pins complete TypeScript/Rust semantic matches for opening and exact FIRST,
 opening SECOND, exact SECOND (including hidden-wager outcomes), and exact blind-second
 decisions, including at least one match on every one of those ten draws. Captures `1061897`
-and `925674` open as SECOND; `1069813` and `1089346` open as FIRST. Each TypeScript
+and `925674` open as SECOND; `1069813` and `1089346` open as FIRST. Since round one became
+an exact solve (advisor policy revision 3) a FIRST opening costs the one-thread TypeScript
+side 4-13 s, so the gate keeps one FIRST opening, `877812` at about 3.6 s, beside the SECOND
+openings of `1061897`, `925674`, `877950` and `877636`, and meets `925719`, `1060199`,
+`1069813` and `1089346` in round two instead (`1024673` already had a round-two SECOND
+decision there); the test takes about 16 s rather than 2-4 s.
+`ExactOpeningParity` adds `1089346`'s FIRST opening under `UR_SLOW_PARITY=1`. Each TypeScript
 comparison still finishes before the next `Game` is constructed, though since 2026-09-25
 each `Game` owns its battle and turn-order caches, so that only keeps one comparison in
 flight. Capture `1081463` remains a standalone Rust replay gate: its
@@ -4171,33 +4178,68 @@ same single-threaded path.
 
 ### Is an exact opening affordable yet?
 
-Round one is a deliberate model choice in both implementations, not a speed limit either
-one hit. `Search.ts` sets `openingEstimate = round === 1` and `search_with_control` picks
-`EvaluationKind::OpeningEstimate` below `rounds_played >= 1`; both then score the whole
-8464-pairing matrix with the same one-round position heuristic and weight replies by the
-same fixed 198-play prior. The two round-one rows above match because they are running the
-same model, not because Rust solved anything TypeScript could not.
+Yes, and since advisor policy revision 3 (2026-09-26) it is the only round-one evaluator in
+both implementations. Until then both scored round one with a one-round position heuristic
+(Life difference, a square-root pillz reserve term and 0.12 of the unplayed cards' power and
+damage, through `tanh`) and weighted replies by the 198-play prior. The two round-one rows in
+the table above were measured on that heuristic, which is why they took tens of
+milliseconds; they describe nothing that still exists. The heuristic was there because a
+complete opening took 12-18 s in Rust and minutes in TypeScript. The continuation caches
+below brought that to seconds, and the owner dropped the estimate because its advice was not
+good.
 
-Forcing `ExactContinuationPolicy` at round zero in a local throwaway build measured the
-complete exact opening in release Rust at **6.2 s on the supported demo draw and 11.6 s,
-14.2 s and 17.7 s on captures `925719`, `1024673` and `1089346`** — single-threaded, all
-8464 units, no deadline cutoff. At the 18x ratio above the same work in TypeScript would be
-roughly two to five minutes, which is why the heuristic exists.
+Measured on 2026-09-26 on this 6-core machine, every row complete, median of three
+alternating samples with every sample in brackets. TypeScript is the search alone on a
+built `Game`; `ParallelSearch` includes starting its three workers, the advisor's default;
+the Rust columns are whole-process worker time (spawn, data load, search, response) at the
+default six threads and at `--threads 1`. FIRST is the round's first mover and SECOND the
+other side, shown the card the first mover played; one side of each is the capture owner's
+view and the other its opponent's:
 
-So an exact opening is not out of reach in Rust the way it is in TypeScript. It is now a
-real mode rather than a measurement; see below.
+| Opening | TS `Search` | TS `ParallelSearch` x3 | Rust, 6 threads | Rust, 1 thread |
+| --- | --- | --- | --- | --- |
+| `877636` FIRST | 12.6 s (12.5, 12.7, 12.6) | 6.20 s (6.16, 6.20, 6.30) | 1.62 s (1.65, 1.55, 1.62) | 2.59 s (2.57, 2.59, 2.60) |
+| `877636` SECOND | 1.62 s (1.70, 1.62, 1.62) | 1.24 s (1.24, 1.23, 1.25) | 179 ms (172, 179, 200) | 294 ms (306, 293, 294) |
+| `925719` FIRST | 8.76 s (8.89, 8.73, 8.76) | 4.84 s (4.86, 4.76, 4.84) | 903 ms (841, 903, 939) | 1.53 s (1.53, 1.51, 1.53) |
+| `925719` SECOND | 1.35 s (1.35, 1.35, 1.35) | 889 ms (905, 888, 888) | 143 ms (147, 143, 141) | 255 ms (255, 271, 249) |
+| `1024673` FIRST | 9.10 s (9.05, 9.10, 9.11) | 5.50 s (5.50, 5.51, 5.49) | 988 ms (988, 1018, 958) | 1.71 s (1.72, 1.71, 1.70) |
+| `1024673` SECOND | 2.28 s (2.33, 2.28, 2.26) | 1.64 s (1.65, 1.63, 1.64) | 156 ms (152, 156, 160) | 274 ms (274, 288, 271) |
+| `1089346` FIRST | 10.7 s (10.6, 10.7, 10.8) | 5.82 s (5.79, 5.88, 5.82) | 1.28 s (1.28, 1.26, 1.34) | 2.18 s (2.18, 2.16, 2.19) |
+| `1089346` SECOND | 3.69 s (3.73, 3.65, 3.69) | 2.26 s (2.26, 2.25, 2.30) | 300 ms (315, 300, 292) | 508 ms (508, 495, 518) |
+
+All four implementations printed the same checksum and best move for every row. The Rust
+worker is five to thirteen times faster than one TypeScript thread on FIRST, and four to
+fifteen on SECOND, where the fixed ~40 ms process cost is a larger share.
+
+`ParallelSearch` needed one change to be worth using here. It dealt single units out by
+stride, and each worker owns its own continuation cache, so the positions one unit's subtree
+shares with its neighbours were solved again by every worker. It now deals whole card pairs
+(our card and theirs), where most of those repeats live. Alternating the two partitions over
+the same openings, three workers took 9.98 s (9.95, 9.98, 10.04) against 6.20 s on `877636`
+FIRST, 7.11 s (7.11, 7.11, 7.21) against 4.84 s on `925719` FIRST, 7.40 s (7.30, 7.40, 7.41)
+against 5.50 s on `1024673` FIRST, 8.32 s (8.30, 8.32, 8.48) against 5.82 s on `1089346` FIRST,
+and 1.50 s, 1.32 s, 2.10 s and 3.14 s against 1.24 s, 0.89 s, 1.64 s and 2.26 s on the four
+SECOND openings. On `deno task time-search` (round two) three workers take 310 ms (292, 310,
+331, 326, 297) against 367 ms (370, 358, 400, 346, 367) by units and 205 ms (212, 205, 204,
+202, 207) on one thread, so three workers still lose there; a round-two search is too small
+to pay for starting them. Sixteen card pairs over three workers is an uneven six-five-five,
+and four workers measured 4.75 s on `877636` FIRST in one exploratory run; the default stays
+three, which leaves cores for the game and the browser.
 
 ### The exact opening
 
-`OpeningPolicy::ExactContinuation` solves round one with the same conservative continuation
-policy rounds two through four already use, instead of the one-round position heuristic.
-Reach it with `deno task rust:advise --exact-opening`, or through the hosted worker with
-`deno task advise --rust=use --exact-opening`. It is off by default and has no effect once a
-round has been played, because later rounds are exact under either policy.
+`EvaluationKind::ExactOpeningPolicy` solves round one with the same conservative
+continuation policy rounds two through four use. It arrived on 2026-09-25 as an opt-in mode
+(`OpeningPolicy::ExactContinuation`, `--exact-opening` on the Rust advisor and on the
+advisor host) beside the heuristic; advisor policy revision 3 made it the only round-one
+evaluator and removed `OpeningPolicy`, `EvaluationKind::OpeningEstimate`,
+`position_heuristic`, both `--exact-opening` flags, TypeScript's `openingEstimate` and
+`openingPositionValue`, and the V3 `opening_policy` field.
 
-Measured on 2026-09-26 on this 6-core machine, release, complete with no deadline cutoff, at
-one thread and at the default six (`std::thread::available_parallelism`), median of three
-alternating samples:
+The root search's thread scaling, measured on 2026-09-26 on this 6-core machine, release,
+complete with no deadline cutoff, at one thread and at the default six
+(`std::thread::available_parallelism`), median of three alternating samples, in-process
+search time from the timing test below:
 
 | Decision | Units | 1 thread | 6 threads | Speedup |
 | --- | --- | --- | --- | --- |
@@ -4232,39 +4274,47 @@ The one-thread path costs what the old serial loop did: alternating the `842a07b
 SECOND is four to eight times cheaper because the opponent's card is already known, so the
 matrix is one card wide rather than four.
 
-Three things had to be separated to make this correct, because the historical pair of
-evaluators agreed on all of them and the code had conflated them. How a nonterminal leaf is
+Three things had to be separated to add the exact mode, because the historical pair of
+evaluators agreed on all of them and the code had conflated them: how a nonterminal leaf is
 scored, how the opponent's current reply is weighted, and whether the Worst column is a
-guarantee are independent decisions. An exact opening solves its leaves and earns a real
-Worst, but still weights the opponent's reply by the captured 198-play prior, because that
-prior is empirical information about what opponents actually open with and says nothing
-about how the resulting position should be scored. `EvaluationKind::scores_exactly` and
-`weights_by_opening_prior` name the two axes; TypeScript's `Search` gained the same split as
-`openingEstimate` and `openingPrior`. Reading `openingEstimate` as "this is round one" was
-wrong in three places on the host side and each one was a real defect, caught by the parity
-gate rather than by review.
+guarantee. With the estimate gone only the weighting still varies. An opening root weights
+the opponent's reply by the captured prior, because that is empirical information about what
+opponents open with and says nothing about how the resulting position should be scored;
+`weights_by_opening_prior` (Rust) and `openingPrior` (TypeScript) name it, and every leaf in
+every round is solved, so the Worst column is always a guarantee and the view shows round one
+as a win chance and a Worst like any other round. While both evaluators existed, reading
+`openingEstimate` as "this is round one" was wrong in three places on the host side, each a
+real defect caught by the parity gate.
 
-Parity is checkable here, which it would not have been otherwise. A Rust exact opening
-compared against the live TypeScript heuristic proves nothing: they answer different
-questions, and gate 5 above only admits a comparison when both sides use the same evaluator.
-So `Search` has a reference `exactOpening` mode that the live advisor never sets, and
-`tests/solver/ExactOpeningParity.test.ts` runs both implementations over the same opening
-root and requires `rust match` on every candidate's average, worst, ceiling, displayed
-percent, KO and risk shares, and the chosen best move. It is skipped unless `UR_SLOW_PARITY=1`
-because TypeScript needed about twenty seconds for the SECOND set (seventy before the
-2026-09-25 engine fixes in AGENTS.md "Performance"), which Rust finishes in well under one;
-since the TypeScript continuation cache below it needs under two.
+The ordinary `--rust=compare` path now compares round one directly, since both sides run the
+same model. `tests/solver/ExactOpeningParity.test.ts` stays as the round-one gate beside the
+per-draw worker gate: it solves `877636`'s SECOND opening and `1089346`'s FIRST opening in
+both implementations and requires `rust match` on every candidate's average, worst, ceiling,
+displayed percent, KO and risk shares, and the chosen best move. It is skipped unless
+`UR_SLOW_PARITY=1` because the one-thread TypeScript side takes about 1.6 s and 11 s.
 
-The hosted bridge carries an `opening_policy` field on every V3 request and the worker echoes
-which evaluator actually ran, so a host that predates the field keeps its old behaviour, an
-older worker rejects the unknown field outright, and a response that solved an opening nobody
-asked to solve is rejected as a mismatch rather than accepted as a bonus. Advisor policy
-semantic revision is 2. In `--rust=compare` an exact opening reports `rust exact opening ·
-not comparable` rather than `differs`, because there is nothing there to disagree with.
+Revision 3 removed the `opening_policy` request field rather than narrowing it to one value,
+and kept protocol version 3. The request is `deny_unknown_fields`, so a host that still sends
+the field is rejected; the advisor policy semantic revision is checked in both directions, so
+a revision-2 host and a revision-2 worker refuse each other before any search; and the host
+no longer knows `opening_estimate` as an evaluation kind, so a response claiming it fails
+decoding, while a response claiming `exact_continuation_policy` at an opening root, or
+`exact_opening_policy` anywhere else, is rejected as the wrong phase. Without `--budget` the
+host now gives the worker 30 s instead of 1 s, and the standalone Rust advisor's default
+`--budget-ms` went from 1000 to 10000: an exact FIRST opening takes one to two seconds at six
+threads and up to 2.6 s at one.
 
-The advice genuinely changes. On capture `925674`'s opening the heuristic recommends Aegis Cr
+The live TypeScript advisor used to keep round one on a single in-process `Search`, because
+the estimate was cheaper than starting workers. It now uses the same `ParallelSearch` pool as
+rounds two to four whenever `--workers` is above one.
+
+The advice genuinely changes. On capture `925674`'s opening the heuristic recommended Aegis Cr
 at five to eight pillz; the exact solve puts Mou at one pillz on top and does not rank Aegis
-Cr in the first four at all.
+Cr in the first four at all. The prior recount (see "The opening prior") moves less:
+re-weighting the solved samples of the eight openings in the table above with the old
+198-play table changes the top move on two of them, `877636` FIRST (card 3 at 0 pillz under
+the new prior, card 1 at 4 under the old) and `1089346` SECOND (card 3 at 3 pillz against
+4).
 
 The root search is parallel. It already committed its matrix in transactional blocks - one
 candidate's whole reply row in FIRST, one hidden opposing wager's whole column across every
@@ -4327,12 +4377,13 @@ FIRST went from 24.8 million round inputs to about half a million.
 No result moved. The timing test still asserts every sample bit-identical to the one-thread
 result; a scratch harness hashing every row's f64 bits gave the same fingerprints before and
 after on all seven openings in the table; `--replay` output for all ten supported captures
-was identical before and after, with and without `--exact-opening`; two new unit tests compare
-whole searches and whole rounds against a control that recomputes every position;
-`ExactOpeningParity` still reports `rust match` and `deno task pins:update` moves no expect
-file. The advisor policy semantic revision did not move. The cost is memory: the peak
-working set of `--replay 1089346 --exact-opening` went from 12 MB to 63 MB at one thread and
-131 MB at six. The cache lives for one search and one request.
+was identical before and after, with and without the `--exact-opening` flag it had then;
+two new unit tests compare whole searches and whole rounds against a control that
+recomputes every position; `ExactOpeningParity` still reports `rust match` and
+`deno task pins:update` moves no expect file. The advisor policy semantic revision did not
+move. The cost is memory: the peak working set of `--replay 1089346 --exact-opening` (now
+plain `--replay 1089346`) went from 12 MB to 63 MB at one thread and 131 MB at six. The
+cache lives for one search and one request.
 
 What is still open: six threads now buy about 2x, not the 4.3x they bought before the cache,
 because each worker owns its control and so its own cache, and a position one worker has
@@ -4408,11 +4459,60 @@ rebuilt match of the same hands, whose keys are the same strings, starts from no
 Dropping `Events.repeat`, the played masks or the asking player from the key each fails it.
 `ExactOpeningParity` still reports `rust match`, now in about two seconds.
 
-What is still open. `ParallelSearch` gives each worker its own cache and deals units out by
-stride, so a position one worker solved is solved again by the next; on `time-search` three
-workers now take 364 ms (327, 374, 364) against one thread's 208 ms, where before the cache
-three workers at 432 ms (441, 414, 442) had beaten one at 472 ms. The live advisor still
-estimates round one; switching it to the exact opening is a separate change.
+What was still open then: `ParallelSearch` gave each worker its own cache and dealt units
+out by stride, so a position one worker solved was solved again by the next; on
+`time-search` three workers took 364 ms (327, 374, 364) against one thread's 208 ms, where
+before the cache three workers at 432 ms (441, 414, 442) had beaten one at 472 ms. Since the
+live advisor solves round one exactly, `ParallelSearch` deals whole card pairs instead; see
+"The exact opening".
+
+### The opening prior
+
+Round one weights the opponent's current reply by `OPENING_REPLY_COUNTS`, a literal table in
+`src/solver/Search.ts` and `rust/src/advisor/search.rs`, plus one Laplace observation per
+legal action. The first table, 198 plays "as of 2026-09-13", had no script or stated rule.
+Recounting it on 2026-09-26 reproduced it exactly as both sides' round-one moves of the first
+101 captures by `capturedAt` (up to 2026-09-11T01:02:14.785Z), in every room and battle rule,
+keyed by engine pillz (server `pillzUsed - 1`) and the Fury flag. 95 of those 198 plays were
+the owner's own openings, and the prior is meant to model the opponent.
+
+The table now counts only the opponent: the side that is not the capture's `mySide`, every
+room and battle rule, both movers, same key, same smoothing. The ten oldest captures
+(2026-09-10 and -11) have no `mySide`; there the owner is recognised by the `myId` every
+other capture carries, which the first recount did not do and so counted their ten owner
+plays as well (390 rather than 380). The result is 380 plays from 380 of the 383 captures up
+to 2026-09-23T20:58:52.100Z: two captures have no round-one moves and one has only the
+owner's.
+
+Shares after smoothing, over the 23 legal actions a twelve-pill stack has:
+
+| Reply | 198 plays, both sides | 380 plays, opponents only |
+| --- | --- | --- |
+| 0 | 17.6% | 18.1% |
+| 1 | 3.6% | 6.9% |
+| 2 | 9.5% | 10.7% |
+| 3 | 13.1% | 12.4% |
+| 4 | 24.4% | 15.1% |
+| 5 | 13.6% | 12.7% |
+| 6 | 5.9% | 9.9% |
+| 7 | 3.6% | 6.2% |
+| 8 | 0.9% | 2.2% |
+| 9 Fury (12 pillz) | 1.4% | 0.5% |
+| any other | 0.5% each, 4 Fury 0.9% | 0.5-0.7% each |
+
+The mode moves from 4 to 0, 4 loses nine points, 1, 6 and 7 gain three to four each, and the
+all-in Fury halves. The mean spend goes from 3.27 to 3.41 pillz.
+
+`deno task opening-prior` prints the recount from `captures/games` and, with `--write`,
+rewrites both literals and their provenance comment between the `BEGIN`/`END
+OPENING_REPLY_COUNTS` markers; `--until <capturedAt>` stops at a cutoff. Adding captures does
+not move the table: it changes only when someone reruns the task and commits the result, and
+that is a recommendation change, so it also needs an advisor policy semantic revision.
+`tests/solver/OpeningPrior.test.ts` requires the TypeScript and Rust literals to be equal,
+the TypeScript literal to be the recount of the corpus up to its recorded cutoff (so a later
+capture never fails it, but an edited literal does), a rewrite from that recount to change
+neither file, and the owner's plays, including those of a capture with no `mySide`, never to
+be counted.
 
 ## Working commands
 

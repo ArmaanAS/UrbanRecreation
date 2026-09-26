@@ -16,8 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::advisor::input::{repository_root, BATTLE_RULE_ID};
 use crate::advisor::search::{
-    default_search_threads, search_with_threads, EvaluationKind, OpeningPolicy, RankedMove,
-    SearchConfig, SearchMode, SearchSnapshot, ADVISOR_POLICY_SEMANTIC_REVISION_V1,
+    default_search_threads, search_with_threads, EvaluationKind, RankedMove, SearchConfig,
+    SearchMode, SearchSnapshot, ADVISOR_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::catalog::{CardKey, EffectiveCardCatalog};
 use crate::effect_registry::EffectRegistryV1;
@@ -133,7 +133,6 @@ pub fn run_with_threads(
         first_mover: request.first_mover.engine(),
         mode: request.search_mode(),
         budget: Duration::from_millis(request.budget_ms),
-        opening: request.opening_policy.engine(),
     };
     let mut write_failed = None;
     let mut last_progress = Duration::ZERO;
@@ -208,29 +207,9 @@ struct Request {
     players: WirePlayers,
     history: Vec<HistoryRound>,
     budget_ms: u64,
-    /// How to evaluate an opening root. Absent means the historical heuristic, so a host
-    /// that predates this field keeps its old behaviour. A host that predates it cannot
-    /// accidentally receive an exact opening either, because the response echoes which
-    /// evaluator actually ran.
-    #[serde(default)]
-    opening_policy: WireOpeningPolicy,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "snake_case")]
-enum WireOpeningPolicy {
-    #[default]
-    PositionHeuristic,
-    ExactContinuation,
-}
-
-impl WireOpeningPolicy {
-    const fn engine(self) -> OpeningPolicy {
-        match self {
-            Self::PositionHeuristic => OpeningPolicy::PositionHeuristic,
-            Self::ExactContinuation => OpeningPolicy::ExactContinuation,
-        }
-    }
+    // There is no opening evaluator to choose: every root, the opening included, is solved
+    // exactly. Advisor policy revision 2 carried an `opening_policy` field here; it is now
+    // an unknown field and rejected, and a revision-2 host is refused on its provenance.
 }
 
 impl Request {
@@ -805,7 +784,6 @@ impl Response {
             opponent_hand_index,
             score_frame: "requester",
             evaluation_kind: match snapshot.evaluation {
-                EvaluationKind::OpeningEstimate => "opening_estimate",
                 EvaluationKind::ExactOpeningPolicy => "exact_opening_policy",
                 EvaluationKind::ExactContinuationPolicy => "exact_continuation_policy",
             },
@@ -1139,7 +1117,7 @@ mod tests {
             assert_eq!(line["sequence"], index as u64);
             assert_eq!(line["mode"], "first");
             assert!(line["opponent_hand_index"].is_null());
-            assert_eq!(line["evaluation_kind"], "opening_estimate");
+            assert_eq!(line["evaluation_kind"], "exact_opening_policy");
             assert_eq!(line["score_frame"], "requester");
             assert!(line["ranked_moves"].is_array());
             for move_ in line["ranked_moves"].as_array().unwrap() {
@@ -1348,6 +1326,16 @@ mod tests {
             request["provenance"][field] = json!(0);
             assert_rejected(request);
         }
+        // Revision 2 let a host choose the opening evaluator. There is nothing to choose now,
+        // so the field is unknown whatever it asks for, and a revision-2 host is refused.
+        for policy in ["position_heuristic", "exact_continuation"] {
+            let mut request = valid_request();
+            request["opening_policy"] = json!(policy);
+            assert_rejected(request);
+        }
+        let mut request = valid_request();
+        request["provenance"]["advisor_policy_semantic_revision"] = json!(2);
+        assert_rejected(request);
         let mut request = valid_request();
         request["provenance"]
             .as_object_mut()

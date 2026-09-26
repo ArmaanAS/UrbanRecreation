@@ -348,7 +348,7 @@ Deno.test("best-bets numbers line up with their headers", () => {
   }
 });
 
-Deno.test("round one is labelled as an opening estimate rather than a win chance", () => {
+Deno.test("round one is presented as a win chance with a Worst, like every round", () => {
   const game = quiet(() =>
     new Game(
       new Player(12, 12, 0),
@@ -366,15 +366,17 @@ Deno.test("round one is labelled as an opening estimate rather than a win chance
     ),
   );
 
-  assertEquals(out.includes("fast opening estimate"), true);
-  assertEquals(out.includes("Opening estimates"), true);
-  assertEquals(out.includes("Avg"), true);
-  assertEquals(out.includes("Range"), true);
-  assertEquals(out.includes("Opening score by pillz"), true);
-  assertEquals(out.includes("Win % by pillz"), false);
+  assertEquals(out.includes("you move first"), true);
+  assertEquals(out.includes("estimate"), false);
+  assertEquals(out.includes("Best bets"), true);
+  assertEquals(out.includes("Win"), true);
+  assertEquals(out.includes("Worst"), true);
+  assertEquals(out.includes("Range"), false);
+  assertEquals(out.includes("Win % by pillz"), true);
+  assertEquals(out.includes("Opening score"), false);
 });
 
-Deno.test("round one reserves ten recommendation rows by default", () => {
+Deno.test("round one reserves the same eight recommendation rows as later rounds", () => {
   const game = quiet(() =>
     new Game(
       new Player(12, 12, 0),
@@ -395,16 +397,12 @@ Deno.test("round one reserves ten recommendation rows by default", () => {
         })
       ),
     ).split("\n");
-    const heading = lines.findIndex((line) =>
-      line.includes("Opening estimates")
-    );
-    const matrix = lines.findIndex((line) =>
-      line.includes("Opening score by pillz")
-    );
+    const heading = lines.findIndex((line) => line.includes("Best bets"));
+    const matrix = lines.findIndex((line) => line.includes("Win % by pillz"));
     return matrix - heading;
   };
 
-  assertEquals(gap(), gap(8) + 2);
+  assertEquals(gap(), gap(8));
 });
 
 Deno.test("three complete recommendations stay above optimistic partial rows", () => {

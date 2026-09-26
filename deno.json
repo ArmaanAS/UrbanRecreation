@@ -6,6 +6,7 @@
     "compile": "deno run -RW ./scripts/CompileAbilities.js",
     "log": "deno run --watch --allow-net=0.0.0.0:8787 --allow-read=captures --allow-write=ur_log.jsonl,captures,data --allow-env=FORCE_COLOR --allow-sys=osRelease ./log_server.ts",
     "cards": "deno run --allow-read --allow-write=data --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/BuildCardData.ts",
+    "opening-prior": "deno run --allow-read=captures,src/solver/Search.ts,rust/src/advisor/search.rs --allow-write=src/solver/Search.ts,rust/src/advisor/search.rs ./scripts/OpeningPrior.ts",
     "prune": "deno run --allow-read --allow-write --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/PruneLog.ts",
     "extract": "deno run --allow-read --allow-write=captures --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/ExtractBattle.ts",
     "bench": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 --inspect-brk ./tests/IterTree.bench.ts",

@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 
 use urban_recreation_rust::advisor::input::{prepare, AdvisorOptions, PreparedAdvisorInput};
 use urban_recreation_rust::advisor::search::{
-    default_search_threads, search_with_threads, AdvisorMove, OpeningPolicy, RankedMove,
-    SearchConfig, SearchMode, SearchSnapshot,
+    default_search_threads, search_with_threads, AdvisorMove, RankedMove, SearchConfig, SearchMode,
+    SearchSnapshot,
 };
 use urban_recreation_rust::engine::{
     BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CombatStatDiagnosticV1, PlayerId,
@@ -65,7 +65,6 @@ fn config(us: PlayerId, first_mover: PlayerId, mode: SearchMode) -> SearchConfig
         first_mover,
         mode,
         budget: Duration::from_secs(600),
-        opening: OpeningPolicy::ExactContinuation,
     }
 }
 

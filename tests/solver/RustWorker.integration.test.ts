@@ -9,7 +9,6 @@ import {
 import {
   CompletedRustSearch,
   DenoCommandRunner,
-  type RustOpeningPolicy,
   runRustAdvisor,
 } from "@/solver/RustAdvisor.ts";
 import { normaliseRustAdvisorInput } from "@/solver/RustAdvisorInput.ts";
@@ -76,7 +75,6 @@ async function runDecision(
   completed: number,
   decision: Decision,
   expectedMode: SearchMode,
-  openingPolicy: RustOpeningPolicy = "position_heuristic",
 ) {
   const state = atDecision(await capture(id), completed, decision);
   assertEquals(state.search.mode, expectedMode, `capture ${id} TS mode`);
@@ -85,8 +83,7 @@ async function runDecision(
     game: state.game,
     decision: { mode: state.search.mode, us: state.search.us },
     requestId: `rust-worker-${id}-${decision}`,
-    budgetMs: openingPolicy === "exact_continuation" ? 30_000 : 5_000,
-    openingPolicy,
+    budgetMs: 30_000,
   });
   assert(input.supported, input.supported ? "" : input.reason);
   if (!input.supported) throw new Error("unreachable");
@@ -97,12 +94,16 @@ async function runDecision(
     new DenoCommandRunner({ command: worker }),
     input.request,
     state.search.candidates,
-    { timeoutMs: 10_000 },
+    { timeoutMs: 40_000 },
   );
   assertEquals(transcript.final.complete, true);
   assertEquals(transcript.final.mode, input.request.mode);
   assertEquals(transcript.final.unitsDone, transcript.final.unitsTotal);
-  const rust = new CompletedRustSearch(state.game, transcript.final, openingPolicy);
+  assertEquals(
+    transcript.final.evaluationKind,
+    completed === 0 ? "exact_opening_policy" : "exact_continuation_policy",
+  );
+  const rust = new CompletedRustSearch(state.game, transcript.final);
   assertEquals(rust.done, true);
   assertEquals(rust.mode, state.search.mode);
   assertEquals(rust.candidates.length, state.search.candidates.length);
@@ -115,33 +116,24 @@ Deno.test({
   ignore: !workerAvailable,
   async fn() {
     // At least one decision from every rule-10 strict draw, spanning all three live
-    // information modes and both opening and exact continuation evaluation.
-    const openingFirst = await runDecision(
-      1024673,
-      0,
-      "first",
-      SearchMode.FIRST,
-    );
+    // information modes and both the opening and later rounds. Round one is an exact solve
+    // in both implementations; a FIRST opening costs the single-threaded TypeScript side
+    // four to thirteen seconds, so this gate keeps one (877812, the cheapest) and meets the
+    // other FIRST-opening draws in round two. tests/solver/ExactOpeningParity.test.ts adds
+    // 1089346's FIRST opening under UR_SLOW_PARITY.
     // Complete each TS semantic comparison before constructing the next Game. Each Game
     // owns its battle cache now, so this is only to keep one comparison in flight at a time.
-    while (openingFirst.search.step()) {
-      /* complete the TypeScript opening matrix */
-    }
-    assertEquals(
-      compareRustSearches(openingFirst.search, openingFirst.rust),
-      "rust match",
-    );
-    const vodLifeOpeningFirst = await runDecision(
+    const vodLifeSecond = await runDecision(
       925719,
-      0,
-      "first",
-      SearchMode.FIRST,
+      1,
+      "second",
+      SearchMode.SECOND,
     );
-    while (vodLifeOpeningFirst.search.step()) {
-      /* complete the TypeScript VOD-Life opening matrix */
+    while (vodLifeSecond.search.step()) {
+      /* complete the TypeScript VOD-Life round-two matrix */
     }
     assertEquals(
-      compareRustSearches(vodLifeOpeningFirst.search, vodLifeOpeningFirst.rust),
+      compareRustSearches(vodLifeSecond.search, vodLifeSecond.rust),
       "rust match",
     );
     const equalizerLifeOpeningFirst = await runDecision(
@@ -164,24 +156,25 @@ Deno.test({
     // Keep one completed production decision for each, rather than treating catalog
     // eligibility as proof that the worker's post-round implementation agrees with TS.
     // 1061897's owner moved second, so retain the committed first card for an actual
-    // opening SECOND decision rather than forcing a nonexistent FIRST view.
-    const anitaOpenings: Array<[number, Decision, SearchMode]> = [
-      [1061897, "second", SearchMode.SECOND],
-      [1069813, "first", SearchMode.FIRST],
-      [1089346, "first", SearchMode.FIRST],
+    // opening SECOND decision rather than forcing a nonexistent FIRST view. The other two
+    // owners opened FIRST, so they answer the revealed card in round two.
+    const anitaDecisions: Array<[number, number]> = [
+      [1061897, 0],
+      [1069813, 1],
+      [1089346, 1],
     ];
-    for (const [id, decision, mode] of anitaOpenings) {
-      const anitaOpening = await runDecision(
+    for (const [id, completed] of anitaDecisions) {
+      const anita = await runDecision(
         id,
-        0,
-        decision,
-        mode,
+        completed,
+        "second",
+        SearchMode.SECOND,
       );
-      while (anitaOpening.search.step()) {
-        /* complete the TypeScript Anita opening matrix */
+      while (anita.search.step()) {
+        /* complete the TypeScript Anita matrix */
       }
       assertEquals(
-        compareRustSearches(anitaOpening.search, anitaOpening.rust),
+        compareRustSearches(anita.search, anita.rust),
         "rust match",
       );
     }
@@ -203,20 +196,17 @@ Deno.test({
       ),
       "rust match",
     );
-    const reprisalOpeningFirst = await runDecision(
+    const reprisalSecond = await runDecision(
       1060199,
-      0,
-      "first",
-      SearchMode.FIRST,
+      1,
+      "second",
+      SearchMode.SECOND,
     );
-    while (reprisalOpeningFirst.search.step()) {
-      /* complete the TypeScript opening matrix */
+    while (reprisalSecond.search.step()) {
+      /* complete the TypeScript round-two matrix */
     }
     assertEquals(
-      compareRustSearches(
-        reprisalOpeningFirst.search,
-        reprisalOpeningFirst.rust,
-      ),
+      compareRustSearches(reprisalSecond.search, reprisalSecond.rust),
       "rust match",
     );
     const openingSecond = await runDecision(
@@ -270,35 +260,22 @@ Deno.test({
 });
 
 Deno.test({
-  name: "the hosted worker solves an opening exactly only when asked to",
+  name:
+    "the hosted worker solves the opening exactly, weighted by the opening prior",
   ignore: !workerAvailable,
   async fn() {
-    // Round one is the only place the opening policy can apply, and 877636 opens SECOND,
-    // which is the cheap information set: the opponent's card is already visible.
-    const estimated = await runDecision(877636, 0, "second", SearchMode.SECOND);
-    assertEquals(estimated.rust.exactOpening, false);
-
-    const exact = await runDecision(
-      877636,
-      0,
-      "second",
-      SearchMode.SECOND,
-      "exact_continuation",
-    );
-    assertEquals(exact.rust.exactOpening, true);
-
-    // Same position, same legal actions, same opposing replies: only the evaluator moved.
-    assertEquals(exact.rust.candidates.length, estimated.rust.candidates.length);
-    assertEquals(exact.rust.units, estimated.rust.units);
-
-    // A solved opening is a different question from an estimated one, so the two must not
-    // be reported as agreeing. The TypeScript side has no exact opening at all.
-    assert(estimated.search.openingEstimate);
-    while (estimated.search.step()) {
-      /* complete the TypeScript opening estimate */
+    // 877636 opens SECOND, the cheap information set: the opponent's card is visible.
+    const opening = await runDecision(877636, 0, "second", SearchMode.SECOND);
+    assert(opening.search.openingPrior);
+    while (opening.search.step()) {
+      /* solve the TypeScript opening */
+    }
+    // Every leaf is a solved line, so the Worst column is categorical on both sides.
+    for (const candidate of opening.rust.candidates) {
+      assert([-1, 0, 1].includes(candidate.minimax), candidate.key);
     }
     assertEquals(
-      compareRustSearches(estimated.search, estimated.rust),
+      compareRustSearches(opening.search, opening.rust),
       "rust match",
     );
   },

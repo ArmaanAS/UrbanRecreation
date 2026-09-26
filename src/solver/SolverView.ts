@@ -279,15 +279,13 @@ function opponentReadPanel(
   const nameW = Math.max(30, Math.min(52, cols - 25));
   lines.push(
     padEnd(`  ${label("Best replies if OPP used")} ${assumed}`, nameW) +
-      padStart(label(search.openingEstimate ? "Score" : "Result"), 9) +
+      padStart(label("Result"), 9) +
       padStart(label("Now"), 7) +
       padStart(dim(`${results.length}/${search.candidates.length}`), 8),
   );
   const rows = results.slice(0, 3).map((result, index) => {
     const score = search.percent(result.value);
-    const resultText = search.openingEstimate
-      ? fg(heat(score), pct(score))
-      : score > 50
+    const resultText = score > 50
       ? fg(GREEN, "Win")
       : score < 50
       ? fg(RED, "Lose")
@@ -315,16 +313,12 @@ function opponentReadPanel(
   return { lines, targets };
 }
 
-function recommendationHeading(
-  cols: number,
-  title: string,
-  openingEstimate = false,
-): string {
+function recommendationHeading(cols: number, title: string): string {
   const nameW = Math.max(14, Math.min(34, cols - (cols >= 78 ? 35 : 23)));
   const koCol = cols >= 78 ? 6 : 0;
   return padEnd(label(`  ${title}`), nameW) +
-    padStart(label(openingEstimate ? "Avg" : "Win"), 6) +
-    padStart(label(openingEstimate ? "Range" : "Worst"), 8) +
+    padStart(label("Win"), 6) +
+    padStart(label("Worst"), 8) +
     (koCol
       ? padStart(label("KO"), koCol) + padStart(label("Risk"), koCol)
       : "") +
@@ -636,8 +630,6 @@ export function render(
       ? `answering ${bold(oppCard?.name ?? "")}`
       : search.mode === SearchMode.BLIND_SECOND
       ? "opponent choosing  ·  initial estimate"
-      : search.openingEstimate
-      ? "you move first  ·  fast opening estimate"
       : "you move first");
   const rate = stats.ms > 0 ? (stats.unitsDone / (stats.ms / 1000)) : 0;
   const eta = rate > 0 && !done
@@ -647,12 +639,7 @@ export function render(
   const progress = extras.phase !== undefined
     ? fg(CYAN, extras.phase.progress)
     : done
-    ? fg(
-      GREEN,
-      `${search.openingEstimate ? "estimated" : "solved"} in ${
-        duration(stats.ms)
-      }`,
-    )
+    ? fg(GREEN, `solved in ${duration(stats.ms)}`)
     : `${workers}${stats.unitsDone}/${stats.units}` +
       dim(eta ? ` eta ${eta}` : "");
 
@@ -670,7 +657,7 @@ export function render(
   const hasStatus = extras.status !== undefined ||
     extras.connection !== undefined || extras.battleId !== undefined ||
     extras.autoQueue !== undefined;
-  const desiredTop = extras.top ?? (search.openingEstimate ? 10 : 8);
+  const desiredTop = extras.top ?? 8;
   // Four rows below the main table are permanently reserved for the defensive shortlist.
   // The optional battle panel disappears when space is tight; it must never shrink either
   // recommendation table into a different shape.
@@ -708,23 +695,13 @@ export function render(
     // Only `win` is provisional. `worst` can only fall as more of the opponent's options
     // are tried, and a knockout already seen is a fact about a line that exists - so
     // those are shown in full even while the search runs, which is when they matter most.
-    const winPct = search.openingEstimate
-      ? pct(search.percent(c.average))
-      : `${search.shownPercent(c.average)}`;
-    const shownScore = search.openingEstimate ? winPct : `${winPct}%`;
+    const shownScore = `${search.shownPercent(c.average)}%`;
     const win = settled
       ? fg(heat(search.percent(c.average)), shownScore)
       : dim(`~${shownScore}`);
-    // A full subtree evaluates to exactly win, draw or loss, while the shallow opening
-    // estimate is continuous and therefore shows its observed floor-to-ceiling range.
+    // Every subtree, round one's included, evaluates to exactly win, draw or loss.
     const worstPct = search.percent(c.minimax);
-    const worst = search.openingEstimate
-      ? (() => {
-        const ceiling = search.percent(search.ceiling(c));
-        return fg(heat(worstPct), pct(worstPct)) + dim("–") +
-          fg(heat(ceiling), pct(ceiling));
-      })()
-      : worstPct > 50
+    const worst = worstPct > 50
       ? fg(GREEN, "Win")
       : worstPct < 50
       ? fg(RED, "Lose")
@@ -754,12 +731,10 @@ export function render(
     // column below it sits two cells left of its own heading.
     const title = extras.phase
       ? "Previous advice"
-      : search.openingEstimate
-      ? "Opening estimates"
       : search.mode === SearchMode.BLIND_SECOND
       ? "Initial estimates"
       : "Best bets";
-    table.push(recommendationHeading(cols, title, search.openingEstimate));
+    table.push(recommendationHeading(cols, title));
 
     const body: string[] = [];
     for (const [i, c] of ranked.slice(0, topN).entries()) {
@@ -788,13 +763,7 @@ export function render(
   );
   const needsSafe = search.done && !topFiveHasSafe && shownSafe.length > 0;
   if (needsSafe) {
-    safeTable.push(
-      recommendationHeading(
-        cols,
-        "─ Safe bets (0% Risk)",
-        search.openingEstimate,
-      ),
-    );
+    safeTable.push(recommendationHeading(cols, "─ Safe bets (0% Risk)"));
     safeTable.push(
       ...shownSafe.map((candidate, index) =>
         recommendationRow(candidate, index + 1)
@@ -823,11 +792,7 @@ export function render(
   const matrix: string[] = ["", ""];
   matrix.push(
     padEnd(
-      label(
-        search.openingEstimate
-          ? "  Opening score by pillz"
-          : "  Win % by pillz",
-      ),
+      label("  Win % by pillz"),
       Math.max(0, mNameCol + statCol),
     ) +
       bets.map((p) => padStart(label(String(p)), cell)).join(""),
@@ -1003,7 +968,7 @@ function formatCell(search: Search, c: Candidate | undefined, rowBest: number) {
   if (c === undefined) return dim("."); // that bet cannot afford fury
   if (Number.isNaN(c.average)) return dim("-"); // not sampled yet
   const p = search.percent(c.average);
-  const text = search.openingEstimate ? pct(p) : `${shownPercent(p)}`;
+  const text = `${shownPercent(p)}`;
   // Dim anything still being sampled, so a settled number is visibly different.
   if (c.done < search.samples) return dim(text);
   return p === rowBest ? bold(fg(heat(p), text)) : fg(heat(p), text);
