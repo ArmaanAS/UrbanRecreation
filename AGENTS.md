@@ -72,6 +72,13 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    Work through that list, but check each entry against `captures/games/<id>.json` before
    coding: several turned out to be misattributed, two of them to abilities that were
    already implemented. Re-run the replay suite after each fix.
+2. **Backlog, not started: deck building for a game mode.** The owner's next bigger idea
+   (2026-09-26): help build decks under a mode's rules (star cap, bans, Leaders, Oculus,
+   single or dual clan) and rank clans against each other in theory (solver matchups) and in
+   practice (captures). Mostly thinking and data gathering first - the mode rules and the
+   owner's collection are not captured yet. `docs/deck-building.md` holds the problem
+   statement, what exists, what is missing and a layered approach. Do not start it without
+   the owner.
 
 ## How to resume (read this first in a new session)
 
