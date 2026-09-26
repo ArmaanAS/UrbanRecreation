@@ -30,7 +30,7 @@ import {
 } from "./Matchup.ts";
 import { formatHands, formatMeta, type GameRecord } from "./Meta.ts";
 import { deckReport } from "./Report.ts";
-import { swapSearch } from "./Swap.ts";
+import { ownedCandidates, swapSearch } from "./Swap.ts";
 import type { DeckCard, DeckFormatData, OwnedCopies, SiteCard, SiteDeck, SiteEvo } from "./SiteData.ts";
 
 const PORT = 8788;
@@ -192,6 +192,23 @@ async function coverage(): Promise<Json> {
   return coverageView.view;
 }
 
+// ---- decks improved by `deno task deck-search`, offered to Deck Lab as drafts --------------
+async function suggestions(): Promise<Json[]> {
+  const out: Json[] = [];
+  try {
+    for await (const entry of Deno.readDir("data/analysis")) {
+      if (!entry.isFile || !/^deck-search-.*\.json$/.test(entry.name)) continue;
+      const file = await readData(`data/analysis/${entry.name}`);
+      if (!Array.isArray(file?.characters) || !file.start) continue;
+      const { characters, start, format, night, swaps, check, generatedAt } = file;
+      out.push({ file: entry.name, characters, start, format, night, swaps, check, generatedAt });
+    }
+  } catch (error) {
+    if (!(error instanceof Deno.errors.NotFound)) throw error;
+  }
+  return out.sort((x, y) => String(y.generatedAt).localeCompare(String(x.generatedAt)));
+}
+
 // ---- deck scoring on the exact Rust solver (src/decks/Matchup.ts) --------------------------
 export interface Solver {
   runner: MatchupRunner;
@@ -276,52 +293,6 @@ function summary(result: DeckVsDeckResult, clanOf?: (hand: readonly (readonly [n
   };
 }
 
-/** Candidates a swap search considers at most, so a job stays a few minutes long. */
-const MAX_CANDIDATES = 40;
-const baseName = (name: string) => name.replace(/ Cr$/, "");
-
-/**
- * The owned cards that could take `slot`: of the slot card's clan (or of any clan in the deck),
- * not already in the deck, each at its highest owned level that the solver can score and that
- * keeps a legal deck legal in the format.
- */
-async function swapCandidates(
-  deck: DeckCard[],
-  slot: number,
-  scope: "clan" | "deck",
-  formatId: number | undefined,
-  night: boolean,
-): Promise<DeckCard[]> {
-  const c = await catalog();
-  if (!c.owned) throw new Error("no collection captured yet: open Collection Pro with the log server running");
-  const clans = new Set(
-    (scope === "clan" ? [deck[slot]] : deck).map((d) => c.cards.get(d.id)?.clan_id).filter((id) => id !== undefined),
-  );
-  const taken = new Set(deck.filter((_, i) => i !== slot).map((d) => baseName(c.cards.get(d.id)?.name ?? `#${d.id}`)));
-  const cov = await coverage();
-  const format = c.formats.find((f) => f.id === formatId);
-  const legal = (cards: DeckCard[]) =>
-    !format || deckReport(cards, c, night).formats.find((v) => v.formatId === format.id)?.legal !== false;
-  const keepLegal = legal(deck);
-  const out: (DeckCard & { power: number })[] = [];
-  for (const [id, copies] of c.owned) {
-    const card = c.cards.get(id);
-    if (!card || id === deck[slot].id || !clans.has(card.clan_id) || taken.has(baseName(card.name))) continue;
-    const levels = Object.keys(copies).map(Number).filter((l) => card.evos[String(l)]).sort((x, y) => y - x);
-    for (const level of levels) {
-      const code = cov.cards?.[id]?.[level]?.[night ? 1 : 0];
-      if (code && code !== "e" && code !== "u") continue;
-      const editions = Object.keys(copies[String(level)] ?? {});
-      const candidate = { id, level, state: editions.includes("") ? "" : editions[0] ?? "" };
-      if (keepLegal && !legal(deck.map((d, i) => (i === slot ? candidate : d)))) continue;
-      const evo = card.evos[String(level)];
-      out.push({ ...candidate, power: evo.power + evo.damage });
-      break;
-    }
-  }
-  return out.sort((x, y) => y.power - x.power).slice(0, MAX_CANDIDATES).map(({ id, level, state }) => ({ id, level, state }));
-}
-
 async function startMatchup(body: Json): Promise<Response> {
   const deck = validDeck(body?.characters);
   if (!deck || deck.length < 4) return json({ error: "characters must be 4 to 30 {id, level 1-5, state}" }, 400);
@@ -390,7 +361,12 @@ async function startMatchup(body: Json): Promise<Response> {
         },
       };
       if (swap) {
-        const candidates = await swapCandidates(deck, swap.slot, swap.scope ?? "clan", body?.format, night);
+        const candidates = ownedCandidates(deck, swap.slot, await catalog(), {
+          scope: swap.scope ?? "clan",
+          formatId: body?.format,
+          night,
+          coverage: await coverage(),
+        });
         const found = await swapSearch(deck, swap.slot, candidates, pairsFor, options);
         view.result = {
           base: { scored: found.base.scored, refused: found.base.refused, mean: found.base.mean },
@@ -447,6 +423,7 @@ export async function handle(r: Request): Promise<Response> {
   }
   if (r.method === "GET" && path === "/api/collection") return json(await collection());
   if (r.method === "GET" && path === "/api/coverage") return json(await coverage());
+  if (r.method === "GET" && path === "/api/suggestions") return json(await suggestions());
   if (r.method === "GET" && path === "/api/clans") {
     const formatId = Number(new URL(r.url).searchParams.get("format"));
     if (!Number.isInteger(formatId)) return json({ error: "format must be a deck format id" }, 400);

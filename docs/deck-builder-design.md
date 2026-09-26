@@ -326,7 +326,19 @@ points, Sledg Cr L5 +4.2, Bulma L5 +3.9, Ghoub L4 +3.1; most others within a poi
 candidate refused in every hand that holds it shows "?", not zero. "Use" puts it in the local
 draft; nothing is written to the site.
 
-The plan as first written, for a whole-deck search:
+**Slot by slot over a whole deck, built the same day**: `deno task deck-search --deck <name>`
+runs that search on every slot in turn, keeps the best candidate only when its gain is more than
+twice its standard error, and repeats for up to `--passes` passes. The gains are measured on seed
+1's hands, which a search can overfit, so the result is re-measured against the starting deck on
+seed 2's hands, which it never saw. It writes `data/analysis/deck-search-*.json`, and Deck Lab
+lists it under "Load a saved deck" as a draft whose diff line shows the swaps. T1 Rescue against
+30 captured Tourney opponents, candidates from Rescue, 45 minutes: Anita L3 -> Reeve L5, Aurora
+L5 -> Bulma L5, Lothar L2 -> Ghoub L4 and Sue L2 -> Sledg Cr L5, each +3.5 to +6.4 points on the
+search hands; on 25 unseen hands 50.1% -> 66.7%, +17.5 ± 2.3 points. Much of that is stars: the
+deck used 25 of Tourney's 32, the result uses all 32. Leaving a deck under the cap on purpose
+(a lower-cap room, a plan for evolving cards) is not something the search knows about.
+
+The plan as first written, for a search from scratch:
 
 Needs: phases 5-6, the cache, and a surrogate. The position heuristic costs 5.4 ms and correlates
 r ≈ 0.8 with the exact value within each first-mover stratum. Its first-mover bias has the

@@ -22,6 +22,8 @@ const state = {
   /** The last scoring job (GET /api/matchup). */
   matchup: null,
   matchupTimer: 0,
+  /** Decks improved by `deno task deck-search` (GET /api/suggestions). */
+  suggestions: [],
 };
 
 // ---- per-viewer draft persistence (a convenience: the page works without it) -------------
@@ -535,12 +537,14 @@ function renderReport(report) {
 
 // ---- wiring -----------------------------------------------------------------------------
 async function main() {
-  const [collection, decks, coverage, matchup] = await Promise.all([
+  const [collection, decks, coverage, matchup, suggestions] = await Promise.all([
     fetch("/api/collection").then((r) => r.json()),
     fetch("/api/decks").then((r) => r.json()),
     fetch("/api/coverage").then((r) => r.json()).catch(() => null),
     fetch("/api/matchup").then((r) => r.json()).catch(() => null),
+    fetch("/api/suggestions").then((r) => r.json()).catch(() => []),
   ]);
+  state.suggestions = Array.isArray(suggestions) ? suggestions : [];
   state.coverage = coverage && !coverage.missing ? coverage : null;
   state.matchup = matchup;
   $("solverOnly").disabled = !state.coverage;
@@ -560,7 +564,15 @@ async function main() {
   $("clan").innerHTML += clans.map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join("");
   $("loadDeck").innerHTML += state.decks.map((d) =>
     `<option value="${d.id}">${esc(d.name)}${d.isCurrent ? " (current)" : ""} · ${d.characters.length}</option>`
-  ).join("");
+  ).join("") + (state.suggestions.length
+    ? `<optgroup label="Improved by deno task deck-search">${
+      state.suggestions.map((s, i) => {
+        const gain = s.check ? ` (${s.check.gain >= 0 ? "+" : "−"}${Math.abs(s.check.gain * 50).toFixed(1)} on unseen hands)` : "";
+        return `<option value="suggestion:${i}">${esc(s.start.name)}, ${esc(s.format.name)}${s.night ? " night" : ""}: ` +
+          `${s.swaps.length} swaps${gain}</option>`;
+      }).join("")
+    }</optgroup>`
+    : "");
 
   for (const id of ["search", "clan", "rarity", "levelMode", "sort", "ownedOnly", "legalOnly", "solverOnly"]) {
     $(id).addEventListener(id === "search" ? "input" : "change", () => {
@@ -639,8 +651,20 @@ async function main() {
     saveDraft();
   });
   $("loadDeck").addEventListener("change", () => {
-    const deck = state.decks.find((d) => d.id === Number($("loadDeck").value));
+    const value = $("loadDeck").value;
     $("loadDeck").value = "";
+    const suggestion = value.startsWith("suggestion:") ? state.suggestions[Number(value.slice("suggestion:".length))] : null;
+    if (suggestion) {
+      // Its source is the deck it started from, so the diff line shows the swaps.
+      state.draft = {
+        name: `${suggestion.start.name} (improved)`,
+        sourceId: suggestion.start.id,
+        cards: suggestion.characters.map((c) => ({ ...c })),
+      };
+      draftChanged();
+      return;
+    }
+    const deck = state.decks.find((d) => d.id === Number(value));
     if (!deck) return;
     state.draft = { name: deck.name, sourceId: deck.id, cards: deck.characters.map((c) => ({ ...c })) };
     draftChanged();

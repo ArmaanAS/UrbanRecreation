@@ -4,6 +4,7 @@
 // differs in one slot shares every hand that does not draw that slot: those pairs are identical,
 // cost nothing (the cache), and differ by exactly zero, which is what makes a small N enough to
 // rank candidates. Phase 7 of docs/deck-builder-design.md, one slot at a time.
+import type { CompactCoverage } from "./Coverage.ts";
 import {
   type DeckCardRef,
   type HandPair,
@@ -14,6 +15,8 @@ import {
   type SolveOptions,
   summarize,
 } from "./Matchup.ts";
+import { type DeckCatalog, deckReport } from "./Report.ts";
+import type { DeckCard } from "./SiteData.ts";
 
 export interface SwapCandidateResult<C extends DeckCardRef> {
   card: C;
@@ -84,4 +87,49 @@ export async function swapSearch<C extends DeckCardRef>(
   const order = (x: number) => (Number.isFinite(x) ? x : -Infinity);
   ranked.sort((x, y) => order(y.diff) - order(x.diff));
   return { base: summarize(base), candidates: ranked, cached, solved };
+}
+
+/** Candidates a swap search considers at most, so a job stays a few minutes long. */
+export const MAX_CANDIDATES = 40;
+const baseName = (name: string) => name.replace(/ Cr$/, "");
+
+/**
+ * The owned cards that could take `slot`: of the slot card's clan (or of any clan in the deck),
+ * not the same character as a card in the deck, each at its highest owned level that the solver
+ * can score (per `coverage`, when given) and that keeps a legal deck legal in the format; the
+ * strongest `MAX_CANDIDATES` by power plus damage.
+ */
+export function ownedCandidates(
+  deck: readonly DeckCard[],
+  slot: number,
+  catalog: DeckCatalog,
+  options: { scope: "clan" | "deck"; formatId?: number; night: boolean; coverage?: Partial<CompactCoverage> },
+): DeckCard[] {
+  const { cards, owned } = catalog;
+  if (!owned) throw new Error("no collection captured yet: open Collection Pro with the log server running");
+  const clans = new Set(
+    (options.scope === "clan" ? [deck[slot]] : deck).map((d) => cards.get(d.id)?.clan_id).filter((id) => id !== undefined),
+  );
+  const taken = new Set(deck.filter((_, i) => i !== slot).map((d) => baseName(cards.get(d.id)?.name ?? `#${d.id}`)));
+  const format = catalog.formats.find((f) => f.id === options.formatId);
+  const legal = (list: DeckCard[]) =>
+    !format || deckReport(list, catalog, options.night).formats.find((v) => v.formatId === format.id)?.legal !== false;
+  const keepLegal = legal([...deck]);
+  const out: (DeckCard & { power: number })[] = [];
+  for (const [id, copies] of owned) {
+    const card = cards.get(id);
+    if (!card || id === deck[slot].id || !clans.has(card.clan_id) || taken.has(baseName(card.name))) continue;
+    const levels = Object.keys(copies).map(Number).filter((l) => card.evos[String(l)]).sort((x, y) => y - x);
+    for (const level of levels) {
+      const code = options.coverage?.cards?.[id]?.[level]?.[options.night ? 1 : 0];
+      if (code && code !== "e" && code !== "u") continue;
+      const editions = Object.keys(copies[String(level)] ?? {});
+      const candidate = { id, level, state: editions.includes("") ? "" : editions[0] ?? "" };
+      if (keepLegal && !legal(deck.map((d, i) => (i === slot ? candidate : d)))) continue;
+      const evo = card.evos[String(level)];
+      out.push({ ...candidate, power: evo.power + evo.damage });
+      break;
+    }
+  }
+  return out.sort((x, y) => y.power - x.power).slice(0, MAX_CANDIDATES).map(({ id, level, state }) => ({ id, level, state }));
 }

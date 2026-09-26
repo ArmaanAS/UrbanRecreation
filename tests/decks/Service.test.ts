@@ -155,3 +155,9 @@ Deno.test("a swap search needs a slot inside the draft", async () => {
     assertStringIncludes((await res.json()).error, "swap.");
   }
 });
+
+Deno.test("deck-search suggestions are listed, newest first, as an array", async () => {
+  const list = await (await handle(req("/api/suggestions"))).json();
+  assert(Array.isArray(list));
+  for (let i = 1; i < list.length; i++) assert(list[i - 1].generatedAt >= list[i].generatedAt);
+});

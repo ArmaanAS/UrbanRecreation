@@ -36,6 +36,7 @@ deno task rust:matchup           # build the batch hand-vs-hand solver the next 
 deno task matchup --a "T1 Rescue" --b "T1 Riots" --n 40 [--seed 1] [--night]  # deck vs deck from data/my_decks.json
 deno task card-coverage          # data/card_coverage.json: which cards the strict Rust engine can score
 deno task clan-matrix [--night]  # data/analysis/clan-matrix-<format>-<day|night>.json (Tourney: about 30 min)
+deno task deck-search --deck "T1 Rescue"  # improve a saved deck slot by slot from the collection (~45 min); Deck Lab offers it as a draft
 deno task bench / deno task time # iterTree benchmark (the breadth-first reference)
 deno task time-search            # Search benchmark - the depth-first path the advisor uses
 deno task advise                 # live view; starts its capture server automatically
@@ -87,8 +88,9 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    first cut of phase 3 (Deck Lab), phase 2's coverage badges, the phase 5 engine
    (`src/decks/Matchup.ts`, `deno task matchup`, `deno task card-coverage`, Deck Lab's
    Score), a first phase 6 clan matrix from the captured hands (`deno task clan-matrix`,
-   Deck Lab's Clans) and a one-slot phase 7 swap search (Deck Lab's ⇄). The rest of that doc -
-   a guarded apply, whole-deck search - is still a proposal with open questions for the owner. `docs/deck-building.md` has the problem and
+   Deck Lab's Clans) a one-slot phase 7 swap search (Deck Lab's ⇄) and a slot-by-slot deck search
+   (`deno task deck-search`). The rest of that doc - a guarded apply, a search from scratch - is
+   still a proposal with open questions for the owner. `docs/deck-building.md` has the problem and
    findings, `docs/site-api.md` the site's interfaces (captured and live).
    Never write to the owner's account (save, delete or set-current a deck, evolve, sell, buy)
    without the owner's explicit go-ahead for that action.
