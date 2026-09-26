@@ -4,6 +4,10 @@
 //   deno task rust:matchup                                  # build the solver once
 //   deno task deck-search --deck "T1 Rescue"                # Tourney field, 30 hands, 2 passes
 //   deno task deck-search --deck 17690254 --scope deck --n 40 --passes 3 --night
+//   deno task deck-search --deck "T1 Rescue" --only-format    # only the field's format stays legal
+//
+// By default every format the deck is legal in now stays legal (a 25-star deck legal in both
+// EFC and Tourney keeps EFC's cap and level rules); --only-format keeps only the field's format.
 //
 // Each pass runs Deck Lab's ⇄ on every slot in turn (src/decks/Swap.ts) and keeps the best
 // candidate only when its gain is more than twice its standard error. The seed is fixed, so the
@@ -26,7 +30,7 @@ import {
   summarize,
 } from "../src/decks/Matchup.ts";
 import { formatHands, type GameRecord } from "../src/decks/Meta.ts";
-import type { DeckCatalog } from "../src/decks/Report.ts";
+import { type DeckCatalog, deckReport } from "../src/decks/Report.ts";
 import type { DeckCard, DeckFormatData, OwnedCopies, SiteCard, SiteDeck } from "../src/decks/SiteData.ts";
 import { ownedCandidates, swapSearch } from "../src/decks/Swap.ts";
 
@@ -34,10 +38,10 @@ const OWNER_ID = 19309601;
 const SEARCH_SEED = 1;
 const CHECK_SEED = 2;
 const USAGE =
-  "usage: deno task deck-search --deck <name or id> [--format Tourney] [--n 30] [--passes 2] [--scope clan|deck] [--night]";
+  "usage: deno task deck-search --deck <name or id> [--format Tourney] [--n 30] [--passes 2] [--scope clan|deck] [--night] [--only-format]";
 
 function parse(args: string[]) {
-  const options = { deck: "", format: "Tourney", n: 30, passes: 2, scope: "clan" as "clan" | "deck", night: false };
+  const options = { deck: "", format: "Tourney", n: 30, passes: 2, scope: "clan" as "clan" | "deck", night: false, onlyFormat: false };
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
     const value = () => {
@@ -71,6 +75,9 @@ function parse(args: string[]) {
       }
       case "--night":
         options.night = true;
+        break;
+      case "--only-format":
+        options.onlyFormat = true;
         break;
       default:
         throw new Error(`unknown argument ${flag}\n${USAGE}`);
@@ -153,13 +160,17 @@ console.log(
     `against ${options.n} of the ${hands.length} captured ${format.name} opponents, ${options.night ? "night" : "day"}, ` +
     `candidates from the ${options.scope === "clan" ? "slot's clan" : "deck's clans"}, up to ${options.passes} passes`,
 );
+const keepFormats = options.onlyFormat ? [format.id] : formats.map((f) => f.id);
+const legalNow = deckReport(start.characters, catalog, options.night).formats.filter((v) => v.legal === true)
+  .filter((v) => keepFormats.includes(v.formatId)).map((v) => v.name);
+console.log(`  stays legal in: ${legalNow.length ? legalNow.join(", ") : "nothing (the deck is legal in none of them now)"}`);
 const started = performance.now();
 let deck: DeckCard[] = start.characters.map((c) => ({ ...c }));
 const swaps: { pass: number; slot: number; out: DeckCard; in: DeckCard; gain: number; gainErr: number; tried: number }[] = [];
 for (let pass = 1; pass <= options.passes; pass++) {
   let changed = false;
   for (let slot = 0; slot < deck.length; slot++) {
-    const candidates = ownedCandidates(deck, slot, catalog, { scope: options.scope, formatId: format.id, night: options.night, coverage });
+    const candidates = ownedCandidates(deck, slot, catalog, { scope: options.scope, keepFormats, night: options.night, coverage });
     if (!candidates.length) continue;
     const found = await swapSearch(deck, slot, candidates, (cards) => sampleFieldPairs(cards, hands, options.n, SEARCH_SEED), solve);
     const best = found.candidates[0];
@@ -188,7 +199,9 @@ const gain = diffs.reduce((s, d) => s + d, 0) / Math.max(1, diffs.length);
 const gainErr = Math.sqrt(diffs.reduce((s, d) => s + (d - gain) ** 2, 0) / Math.max(1, diffs.length - 1) / Math.max(1, diffs.length));
 const check = { seed: CHECK_SEED, before: summarize(was).mean, after: summarize(now).mean, gain, gainErr, pairs: diffs.length };
 
-const out = `data/analysis/deck-search-${start.id}-${format.id}-${options.night ? "night" : "day"}.json`;
+const out = `data/analysis/deck-search-${start.id}-${format.id}-${options.night ? "night" : "day"}${
+  options.onlyFormat ? "-only-format" : ""
+}.json`;
 await Deno.mkdir("data/analysis", { recursive: true });
 await Deno.writeTextFile(
   out,
@@ -199,6 +212,7 @@ await Deno.writeTextFile(
       night: options.night,
       n: options.n,
       scope: options.scope,
+      keptLegal: legalNow,
       start: { id: start.id, name: start.name, characters: start.characters },
       characters: deck,
       swaps,

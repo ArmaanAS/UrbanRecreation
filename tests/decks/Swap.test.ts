@@ -1,6 +1,7 @@
 import { assert, assertAlmostEquals, assertEquals } from "@std/assert";
 import { type MatchupRequest, type MatchupResponse, type MatchupRunner, sampleFieldPairs, type SolveRequest } from "@/decks/Matchup.ts";
-import { swapSearch } from "@/decks/Swap.ts";
+import type { OwnedCopies, SiteCard } from "@/decks/SiteData.ts";
+import { ownedCandidates, swapSearch } from "@/decks/Swap.ts";
 
 /** A hand's strength is the sum of its card ids, and the stronger hand wins by the difference. */
 const runner: MatchupRunner = {
@@ -57,4 +58,67 @@ Deno.test("a slot outside the deck is an error", async () => {
     threw = true;
   }
   assert(threw);
+});
+
+const siteCard = (id: number, clan_id: number, name = `Card ${id}`): SiteCard => ({
+  id,
+  name,
+  clan_id,
+  clan_name: `Clan ${clan_id}`,
+  level_min: 1,
+  level_max: 4,
+  rarity: "u",
+  release_date: 1,
+  efc_banned: false,
+  efc_max_evo_banned: false,
+  efc_temp_banned: false,
+  efc_bonus_low: false,
+  efc_bonus_high: false,
+  tourney_banned: false,
+  tourney_max_evo_banned: false,
+  evos: Object.fromEntries([1, 2, 3, 4].map((l) => [String(l), {
+    power: id % 10 + l,
+    damage: l,
+    ability: { id: 0, typeID: 0, unlockLevel: 0, description: "No Ability" },
+    nightAbility: [],
+  }])),
+  bonus: { id: 1, typeID: 0, description: "Power +1" },
+  nightBonus: [],
+});
+
+Deno.test("owned candidates keep every format the deck is legal in, at the highest level that does", () => {
+  const cards = [1, 2, 3, 4, 5, 6, 7].map((id) => siteCard(id, id <= 6 ? 10 : 20));
+  cards.push(siteCard(8, 10, "Card 1 Cr")); // the same character as card 1
+  const catalog = {
+    cards: new Map(cards.map((c) => [c.id, c])),
+    formats: [
+      { id: 1, name: "Cap 10", criteria: [{ name: "max_stars", value: 10, description: "10 stars at most" }] },
+      { id: 2, name: "Any", criteria: [] },
+    ],
+    owned: new Map<number, OwnedCopies>([
+      [5, { "4": { "": 1 }, "2": { p: 1 } }],
+      [6, { "3": { "": 2 } }],
+      [7, { "4": { "": 1 } }],
+      [8, { "4": { "": 1 } }],
+    ]),
+  };
+  const deck = [1, 2, 3, 4].map((id) => ({ id, level: 2, state: "" })); // 8 stars, legal in both
+  const both = ownedCandidates(deck, 3, catalog, { scope: "clan", keepFormats: [1, 2], night: false });
+  // Card 5 at level 4 would make 10 stars: fine. Card 6 at 3 makes 9. Card 7 is another clan and
+  // card 8 is card 1 again.
+  assertEquals(both.map((c) => [c.id, c.level, c.state]).sort(), [[5, 4, ""], [6, 3, ""]]);
+  const tight = [1, 2, 3, 4].map((id) => ({ id, level: id === 1 ? 4 : 2, state: "" })); // 10 stars
+  const capped = ownedCandidates(tight, 3, catalog, { scope: "clan", keepFormats: [1, 2], night: false });
+  assertEquals(capped.map((c) => [c.id, c.level, c.state]).sort(), [[5, 2, "p"]], "level 2 is all the cap leaves");
+  const loose = ownedCandidates(tight, 3, catalog, { scope: "clan", keepFormats: [2], night: false });
+  assertEquals(loose.map((c) => [c.id, c.level]).sort(), [[5, 4], [6, 3]], "only the other format is kept");
+  const wide = ownedCandidates(deck, 3, catalog, { scope: "deck", keepFormats: [1, 2], night: false });
+  assertEquals(wide.length, 2, "the deck's clans are still clan 10 only");
+  const refused = ownedCandidates(deck, 3, catalog, {
+    scope: "clan",
+    keepFormats: [1, 2],
+    night: false,
+    coverage: { cards: { "5": { "4": ["r", "r", -1, -1] } } },
+  });
+  assertEquals(refused.map((c) => [c.id, c.level]).sort(), [[5, 2], [6, 3]], "a level the solver refuses is skipped");
 });

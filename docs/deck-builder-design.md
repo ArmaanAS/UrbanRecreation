@@ -335,8 +335,13 @@ lists it under "Load a saved deck" as a draft whose diff line shows the swaps. T
 30 captured Tourney opponents, candidates from Rescue, 45 minutes: Anita L3 -> Reeve L5, Aurora
 L5 -> Bulma L5, Lothar L2 -> Ghoub L4 and Sue L2 -> Sledg Cr L5, each +3.5 to +6.4 points on the
 search hands; on 25 unseen hands 50.1% -> 66.7%, +17.5 ± 2.3 points. Much of that is stars: the
-deck used 25 of Tourney's 32, the result uses all 32. Leaving a deck under the cap on purpose
-(a lower-cap room, a plan for evolving cards) is not something the search knows about.
+deck used 25 of Tourney's 32, the result uses all 32 and three level-5 cards, which EFC forbids.
+The owner's "T1" decks are all exactly 25 stars and legal in EFC as well as Tourney, so both
+the search and Deck Lab's ⇄ now keep every format the deck is legal in now by default
+(`--only-format`, or unticking "Keep all its formats", relaxes that). Kept legal in EFC, Tourney
+and Free Fight, T1 Rescue has no swap worth more than twice its error (best: Tina L3 -> Joana
+L3 +0.9 ± 0.7, Aurora L5 -> Bulma L5 +2.9 ± 1.6), 8 minutes: within its rules and the owner's
+Rescue cards it is already the best deck a single swap can reach.
 
 The plan as first written, for a search from scratch:
 

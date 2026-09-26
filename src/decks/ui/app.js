@@ -139,7 +139,7 @@ async function startScore(slot) {
   const choice = $("opponent").value;
   if (!choice) return;
   const opponent = choice === "field" ? { format: format()?.id } : { deck: Number(choice.slice("deck:".length)) };
-  const swap = Number.isInteger(slot) ? { slot, scope: $("swapScope").value } : undefined;
+  const swap = Number.isInteger(slot) ? { slot, scope: $("swapScope").value, keepAll: $("keepAll").checked } : undefined;
   try {
     const res = await fetch("/api/matchup", {
       method: "POST",
@@ -568,8 +568,9 @@ async function main() {
     ? `<optgroup label="Improved by deno task deck-search">${
       state.suggestions.map((s, i) => {
         const gain = s.check ? ` (${s.check.gain >= 0 ? "+" : "−"}${Math.abs(s.check.gain * 50).toFixed(1)} on unseen hands)` : "";
-        return `<option value="suggestion:${i}">${esc(s.start.name)}, ${esc(s.format.name)}${s.night ? " night" : ""}: ` +
-          `${s.swaps.length} swaps${gain}</option>`;
+        const legal = s.keptLegal?.length ? `, legal in ${s.keptLegal.join(", ")}` : "";
+        return `<option value="suggestion:${i}">${esc(s.start.name)} vs ${esc(s.format.name)}${s.night ? " night" : ""}: ` +
+          `${s.swaps.length ? `${s.swaps.length} swaps${gain}` : "no better swap"}${esc(legal)}</option>`;
       }).join("")
     }</optgroup>`
     : "");

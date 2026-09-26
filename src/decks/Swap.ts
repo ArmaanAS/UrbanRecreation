@@ -96,14 +96,15 @@ const baseName = (name: string) => name.replace(/ Cr$/, "");
 /**
  * The owned cards that could take `slot`: of the slot card's clan (or of any clan in the deck),
  * not the same character as a card in the deck, each at its highest owned level that the solver
- * can score (per `coverage`, when given) and that keeps a legal deck legal in the format; the
+ * can score (per `coverage`, when given) and that keeps the deck legal in every one of
+ * `keepFormats` it is legal in now (a deck built for two formats stays playable in both); the
  * strongest `MAX_CANDIDATES` by power plus damage.
  */
 export function ownedCandidates(
   deck: readonly DeckCard[],
   slot: number,
   catalog: DeckCatalog,
-  options: { scope: "clan" | "deck"; formatId?: number; night: boolean; coverage?: Partial<CompactCoverage> },
+  options: { scope: "clan" | "deck"; keepFormats: readonly number[]; night: boolean; coverage?: Partial<CompactCoverage> },
 ): DeckCard[] {
   const { cards, owned } = catalog;
   if (!owned) throw new Error("no collection captured yet: open Collection Pro with the log server running");
@@ -111,10 +112,15 @@ export function ownedCandidates(
     (options.scope === "clan" ? [deck[slot]] : deck).map((d) => cards.get(d.id)?.clan_id).filter((id) => id !== undefined),
   );
   const taken = new Set(deck.filter((_, i) => i !== slot).map((d) => baseName(cards.get(d.id)?.name ?? `#${d.id}`)));
-  const format = catalog.formats.find((f) => f.id === options.formatId);
-  const legal = (list: DeckCard[]) =>
-    !format || deckReport(list, catalog, options.night).formats.find((v) => v.formatId === format.id)?.legal !== false;
-  const keepLegal = legal([...deck]);
+  const legalIn = (list: readonly DeckCard[]) =>
+    new Set(deckReport([...list], catalog, options.night).formats.filter((v) => v.legal === true).map((v) => v.formatId));
+  const now = legalIn(deck);
+  const keep = options.keepFormats.filter((id) => now.has(id));
+  const legal = (list: DeckCard[]) => {
+    if (!keep.length) return true;
+    const after = legalIn(list);
+    return keep.every((id) => after.has(id));
+  };
   const out: (DeckCard & { power: number })[] = [];
   for (const [id, copies] of owned) {
     const card = cards.get(id);
@@ -125,7 +131,7 @@ export function ownedCandidates(
       if (code && code !== "e" && code !== "u") continue;
       const editions = Object.keys(copies[String(level)] ?? {});
       const candidate = { id, level, state: editions.includes("") ? "" : editions[0] ?? "" };
-      if (keepLegal && !legal(deck.map((d, i) => (i === slot ? candidate : d)))) continue;
+      if (!legal(deck.map((d, i) => (i === slot ? candidate : d)))) continue;
       const evo = card.evos[String(level)];
       out.push({ ...candidate, power: evo.power + evo.damage });
       break;

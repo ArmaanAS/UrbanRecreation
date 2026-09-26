@@ -36,7 +36,7 @@ deno task rust:matchup           # build the batch hand-vs-hand solver the next 
 deno task matchup --a "T1 Rescue" --b "T1 Riots" --n 40 [--seed 1] [--night]  # deck vs deck from data/my_decks.json
 deno task card-coverage          # data/card_coverage.json: which cards the strict Rust engine can score
 deno task clan-matrix [--night]  # data/analysis/clan-matrix-<format>-<day|night>.json (Tourney: about 30 min)
-deno task deck-search --deck "T1 Rescue"  # improve a saved deck slot by slot from the collection (~45 min); Deck Lab offers it as a draft
+deno task deck-search --deck "T1 Rescue"  # improve a saved deck slot by slot from the collection, keeping every format it is legal in (--only-format: just the field's); Deck Lab offers it as a draft
 deno task bench / deno task time # iterTree benchmark (the breadth-first reference)
 deno task time-search            # Search benchmark - the depth-first path the advisor uses
 deno task advise                 # live view; starts its capture server automatically

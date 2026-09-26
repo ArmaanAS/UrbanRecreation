@@ -200,8 +200,8 @@ async function suggestions(): Promise<Json[]> {
       if (!entry.isFile || !/^deck-search-.*\.json$/.test(entry.name)) continue;
       const file = await readData(`data/analysis/${entry.name}`);
       if (!Array.isArray(file?.characters) || !file.start) continue;
-      const { characters, start, format, night, swaps, check, generatedAt } = file;
-      out.push({ file: entry.name, characters, start, format, night, swaps, check, generatedAt });
+      const { characters, start, format, night, swaps, check, keptLegal, generatedAt } = file;
+      out.push({ file: entry.name, characters, start, format, night, swaps, check, keptLegal, generatedAt });
     }
   } catch (error) {
     if (!(error instanceof Deno.errors.NotFound)) throw error;
@@ -361,9 +361,11 @@ async function startMatchup(body: Json): Promise<Response> {
         },
       };
       if (swap) {
-        const candidates = ownedCandidates(deck, swap.slot, await catalog(), {
+        const c = await catalog();
+        const candidates = ownedCandidates(deck, swap.slot, c, {
           scope: swap.scope ?? "clan",
-          formatId: body?.format,
+          // By default every format the draft is legal in stays legal; else only the chosen one.
+          keepFormats: swap.keepAll === false ? [body?.format] : c.formats.map((f) => f.id),
           night,
           coverage: await coverage(),
         });
