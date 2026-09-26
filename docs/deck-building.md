@@ -1,9 +1,33 @@
 # Deck building for a game mode (backlog)
 
-Status: **not started.** The owner raised this on 2026-09-26 as the next bigger thing after
-the solver work. It is on the backlog to think about, not a committed plan. Everything below
-is a starting point for that thinking, and every rule marked *to confirm* needs the owner's
-word or a capture before anything is built on it.
+Status: **investigated, not built.** The owner raised this on 2026-09-26 as the next bigger
+thing after the solver work, and asked for it to be integrated with the website: first through
+the Tampermonkey userscript on "My Collection Pro" (https://www.urban-rivals.com/collection/pro/),
+whose own UI is buggy and hides card details, with our own UI as the gold-star version. The
+same day's read-only investigation is in `docs/site-api.md` (the site's collection, deck, format
+and market interfaces, mapped from traffic already captured) and `docs/deck-builder-design.md`
+(a phased design proposal with safety rules, a live-browser checklist and questions for the
+owner). Nothing is built until the owner answers those questions.
+
+What the investigation settled, correcting the first write-up below:
+- **Format rules are machine-readable.** `/ajax/collection/ action=deckformatsdata` returns
+  every format's criteria. On 2026-09-23: Tourney (54363) at least 8 cards, **32 stars max**,
+  218 banned and 133 banned at max level, no duplicates; EFC (1) at least 8, 25 stars max, no
+  level-1 cards, at most one level-5 card, weekly vote bans and staff ELO bans; Free Fight
+  (57215) at least 8; Survivor (55009) at least 10. Stars are the sum of card levels (the
+  site's own rule text). No format limits Leaders or clans. Ban lists move weekly.
+- **The collection and decks are readable and writable** through the same cookie-authenticated
+  form posts Collection Pro itself uses (`collectiondata`, `loaddeck`, `savedeck`); the owner
+  has 19 of 21 deck slots used. Any write must follow the design's safety rules.
+- **Engine coverage**: at max level the strict Rust projection can execute about 55% of all
+  cards in a neutral context, but 97% of the 857 card-levels seen in opposing Tourney hands and
+  all 81 of the owner's. Most of the gap is abilities no battle capture has shown yet.
+- **Cost**: an exact hand-pair opening solve takes about 1.2-1.9 s single-threaded (max 3.4 s),
+  so a full deck against deck (9,800 solves) is about 35-55 minutes on six cores; a sample of
+  100 hand pairs gives about ±1.5 points in 20-30 s. A clan matrix needs sampling and caching.
+- **A data hazard found on the way**: the local `data/site_characters.jsonl` held only 2,030 of
+  2,496 characters, because `__ur.dumpCharacters()` treated an expired-token error as the last
+  page. `deno task cards` now refuses to shrink the catalog, and userscript 0.7.1 stops loudly.
 
 ## The problem
 

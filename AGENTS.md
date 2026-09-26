@@ -75,10 +75,12 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
 2. **Backlog, not started: deck building for a game mode.** The owner's next bigger idea
    (2026-09-26): help build decks under a mode's rules (star cap, bans, Leaders, Oculus,
    single or dual clan) and rank clans against each other in theory (solver matchups) and in
-   practice (captures). Mostly thinking and data gathering first - the mode rules and the
-   owner's collection are not captured yet. `docs/deck-building.md` holds the problem
-   statement, what exists, what is missing and a layered approach. Do not start it without
-   the owner.
+   practice (captures), integrated with the site's "My Collection Pro" page through the
+   userscript first and our own UI later. Investigated 2026-09-26, not built:
+   `docs/deck-building.md` (problem and findings), `docs/site-api.md` (the site's collection,
+   deck and format interfaces from captured traffic) and `docs/deck-builder-design.md` (phased
+   design, safety rules for writing decks, live checklist, questions). Do not build any of it,
+   and never write to the owner's account, without the owner's go-ahead.
 
 ## How to resume (read this first in a new session)
 
@@ -87,7 +89,7 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    `--no-check` is only a speed-up; keep `deno task check` clean before committing.
 2. New games: the owner runs `deno task advise` (or standalone `deno task log` for capture
    without the TUI) and plays; then `deno task extract` and re-run the replay suite. The userscript
-   is at 0.7 - if `ur_log.jsonl` starts growing by gigabytes again, Tampermonkey is still
+   is at 0.7.1 - if `ur_log.jsonl` starts growing by gigabytes again, Tampermonkey is still
    running an older copy and needs it re-pasted. Failures print the round, both cards and the engine-vs-server diff;
    `captures/games/<id>.json` has the full round (moves, abilities, server results,
    post-round effects). Group new failures by ability keyword before fixing anything.
