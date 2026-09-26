@@ -103,6 +103,8 @@ Deno.test("a draft is scored against the captured Tourney field in the backgroun
   assert(done.result.refused > 0);
   assertEquals(done.result.refusals[0].side, "a");
   assertEquals(done.result.refusals[0].card, [269, 5]);
+  // Every scored pair is counted under its opposing hand's clan ("mixed" without one).
+  assertEquals(done.result.byClan.reduce((s: number, c: { scored: number }) => s + c.scored, 0), done.result.scored);
 });
 
 Deno.test("a new job stops the running one", async () => {
@@ -135,4 +137,12 @@ Deno.test("bad scoring requests are refused before anything runs", async () => {
     assertEquals(res.status, 400, JSON.stringify(body));
     assertStringIncludes((await res.json()).error, message);
   }
+});
+
+Deno.test("the clan matrix is read per format, and a bad format is refused", async () => {
+  const none = await (await handle(req("/api/clans?format=999999"))).json();
+  assertEquals(none, { day: null, night: null });
+  const bad = await handle(req("/api/clans?format=x"));
+  assertEquals(bad.status, 400);
+  await bad.body?.cancel();
 });

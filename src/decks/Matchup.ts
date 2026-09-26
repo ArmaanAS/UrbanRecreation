@@ -487,21 +487,25 @@ export class FileMatchupCache implements MatchupCache {
 // ---------------------------------------------------------------------------------------------
 // Deck versus deck
 
-export interface DeckVsDeckOptions {
+/** How to solve hand pairs: the solver, its cache and the room. */
+export interface SolveOptions {
   readonly runner: MatchupRunner;
   readonly cache?: MatchupCache;
-  /** Hand pairs to sample (default 100). */
-  readonly n?: number;
-  readonly seed?: number;
   readonly night?: boolean;
   readonly life?: number;
   readonly pillz?: number;
-  /** How many of A's worst pairs to return (default 5). */
-  readonly worst?: number;
   /** Called once per fresh solve as its response arrives. */
   readonly onProgress?: (done: number, total: number) => void;
   /** Stops the solver; the solves finished by then are kept in the cache. */
   readonly signal?: AbortSignal;
+}
+
+export interface DeckVsDeckOptions extends SolveOptions {
+  /** Hand pairs to sample (default 100). */
+  readonly n?: number;
+  readonly seed?: number;
+  /** How many of A's worst pairs to return (default 5). */
+  readonly worst?: number;
 }
 
 export interface PairResult {
@@ -659,11 +663,18 @@ export async function deckVsHands(
   return await scorePairs(sampleFieldPairs(deckA, hands, options.n ?? 100, seed), seed, options);
 }
 
-async function scorePairs(
+/** A pair's result, or why it was refused. */
+export type PairOutcome = PairResult | RefusedPair;
+export const isRefusedPair = (outcome: PairOutcome): outcome is RefusedPair => "reason" in outcome;
+
+/**
+ * Solves both first movers of every pair in one runner batch (through the cache) and returns
+ * each pair's outcome in the order given, hands in canonical order.
+ */
+export async function solvePairs(
   sampled: readonly HandPair[],
-  seed: number,
-  options: DeckVsDeckOptions,
-): Promise<DeckVsDeckResult> {
+  options: SolveOptions,
+): Promise<{ outcomes: PairOutcome[]; cached: number; solved: number }> {
   const context: SolveContext = {
     night: options.night ?? false,
     life: options.life ?? DEFAULT_LIFE,
@@ -673,36 +684,46 @@ async function scorePairs(
   const pairs = sampled.map(({ a, b }) => ({ a: canonicalHand(a), b: canonicalHand(b) }));
   const { keys, perPair } = solvesFor(pairs, context);
   const { cached, solved } = await resolve(keys, cache, options.runner, options.onProgress, options.signal);
-
-  const results: PairResult[] = [];
-  const refusedPairs: RefusedPair[] = [];
-  pairs.forEach(({ a, b }, i) => {
+  const outcomes = pairs.map(({ a, b }, i): PairOutcome => {
     const aFirst = cache.get(perPair[i].aFirst)!;
     const bFirst = cache.get(perPair[i].bFirst)!;
-    if ("refused" in aFirst || "refused" in bFirst) {
-      refusedPairs.push(
-        "refused" in aFirst
-          ? refusedPair(a, b, aFirst.refused, true)
-          : refusedPair(a, b, (bFirst as { refused: string }).refused, false),
-      );
-      return;
-    }
-    results.push({ a, b, aFirst: aFirst.value, bFirst: bFirst.value, score: (aFirst.value - bFirst.value) / 2 });
+    if ("refused" in aFirst) return refusedPair(a, b, aFirst.refused, true);
+    if ("refused" in bFirst) return refusedPair(a, b, bFirst.refused, false);
+    return { a, b, aFirst: aFirst.value, bFirst: bFirst.value, score: (aFirst.value - bFirst.value) / 2 };
   });
-  const scores = results.map((r) => r.score);
+  return { outcomes, cached, solved };
+}
+
+/** The mean score over the solved outcomes and its standard error; refused ones are counted apart. */
+export function summarize(outcomes: readonly PairOutcome[]) {
+  const pairs = outcomes.filter((o): o is PairResult => !isRefusedPair(o));
+  const refusedPairs = outcomes.filter(isRefusedPair);
+  const scores = pairs.map((r) => r.score);
   const m = mean(scores);
   return {
-    n: pairs.length,
-    seed,
-    night: context.night,
-    scored: results.length,
+    scored: pairs.length,
     refused: refusedPairs.length,
     mean: m,
     stderr: standardError(scores),
     percent: ((m + 1) / 2) * 100,
-    pairs: results,
-    worst: [...results].sort((x, y) => x.score - y.score).slice(0, options.worst ?? 5),
+    pairs,
     refusedPairs,
+  };
+}
+
+async function scorePairs(
+  sampled: readonly HandPair[],
+  seed: number,
+  options: DeckVsDeckOptions,
+): Promise<DeckVsDeckResult> {
+  const { outcomes, cached, solved } = await solvePairs(sampled, options);
+  const summary = summarize(outcomes);
+  return {
+    n: outcomes.length,
+    seed,
+    night: options.night ?? false,
+    ...summary,
+    worst: [...summary.pairs].sort((x, y) => x.score - y.score).slice(0, options.worst ?? 5),
     cached,
     solved,
   };

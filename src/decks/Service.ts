@@ -10,6 +10,7 @@
 // and caches its solves under cache/matchups/, like `deno task matchup`.
 import "colors";
 import { readRustV1Provenance } from "../solver/RustProvenance.ts";
+import { handClan } from "./ClanMatrix.ts";
 import { compactCoverage, type CoverageFile, describeRefusal } from "./Coverage.ts";
 import {
   assertCurrentBinary,
@@ -232,7 +233,15 @@ let job: { view: MatchupJob; controller: AbortController } | undefined;
 let jobCount = 0;
 
 /** What Deck Lab shows of a result: the numbers, the worst pairs, and why pairs were refused. */
-function summary(result: DeckVsDeckResult) {
+function summary(result: DeckVsDeckResult, clanOf?: (hand: readonly (readonly [number, number])[]) => string | null) {
+  // Against the field, the pairs grouped by the opposing hand's clan: what the draft is weak against.
+  const byClan = new Map<string, number[]>();
+  if (clanOf) {
+    for (const pair of result.pairs) {
+      const clan = clanOf(pair.b) ?? "mixed";
+      byClan.set(clan, [...(byClan.get(clan) ?? []), pair.score]);
+    }
+  }
   const refusals = new Map<string, { side?: string; card?: readonly [number, number]; why: string; count: number }>();
   for (const pair of result.refusedPairs) {
     const why = describeRefusal(pair.reason);
@@ -252,6 +261,11 @@ function summary(result: DeckVsDeckResult) {
     solved: result.solved,
     worst: result.worst,
     refusals: [...refusals.values()].sort((x, y) => y.count - x.count).slice(0, 8),
+    byClan: [...byClan].map(([clan, scores]) => ({
+      clan,
+      scored: scores.length,
+      mean: scores.reduce((sum, x) => sum + x, 0) / scores.length,
+    })).sort((x, y) => x.mean - y.mean),
   };
 }
 
@@ -264,12 +278,15 @@ async function startMatchup(body: Json): Promise<Response> {
   const opponent = body?.opponent;
   let against: string;
   let run: (options: DeckVsDeckOptions) => Promise<DeckVsDeckResult>;
+  let clanOf: ((hand: readonly (readonly [number, number])[]) => string | null) | undefined;
   if (Number.isInteger(opponent?.format)) {
     const hands = formatHands(await games(), opponent.format, OWNER_ID);
     if (!hands.length) return json({ error: "no opposing hands of that format have been captured" }, 400);
     const name = (await catalog()).formats.find((f) => f.id === opponent.format)?.name ?? `format ${opponent.format}`;
     against = `${Math.min(n, hands.length)} of the ${hands.length} captured ${name} opponents`;
     run = (options) => deckVsHands(deck, hands, options);
+    const cards = (await catalog()).cards;
+    clanOf = (hand) => handClan(hand.map(([id]) => ({ clan: cards.get(id)?.clan_name })));
   } else if (Number.isInteger(opponent?.deck)) {
     const other = ((await readData(FILES.decks))?.decks as SiteDeck[] | undefined)?.find((d) => d.id === opponent.deck);
     if (!other) return json({ error: "no such deck captured; open it in Collection Pro" }, 404);
@@ -310,7 +327,7 @@ async function startMatchup(body: Json): Promise<Response> {
           view.total = total;
         },
       });
-      view.result = summary(result);
+      view.result = summary(result, clanOf);
       view.state = "done";
     } catch (error) {
       if (controller.signal.aborted) view.state = "cancelled";
@@ -346,6 +363,14 @@ export async function handle(r: Request): Promise<Response> {
   }
   if (r.method === "GET" && path === "/api/collection") return json(await collection());
   if (r.method === "GET" && path === "/api/coverage") return json(await coverage());
+  if (r.method === "GET" && path === "/api/clans") {
+    const formatId = Number(new URL(r.url).searchParams.get("format"));
+    if (!Number.isInteger(formatId)) return json({ error: "format must be a deck format id" }, 400);
+    const [day, night] = await Promise.all(
+      ["day", "night"].map((time) => readData(`data/analysis/clan-matrix-${formatId}-${time}.json`)),
+    );
+    return json({ day: day ?? null, night: night ?? null });
+  }
   if (path === "/api/matchup") {
     if (r.method === "GET") return json(job?.view ?? { state: "none" });
     if (r.method === "DELETE") {

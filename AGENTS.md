@@ -10,7 +10,7 @@ Written by hand by the repo owner (armaanas); AI assistance started September 20
 | --- | --- |
 | `src/game/` | Engine: `Game` (incl. `make`/`unmake` + `Undo`, the allocation-free way the solver explores), `Hand`, `Card`, `Player`, `PlayerRound`; abilities are parsed from text by `AbilityParser.ts` → `Ability.ts` → `modifiers/*`; a round is resolved by `battle/CardBattle.ts` firing `Events` at ordered `EventTime`s (START, PRE4..PRE1, POST1..POST4, END). `battle/Cached*` are memoised variants used by the solver. |
 | `src/solver/` | `Minimax.ts` + `Analysis.ts` = the original breadth-first game-tree search (`iterTree`, used by `worker.ts` and `Main.ts`; `iterTree3`/`processRound` is an unused DFS rewrite). `Deep.ts` is its allocation-free perfect-information reference. `Search.ts` divides live work into depth-2 units and hands each future subtree to `Policy.ts`, whose conservative pure policy never conditions our reply on hidden pillz/Fury. `Advisor.ts` + `SolverView.ts` are the live terminal view. |
-| `src/decks/` | Deck builder (read-only so far): `SiteData.ts` parses Collection Pro's collection, format and deck records; `DeckFormat.ts` ports the site's own deck validator (agrees with the server on all 76 of the owner's deck-format pairs); `Report.ts` builds a deck report; `Service.ts` serves it (`deno task decks`, reached by the userscript's Collection Pro panel through the log server's `/decks/`) and serves Deck Lab (`ui/`, http://127.0.0.1:8788): a collection browser and deck drafter with live reports, solver-coverage badges (`Coverage.ts` over `data/card_coverage.json`) and a Score button that runs `Matchup.ts` against the captured opponents of a format or a saved deck, read-only. Data comes from `scripts/DeckCapture.ts`. `Matchup.ts` scores one deck against another on the exact Rust solver (`deno task matchup`, phase 5): seeded hand-pair sampling with common random numbers, both first movers per pair, score = (value A-first - value B-first)/2, refused draws counted and never scored, solves cached under `cache/matchups/` keyed by engine and data provenance. See `docs/deck-builder-design.md` and `docs/site-api.md`. |
+| `src/decks/` | Deck builder (read-only so far): `SiteData.ts` parses Collection Pro's collection, format and deck records; `DeckFormat.ts` ports the site's own deck validator (agrees with the server on all 76 of the owner's deck-format pairs); `Report.ts` builds a deck report; `Service.ts` serves it (`deno task decks`, reached by the userscript's Collection Pro panel through the log server's `/decks/`) and serves Deck Lab (`ui/`, http://127.0.0.1:8788): a collection browser and deck drafter with live reports, solver-coverage badges (`Coverage.ts` over `data/card_coverage.json`) and a Score button that runs `Matchup.ts` against the captured opponents of a format or a saved deck, read-only. Data comes from `scripts/DeckCapture.ts`. `Matchup.ts` scores one deck against another on the exact Rust solver (`deno task matchup`, phase 5): seeded hand-pair sampling with common random numbers, both first movers per pair, score = (value A-first - value B-first)/2, refused draws counted and never scored, solves cached under `cache/matchups/` keyed by engine and data provenance. `ClanMatrix.ts` ranks a format's clans against each other from the captured hands (3+ cards of a clan), in theory (solved hand pairs per clan pair) and in practice (the captured games), shown by Deck Lab's Clans button. See `docs/deck-builder-design.md` and `docs/site-api.md`. |
 | `src/utils/` | Console rendering, misc helpers. |
 | `data/` | `data.json` = the card list the engine loads, **one row per card per level** (power, damage and ability differ by level), built by `deno task cards` from `site_characters.jsonl` (gitignored 40 MB dump of the site's own card DB, refreshed via `__ur.dumpCharacters()` in the browser). `site_clans.json` (from `__ur.dumpClans()`) supplies clan names/bonuses; otherwise they come from the legacy `cards.json`. `cards.json` / `data.maxlevel.json` = older OAuth-API dumps (Dec 2024, max level only, stale); `compiled.json` = ability inventory from `deno task compile`. |
 | `scripts/` | Card data (`BuildCardData.ts` is the live path; `RequestCards.ts` / `RequestAllCardLevels.ts` / `UR_API.ts` are the OAuth-API path, needs API_KEY/API_SECRET in `.env` plus a browser auth step), ability compiler (`CompileAbilities.js`), battle capture (`BattleCapture.ts`, `ExtractBattle.ts`). |
@@ -35,6 +35,7 @@ deno task deck-data [logs...]    # rebuild the deck data files from raw logs
 deno task rust:matchup           # build the batch hand-vs-hand solver the next two use
 deno task matchup --a "T1 Rescue" --b "T1 Riots" --n 40 [--seed 1] [--night]  # deck vs deck from data/my_decks.json
 deno task card-coverage          # data/card_coverage.json: which cards the strict Rust engine can score
+deno task clan-matrix [--night]  # data/analysis/clan-matrix-<format>-<day|night>.json (Tourney: about 30 min)
 deno task bench / deno task time # iterTree benchmark (the breadth-first reference)
 deno task time-search            # Search benchmark - the depth-first path the advisor uses
 deno task advise                 # live view; starts its capture server automatically
@@ -83,10 +84,12 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    practice (captures), integrated with the site's "My Collection Pro" page through the
    userscript first and our own UI later. Phases 0-1 of `docs/deck-builder-design.md` are
    built (hardened log server, `src/decks/`, the read-only Collection Pro panel), so are a
-   first cut of phase 3 (Deck Lab), phase 2's coverage badges and the phase 5 engine
-   (`src/decks/Matchup.ts`, `deno task matchup`, `deno task card-coverage`, Deck Lab's Score); the rest of that doc - a guarded apply, a
-   clan matrix, deck search - is still a proposal with open questions for the owner. `docs/deck-building.md`
-   has the problem and findings, `docs/site-api.md` the site's interfaces (captured and live).
+   first cut of phase 3 (Deck Lab), phase 2's coverage badges, the phase 5 engine
+   (`src/decks/Matchup.ts`, `deno task matchup`, `deno task card-coverage`, Deck Lab's
+   Score) and a first phase 6 clan matrix from the captured hands (`deno task clan-matrix`,
+   Deck Lab's Clans). The rest of that doc - a guarded apply, deck search - is still a
+   proposal with open questions for the owner. `docs/deck-building.md` has the problem and
+   findings, `docs/site-api.md` the site's interfaces (captured and live).
    Never write to the owner's account (save, delete or set-current a deck, evolve, sell, buy)
    without the owner's explicit go-ahead for that action.
 

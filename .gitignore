@@ -20,3 +20,5 @@ data/my_decks.json
 # coverage report; both regenerate from the solver
 cache/
 data/card_coverage.json
+# clan matrices from `deno task clan-matrix`, which Deck Lab reads
+data/analysis/

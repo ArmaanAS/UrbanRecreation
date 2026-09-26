@@ -282,6 +282,25 @@ cached by hand pair and fingerprints), plus coverage from phase 2.
 
 ### Phase 6: clan matrix for one format (Tourney first)
 
+**First cut built (2026-09-26), from captured hands rather than representative decks.**
+`src/decks/ClanMatrix.ts`, `deno task clan-matrix [--night]`, shown by Deck Lab's Clans button.
+A hand belongs to a clan when three or four of its cards do; each clan pair gets 16 hand pairs
+drawn from the two clans' captured Tourney hands (both sides of every game, so most hands of the
+owner's own clans are the owner's), solved with both first movers. "vs clans" weights every other
+clan equally; "vs field" weights them by how often the owner's opponents play them. Next to it,
+"in practice": how those hands did in the captured games themselves. Tourney, 21 clans with 7+
+hands, 210 clan pairs: 6,266 solves in 21 minutes by day, the same again by night. 38% of hand
+pairs by day (35% by night) are refused and left out, led by Leaders (124), `Day: -2 Opp Pillz.
+Min 0` (84, never captured), the `Tune Out` bonus (69), `Cancel Opp. Pillz & Life Modif.` (56)
+and `Dope 3, Max. 4` (51), so the "Solved" column matters. By day, vs field: Roots 57%, Raptors
+55.5%, Zenith 55%, Riots 54.5% at the top; the owner's clans Ulu Watu 50.3%, Paradox 49.3%, Hive
+46.6%, Rescue 43.3%; Cosmohnuts and All Stars 42% at the bottom (about ±1.5 each, Zenith, Tolvack
+and Oblivion ±3-5). The most one-sided pairs: Raptors over Rescue 81%, Roots over Raptors 81%,
+Nightmare over Rescue 72-74%. Deck Lab's Score against the field also breaks the draft's result
+down by the opposing hand's clan (T1 Rescue, 60 field hands: 24% against Raptors and Montana).
+
+The plan as first written, for when representative decks exist:
+
 Needs: phase 5, and a representative deck per clan: the best legal mono-clan deck under 32 stars
 from exactly covered cards, chosen by the heuristic, plus a few obvious dual-clan decks.
 - 35 × 34 / 2 = 595 pairs at N = 40 (±2.4 pp) is 47,600 solves: about 6 h on 6 cores at the

@@ -128,3 +128,17 @@ button:disabled { opacity: 0.5; cursor: default; }
 .score { font-size: 22px; font-weight: 700; color: var(--gold); margin: 6px 0 2px; }
 .small { font-size: 11px; margin-top: 6px; }
 code { font-size: 12px; background: #0d0f12; padding: 0 3px; border-radius: 3px; }
+
+#clans { margin: 12px 16px 0; overflow-x: auto; }
+#clans h3 { margin: 4px 0 8px; font-size: 14px; color: var(--gold); }
+#clans table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#clans td, #clans th { padding: 2px 5px; border: 1px solid var(--line); text-align: right; white-space: nowrap; }
+#clans th { color: var(--dim); font-weight: 600; }
+#clans th.clan { text-align: left; cursor: pointer; }
+#clans th.clan:hover { color: var(--gold); }
+#clans .matrix th.col { writing-mode: vertical-rl; transform: rotate(180deg); text-align: left; }
+#clans .matrix td { min-width: 34px; text-align: center; }
+#clans .matrix td.self { background: #0d0f12; }
+#clans .cols { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
+.byclan { margin: 6px 0; line-height: 1.9; }
+.byclan span { padding: 1px 6px; border-radius: 3px; white-space: nowrap; }

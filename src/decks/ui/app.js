@@ -200,6 +200,13 @@ function renderScore() {
     : "";
   const margin = r.stderr == null ? "" : ` <span class="dim">± ${(r.stderr * 50).toFixed(1)}</span>`;
   const head = r.scored ? `<div class="score">${pct(r.percent)}${margin}</div>` : '<div class="score bad">Nothing could be scored</div>';
+  const clans = (r.byClan ?? []).filter((c) => c.scored >= 2);
+  const byClan = clans.length
+    ? `<div class="byclan">By opposing clan: ${
+      clans.map((c) => `<span style="${heat(c.mean)}" title="${c.scored} hand pairs">${esc(c.clan)} ${pctOf(c.mean)}%</span>`)
+        .join(" ")
+    }</div>`
+    : "";
   const worst = r.worst.length
     ? `<details><summary>Worst hands</summary><ul>${
       r.worst.map((p) => `<li><b>${pct((p.score + 1) * 50)}</b> ${handText(p.a)} <span class="dim">vs</span> ${handText(p.b)}</li>`)
@@ -216,10 +223,78 @@ function renderScore() {
   out.innerHTML = head + changed +
     `<div class="dim">Against ${esc(job.against)}${when}: ${r.scored} of ${r.pairs} hand pairs scored` +
     `${r.refused ? `, ${r.refused} not` : ""} · ${job.seconds.toFixed(1)} s (${r.solved} solved, ${r.cached} from the cache)</div>` +
-    worst + refusals +
+    byClan + worst + refusals +
     '<div class="dim small">Each hand pair is solved exactly with both first movers, playing the advisor\'s conservative ' +
     "policy, which never relies on guessing hidden pillz. 50% is even. The opposing hands are the same every time, so " +
     "use it to compare drafts; it is not a win rate.</div>";
+}
+
+// ---- clans against each other (deno task clan-matrix) -------------------------------------
+const pctOf = (mean) => (mean == null ? "" : ((mean + 1) * 50).toFixed(0));
+/** Red below 50%, green above, for the dark theme. */
+const heat = (mean) => {
+  if (mean == null) return "";
+  const t = Math.max(-1, Math.min(1, mean / 0.4));
+  return `background: hsl(${60 + 60 * t}, 45%, ${16 + 10 * Math.abs(t)}%)`;
+};
+
+async function renderClans() {
+  const el = $("clans");
+  if (el.hidden) return;
+  const f = format();
+  let data = null;
+  try {
+    data = await fetch(`/api/clans?format=${f?.id}`).then((r) => r.json());
+  } catch { /* shown as missing */ }
+  const m = data?.[night() ? "night" : "day"];
+  if (!m) {
+    el.innerHTML = `<h3>Clans in ${esc(f?.name)}, ${night() ? "night" : "day"}</h3>` +
+      `<div class="dim">Not computed yet: run <code>deno task clan-matrix --format ${esc(f?.name)}${night() ? " --night" : ""}</code>` +
+      " (about half an hour for Tourney).</div>";
+    return;
+  }
+  const order = m.clans.map((c) => c.clan);
+  const cell = new Map();
+  for (const c of m.cells) {
+    cell.set(`${c.a}|${c.b}`, { mean: c.mean, stderr: c.stderr, scored: c.scored, refused: c.refused, practice: c.practice });
+    cell.set(`${c.b}|${c.a}`, {
+      mean: c.mean == null ? null : -c.mean,
+      stderr: c.stderr,
+      scored: c.scored,
+      refused: c.refused,
+      practice: { games: c.practice.games, score: c.practice.games - c.practice.score },
+    });
+  }
+  const err = (x) => (x == null ? "" : `±${(x * 50).toFixed(1)}`);
+  const ranking = `<table><tr><th class="clan">Clan</th><th title="Each clan weighted by how often your opponents play it">vs field</th>` +
+    `<th title="Every other clan weighted equally">vs clans</th><th>Hands</th><th title="Share of its hand pairs the exact engine could solve; the rest are left out">Solved</th>` +
+    `<th title="Captured games against the other clans here">In practice</th></tr>` +
+    m.clans.map((c) =>
+      `<tr><th class="clan" data-clan="${esc(c.clan)}">${esc(c.clan)}</th>` +
+      `<td style="${heat(c.vsField)}">${c.vsField == null ? "–" : `${pctOf(c.vsField)}%`} <span class="dim">${err(c.vsFieldErr)}</span></td>` +
+      `<td style="${heat(c.vsClans)}">${c.vsClans == null ? "–" : `${pctOf(c.vsClans)}%`} <span class="dim">${err(c.vsClansErr)}</span></td>` +
+      `<td title="${c.ownerHands} of them yours, from ${c.players} players">${c.hands}</td>` +
+      `<td>${c.scored + c.refused ? Math.round((100 * c.scored) / (c.scored + c.refused)) : 0}%</td>` +
+      `<td>${c.practice.games ? `${c.practice.score}/${c.practice.games}` : ""}</td></tr>`
+    ).join("") + "</table>";
+  const matrix = `<table class="matrix"><tr><th></th>${order.map((c) => `<th class="col">${esc(c)}</th>`).join("")}</tr>` +
+    order.map((row) =>
+      `<tr><th class="clan" data-clan="${esc(row)}">${esc(row)}</th>` + order.map((col) => {
+        if (row === col) return '<td class="self"></td>';
+        const c = cell.get(`${row}|${col}`);
+        if (!c) return "<td></td>";
+        const title = `${row} against ${col}: ${pctOf(c.mean)}% ${err(c.stderr)} over ${c.scored} hand pairs` +
+          (c.refused ? `, ${c.refused} refused` : "") +
+          (c.practice.games ? `; in practice ${c.practice.score} of ${c.practice.games} captured games` : "");
+        return `<td style="${heat(c.mean)}" title="${esc(title)}">${pctOf(c.mean)}</td>`;
+      }).join("") + "</tr>"
+    ).join("") + "</table>";
+  el.innerHTML = `<h3>Clans in ${esc(m.format.name)}, ${m.night ? "night" : "day"}: each row's score against each column</h3>` +
+    `<div class="cols"><div>${ranking}</div><div>${matrix}</div></div>` +
+    `<div class="dim small">Exact solves of ${m.perCell} hand pairs per clan pair, drawn from the ${m.handsCaptured} ` +
+    `clan hands (3+ cards of one clan) in ${m.games} captured games, both first movers, the advisor's conservative policy; ` +
+    `50% is even. Most hands of the clans you play are yours. Computed ${esc(m.generatedAt.slice(0, 16).replace("T", " "))} UTC. ` +
+    "Click a clan to browse its cards.</div>";
 }
 
 // ---- collection -------------------------------------------------------------------------
@@ -456,16 +531,30 @@ async function main() {
   $("format").addEventListener("change", async () => {
     await loadMeta();
     renderOpponents();
+    renderClans();
     renderCollection();
     requestReport();
   });
   $("night").addEventListener("change", () => {
+    renderClans();
     renderCollection();
     renderDraft();
     renderCoverageLine();
     requestReport();
   });
   $("score").addEventListener("click", startScore);
+  $("clansToggle").addEventListener("click", () => {
+    $("clans").hidden = !$("clans").hidden;
+    renderClans();
+  });
+  $("clans").addEventListener("click", (e) => {
+    const name = e.target.closest("[data-clan]")?.dataset.clan;
+    const option = [...$("clan").options].find((o) => o.textContent === name);
+    if (!option) return;
+    $("clan").value = option.value;
+    state.shown = PAGE;
+    renderCollection();
+  });
   $("cancel").addEventListener("click", async () => {
     try {
       state.matchup = await fetch("/api/matchup", { method: "DELETE" }).then((r) => r.json());
