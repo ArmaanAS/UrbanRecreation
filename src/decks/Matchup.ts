@@ -8,7 +8,8 @@
 // execute comes back `refused`, and is counted, never scored.
 //
 // deckVsDeck samples hand pairs (four random cards from each deck) with a seeded generator,
-// solves each pair with both first movers, and scores deck A on a pair as
+// deckVsHands pairs hands of one deck with given opposing hands (the captured field), and both
+// solve each pair with both first movers and score deck A on a pair as
 //   score = (value(A moves first) - value(B moves first)) / 2,
 // each value in its own first mover's frame. It is antisymmetric: swapping the decks (with the
 // same hands) negates it. It measures the advisor's conservative policy for whoever moves first,
@@ -124,9 +125,11 @@ export type MatchupResponse = SolvedResponse | RefusedResponse | ErrorResponse |
 
 /** Anything that answers a batch of requests in order; tests inject a fake. */
 export interface MatchupRunner {
+  /** Rejects with the signal's reason once `signal` aborts; responses already passed on stand. */
   run(
     requests: readonly MatchupRequest[],
     onResponse?: (response: MatchupResponse, index: number) => void,
+    signal?: AbortSignal,
   ): Promise<MatchupResponse[]>;
 }
 
@@ -155,7 +158,9 @@ export class ProcessMatchupRunner implements MatchupRunner {
   async run(
     requests: readonly MatchupRequest[],
     onResponse?: (response: MatchupResponse, index: number) => void,
+    signal?: AbortSignal,
   ): Promise<MatchupResponse[]> {
+    signal?.throwIfAborted();
     if (!requests.length) return [];
     const binary = this.options.binary ?? matchupBinaryPath();
     try {
@@ -169,6 +174,14 @@ export class ProcessMatchupRunner implements MatchupRunner {
       stdout: "piped",
       stderr: "piped",
     }).spawn();
+    const kill = () => {
+      try {
+        child.kill();
+      } catch {
+        // It has already exited.
+      }
+    };
+    signal?.addEventListener("abort", kill, { once: true });
     const encoder = new TextEncoder();
     const write = (async () => {
       const writer = child.stdin.getWriter();
@@ -203,8 +216,10 @@ export class ProcessMatchupRunner implements MatchupRunner {
       onResponse?.(response, index);
     }
     const [status, errors] = await Promise.all([child.status, stderr]);
+    signal?.removeEventListener("abort", kill);
     // A binary that exits early closes its stdin; the exit status below says why.
     await write.catch(() => {});
+    signal?.throwIfAborted();
     if (failure) throw failure;
     if (!status.success || responses.length !== requests.length) {
       throw new Error(
@@ -234,7 +249,19 @@ export async function matchupProvenance(runner: MatchupRunner): Promise<MatchupP
  * be describing. The fingerprints are the advisor worker's (src/solver/RustProvenance.ts).
  */
 export async function assertCurrentBinary(provenance: MatchupProvenance): Promise<void> {
-  const source = await readRustV1Provenance();
+  const stale = provenanceMismatches(provenance, await readRustV1Provenance());
+  if (stale.length) {
+    throw new Error(
+      `the matchup binary does not match this checkout (${stale.join(", ")}); rebuild it with \`deno task rust:matchup\``,
+    );
+  }
+}
+
+/** Every way a binary's (or a file it wrote) provenance differs from the checkout's. */
+export function provenanceMismatches(
+  provenance: MatchupProvenance,
+  source: Awaited<ReturnType<typeof readRustV1Provenance>>,
+): string[] {
   const pairs: [string, unknown, unknown][] = [
     ["effective catalog", provenance.effective_catalog_fingerprint_fnv1a64, source.effectiveCatalogFingerprintFnv1a64],
     ["effect registry", provenance.effect_registry_fingerprint_fnv1a64, source.effectRegistryFingerprintFnv1a64],
@@ -247,14 +274,9 @@ export async function assertCurrentBinary(provenance: MatchupProvenance): Promis
     ],
     ["advisor policy revision", provenance.advisor_policy_semantic_revision, source.advisorPolicySemanticRevision],
   ];
-  const stale = pairs.filter(([, binary, checkout]) => binary !== checkout);
-  if (stale.length) {
-    throw new Error(
-      `the matchup binary does not match this checkout (${
-        stale.map(([name, binary, checkout]) => `${name} ${binary} vs ${checkout}`).join(", ")
-      }); rebuild it with \`deno task rust:matchup\``,
-    );
-  }
+  return pairs
+    .filter(([, binary, checkout]) => binary !== checkout)
+    .map(([name, binary, checkout]) => `${name} ${binary} vs ${checkout}`);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -317,6 +339,33 @@ export function sampleHandPairs(
   return Array.from({ length: n }, (_, i) => ({
     a: sampleHandPositions(deckA.length, mulberry32(mix(seed, 0xa, i))).map((p) => deckA[p]),
     b: sampleHandPositions(deckB.length, mulberry32(mix(seed, 0xb, i))).map((p) => deckB[p]),
+  }));
+}
+
+/**
+ * Up to `n` pairs of a sampled hand of deck A against distinct given hands (the opposing hands
+ * of the captures), all of them once `n` reaches their number. The given hands are taken in an
+ * order that depends on the seed alone, and A's hands come from sampleHandPairs' A stream, so
+ * two decks scored with one seed face the same hands.
+ */
+export function sampleFieldPairs(
+  deckA: readonly DeckCardRef[],
+  hands: readonly (readonly DeckCardRef[])[],
+  n: number,
+  seed: number,
+): HandPair[] {
+  if (deckA.length < HAND_SIZE) throw new Error(`deck A has ${deckA.length} cards; a hand needs ${HAND_SIZE}`);
+  const short = hands.findIndex((hand) => hand.length !== HAND_SIZE);
+  if (short >= 0) throw new Error(`opposing hand ${short} has ${hands[short].length} cards, not ${HAND_SIZE}`);
+  const order = Array.from({ length: hands.length }, (_, i) => i);
+  const random = mulberry32(mix(seed, 0xc));
+  for (let k = order.length - 1; k > 0; k--) {
+    const j = Math.floor(random() * (k + 1));
+    [order[k], order[j]] = [order[j], order[k]];
+  }
+  return order.slice(0, Math.min(n, hands.length)).map((h, i) => ({
+    a: sampleHandPositions(deckA.length, mulberry32(mix(seed, 0xa, i))).map((p) => deckA[p]),
+    b: hands[h],
   }));
 }
 
@@ -451,6 +500,8 @@ export interface DeckVsDeckOptions {
   readonly worst?: number;
   /** Called once per fresh solve as its response arrives. */
   readonly onProgress?: (done: number, total: number) => void;
+  /** Stops the solver; the solves finished by then are kept in the cache. */
+  readonly signal?: AbortSignal;
 }
 
 export interface PairResult {
@@ -468,6 +519,21 @@ export interface RefusedPair {
   readonly a: readonly CardKey[];
   readonly b: readonly CardKey[];
   readonly reason: string;
+  /** The hand and card the refusal names, when it names one. */
+  readonly side?: "a" | "b";
+  readonly card?: CardKey;
+}
+
+/**
+ * A refused pair, with the card its reason names ("P1 slot 2 ...") read back into the pair's
+ * own terms: `p1` is the hand that moved first in the refused solve.
+ */
+function refusedPair(a: readonly CardKey[], b: readonly CardKey[], reason: string, aMovedFirst: boolean): RefusedPair {
+  const m = /^P([12]) slot (\d+)\b/.exec(reason);
+  if (!m) return { a, b, reason };
+  const side = (m[1] === "1") === aMovedFirst ? "a" : "b";
+  const card = (side === "a" ? a : b)[Number(m[2])];
+  return card ? { a, b, reason, side, card } : { a, b, reason };
 }
 
 export interface DeckVsDeckResult {
@@ -516,30 +582,42 @@ function solvesFor(pairs: readonly { a: readonly CardKey[]; b: readonly CardKey[
   return { keys, perPair };
 }
 
-/** Solves every key the cache does not hold, through one runner batch. */
+/**
+ * Solves every key the cache does not hold, through one runner batch. Each result is cached as
+ * it arrives, so a run that is stopped or fails keeps the solves it finished.
+ */
 async function resolve(
   keys: ReadonlyMap<string, SolveRequest>,
   cache: MatchupCache,
   runner: MatchupRunner,
   onProgress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<{ cached: number; solved: number }> {
   const missing = [...keys].filter(([key]) => cache.get(key) === undefined);
   if (missing.length) {
-    let done = 0;
-    const responses = await runner.run(missing.map(([, request]) => request), () => onProgress?.(++done, missing.length));
-    if (responses.length !== missing.length) {
-      throw new Error(`matchup runner answered ${responses.length} of ${missing.length} solves`);
-    }
+    const recorded = new Set<number>();
+    let failure: Error | undefined;
+    const record = (response: MatchupResponse, i: number) => {
+      if (recorded.has(i) || i >= missing.length) return;
+      recorded.add(i);
+      const [key] = missing[i];
+      if (isError(response)) failure ??= new Error(`solve ${key} failed: ${response.error}`);
+      else if (isRefused(response)) cache.set(key, { refused: response.refused });
+      else if (isSolved(response)) {
+        const { value, worst, best_move, ko_share, koed_share, ms } = response;
+        cache.set(key, { value, worst, best_move, ko_share, koed_share, ms });
+      } else failure ??= new Error(`solve ${key} got an unexpected response ${JSON.stringify(response)}`);
+    };
     try {
-      responses.forEach((response, i) => {
-        const [key] = missing[i];
-        if (isError(response)) throw new Error(`solve ${key} failed: ${response.error}`);
-        if (isRefused(response)) cache.set(key, { refused: response.refused });
-        else if (isSolved(response)) {
-          const { value, worst, best_move, ko_share, koed_share, ms } = response;
-          cache.set(key, { value, worst, best_move, ko_share, koed_share, ms });
-        } else throw new Error(`solve ${key} got an unexpected response ${JSON.stringify(response)}`);
-      });
+      const responses = await runner.run(missing.map(([, request]) => request), (response, i) => {
+        record(response, i);
+        onProgress?.(recorded.size, missing.length);
+      }, signal);
+      responses.forEach(record);
+      if (responses.length !== missing.length) {
+        throw new Error(`matchup runner answered ${responses.length} of ${missing.length} solves`);
+      }
+      if (failure) throw failure;
     } finally {
       await cache.flush();
     }
@@ -564,17 +642,37 @@ export async function deckVsDeck(
   deckB: readonly DeckCardRef[],
   options: DeckVsDeckOptions,
 ): Promise<DeckVsDeckResult> {
-  const n = options.n ?? 100;
   const seed = options.seed ?? 1;
+  return await scorePairs(sampleHandPairs(deckA, deckB, options.n ?? 100, seed), seed, options);
+}
+
+/**
+ * Scores deck A against given opposing hands, such as the captured opponents of a format: up to
+ * `n` of them (see sampleFieldPairs), each against a sampled hand of A, scored as deckVsDeck.
+ */
+export async function deckVsHands(
+  deckA: readonly DeckCardRef[],
+  hands: readonly (readonly DeckCardRef[])[],
+  options: DeckVsDeckOptions,
+): Promise<DeckVsDeckResult> {
+  const seed = options.seed ?? 1;
+  return await scorePairs(sampleFieldPairs(deckA, hands, options.n ?? 100, seed), seed, options);
+}
+
+async function scorePairs(
+  sampled: readonly HandPair[],
+  seed: number,
+  options: DeckVsDeckOptions,
+): Promise<DeckVsDeckResult> {
   const context: SolveContext = {
     night: options.night ?? false,
     life: options.life ?? DEFAULT_LIFE,
     pillz: options.pillz ?? DEFAULT_PILLZ,
   };
   const cache = options.cache ?? new MemoryMatchupCache();
-  const pairs = sampleHandPairs(deckA, deckB, n, seed).map(({ a, b }) => ({ a: canonicalHand(a), b: canonicalHand(b) }));
+  const pairs = sampled.map(({ a, b }) => ({ a: canonicalHand(a), b: canonicalHand(b) }));
   const { keys, perPair } = solvesFor(pairs, context);
-  const { cached, solved } = await resolve(keys, cache, options.runner, options.onProgress);
+  const { cached, solved } = await resolve(keys, cache, options.runner, options.onProgress, options.signal);
 
   const results: PairResult[] = [];
   const refusedPairs: RefusedPair[] = [];
@@ -582,7 +680,11 @@ export async function deckVsDeck(
     const aFirst = cache.get(perPair[i].aFirst)!;
     const bFirst = cache.get(perPair[i].bFirst)!;
     if ("refused" in aFirst || "refused" in bFirst) {
-      refusedPairs.push({ a, b, reason: "refused" in aFirst ? aFirst.refused : (bFirst as { refused: string }).refused });
+      refusedPairs.push(
+        "refused" in aFirst
+          ? refusedPair(a, b, aFirst.refused, true)
+          : refusedPair(a, b, (bFirst as { refused: string }).refused, false),
+      );
       return;
     }
     results.push({ a, b, aFirst: aFirst.value, bFirst: bFirst.value, score: (aFirst.value - bFirst.value) / 2 });
@@ -590,7 +692,7 @@ export async function deckVsDeck(
   const scores = results.map((r) => r.score);
   const m = mean(scores);
   return {
-    n,
+    n: pairs.length,
     seed,
     night: context.night,
     scored: results.length,

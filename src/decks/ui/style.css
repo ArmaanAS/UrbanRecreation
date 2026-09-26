@@ -112,3 +112,19 @@ ul.errs { margin: 4px 0 8px 18px; padding: 0; color: #ff9b9b; }
 .note { color: var(--unk); margin-top: 6px; }
 .diff { margin: 6px 0; }
 .diff .add { color: var(--ok); } .diff .del { color: var(--bad); }
+.badge.solver { background: var(--unk); }
+
+#solver { margin-top: 10px; padding-top: 4px; border-top: 1px solid var(--line); }
+#solver h3 { margin: 8px 0 6px; font-size: 14px; color: var(--gold); }
+.solver-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.solver-row select { flex: 1 1 200px; min-width: 0; }
+.solver-row input[type="number"] { width: 64px; }
+button:disabled { opacity: 0.5; cursor: default; }
+#coverageLine { margin: 6px 0; }
+#coverageLine ul, #scoreOut ul { margin: 4px 0 4px 18px; padding: 0; }
+#scoreOut progress { width: 60%; vertical-align: middle; }
+#scoreOut details { margin: 4px 0; }
+#scoreOut summary { cursor: pointer; color: var(--dim); }
+.score { font-size: 22px; font-weight: 700; color: var(--gold); margin: 6px 0 2px; }
+.small { font-size: 11px; margin-top: 6px; }
+code { font-size: 12px; background: #0d0f12; padding: 0 3px; border-radius: 3px; }

@@ -4,6 +4,7 @@ import {
   canonicalHand,
   type CardKey,
   deckVsDeck,
+  deckVsHands,
   FileMatchupCache,
   isRefused,
   matchupBinaryPath,
@@ -15,6 +16,7 @@ import {
   MemoryMatchupCache,
   type ProbeResponse,
   ProcessMatchupRunner,
+  sampleFieldPairs,
   sampleHandPairs,
   type SolveRequest,
 } from "@/decks/Matchup.ts";
@@ -260,4 +262,74 @@ Deno.test({
     assert(isRefused(responses[1]) && responses[1].refused.includes("Leader"));
     assertEquals((responses[2] as ProbeResponse).status, "leader");
   },
+});
+
+Deno.test("the field is sampled without repeats, in an order that depends on the seed alone", () => {
+  const field = Array.from({ length: 9 }, (_, i) => deck(300 + 10 * i, 4));
+  const some = sampleFieldPairs(A, field, 5, 7);
+  assertEquals(some.length, 5);
+  assertEquals(new Set(some.map((p) => p.b)).size, 5, "no opposing hand twice");
+  assertEquals(sampleFieldPairs(A, field, 5, 7), some);
+  // Common random numbers: another deck meets the same opposing hands, and its own hands come
+  // from the same stream as sampleHandPairs.
+  assertEquals(sampleFieldPairs(deck(500), field, 5, 7).map((p) => p.b), some.map((p) => p.b));
+  assertEquals(some.map((p) => p.a), sampleHandPairs(A, B, 5, 7).map((p) => p.a));
+  const all = sampleFieldPairs(A, field, 50, 7);
+  assertEquals(all.length, 9, "n past the field's size takes every hand once");
+  assertEquals(new Set(all.map((p) => p.b)), new Set(field));
+  assertNotEquals(sampleFieldPairs(A, field, 9, 8).map((p) => p.b), all.map((p) => p.b));
+});
+
+Deno.test("a deck is scored against given hands like against a deck", async () => {
+  const field = Array.from({ length: 6 }, (_, i) => deck(300 + 10 * i, 4));
+  const runner = new FakeRunner(byStrength);
+  const result = await deckVsHands(A, field, { runner, n: 40, seed: 2 });
+  assertEquals(result.n, 6);
+  assertEquals(result.scored, 6);
+  for (const pair of result.pairs) {
+    assertEquals(pair.aFirst, byStrength(pair.a, pair.b));
+    assertEquals(pair.score, (pair.aFirst - pair.bFirst) / 2);
+  }
+  assert(result.mean < 0, "the field's cards are all stronger");
+  await assertRejects(() => deckVsHands(A, [deck(300, 3)], { runner, n: 1 }), Error, "3 cards");
+});
+
+Deno.test("a refusal names the refused card in the pair's own terms", async () => {
+  // Card 203 is refused wherever it is, and the reason names its real slot and seat.
+  const runner: MatchupRunner = {
+    run(requests) {
+      return Promise.resolve((requests as SolveRequest[]).map((r, id) => {
+        for (const [seat, hand] of [["1", r.p1], ["2", r.p2]] as const) {
+          const slot = hand.findIndex(([card]) => card === 203);
+          if (slot >= 0) return { id, kind: "solve", refused: `P${seat} slot ${slot} Ability catalog source` } as MatchupResponse;
+        }
+        return { id, kind: "solve", value: 0, worst: 0, best: 0, best_move: { hand_index: 0, pillz: 0, fury: false }, ko_share: 0, koed_share: 0, root_moves: 1, replies: 1, ms: 1 };
+      }));
+    },
+  };
+  const result = await deckVsDeck(A, B, { runner, n: 30, seed: 9 });
+  assert(result.refused > 0);
+  for (const pair of result.refusedPairs) {
+    assertEquals(pair.side, "b");
+    assertEquals(pair.card?.[0], 203);
+  }
+});
+
+Deno.test("stopping a run keeps the solves it finished", async () => {
+  const controller = new AbortController();
+  const cache = new MemoryMatchupCache();
+  const runner: MatchupRunner = {
+    run(requests, onResponse, signal) {
+      const answered = new FakeRunner(byStrength);
+      return answered.run(requests.slice(0, 5), (response, i) => {
+        onResponse?.(response, i);
+        if (i === 4) controller.abort(new DOMException("stopped", "AbortError"));
+      }).then(() => {
+        signal?.throwIfAborted();
+        throw new Error("unreachable");
+      });
+    },
+  };
+  await assertRejects(() => deckVsDeck(A, B, { runner, cache, n: 10, seed: 1, signal: controller.signal }), DOMException, "stopped");
+  assertEquals(cache.entries.size, 5);
 });

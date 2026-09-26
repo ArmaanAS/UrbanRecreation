@@ -6,8 +6,25 @@
 // It only reads the data files the log server writes (see scripts/DeckCapture.ts), and it
 // never talks to the site: nothing here can change the owner's account. Kept out of
 // log_server.ts on purpose - that process has to keep up with the game client's polling.
+// Deck scoring runs the release `urban-recreation-matchup` binary (`deno task rust:matchup`)
+// and caches its solves under cache/matchups/, like `deno task matchup`.
 import "colors";
-import { formatMeta, type GameRecord } from "./Meta.ts";
+import { readRustV1Provenance } from "../solver/RustProvenance.ts";
+import { compactCoverage, type CoverageFile, describeRefusal } from "./Coverage.ts";
+import {
+  assertCurrentBinary,
+  deckVsDeck,
+  type DeckVsDeckOptions,
+  type DeckVsDeckResult,
+  deckVsHands,
+  FileMatchupCache,
+  type MatchupCache,
+  matchupProvenance,
+  type MatchupRunner,
+  ProcessMatchupRunner,
+  provenanceMismatches,
+} from "./Matchup.ts";
+import { formatHands, formatMeta, type GameRecord } from "./Meta.ts";
 import { deckReport } from "./Report.ts";
 import type { DeckCard, DeckFormatData, OwnedCopies, SiteCard, SiteDeck, SiteEvo } from "./SiteData.ts";
 
@@ -18,6 +35,7 @@ const SITE_ORIGIN = "https://www.urban-rivals.com";
 const cors = {
   "Access-Control-Allow-Origin": SITE_ORIGIN,
   "Access-Control-Allow-Headers": "content-type",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Vary": "Origin",
 };
 
@@ -150,6 +168,163 @@ async function collection() {
   };
 }
 
+// ---- which cards the exact solver can score (data/card_coverage.json) --------------------
+const COVERAGE_FILE = "data/card_coverage.json";
+let coverageView: { file: CoverageFile; view: Json } | undefined;
+async function coverage(): Promise<Json> {
+  const file = (await readData(COVERAGE_FILE)) as CoverageFile | undefined;
+  if (!file) return { missing: true };
+  if (coverageView?.file !== file) {
+    let stale: string | null = null;
+    try {
+      const mismatches = provenanceMismatches(file.provenance, await readRustV1Provenance());
+      if (mismatches.length) stale = `it was made from other engine or card data (${mismatches.join(", ")})`;
+    } catch (error) {
+      stale = `it cannot be checked against this checkout: ${(error as Error).message}`;
+    }
+    coverageView = { file, view: { ...compactCoverage(file), stale } };
+  }
+  return coverageView.view;
+}
+
+// ---- deck scoring on the exact Rust solver (src/decks/Matchup.ts) --------------------------
+export interface Solver {
+  runner: MatchupRunner;
+  cache: MatchupCache;
+}
+
+const solveCaches = new Map<string, FileMatchupCache>();
+/** Checks the release binary against this checkout on every job, so a rebuild is picked up. */
+async function releaseSolver(): Promise<Solver> {
+  const runner = new ProcessMatchupRunner();
+  const provenance = await matchupProvenance(runner);
+  await assertCurrentBinary(provenance);
+  const key = JSON.stringify(provenance);
+  let cache = solveCaches.get(key);
+  if (!cache) solveCaches.set(key, cache = await FileMatchupCache.open("cache/matchups", provenance));
+  return { runner, cache };
+}
+let solver: () => Promise<Solver> = releaseSolver;
+/** For tests: score with another solver. */
+export function useSolver(factory: () => Promise<Solver>) {
+  solver = factory;
+}
+
+const MAX_PAIRS = 400;
+/** One seed for every job, so two drafts scored against the same opponent meet the same hands. */
+const SEED = 1;
+
+interface MatchupJob {
+  id: number;
+  state: "running" | "done" | "failed" | "cancelled";
+  /** The draft that was scored, as [id, level], and what it was scored against. */
+  deck: [number, number][];
+  against: string;
+  night: boolean;
+  done: number;
+  total: number;
+  startedAt: string;
+  seconds?: number;
+  result?: Json;
+  error?: string;
+}
+let job: { view: MatchupJob; controller: AbortController } | undefined;
+let jobCount = 0;
+
+/** What Deck Lab shows of a result: the numbers, the worst pairs, and why pairs were refused. */
+function summary(result: DeckVsDeckResult) {
+  const refusals = new Map<string, { side?: string; card?: readonly [number, number]; why: string; count: number }>();
+  for (const pair of result.refusedPairs) {
+    const why = describeRefusal(pair.reason);
+    const key = `${pair.side}|${pair.card?.join(":")}|${why}`;
+    const entry = refusals.get(key) ?? { side: pair.side, card: pair.card, why, count: 0 };
+    entry.count++;
+    refusals.set(key, entry);
+  }
+  return {
+    pairs: result.n,
+    scored: result.scored,
+    refused: result.refused,
+    mean: result.mean,
+    stderr: result.stderr,
+    percent: result.percent,
+    cached: result.cached,
+    solved: result.solved,
+    worst: result.worst,
+    refusals: [...refusals.values()].sort((x, y) => y.count - x.count).slice(0, 8),
+  };
+}
+
+async function startMatchup(body: Json): Promise<Response> {
+  const deck = validDeck(body?.characters);
+  if (!deck || deck.length < 4) return json({ error: "characters must be 4 to 30 {id, level 1-5, state}" }, 400);
+  const n = body?.n === undefined ? 40 : Number(body.n);
+  if (!Number.isInteger(n) || n < 1 || n > MAX_PAIRS) return json({ error: `n must be 1 to ${MAX_PAIRS} hand pairs` }, 400);
+  const night = body?.night === true;
+  const opponent = body?.opponent;
+  let against: string;
+  let run: (options: DeckVsDeckOptions) => Promise<DeckVsDeckResult>;
+  if (Number.isInteger(opponent?.format)) {
+    const hands = formatHands(await games(), opponent.format, OWNER_ID);
+    if (!hands.length) return json({ error: "no opposing hands of that format have been captured" }, 400);
+    const name = (await catalog()).formats.find((f) => f.id === opponent.format)?.name ?? `format ${opponent.format}`;
+    against = `${Math.min(n, hands.length)} of the ${hands.length} captured ${name} opponents`;
+    run = (options) => deckVsHands(deck, hands, options);
+  } else if (Number.isInteger(opponent?.deck)) {
+    const other = ((await readData(FILES.decks))?.decks as SiteDeck[] | undefined)?.find((d) => d.id === opponent.deck);
+    if (!other) return json({ error: "no such deck captured; open it in Collection Pro" }, 404);
+    if (other.characters.length < 4) return json({ error: `"${other.name}" has fewer than 4 cards` }, 400);
+    against = `your deck "${other.name}"`;
+    run = (options) => deckVsDeck(deck, other.characters, options);
+  } else {
+    return json({ error: "opponent must be {format: id} or {deck: id}" }, 400);
+  }
+
+  job?.controller.abort();
+  const controller = new AbortController();
+  const view: MatchupJob = {
+    id: ++jobCount,
+    state: "running",
+    deck: deck.map((c) => [c.id, c.level]),
+    against,
+    night,
+    done: 0,
+    total: 0,
+    startedAt: new Date().toISOString(),
+  };
+  job = { view, controller };
+  const started = performance.now();
+  (async () => {
+    try {
+      const { runner, cache } = await solver();
+      controller.signal.throwIfAborted();
+      const result = await run({
+        runner,
+        cache,
+        n,
+        seed: SEED,
+        night,
+        signal: controller.signal,
+        onProgress: (done, total) => {
+          view.done = done;
+          view.total = total;
+        },
+      });
+      view.result = summary(result);
+      view.state = "done";
+    } catch (error) {
+      if (controller.signal.aborted) view.state = "cancelled";
+      else {
+        view.state = "failed";
+        view.error = (error as Error).message;
+      }
+    } finally {
+      view.seconds = (performance.now() - started) / 1000;
+    }
+  })();
+  return json(view, 202);
+}
+
 // Deck Lab's own page, and the site (the userscript panel, via the log server's proxy or
 // directly). Every other origin is refused, so no other page can read the owner's decks.
 const OWN_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
@@ -170,6 +345,23 @@ export async function handle(r: Request): Promise<Response> {
     });
   }
   if (r.method === "GET" && path === "/api/collection") return json(await collection());
+  if (r.method === "GET" && path === "/api/coverage") return json(await coverage());
+  if (path === "/api/matchup") {
+    if (r.method === "GET") return json(job?.view ?? { state: "none" });
+    if (r.method === "DELETE") {
+      job?.controller.abort();
+      return json(job?.view ?? { state: "none" });
+    }
+    if (r.method === "POST") {
+      let body: Json;
+      try {
+        body = await r.json();
+      } catch {
+        return json({ error: "expected a JSON body" }, 400);
+      }
+      return startMatchup(body);
+    }
+  }
   if (r.method === "GET" && path === "/api/meta") {
     const formatId = Number(new URL(r.url).searchParams.get("format"));
     if (!Number.isInteger(formatId)) return json({ error: "format must be a deck format id" }, 400);

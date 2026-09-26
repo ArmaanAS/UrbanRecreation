@@ -9,7 +9,7 @@
     "opening-prior": "deno run --allow-read=captures,src/solver/Search.ts,rust/src/advisor/search.rs --allow-write=src/solver/Search.ts,rust/src/advisor/search.rs ./scripts/OpeningPrior.ts",
     "prune": "deno run --allow-read --allow-write --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/PruneLog.ts",
     "deck-data": "deno run --allow-read --allow-write=data --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/DeckData.ts",
-    "decks": "deno run --allow-net=127.0.0.1:8788 --allow-read=data,src/decks/ui,captures/games --allow-env=FORCE_COLOR --allow-sys=osRelease ./src/decks/Service.ts",
+    "decks": "deno run --allow-net=127.0.0.1:8788 --allow-read=data,src/decks/ui,captures,rust,cache --allow-write=cache --allow-run=rust/target/release/urban-recreation-matchup.exe,rust/target/release/urban-recreation-matchup --allow-env=FORCE_COLOR --allow-sys=osRelease ./src/decks/Service.ts",
     "matchup": "deno run --allow-read=data,captures,rust,cache --allow-write=cache --allow-run=rust/target/release/urban-recreation-matchup.exe,rust/target/release/urban-recreation-matchup --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/Matchup.ts",
     "card-coverage": "deno run --allow-read=data,captures,rust --allow-write=data/card_coverage.json --allow-run=rust/target/release/urban-recreation-matchup.exe,rust/target/release/urban-recreation-matchup --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/CardCoverage.ts",
     "extract": "deno run --allow-read --allow-write=captures --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/ExtractBattle.ts",

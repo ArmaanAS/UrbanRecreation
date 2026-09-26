@@ -49,6 +49,17 @@ plan: hands are solved in sorted `(id, level)` order, so Symmetry/Asymmetry see 
 arrangement rather than a random deal, and a draw's value is the advisor's top-ranked move's,
 which the rounded-percent ranking can put up to half a point below the best raw average.
 
+Deck Lab then got both (same day): every card carries a badge when the solver cannot score it
+at that level and time of day, with the reason (from `data/card_coverage.json`, flagged when
+the file no longer matches the engine or card data), a "Solver can score" filter, a line
+under the draft naming its unscorable cards, and a **Score** button. It scores the draft
+against the captured opposing hands of the chosen format (the "meta" of the plan, taken as
+the real hands rather than assembled decks) or against a saved deck, in the deck service
+(`POST /api/matchup`, polled; one job at a time, a new one or Stop kills the binary, finished
+solves stay cached). Its seed is fixed, so two drafts meet the same opposing hands. T1 Rescue
+against 20 captured Tourney opponents: 45.5% ± 3.9, 15 of 20 pairs scored (two refused for
+Leaders, two for Anita's Courage Life conversion, one for an After-clan ability), 10.8 s.
+
 To use it: update the userscript from http://localhost:8787/ur-logger.user.js, run
 `deno task decks` beside the log server, open Collection Pro and click "UR Lab", or open
 http://127.0.0.1:8788 for Deck Lab.
@@ -228,7 +239,8 @@ legal and every card's full text, with nothing sent to the site that the page di
   exact / bonus_refused / bonus_untested / refused / leader / missing, and every refusal classed
   as uncaptured text, uncaptured id or not executable. The TS parser's "compiles to nothing"
   column is not built.
-- The panel and the service show the badge on every card, and a deck-level coverage line.
+- The panel and the service show the badge on every card, and a deck-level coverage line
+  (done in Deck Lab; the Collection Pro panel does not show it yet).
 - If the site DOM exposes card ids (live check), hovering a card in the site's own grid shows the
   panel's detail card for it. This targets "doesn't display all the details nicely" directly.
 

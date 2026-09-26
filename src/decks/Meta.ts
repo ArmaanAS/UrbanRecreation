@@ -32,6 +32,21 @@ function mySide(game: GameRecord, ownerId?: number): number | null {
   return game.players.find((p) => p.id === id)?.side ?? null;
 }
 
+/** The opposing four-card hands of one format, oldest capture first: the field to score against. */
+export function formatHands(games: GameRecord[], formatId: number, ownerId?: number): { id: number; level: number }[][] {
+  const hands: { at: string; id: number; hand: { id: number; level: number }[] }[] = [];
+  for (const game of games) {
+    if ((game.room?.idDeckFormat ?? -1) !== formatId) continue;
+    const me = mySide(game, ownerId);
+    if (me === null) continue;
+    for (const player of game.players) {
+      if (player.side === me || player.hand.length !== 4) continue;
+      hands.push({ at: game.capturedAt ?? "", id: game.id, hand: player.hand.map(({ id, level }) => ({ id, level })) });
+    }
+  }
+  return hands.sort((x, y) => x.at.localeCompare(y.at) || x.id - y.id).map((h) => h.hand);
+}
+
 export function formatMeta(games: GameRecord[], formatId: number, ownerId?: number): FormatMeta {
   const cards = new Map<number, { count: number; levels: Record<string, number> }>();
   const clans = new Map<string, number>();

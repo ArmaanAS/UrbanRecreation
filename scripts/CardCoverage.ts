@@ -7,12 +7,10 @@
 // in a neutral draw (rust/src/advisor/matchup.rs says exactly which): `exact` means it can be
 // scored alone and beside a clan-mate, `bonus_refused` only without a clan-mate, `refused`
 // not at all; `leader` and `missing` (not in data/data.json) speak for themselves.
-// Each refusal is also classified by what blocks it:
-//   uncaptured_text  no battle capture has shown that ability or bonus text at all;
-//   uncaptured_id    the text is known, but not under this card's ability id (the registry
-//                    keeps printed identity, so a same-text variant waits for its own capture);
-//   not_executable   the registry knows it, the strict engine does not execute it.
+// Each refusal is also classified by what blocks it (see BlockKind in src/decks/Coverage.ts).
+// Deck Lab shows the result on every card.
 import "colors";
+import { BLOCK_KINDS, type BlockKind, type Blocker, blocker } from "../src/decks/Coverage.ts";
 import {
   assertCurrentBinary,
   matchupProvenance,
@@ -46,28 +44,6 @@ const responses = await runner.run(requests, (_, i) => {
 });
 if (Deno.stderr.isTerminal()) Deno.stderr.writeSync(encoder.encode("\r\x1b[K"));
 const seconds = (performance.now() - started) / 1000;
-
-type BlockKind = "uncaptured_text" | "uncaptured_id" | "not_executable" | "other";
-const BLOCK_KINDS: BlockKind[] = ["uncaptured_text", "uncaptured_id", "not_executable", "other"];
-
-interface Blocker {
-  source: "Ability" | "Bonus" | "card";
-  text: string;
-  kind: BlockKind;
-}
-
-/** The source a refusal names and what blocks it (see the file comment). */
-function blocker(reason: string): Blocker {
-  const m = /(Ability|Bonus) catalog source [^"]*"((?:[^"\\]|\\.)*)"/.exec(reason);
-  const kind: BlockKind = /lookup failed: effect description .* is missing/.test(reason)
-    ? "uncaptured_text"
-    : /lookup failed: effect id \d+ is missing/.test(reason)
-    ? "uncaptured_id"
-    : /is not executable by this projection|cannot map to a compact plan/.test(reason)
-    ? "not_executable"
-    : "other";
-  return { source: (m?.[1] as "Ability" | "Bonus" | undefined) ?? "card", text: m ? m[2] : reason, kind };
-}
 
 type Entry = { status: ProbeStatus; reason?: string; blocked?: BlockKind; partner?: readonly [number, number] };
 const byCard = new Map<number, Record<string, { day?: Entry; night?: Entry }>>();

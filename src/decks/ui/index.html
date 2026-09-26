@@ -41,6 +41,7 @@
         </select>
         <label class="check"><input type="checkbox" id="ownedOnly" checked> Owned</label>
         <label class="check"><input type="checkbox" id="legalOnly"> Legal in format</label>
+        <label class="check" title="Only cards the exact solver can score (deno task card-coverage)"><input type="checkbox" id="solverOnly"> Solver can score</label>
       </div>
       <div id="meta" class="dim"></div>
       <div id="count" class="dim"></div>
@@ -55,6 +56,17 @@
         <button id="export" class="secondary" title="Download the draft as JSON">Export</button>
       </div>
       <div id="draftCards"></div>
+      <div id="solver">
+        <h3>Score against</h3>
+        <div class="solver-row">
+          <select id="opponent"></select>
+          <label>Hands <input id="hands" type="number" min="1" max="400" value="40"></label>
+          <button id="score">Score</button>
+          <button id="cancel" class="secondary" hidden>Stop</button>
+        </div>
+        <div id="coverageLine" class="dim"></div>
+        <div id="scoreOut"></div>
+      </div>
       <div id="report"></div>
     </section>
   </main>
