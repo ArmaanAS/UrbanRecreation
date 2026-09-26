@@ -9,9 +9,9 @@
 // that both implementations already agree on for rounds two through four, which makes the
 // Rust answer checkable against the reference rather than merely plausible.
 //
-// It is skipped unless UR_SLOW_PARITY is set, because TypeScript takes roughly twenty times
-// as long as Rust for identical work: about half a minute for the SECOND information set
-// used here, and several minutes for FIRST.
+// It is skipped unless UR_SLOW_PARITY is set. The TypeScript half took about twenty seconds
+// for the SECOND information set used here, and five minutes for FIRST, until the policy's
+// continuation cache (src/solver/Policy.ts) brought them to about two and thirteen.
 import { assert, assertEquals } from "@std/assert";
 import {
   buildPosition,

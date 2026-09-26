@@ -347,6 +347,15 @@ export default class Game {
     return this[BASES][this.id];
   }
 
+  /**
+   * The match's two tables, which identify it: every clone and make/unmake of this Game
+   * shares them by reference, and a constructed or restored (`Game.from`) Game builds its
+   * own. A solver cache that is only valid within one match compares both by identity.
+   */
+  get matchTables(): readonly [object, object] {
+    return [this[BASES], this[BATTLES]];
+  }
+
   get day() {
     return true;
   }

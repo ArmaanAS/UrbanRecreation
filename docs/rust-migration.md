@@ -4251,8 +4251,9 @@ So `Search` has a reference `exactOpening` mode that the live advisor never sets
 `tests/solver/ExactOpeningParity.test.ts` runs both implementations over the same opening
 root and requires `rust match` on every candidate's average, worst, ceiling, displayed
 percent, KO and risk shares, and the chosen best move. It is skipped unless `UR_SLOW_PARITY=1`
-because TypeScript needs about twenty seconds for the SECOND set (seventy before the
-2026-09-25 engine fixes in AGENTS.md "Performance"), which Rust finishes in well under one.
+because TypeScript needed about twenty seconds for the SECOND set (seventy before the
+2026-09-25 engine fixes in AGENTS.md "Performance"), which Rust finishes in well under one;
+since the TypeScript continuation cache below it needs under two.
 
 The hosted bridge carries an `opening_policy` field on every V3 request and the worker echoes
 which evaluator actually ran, so a host that predates the field keeps its old behaviour, an
@@ -4343,6 +4344,75 @@ starts the TypeScript search beside the Rust worker in `--rust=compare` and `--r
 and the two now compete for the same cores. Deadline-bounded partial results exist in the
 protocol but a partially evaluated root matrix cannot be ranked honestly, so a budget expiry
 still falls back rather than publishing a half-searched opening.
+
+### The TypeScript continuation cache
+
+Added on 2026-09-26, the same idea as the Rust cache above, ported to `Policy.ts` because the
+owner has decided round one will be solved exactly rather than estimated, and the TypeScript
+reference exact opening took 17 s for a SECOND information set and nearly five minutes for
+FIRST. `ContinuationCache` remembers every completed `roundValue` in one match. It lives on
+the `PolicyStack`, so each `Search`, and each worker of a `ParallelSearch`, owns one and
+nothing is process-global; `policyValue` binds it to the match first and it forgets
+everything when shown another one (`Game.matchTables`, the per-match turn-order and battle
+tables every clone and make/unmake shares by reference). Past 2^19 entries it stops
+remembering new positions and never changes a remembered one.
+
+The key was the hard part. Rust keys on `BaseRulesPosition`, which was designed as the
+complete mutable state; the TypeScript `Game` was not, so the key was built from an audit of
+everything `Game.make` changes (the `Undo` class lists it) and everything a later battle
+reads:
+
+- `id` (round, the first mover of this and every later round, and no card selected), the
+  winner, the asking player and the round's first mover;
+- both players' packed ints (life, pillz, won, wonPrevious, match-start totals), both
+  PlayerRounds' packed ints and each side's `lastClan`;
+- which cards each hand has played. The compiled copy `CachedCardBattle.play` leaves in a
+  played slot never matters again: every battle compiles its own cards, and a hand is only
+  asked for clans, names and its Leader, which the copy shares;
+- each side's `Events.repeat`, entry by entry and in order: latched permanents and a
+  Leader's global ability. `Events.events` is empty between rounds and `Events.mask` only
+  decides which times are visited. An entry is keyed by structure, since every battle merges
+  fresh clones: type, text, conditions and each modifier with its class, serialised once per
+  object and interned, plus its won/delayed flags read live. By the time a round starts a
+  Growth permanent has already frozen its amount into its modifier, so the serialisation
+  carries it.
+
+Not caching positions that carry a repeat entry was measured as the alternative: on
+DeepEquivalence's Galactea hands it took the exact opening to 7.2 s instead of 4.8 s, so the
+serialisation stays. Not caching round-four positions was also measured, and cost 3.5 s
+instead of 1.6 s on SECOND and 50 s instead of 12.6 s on FIRST, so every round is cached.
+
+Measured on 2026-09-26 on this 6-core machine, single-threaded, alternating the `aa1ea2f`
+baseline with the patched tree, medians with every sample in brackets:
+
+| Search | Units | Before | After | Speedup |
+| --- | --- | --- | --- | --- |
+| `deno task time-search` (round 2) | 1587 | 472 ms (481, 471, 472, 485, 460) | 208 ms (221, 211, 201, 201, 208) | 2.3x |
+| `877636` exact opening SECOND | 2116 | 17.3 s (17.2, 17.3, 17.4) | 1.64 s (1.68, 1.64, 1.59) | 10.6x |
+| `877636` exact opening FIRST | 8464 | 283 s (281, 283, 289) | 12.6 s (12.5, 12.6, 12.6) | 22.4x |
+| Galactea hands exact opening FIRST, 7 pillz | 2704 | 20.7 s (20.8, 20.5, 20.7) | 4.80 s (4.80, 4.70, 4.87) | 4.3x |
+
+Every before/after pair printed the same checksum (`time-search` still `1419.043478`, best
+`1 9 true`). The largest table was 877636's FIRST: 273,406 positions stored, 4.95 million
+hits against those 273,406 misses (95%), about 60-80 MB of heap. SECOND stored 61,944 with
+821,501 hits.
+
+`tests/solver/PolicyCache.test.ts` solves every depth-2 unit under a round-one root (both
+players' moves, for both askers, so FIRST, SECOND and blind-second alike), a round-two root
+and a round-three root, on DeepEquivalence's latching-permanent and Backlash hands and a
+third pair that latches a delayed Poison and Heal one a side, plus two pairs added in
+review that carry a frozen Growth Heal, Revenge and Confidence, "After [clan]", an Oculus
+infiltration and a night match, once through one shared cache
+and once uncached, and requires identical values and an untouched game; another test shows a
+rebuilt match of the same hands, whose keys are the same strings, starts from nothing.
+Dropping `Events.repeat`, the played masks or the asking player from the key each fails it.
+`ExactOpeningParity` still reports `rust match`, now in about two seconds.
+
+What is still open. `ParallelSearch` gives each worker its own cache and deals units out by
+stride, so a position one worker solved is solved again by the next; on `time-search` three
+workers now take 364 ms (327, 374, 364) against one thread's 208 ms, where before the cache
+three workers at 432 ms (441, 414, 442) had beaten one at 472 ms. The live advisor still
+estimates round one; switching it to the exact opening is a separate change.
 
 ## Working commands
 

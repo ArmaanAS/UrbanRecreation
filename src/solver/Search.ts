@@ -10,10 +10,11 @@
 // hold a subtree in memory at all. Deep.ts retains the original perfect-information
 // minimax as a reference; Policy.ts prevents live advice from peeking at hidden pillz.
 //
-// Round one is an explicit exception: recursively solving the three remaining rounds is
-// intractable even for four zero-pill probes, so all current-round pairings are evaluated
-// with a cheap post-battle position score instead. The view labels that value as an opening
-// score, never as a win percentage.
+// Round one is an explicit exception by default: recursively solving the three remaining
+// rounds took minutes before Policy.ts remembered solved positions, so all current-round
+// pairings are evaluated with a cheap post-battle position score instead unless
+// `exactOpening` is set. The view labels that value as an opening score, never as a win
+// percentage.
 //
 //   average   average over the opponent's current unknown choice. The shallow opening uses
 //             an empirical prior from captured first-round bets; later rounds use a uniform
@@ -264,8 +265,10 @@ export default class Search {
   /**
    * @param exactOpening solve round one to the end of the match instead of estimating it.
    * This is a reference mode for checking the Rust worker's exact opening, not the live
-   * path: it costs minutes rather than milliseconds and the advisor never sets it. Rounds
-   * two onward are exact regardless, so it changes nothing there.
+   * path, and the advisor never sets it. With the policy's continuation cache it costs about
+   * two seconds for a SECOND information set and thirteen for FIRST, single-threaded,
+   * against milliseconds for the estimate. Rounds two onward are exact regardless, so it
+   * changes nothing there.
    */
   constructor(
     game: Game,
