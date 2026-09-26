@@ -112,7 +112,11 @@ export function absorbRecord(rec: Json, store: DeckStore): boolean {
       }
       case "deckformatsdata": {
         if (!Array.isArray(resp)) return false;
-        store.formats = { fetchedAt: iso(t), formats: resp.map(deckFormat) };
+        const formats = resp.map(deckFormat);
+        // The file is committed, so only a real rule change (a new weekly ban list) may
+        // touch it; `fetchedAt` is when this version of the rules was first seen.
+        if (JSON.stringify(formats) === JSON.stringify(store.formats?.formats)) return true;
+        store.formats = { fetchedAt: iso(t), formats };
         store.dirty.add("formats");
         return true;
       }

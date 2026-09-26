@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UR logger
 // @namespace    urban-recreation
-// @version      0.8.0
+// @version      0.9.0
 // @description  Mirror Urban Rivals network traffic to a local log server (see log_server.ts)
 // @match        https://www.urban-rivals.com/*
 // @run-at       document-start
@@ -23,7 +23,7 @@
 (() => {
   // Keep equal to @version above; log_server.ts compares it with the repository copy and
   // says when this one is out of date.
-  const VERSION = '0.8.0';
+  const VERSION = '0.9.0';
   const SERVER_ROOT = 'http://localhost:8787';
   const SERVER = SERVER_ROOT + '/log';
   const CONTROL = SERVER_ROOT + '/control';
@@ -264,6 +264,118 @@
       return clans.length;
     },
   };
+
+  // ---- deck panel (Collection Pro only) --------------------------------------------------
+  // A read-only side panel beside the site's own deck editor. It reads the deck being edited
+  // from the page's deck list (each card link carries its id, level and edition), asks the
+  // local deck service (`deno task decks`, src/decks/Service.ts, reached through the log
+  // server's /decks/ so the browser needs only one local port) for a report, and shows it:
+  // legality in every format as the site's own validator would judge it, stars, clans, how
+  // often each card's bonus is live, full card texts and the copies owned. It sends nothing
+  // to the site, and has no control that could.
+  const DECK_SERVICE = SERVER_ROOT + '/decks';
+  const deckPanel = () => {
+    const host = document.createElement('div');
+    host.id = 'ur-lab-deck-panel';
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = `<style>
+      :host { all: initial; }
+      .wrap { position: fixed; left: 10px; bottom: 10px; z-index: 2147483000; font: 12px/1.35 system-ui, sans-serif; color: #eee; }
+      button.toggle { background: #f5c518; color: #111; border: 0; border-radius: 6px; padding: 6px 10px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px #0008; }
+      .panel { display: none; margin-bottom: 6px; width: 560px; max-width: calc(100vw - 20px); max-height: 78vh; overflow: auto;
+        background: #16181d; border: 1px solid #444; border-radius: 8px; padding: 10px; box-shadow: 0 6px 24px #000a; }
+      .open .panel { display: block; }
+      h3 { margin: 0 0 6px; font-size: 14px; color: #f5c518; }
+      .chips span { display: inline-block; margin: 0 6px 6px 0; padding: 2px 8px; border-radius: 10px; border: 1px solid #555; }
+      .ok { color: #7ee07e; } .bad { color: #ff7b7b; } .unk { color: #e0c060; } .sel { border-color: #f5c518 !important; }
+      ul.errs { margin: 0 0 8px 16px; padding: 0; } ul.errs li { color: #ff9b9b; }
+      table { border-collapse: collapse; width: 100%; } td, th { padding: 3px 4px; border-top: 1px solid #333; vertical-align: top; text-align: left; }
+      th { color: #aaa; font-weight: 600; } .dim { color: #999; } .ban { color: #111; background: #ff7b7b; border-radius: 3px; padding: 0 3px; margin-left: 3px; font-size: 10px; }
+      .note { color: #e0c060; margin-top: 6px; }
+    </style><div class="wrap"><div class="panel"></div><button class="toggle" title="UR Lab deck report (read-only)">UR Lab ▲</button></div>`;
+    const wrap = root.querySelector('.wrap');
+    const panel = root.querySelector('.panel');
+    const toggle = root.querySelector('button.toggle');
+    toggle.addEventListener('click', () => {
+      wrap.classList.toggle('open');
+      toggle.textContent = wrap.classList.contains('open') ? 'UR Lab ▼' : 'UR Lab ▲';
+      refresh(true);
+    });
+    document.body.appendChild(host);
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    const readDeck = () => [...document.querySelectorAll('.js-deck-cards-list > li a.js-load-character')].map((a) => ({
+      id: Number(a.dataset.characterId),
+      level: Number(a.dataset.characterLevel),
+      state: a.dataset.characterState || '',
+    }));
+    const selectedFormat = () => Number(document.querySelector('.js-deck-format-filter')?.value || 0);
+    const deckName = () => document.querySelector('.js-deck-save')?.getAttribute('data-name') || '(unsaved)';
+
+    const render = (report, deck) => {
+      const selected = selectedFormat();
+      const chips = report.formats.map((f) => {
+        const cls = f.legal === true ? 'ok' : f.legal === false ? 'bad' : 'unk';
+        const mark = f.legal === true ? '✓' : f.legal === false ? '✗' : '?';
+        const why = f.errors.map((e) => e.description).concat(f.unknown.map((u) => 'not understood: ' + u.name)).join('\n');
+        return `<span class="${cls}${f.formatId === selected ? ' sel' : ''}" title="${esc(why)}">${mark} ${esc(f.name)}</span>`;
+      }).join('');
+      const chosen = report.formats.find((f) => f.formatId === selected);
+      const errors = chosen && chosen.errors.length
+        ? `<ul class="errs">${chosen.errors.map((e) => `<li>${esc(e.description)}</li>`).join('')}</ul>` : '';
+      const clans = report.clans.map((c) => `${esc(c.clan)} ×${c.count}`).join(', ') + (report.leaders ? `, Leaders ×${report.leaders}` : '');
+      const rows = report.cards.map((c, i) => {
+        if (!c.known) return `<tr><td colspan="5" class="bad">#${c.id} level ${c.level}: not in the captured card list</td></tr>`;
+        const bans = [
+          c.bans.tourney && 'T', c.bans.tourneyMaxLevel && c.level >= c.levelMax && 'T max',
+          c.bans.elo && 'ELO', c.bans.efcMaxLevel && c.level >= c.levelMax && 'EFC max', c.bans.efcTemporary && 'EFC temp',
+        ].filter(Boolean).map((b) => `<span class="ban">${b}</span>`).join('');
+        const invalid = chosen && chosen.invalidIndexes.includes(i) ? ' class="bad"' : '';
+        const owned = c.ownedExact === undefined ? '' : c.ownedExact > 0 ? `×${c.ownedExact}` : `<span class="bad">none${c.ownedAtLevel ? ` (${c.ownedAtLevel} other ed.)` : ''}</span>`;
+        const share = c.bonusLiveShare === undefined ? '—' : Math.round(c.bonusLiveShare * 100) + '%';
+        return `<tr><td${invalid}>${esc(c.name)}${bans}<div class="dim">${esc(c.clan)} · L${c.level}/${c.levelMax}${c.state ? ' · ' + esc(c.state) : ''}</div></td>` +
+          `<td>${c.power}/${c.damage}</td><td>${esc(c.ability)}${c.abilityLocked && c.abilityUnlockLevel ? `<div class="dim">unlocks at L${c.abilityUnlockLevel}</div>` : ''}</td>` +
+          `<td>${esc(c.bonus)}<div class="dim">live ${share}</div></td><td>${owned}</td></tr>`;
+      }).join('');
+      const cap = chosen?.maxStars ? '/' + chosen.maxStars : '';
+      panel.innerHTML = `<h3>${esc(deckName())} · ${deck.length} cards · ${report.stars}${cap}★</h3>` +
+        `<div class="chips">${chips}</div>${errors}<div class="dim" style="margin-bottom:6px">${clans}</div>` +
+        `<table><tr><th>Card</th><th>P/D</th><th>Ability</th><th>Bonus</th><th>Owned</th></tr>${rows}</table>` +
+        report.notes.map((n) => `<div class="note">${esc(n)}</div>`).join('');
+    };
+
+    let lastKey = '';
+    let timer = 0;
+    const refresh = async (force = false) => {
+      if (!wrap.classList.contains('open')) return;
+      const deck = readDeck();
+      const key = JSON.stringify([deck, selectedFormat(), !!window.isNight]);
+      if (!force && key === lastKey) return;
+      lastKey = key;
+      if (!deck.length) { panel.innerHTML = '<h3>UR Lab</h3><div class="dim">Load or build a deck to see its report.</div>'; return; }
+      try {
+        const res = await nativeFetch(DECK_SERVICE + '/api/report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ characters: deck, night: !!window.isNight }),
+        });
+        const report = await res.json();
+        if (!res.ok) throw new Error(report.error || res.status);
+        render(report, deck);
+      } catch (e) {
+        panel.innerHTML = `<h3>UR Lab</h3><div class="unk">No deck report: run <b>deno task decks</b> (and the log server) in the repository (${esc(e && e.message)}).</div>`;
+      }
+    };
+    // The site rebuilds the deck list as cards are added, removed or re-levelled; watch the
+    // whole page cheaply and only ask again when the deck or the chosen room changed.
+    new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => refresh(), 250); })
+      .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-character-level', 'data-character-state'] });
+    document.addEventListener('change', (e) => { if (e.target?.classList?.contains('js-deck-format-filter')) refresh(true); }, true);
+  };
+  if (location.pathname.startsWith('/collection/pro')) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', deckPanel);
+    else deckPanel();
+  }
 
   log('page', { href: location.href, ua: navigator.userAgent, version: VERSION });
 })();

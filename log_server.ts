@@ -194,6 +194,25 @@ function print(label: string, t: number, summary: string) {
   );
 }
 
+const DECK_SERVICE = "http://127.0.0.1:8788";
+async function proxyDecks(r: Request, path: string): Promise<Response> {
+  // The panel's POST is preflighted; answer that here rather than forwarding it.
+  if (r.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  try {
+    const res = await fetch(DECK_SERVICE + path, {
+      method: r.method,
+      headers: { "content-type": "application/json" },
+      body: r.method === "POST" ? await r.text() : undefined,
+    });
+    return new Response(await res.text(), {
+      status: res.status,
+      headers: { ...cors, "content-type": "application/json" },
+    });
+  } catch {
+    return Response.json({ error: "deck service not running: `deno task decks`" }, { status: 503, headers: cors });
+  }
+}
+
 // Requests arrive concurrently (the game client fires several polls at once); process them
 // strictly in arrival order so appended lines and capture state stay consistent.
 let queue: Promise<unknown> = Promise.resolve();
@@ -210,6 +229,10 @@ Deno.serve({ port: 8787, onListen: ({ port }) => console.log(`UR log server on :
   const origin = r.headers.get("origin");
   if (origin !== null && origin !== SITE_ORIGIN) return new Response(null, { status: 403 });
   if (r.method === "GET" && path === "/events") return feed();
+  // The Collection Pro panel reaches the deck service through here, so the browser only
+  // ever needs to reach this one local port: Edge asks the owner separately for each
+  // local address a site may call, and a pending prompt stalls the page.
+  if (path.startsWith("/decks/")) return proxyDecks(r, path.slice("/decks".length));
   if (path === "/control") {
     if (r.method === "GET") {
       return Response.json({ autoQueue }, { headers: { ...cors, "cache-control": "no-store" } });

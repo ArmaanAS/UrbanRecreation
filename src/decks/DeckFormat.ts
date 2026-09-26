@@ -34,6 +34,8 @@ export interface FormatVerdict {
   invalidIndexes: number[];
   /** true legal, false illegal, null cannot tell (an unknown criterion). */
   legal: boolean | null;
+  /** The format's star cap, when it has one, for display. */
+  maxStars?: number;
 }
 
 /** The site treats clan 36 as the Leaders, who never count as a clan. */
@@ -228,9 +230,11 @@ export function checkDeck(format: DeckFormatData, deck: DeckCharacter[]): Format
   // Like the site: no format (id 0), an empty deck or no criteria has nothing to check.
   const checked = format.id !== 0 && deck.length > 0 && format.criteria.length > 0;
   const errors = checked ? criteriaErrors(format, deck) : [];
+  const maxStars = format.criteria.find((c) => c.name === "max_stars")?.value;
   return {
     formatId: format.id,
     name: format.name,
+    ...(typeof maxStars === "number" ? { maxStars } : {}),
     errors,
     unknown,
     invalidIndexes: checked ? invalidIndexes(deck, errors) : [],
