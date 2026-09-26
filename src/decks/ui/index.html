@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deck Lab</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>Deck Lab</h1>
+    <label>Format
+      <select id="format"></select>
+    </label>
+    <label class="check"><input type="checkbox" id="night"> Night</label>
+    <span id="freshness" class="dim"></span>
+    <span class="dim readonly">Read-only: nothing here changes your account.</span>
+  </header>
+  <main>
+    <section id="collection">
+      <div class="filters">
+        <input id="search" type="search" placeholder="Search name, ability, bonus…">
+        <select id="clan"><option value="">All clans</option></select>
+        <select id="rarity">
+          <option value="">All rarities</option>
+          <option value="c">Common</option><option value="u">Uncommon</option><option value="r">Rare</option>
+          <option value="l">Legendary</option><option value="cr">Collector</option><option value="m">Mythic</option>
+        </select>
+        <select id="levelMode" title="Which level to show and add">
+          <option value="owned">Highest owned level</option>
+          <option value="max">Max level</option>
+          <option value="min">Min level</option>
+        </select>
+        <select id="sort">
+          <option value="name">Sort: name</option>
+          <option value="power">Sort: power</option>
+          <option value="damage">Sort: damage</option>
+          <option value="stars">Sort: level</option>
+          <option value="release">Sort: newest</option>
+        </select>
+        <label class="check"><input type="checkbox" id="ownedOnly" checked> Owned</label>
+        <label class="check"><input type="checkbox" id="legalOnly"> Legal in format</label>
+      </div>
+      <div id="count" class="dim"></div>
+      <div id="cards"></div>
+      <button id="more" class="secondary" hidden>Show more</button>
+    </section>
+    <section id="draft">
+      <div class="draft-head">
+        <input id="draftName" placeholder="Draft name">
+        <select id="loadDeck"><option value="">Load a saved deck…</option></select>
+        <button id="clear" class="secondary">Clear</button>
+        <button id="export" class="secondary" title="Download the draft as JSON">Export</button>
+      </div>
+      <div id="draftCards"></div>
+      <div id="report"></div>
+    </section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

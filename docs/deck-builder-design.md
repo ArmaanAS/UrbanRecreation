@@ -32,8 +32,17 @@ Where it differs from the plan below:
 - The deck service has `/api/deck/:id` and `/api/card/:id` rather than per-level card routes,
   plus `POST /api/report` for any list of cards.
 
+A first cut of **phase 3** followed: Deck Lab (`src/decks/ui/`), served by the deck service at
+http://127.0.0.1:8788. It browses all 2,498 cards with the owner's copies (filters for clan,
+rarity, owned, "legal in this format", text; level shown as the highest owned, max or min;
+sorting), drafts a deck from them or from a saved deck (levels up and down, remove), and shows
+the same live report as the panel plus the difference from the saved deck it started from.
+Drafts are kept in the browser's local storage and can be exported as JSON. Nothing in it
+talks to the site.
+
 To use it: update the userscript from http://localhost:8787/ur-logger.user.js, run
-`deno task decks` beside the log server, open Collection Pro and click "UR Lab".
+`deno task decks` beside the log server, open Collection Pro and click "UR Lab", or open
+http://127.0.0.1:8788 for Deck Lab.
 
 ## What changed since the backlog write-up
 

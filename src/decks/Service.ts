@@ -1,14 +1,14 @@
-// The deck service: answers the userscript's Collection Pro panel (and, later, our own deck
-// builder page) with deck reports computed from the captured site data.
+// The deck service: answers the userscript's Collection Pro panel with deck reports computed
+// from the captured site data, and serves our own deck builder page ("Deck Lab").
 //
-//   deno task decks        # http://127.0.0.1:8788
+//   deno task decks        # http://127.0.0.1:8788 - open it in a browser for Deck Lab
 //
 // It only reads the data files the log server writes (see scripts/DeckCapture.ts), and it
 // never talks to the site: nothing here can change the owner's account. Kept out of
 // log_server.ts on purpose - that process has to keep up with the game client's polling.
 import "colors";
 import { deckReport } from "./Report.ts";
-import type { DeckCard, DeckFormatData, OwnedCopies, SiteCard, SiteDeck } from "./SiteData.ts";
+import type { DeckCard, DeckFormatData, OwnedCopies, SiteCard, SiteDeck, SiteEvo } from "./SiteData.ts";
 
 const PORT = 8788;
 const SITE_ORIGIN = "https://www.urban-rivals.com";
@@ -50,7 +50,7 @@ async function catalog() {
     readData(FILES.cards),
     readData(FILES.collection),
   ]);
-  let byId = cards && indexes.get(cards);
+  let byId: Map<number, SiteCard> | undefined = cards ? indexes.get(cards) : undefined;
   if (cards && !byId) {
     byId = new Map((cards.cards as SiteCard[]).map((c) => [c.id, c]));
     indexes.set(cards, byId);
@@ -78,12 +78,79 @@ function validDeck(characters: unknown): DeckCard[] | null {
 
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: cors });
 
+// Deck Lab's static files, served from src/decks/ui/.
+const UI_DIR = new URL("./ui/", import.meta.url);
+const UI_FILES: Record<string, string> = {
+  "/": "index.html",
+  "/app.js": "app.js",
+  "/style.css": "style.css",
+};
+const UI_TYPES: Record<string, string> = {
+  html: "text/html; charset=utf-8",
+  js: "text/javascript; charset=utf-8",
+  css: "text/css; charset=utf-8",
+};
+
+/**
+ * Every card, compact, with the owner's copies: what Deck Lab's collection browser needs in
+ * one request. Per level: [power, damage, ability, unlock level, night ability, picture].
+ */
+async function collection() {
+  const c = await catalog();
+  return {
+    fetchedAt: c.fetchedAt,
+    formats: c.formats,
+    cards: [...c.cards.values()].map((card) => ({
+      id: card.id,
+      name: card.name,
+      clan: card.clan_name,
+      clanId: card.clan_id,
+      rarity: card.rarity,
+      levelMin: card.level_min,
+      levelMax: card.level_max,
+      release: card.release_date,
+      bans: {
+        tourney: card.tourney_banned,
+        tourneyMaxLevel: card.tourney_max_evo_banned,
+        elo: card.efc_banned,
+        efcMaxLevel: card.efc_max_evo_banned,
+        efcTemporary: card.efc_temp_banned,
+      },
+      bonus: card.bonus.description,
+      nightBonus: Array.isArray(card.nightBonus) ? undefined : card.nightBonus.description,
+      evos: Object.fromEntries(Object.entries(card.evos as Record<string, SiteEvo>).map(([level, evo]) => [level, [
+        evo.power,
+        evo.damage,
+        evo.ability.description,
+        evo.ability.unlockLevel ?? 0,
+        Array.isArray(evo.nightAbility) ? null : evo.nightAbility.description,
+        evo.pictureURL ?? null,
+      ]])),
+      owned: c.owned?.get(card.id) ?? {},
+    })),
+  };
+}
+
+// Deck Lab's own page, and the site (the userscript panel, via the log server's proxy or
+// directly). Every other origin is refused, so no other page can read the owner's decks.
+const OWN_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
+
 export async function handle(r: Request): Promise<Response> {
   const origin = r.headers.get("origin");
-  if (origin !== null && origin !== SITE_ORIGIN) return new Response(null, { status: 403 });
+  if (origin !== null && origin !== SITE_ORIGIN && !OWN_ORIGINS.has(origin)) {
+    return new Response(null, { status: 403 });
+  }
   if (r.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   const path = new URL(r.url).pathname;
 
+  const uiFile = UI_FILES[path];
+  if (r.method === "GET" && uiFile) {
+    const body = await Deno.readFile(new URL(uiFile, UI_DIR));
+    return new Response(body, {
+      headers: { "content-type": UI_TYPES[uiFile.split(".").pop()!], "cache-control": "no-store" },
+    });
+  }
+  if (r.method === "GET" && path === "/api/collection") return json(await collection());
   if (r.method === "GET" && path === "/api/status") {
     const [c, decks] = await Promise.all([catalog(), readData(FILES.decks)]);
     return json({
@@ -127,6 +194,9 @@ if (import.meta.main) {
   Deno.serve({
     hostname: "127.0.0.1",
     port: PORT,
-    onListen: () => console.log(`deck service on http://127.0.0.1:${PORT} (reads ${Object.values(FILES).join(", ")})`.green),
+    onListen: () =>
+      console.log(
+        `deck service on http://127.0.0.1:${PORT} - open it for Deck Lab (reads ${Object.values(FILES).join(", ")})`.green,
+      ),
   }, handle);
 }

@@ -9,7 +9,7 @@
     "opening-prior": "deno run --allow-read=captures,src/solver/Search.ts,rust/src/advisor/search.rs --allow-write=src/solver/Search.ts,rust/src/advisor/search.rs ./scripts/OpeningPrior.ts",
     "prune": "deno run --allow-read --allow-write --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/PruneLog.ts",
     "deck-data": "deno run --allow-read --allow-write=data --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/DeckData.ts",
-    "decks": "deno run --allow-net=127.0.0.1:8788 --allow-read=data --allow-env=FORCE_COLOR --allow-sys=osRelease ./src/decks/Service.ts",
+    "decks": "deno run --allow-net=127.0.0.1:8788 --allow-read=data,src/decks/ui --allow-env=FORCE_COLOR --allow-sys=osRelease ./src/decks/Service.ts",
     "extract": "deno run --allow-read --allow-write=captures --allow-env=FORCE_COLOR --allow-sys=osRelease ./scripts/ExtractBattle.ts",
     "bench": "deno run --allow-env=FORCE_COLOR --allow-read --allow-sys=osRelease --unstable-worker-options --v8-flags=--max-old-space-size=12000 --inspect-brk ./tests/IterTree.bench.ts",
     "advise": "deno run --allow-read --allow-net=localhost:8787,127.0.0.1:8787 --allow-run=deno,rust/target/release/urban-recreation-advisor-jsonl.exe,rust/target/release/urban-recreation-advisor-jsonl --allow-env=FORCE_COLOR --allow-sys=osRelease --v8-flags=--max-old-space-size=12000 ./src/solver/Advisor.ts",
