@@ -395,6 +395,16 @@
     "flip": false,
     "life": 14,
     "pillz": 12,
+    "abilities": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      "Revenge: -16 Opp Attack, Min 3",
+      null,
+      null
+    ],
     "moves": [
       {
         "s1": [

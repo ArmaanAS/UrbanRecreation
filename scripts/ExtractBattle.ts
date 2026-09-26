@@ -360,7 +360,23 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
       hazard && c.ability?.abilityData?.specialAction !== "random_abilities" ? c.ability?.description ?? "No Ability" : null
     );
   });
-  const testcase = levelMismatch ? null : buildTestcase(players, rounds, issues, night, substituted);
+  // A balance patch can change a card's printed ability after its battle was captured:
+  // Trasher-X level 4 fought capture 1080464 with "Revenge: -16 Opp Attack, Min 3", and the
+  // 2026-09-26 card dump prints -13. A replay has to fight with what the server dealt, so a
+  // card whose battle-start text differs from today's catalog text carries the battle's
+  // text, through the same per-card slot as Hazard. The first snapshot is used because it
+  // shows printed texts, before a Copy resolves.
+  const repatched = sides.map((k) =>
+    [...(first[k].characters as Character[])].sort((a, b) => a.index - b.index).map((c) => {
+      const row = cardByIdLevel.get(`${c.id}:${c.level}`);
+      const dealt: string | undefined = c.ability?.description;
+      if (row === undefined || dealt === undefined) return null;
+      const printed = (night ? row.night_ability : undefined) ?? row.ability;
+      return dealt !== printed ? dealt : null;
+    })
+  );
+  const dealt = substituted.map((hand, s) => hand.map((ability, i) => ability ?? repatched[s][i]));
+  const testcase = levelMismatch ? null : buildTestcase(players, rounds, issues, night, dealt);
 
   return {
     id,
@@ -448,7 +464,8 @@ function buildTestcase(
     flip: false,
     life: players[p1].baseLife,
     pillz: players[p1].basePillz,
-    // Only in a Hazard battle, so every other record stays byte-identical.
+    // Only in a Hazard battle or where a card's ability changed after the battle, so
+    // every other record stays byte-identical.
     ...(abilities.some((a) => a !== null) ? { abilities } : {}),
     moves: [],
   };

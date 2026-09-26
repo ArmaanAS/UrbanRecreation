@@ -342,7 +342,7 @@ mod tests {
             "capture errors: {:#?}",
             corpus.errors
         );
-        assert_eq!(corpus.skipped.len(), 7);
+        assert_eq!(corpus.skipped.len(), 6);
         assert!(corpus.ready.len() >= 354);
 
         let skipped: Vec<_> = corpus
@@ -351,11 +351,10 @@ mod tests {
             .map(|skipped| (skipped.battle_id, skipped.reason))
             .collect();
         // 830285 left this list when Dojo battles started being extracted like any other
-        // battle. Every other skip is a capture that stopped mid-match, except 1414087: it
-        // deals card 2714, released after the 2026-09-10 card dump, so the extractor wrote
-        // null for its name and clan and generated no testcase. A card refresh
-        // (`__ur.dumpCharacters()`, `deno task cards`, `deno task extract`) makes it ready.
-        use ReplaySkipReason::{InProgress, NoReplayTestcase};
+        // battle, and 1414087 when the 2026-09-26 card refresh brought in card 2714 (the
+        // extractor had written null for its name and clan). Every skip left is a capture
+        // that stopped mid-match.
+        use ReplaySkipReason::InProgress;
         assert_eq!(
             skipped,
             [
@@ -365,7 +364,6 @@ mod tests {
                 (1024388, InProgress),
                 (1092729, InProgress),
                 (1145959, InProgress),
-                (1414087, NoReplayTestcase),
             ]
         );
 

@@ -648,13 +648,16 @@ mod tests {
     fn effective_catalog_applies_and_validates_runtime_overrides() {
         let raw = CardCatalog::load(canonical_data_path()).unwrap();
         let raw_quetzal = raw.get(CardKey::new(1577, 3)).unwrap();
+        // The 2026-09-26 card refresh caught up with battle 1131463, so the canonical row
+        // already holds the override's `to` and the override is a validated no-op. The
+        // synthetic contract test below covers an override that still applies.
         assert_eq!(
             (
                 raw_quetzal.power,
                 raw_quetzal.damage,
                 raw_quetzal.ability.as_str()
             ),
-            (2, 6, "No Ability")
+            (7, 4, "Stop Opp. Bonus")
         );
 
         let effective =
@@ -769,6 +772,21 @@ mod tests {
                 current.get(CardKey::new(1, 1)).unwrap().ability_id,
                 current.get(CardKey::new(1, 1)).unwrap().ability.as_str(),
                 current.validated_override_count()
+            ),
+            (7, 4, 99, "Stop Opp. Bonus", 1)
+        );
+
+        // The same contract over a catalog still at `from` applies `to`.
+        let applied =
+            EffectiveCardCatalog::from_readers(row.as_bytes(), current_contract.as_bytes())
+                .unwrap();
+        assert_eq!(
+            (
+                applied.get(CardKey::new(1, 1)).unwrap().power,
+                applied.get(CardKey::new(1, 1)).unwrap().damage,
+                applied.get(CardKey::new(1, 1)).unwrap().ability_id,
+                applied.get(CardKey::new(1, 1)).unwrap().ability.as_str(),
+                applied.validated_override_count()
             ),
             (7, 4, 99, "Stop Opp. Bonus", 1)
         );

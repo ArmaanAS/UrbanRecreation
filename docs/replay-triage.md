@@ -1,8 +1,8 @@
 # Replay triage — engine vs server mismatches
 
 Status from `deno test -A --no-check tests/replay/` against 383 captured battles
-(376 replay-ready; 7 ignored, 6 because they stopped mid-match and 1414087 because it deals
-card 2714, which the 2026-09-10 card data predates): 368 replay exactly and 8 mismatch. Each entry
+(377 replay-ready; 6 ignored because they stopped mid-match): 369 replay exactly and 8
+mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
 `captures/games/<id>.json`, which has the full context.
@@ -46,6 +46,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-24 | 347 | 29 | Corrupt implemented; abbreviated condition prefixes parse |
 | 2026-09-25 | 368 | 8 | `/ Life Lost` is Per; conditional Copy gated; Naja and Dope pay after KO; Recover win + floor; stale final rounds attributed |
 | 2026-09-25 | 368 | 8 | A conditional `Protection: Power And Damage` refuses reductions while its condition holds (no replay moves) |
+| 2026-09-26 | 369 | 8 | Card refresh (2498 cards): 1414087 replays exactly; rebalanced abilities replay with the battle's own text |
 
 ## Fixed
 
@@ -593,10 +594,17 @@ a second capture or an open question: 874712 (Revenge / Damage Impose), 1093173 
 order), 1059149 (Exchange, TypeScript only), 1414749 (an increase to the opposing card), and
 the single points 1079078, 1089974, 947670 and 1025413. The backlog of 39 that the expanded
 corpus brought on 2026-09-14 and 2026-09-17, and the three from the 2026-09-23 session, are
-fixed above or among those eight. A fourth 2026-09-23 capture,
-1414087, has no testcase at all: its opponent deals card 2714 (level 2, `Brawl: Damage + 1`),
-which is newer than the 2026-09-10 character dump, so the extractor has no name, clan or
-stats for it. Run `__ur.dumpCharacters()` and `deno task cards`, then `deno task extract`.
+fixed above or among those eight. A fourth 2026-09-23 capture, 1414087, deals card 2714
+(Gloria, level 2, `Brawl: Damage + 1`), which the 2026-09-10 character dump predated; since
+the 2026-09-26 card refresh it has a testcase and replays exactly.
+
+That refresh also rebalanced cards the corpus had already captured, which is a new kind of
+replay failure: 1080464 broke because Trasher-X level 4 fought it with `Revenge: -16 Opp
+Attack, Min 3` and the refreshed catalog prints -13. `deno task extract` now writes a card's
+battle-start ability text into the testcase's `abilities` slot whenever it differs from the
+catalog (the slot Hazard already used), which put 1080464 back and gave 1090887 its
+Chelonite `Unison: Killshot: +4 Life`. Only those two testcases changed. A power or damage
+rebalance of a captured card would need a stats slot too; none has happened yet.
 
 The five that arrived with the 2026-09-17 captures are no longer here: 1130425, 1130726,
 1131144, 1207064 and 1093129 are all fixed above, and so is 901004, which had been filed

@@ -395,6 +395,16 @@
     "flip": false,
     "life": 12,
     "pillz": 12,
+    "abilities": [
+      null,
+      null,
+      null,
+      "Unison: Killshot: +4 Life",
+      null,
+      null,
+      null,
+      null
+    ],
     "moves": [
       {
         "s1": [

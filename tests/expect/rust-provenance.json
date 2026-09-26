@@ -2,7 +2,7 @@
   "description": "Catalog and registry fingerprints plus the Rust semantic revisions the worker checks.",
   "regenerate": "UR_UPDATE_EXPECT=1 deno test -A --no-check tests/solver/RustAdvisorInput.test.ts",
   "value": {
-    "effectiveCatalogFingerprintFnv1a64": "115363043bb5dded",
+    "effectiveCatalogFingerprintFnv1a64": "66477dd01875098b",
     "effectRegistryFingerprintFnv1a64": "7a9889755b202794",
     "effectRegistrySchemaVersion": 1,
     "compilerPolicySemanticRevision": 76,
