@@ -142,3 +142,7 @@ code { font-size: 12px; background: #0d0f12; padding: 0 3px; border-radius: 3px;
 #clans .cols { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
 .byclan { margin: 6px 0; line-height: 1.9; }
 .byclan span { padding: 1px 6px; border-radius: 3px; white-space: nowrap; }
+#scoreOut table.swap { border-collapse: collapse; margin: 6px 0; }
+#scoreOut table.swap td, #scoreOut table.swap th { padding: 2px 6px; border-top: 1px solid var(--line); text-align: left; }
+#scoreOut table.swap th { color: var(--dim); font-weight: 600; }
+.draft-row { grid-template-columns: minmax(0, 1fr) auto auto auto; }

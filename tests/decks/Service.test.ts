@@ -146,3 +146,12 @@ Deno.test("the clan matrix is read per format, and a bad format is refused", asy
   assertEquals(bad.status, 400);
   await bad.body?.cancel();
 });
+
+Deno.test("a swap search needs a slot inside the draft", async () => {
+  useSolver(() => Promise.reject(new Error("the solver must not start")));
+  for (const swap of [{ slot: 5 }, { slot: -1 }, { slot: "x" }, { slot: 0, scope: "world" }]) {
+    const res = await handle(post("/api/matchup", { characters: draft, opponent: { format: 54363 }, swap }));
+    assertEquals(res.status, 400, JSON.stringify(swap));
+    assertStringIncludes((await res.json()).error, "swap.");
+  }
+});

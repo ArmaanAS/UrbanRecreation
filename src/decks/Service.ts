@@ -14,19 +14,23 @@ import { handClan } from "./ClanMatrix.ts";
 import { compactCoverage, type CoverageFile, describeRefusal } from "./Coverage.ts";
 import {
   assertCurrentBinary,
-  deckVsDeck,
-  type DeckVsDeckOptions,
+  type DeckCardRef,
   type DeckVsDeckResult,
-  deckVsHands,
   FileMatchupCache,
+  type HandPair,
   type MatchupCache,
   matchupProvenance,
   type MatchupRunner,
   ProcessMatchupRunner,
   provenanceMismatches,
+  sampleFieldPairs,
+  sampleHandPairs,
+  solvePairs,
+  summarize,
 } from "./Matchup.ts";
 import { formatHands, formatMeta, type GameRecord } from "./Meta.ts";
 import { deckReport } from "./Report.ts";
+import { swapSearch } from "./Swap.ts";
 import type { DeckCard, DeckFormatData, OwnedCopies, SiteCard, SiteDeck, SiteEvo } from "./SiteData.ts";
 
 const PORT = 8788;
@@ -217,6 +221,9 @@ const SEED = 1;
 
 interface MatchupJob {
   id: number;
+  /** A score of the draft, or a search for a better card in one of its slots. */
+  kind: "score" | "swap";
+  slot?: number;
   state: "running" | "done" | "failed" | "cancelled";
   /** The draft that was scored, as [id, level], and what it was scored against. */
   deck: [number, number][];
@@ -269,22 +276,77 @@ function summary(result: DeckVsDeckResult, clanOf?: (hand: readonly (readonly [n
   };
 }
 
+/** Candidates a swap search considers at most, so a job stays a few minutes long. */
+const MAX_CANDIDATES = 40;
+const baseName = (name: string) => name.replace(/ Cr$/, "");
+
+/**
+ * The owned cards that could take `slot`: of the slot card's clan (or of any clan in the deck),
+ * not already in the deck, each at its highest owned level that the solver can score and that
+ * keeps a legal deck legal in the format.
+ */
+async function swapCandidates(
+  deck: DeckCard[],
+  slot: number,
+  scope: "clan" | "deck",
+  formatId: number | undefined,
+  night: boolean,
+): Promise<DeckCard[]> {
+  const c = await catalog();
+  if (!c.owned) throw new Error("no collection captured yet: open Collection Pro with the log server running");
+  const clans = new Set(
+    (scope === "clan" ? [deck[slot]] : deck).map((d) => c.cards.get(d.id)?.clan_id).filter((id) => id !== undefined),
+  );
+  const taken = new Set(deck.filter((_, i) => i !== slot).map((d) => baseName(c.cards.get(d.id)?.name ?? `#${d.id}`)));
+  const cov = await coverage();
+  const format = c.formats.find((f) => f.id === formatId);
+  const legal = (cards: DeckCard[]) =>
+    !format || deckReport(cards, c, night).formats.find((v) => v.formatId === format.id)?.legal !== false;
+  const keepLegal = legal(deck);
+  const out: (DeckCard & { power: number })[] = [];
+  for (const [id, copies] of c.owned) {
+    const card = c.cards.get(id);
+    if (!card || id === deck[slot].id || !clans.has(card.clan_id) || taken.has(baseName(card.name))) continue;
+    const levels = Object.keys(copies).map(Number).filter((l) => card.evos[String(l)]).sort((x, y) => y - x);
+    for (const level of levels) {
+      const code = cov.cards?.[id]?.[level]?.[night ? 1 : 0];
+      if (code && code !== "e" && code !== "u") continue;
+      const editions = Object.keys(copies[String(level)] ?? {});
+      const candidate = { id, level, state: editions.includes("") ? "" : editions[0] ?? "" };
+      if (keepLegal && !legal(deck.map((d, i) => (i === slot ? candidate : d)))) continue;
+      const evo = card.evos[String(level)];
+      out.push({ ...candidate, power: evo.power + evo.damage });
+      break;
+    }
+  }
+  return out.sort((x, y) => y.power - x.power).slice(0, MAX_CANDIDATES).map(({ id, level, state }) => ({ id, level, state }));
+}
+
 async function startMatchup(body: Json): Promise<Response> {
   const deck = validDeck(body?.characters);
   if (!deck || deck.length < 4) return json({ error: "characters must be 4 to 30 {id, level 1-5, state}" }, 400);
   const n = body?.n === undefined ? 40 : Number(body.n);
   if (!Number.isInteger(n) || n < 1 || n > MAX_PAIRS) return json({ error: `n must be 1 to ${MAX_PAIRS} hand pairs` }, 400);
   const night = body?.night === true;
+  const swap = body?.swap;
+  if (swap !== undefined) {
+    if (!Number.isInteger(swap?.slot) || swap.slot < 0 || swap.slot >= deck.length) {
+      return json({ error: "swap.slot must be a position in the deck" }, 400);
+    }
+    if (swap.scope !== undefined && swap.scope !== "clan" && swap.scope !== "deck") {
+      return json({ error: 'swap.scope must be "clan" or "deck"' }, 400);
+    }
+  }
   const opponent = body?.opponent;
   let against: string;
-  let run: (options: DeckVsDeckOptions) => Promise<DeckVsDeckResult>;
+  let pairsFor: (cards: readonly DeckCardRef[]) => HandPair[];
   let clanOf: ((hand: readonly (readonly [number, number])[]) => string | null) | undefined;
   if (Number.isInteger(opponent?.format)) {
     const hands = formatHands(await games(), opponent.format, OWNER_ID);
     if (!hands.length) return json({ error: "no opposing hands of that format have been captured" }, 400);
     const name = (await catalog()).formats.find((f) => f.id === opponent.format)?.name ?? `format ${opponent.format}`;
     against = `${Math.min(n, hands.length)} of the ${hands.length} captured ${name} opponents`;
-    run = (options) => deckVsHands(deck, hands, options);
+    pairsFor = (cards) => sampleFieldPairs(cards, hands, n, SEED);
     const cards = (await catalog()).cards;
     clanOf = (hand) => handClan(hand.map(([id]) => ({ clan: cards.get(id)?.clan_name })));
   } else if (Number.isInteger(opponent?.deck)) {
@@ -292,7 +354,7 @@ async function startMatchup(body: Json): Promise<Response> {
     if (!other) return json({ error: "no such deck captured; open it in Collection Pro" }, 404);
     if (other.characters.length < 4) return json({ error: `"${other.name}" has fewer than 4 cards` }, 400);
     against = `your deck "${other.name}"`;
-    run = (options) => deckVsDeck(deck, other.characters, options);
+    pairsFor = (cards) => sampleHandPairs(cards, other.characters, n, SEED);
   } else {
     return json({ error: "opponent must be {format: id} or {deck: id}" }, 400);
   }
@@ -301,6 +363,8 @@ async function startMatchup(body: Json): Promise<Response> {
   const controller = new AbortController();
   const view: MatchupJob = {
     id: ++jobCount,
+    kind: swap ? "swap" : "score",
+    ...(swap ? { slot: swap.slot } : {}),
     state: "running",
     deck: deck.map((c) => [c.id, c.level]),
     against,
@@ -315,19 +379,39 @@ async function startMatchup(body: Json): Promise<Response> {
     try {
       const { runner, cache } = await solver();
       controller.signal.throwIfAborted();
-      const result = await run({
+      const options = {
         runner,
         cache,
-        n,
-        seed: SEED,
         night,
         signal: controller.signal,
-        onProgress: (done, total) => {
+        onProgress: (done: number, total: number) => {
           view.done = done;
           view.total = total;
         },
-      });
-      view.result = summary(result, clanOf);
+      };
+      if (swap) {
+        const candidates = await swapCandidates(deck, swap.slot, swap.scope ?? "clan", body?.format, night);
+        const found = await swapSearch(deck, swap.slot, candidates, pairsFor, options);
+        view.result = {
+          base: { scored: found.base.scored, refused: found.base.refused, mean: found.base.mean },
+          considered: candidates.length,
+          candidates: found.candidates.slice(0, 15),
+          cached: found.cached,
+          solved: found.solved,
+        };
+      } else {
+        const { outcomes, cached, solved } = await solvePairs(pairsFor(deck), options);
+        const s = summarize(outcomes);
+        view.result = summary({
+          n: outcomes.length,
+          seed: SEED,
+          night,
+          ...s,
+          worst: [...s.pairs].sort((x, y) => x.score - y.score).slice(0, 5),
+          cached,
+          solved,
+        }, clanOf);
+      }
       view.state = "done";
     } catch (error) {
       if (controller.signal.aborted) view.state = "cancelled";

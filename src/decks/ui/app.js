@@ -132,15 +132,24 @@ function renderOpponents() {
   if ([...$("opponent").options].some((o) => o.value === keep)) $("opponent").value = keep;
 }
 
-async function startScore() {
+/** Scores the draft, or with `slot` looks for a better owned card for that slot. */
+async function startScore(slot) {
   const choice = $("opponent").value;
   if (!choice) return;
   const opponent = choice === "field" ? { format: format()?.id } : { deck: Number(choice.slice("deck:".length)) };
+  const swap = Number.isInteger(slot) ? { slot, scope: $("swapScope").value } : undefined;
   try {
     const res = await fetch("/api/matchup", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ characters: state.draft.cards, night: night(), n: Number($("hands").value), opponent }),
+      body: JSON.stringify({
+        characters: state.draft.cards,
+        night: night(),
+        n: Number($("hands").value),
+        opponent,
+        format: format()?.id,
+        swap,
+      }),
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.error ?? res.status);
@@ -180,8 +189,10 @@ function renderScore() {
     return;
   }
   const when = job.night ? " at night" : "";
+  const slotCard = job.kind === "swap" ? job.deck[job.slot] : null;
   if (running) {
-    out.innerHTML = `<div>Scoring against ${esc(job.against)}${when}…</div>` + (job.total
+    const what = slotCard ? `Looking for a better card than ${cardName(slotCard)}` : "Scoring";
+    out.innerHTML = `<div>${what} against ${esc(job.against)}${when}…</div>` + (job.total
       ? `<progress max="${job.total}" value="${job.done}"></progress> <span class="dim">${job.done} of ${job.total} solves</span>`
       : '<span class="dim">starting the solver…</span>');
     return;
@@ -195,9 +206,12 @@ function renderScore() {
     return;
   }
   const r = job.result;
-  const changed = JSON.stringify(job.deck) !== JSON.stringify(state.draft.cards.map((c) => [c.id, c.level]))
-    ? '<div class="dim">The draft has changed since this score.</div>'
-    : "";
+  const stale = JSON.stringify(job.deck) !== JSON.stringify(state.draft.cards.map((c) => [c.id, c.level]));
+  const changed = stale ? '<div class="dim">The draft has changed since this score.</div>' : "";
+  if (slotCard) {
+    out.innerHTML = renderSwap(job, slotCard, stale) + changed;
+    return;
+  }
   const margin = r.stderr == null ? "" : ` <span class="dim">± ${(r.stderr * 50).toFixed(1)}</span>`;
   const head = r.scored ? `<div class="score">${pct(r.percent)}${margin}</div>` : '<div class="score bad">Nothing could be scored</div>';
   const clans = (r.byClan ?? []).filter((c) => c.scored >= 2);
@@ -227,6 +241,31 @@ function renderScore() {
     '<div class="dim small">Each hand pair is solved exactly with both first movers, playing the advisor\'s conservative ' +
     "policy, which never relies on guessing hidden pillz. 50% is even. The opposing hands are the same every time, so " +
     "use it to compare drafts; it is not a win rate.</div>";
+}
+
+function renderSwap(job, slotCard, stale) {
+  const r = job.result;
+  const pp = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x * 50).toFixed(1)}`;
+  const rows = r.candidates.map((c, i) => {
+    const known = c.diff != null;
+    // Pairs the draft itself loses to refusals are not the candidate's doing.
+    const extra = c.refused - r.base.refused;
+    const partly = extra > 0 ? ` title="${extra} more hand pairs refused than with the draft's own card"` : "";
+    return `<tr><td>${cardName([c.card.id, c.card.level])}</td>` +
+      `<td style="${known ? heat(c.diff * 5) : ""}"${partly}>${known ? pp(c.diff) : "?"}` +
+      `${known && c.diffErr != null ? ` <span class="dim">±${(c.diffErr * 50).toFixed(1)}</span>` : ""}${extra > 0 ? " *" : ""}</td>` +
+      `<td>${c.mean == null ? "" : pct((c.mean + 1) * 50)}</td>` +
+      `<td>${stale ? "" : `<button class="icon" data-use="${i}" title="Put it in the draft">Use</button>`}</td></tr>`;
+  }).join("");
+  const base = r.base.scored ? pct((r.base.mean + 1) * 50) : "not scored";
+  return `<div>Better cards than <b>${cardName(slotCard)}</b> against ${esc(job.against)}${job.night ? " at night" : ""}: ` +
+    `the draft scores ${base} as it is.</div>` +
+    (r.candidates.length
+      ? `<table class="swap"><tr><th>Instead</th><th title="Points on the percent scale, same opposing hands">Change</th><th>Draft</th><th></th></tr>${rows}</table>`
+      : '<div class="note">No owned card of that scope can take this slot.</div>') +
+    `<div class="dim">${r.considered} owned cards tried (the ${r.candidates.length} best shown) · ${job.seconds.toFixed(1)} s ` +
+    `(${r.solved} solved, ${r.cached} from the cache). Only the hands that draw this slot change, and against the same ` +
+    "opposing hands, which keeps the ± small; * marks cards that get more hand pairs refused than the draft's own.</div>";
 }
 
 // ---- clans against each other (deno task clan-matrix) -------------------------------------
@@ -420,6 +459,7 @@ function renderDraft() {
       `<div><span class="name">${esc(card.name)}</span>${solverBadge(card, c.level)} <span class="dim">${esc(card.clan)} · ${power}/${damage}` +
       `${c.state ? " · " + esc(c.state) : ""}${owned ? "" : " · not owned at this level"}</span></div>` +
       `<span class="stepper"><button class="icon" data-step="-1">−</button>L${c.level}<button class="icon" data-step="1">+</button></span>` +
+      `<button class="icon" data-swap="1" title="Find a better owned card for this slot, scored against the opponent below">⇄</button>` +
       `<button class="icon" data-remove="1" title="Remove">×</button></div>`;
   }).join("") || '<div class="dim">Add cards from the collection, or load a saved deck.</div>';
 }
@@ -542,7 +582,16 @@ async function main() {
     renderCoverageLine();
     requestReport();
   });
-  $("score").addEventListener("click", startScore);
+  $("score").addEventListener("click", () => startScore());
+  $("scoreOut").addEventListener("click", (e) => {
+    const use = e.target.closest("[data-use]");
+    const job = state.matchup;
+    if (!use || job?.kind !== "swap") return;
+    const pick = job.result.candidates[Number(use.dataset.use)];
+    if (!pick || !state.draft.cards[job.slot]) return;
+    state.draft.cards[job.slot] = { id: pick.card.id, level: pick.card.level, state: pick.card.state ?? "" };
+    draftChanged();
+  });
   $("clansToggle").addEventListener("click", () => {
     $("clans").hidden = !$("clans").hidden;
     renderClans();
@@ -575,6 +624,7 @@ async function main() {
     if (!row) return;
     const entry = state.draft.cards[Number(row.dataset.index)];
     const card = state.byId.get(entry.id);
+    if (e.target.dataset.swap) return startScore(Number(row.dataset.index));
     if (e.target.dataset.remove) state.draft.cards.splice(Number(row.dataset.index), 1);
     else if (e.target.dataset.step && card) {
       const level = entry.level + Number(e.target.dataset.step);

@@ -314,6 +314,20 @@ from exactly covered cards, chosen by the heuristic, plus a few obvious dual-cla
 
 ### Phase 7: deck search from your collection
 
+**One slot at a time, built (2026-09-26)**: `src/decks/Swap.ts`, Deck Lab's ⇄ on a draft row.
+It tries every owned card of the slot's clan (or of the deck's clans) that is not in the deck, at
+its highest owned level that the solver can score and that keeps a legal deck legal, 40 at most
+(strongest power + damage first), and scores each variant against the same opposing hands as the
+draft. A deck's own hands depend only on its size and the seed, so a variant shares every hand
+that does not draw the slot: those pairs cost nothing and differ by exactly zero, and the ranking
+uses the paired difference, which keeps the error small at N = 30. T1 Rescue's Wesley L3 against
+30 captured Tourney opponents: 58 owned Rescue cards in 296 s (1,508 solves), Reeve L5 +4.8 ± 1.6
+points, Sledg Cr L5 +4.2, Bulma L5 +3.9, Ghoub L4 +3.1; most others within a point of zero. A
+candidate refused in every hand that holds it shows "?", not zero. "Use" puts it in the local
+draft; nothing is written to the site.
+
+The plan as first written, for a whole-deck search:
+
 Needs: phases 5-6, the cache, and a surrogate. The position heuristic costs 5.4 ms and correlates
 r ≈ 0.8 with the exact value within each first-mover stratum. Its first-mover bias has the
 opposite sign, so it needs calibrating per perspective before it is used.

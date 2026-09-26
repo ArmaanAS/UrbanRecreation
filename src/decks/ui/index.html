@@ -63,6 +63,10 @@
         <div class="solver-row">
           <select id="opponent"></select>
           <label>Hands <input id="hands" type="number" min="1" max="400" value="40"></label>
+          <select id="swapScope" title="Where ⇄ looks for a better card">
+            <option value="clan">⇄ from the slot's clan</option>
+            <option value="deck">⇄ from the deck's clans</option>
+          </select>
           <button id="score">Score</button>
           <button id="cancel" class="secondary" hidden>Stop</button>
         </div>
