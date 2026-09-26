@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UR logger
 // @namespace    urban-recreation
-// @version      0.7
+// @version      0.7.1
 // @description  Mirror Urban Rivals network traffic to a local log server (see log_server.ts)
 // @match        https://www.urban-rivals.com/*
 // @run-at       document-start
@@ -234,7 +234,14 @@
       let page = 0, total = 0;
       for (;;) {
         const r = await apiCall('characters.get', { page, timestampLastUpdate: since });
-        const chars = (r && r.data && r.data.characters) || [];
+        // An error (an expired access token, most often) used to look like the last page, so
+        // the dump ended part-way without a word. Stop loudly instead: a partial file must
+        // never be mistaken for the whole catalog.
+        if (!(r && r.data && Array.isArray(r.data.characters))) {
+          throw new Error(`characters.get page ${page} failed after ${total} rows: ${JSON.stringify(r)}. ` +
+            'Reload a /game/play/webgl/ tab so the API token is fresh, then run __ur.dumpCharacters() again.');
+        }
+        const chars = r.data.characters;
         total += chars.length;
         await log('characters', { page, since, count: chars.length, hasNextPage: !!(r && r.data && r.data.hasNextPage), characters: chars, raw: chars.length ? undefined : r });
         console.log(`characters.get page ${page}: ${chars.length} rows (total ${total})`);

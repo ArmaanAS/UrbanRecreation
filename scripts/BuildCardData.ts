@@ -8,6 +8,10 @@
 //         clan names / bonuses already present in data/cards.json
 // Output: data/data.json with one row per card per level (power, damage and ability differ
 //         by level), in the same shape the engine's CardJSON expects.
+//
+// It refuses to write a catalog with fewer cards than the one it replaces, because a dump
+// that stopped part-way (an expired access token used to end `dumpCharacters()` silently)
+// would otherwise delete every card it missed. Pass --allow-shrink if cards really left.
 import "colors";
 import { ClanIdMap } from "@/game/types/CardTypes.ts";
 
@@ -136,6 +140,22 @@ for (const [clanId, names] of unknownClans) {
   );
 }
 
+const ids = new Set(rows.map((r) => r.id));
+const cards = ids.size;
+const previous = await Deno.readTextFile(OUT).then(
+  (text) => new Set((JSON.parse(text) as { id: number }[]).map((r) => r.id)),
+  () => new Set<number>(),
+);
+const lost = [...previous].filter((id) => !ids.has(id));
+if (lost.length > 0 && !Deno.args.includes("--allow-shrink")) {
+  console.error(
+    (`Refusing to write ${OUT}: the new catalog has ${cards} cards and would drop ${lost.length} ` +
+      `of the ${previous.size} in the current one (ids ${lost.slice(0, 8).join(", ")}${lost.length > 8 ? ", …" : ""}). ` +
+      `The dump in ${SITE_CHARACTERS} is probably incomplete: run __ur.dumpCharacters() again ` +
+      `and check it reports every page, or pass --allow-shrink if those cards were really removed.`).red,
+  );
+  Deno.exit(1);
+}
+
 await Deno.writeTextFile(OUT, JSON.stringify(rows));
-const cards = new Set(rows.map((r) => r.id)).size;
 console.log(`Wrote ${rows.length} rows (${cards} cards, all levels) to ${OUT}`.green);
