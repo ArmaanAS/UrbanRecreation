@@ -343,6 +343,24 @@ and Free Fight, T1 Rescue has no swap worth more than twice its error (best: Tin
 L3 +0.9 ± 0.7, Aurora L5 -> Bulma L5 +2.9 ± 1.6), 8 minutes: within its rules and the owner's
 Rescue cards it is already the best deck a single swap can reach.
 
+The other "T1" decks, same settings (30 Tourney field hands by day, every current format kept),
+about 70 minutes in all; judge each by the unseen-hands check, not the search's own numbers:
+
+| Deck (kept legal in) | Swaps kept | Unseen hands |
+| --- | --- | --- |
+| Riots (EFC, Tourney, FF) | Archimedes L5 -> FugOmatic L5, Pr Hide L3 -> Grace L3 | 51.7% -> 59.1%, +7.4 ± 2.9 (24 hands) |
+| Pirhanas (EFC, FF) | Goldie L3 -> Bonnie Ld L2, Scubb L4 -> Didier L5 | 39.8% -> 53.4%, +13.6 ± 2.2 (11 hands) |
+| Paradox (EFC, Tourney, FF) | Ramak L4 -> Efesto L4 | +1.3 ± 0.5 (27 hands) |
+| Hive (EFC, Tourney, FF) | Mou L3 -> Nameko L3 | +0.7 ± 0.7: noise |
+| Ulu Watu (EFC, Tourney, FF) | Dave L2 -> Warren L2 | -1.7 ± 0.9: the search overfit, do not take it |
+| Bangerz (Free Fight only) | three swaps to level-5 cards | +4.8 ± 4.8 on 5 hands: unchecked |
+| GhosTown (EFC, FF) | none: no pair scores by day or night | - |
+
+Two lessons: at N = 30 a gain of twice its error on the search hands can still be noise (Hive,
+Ulu Watu), so a swap is worth taking only when the unseen check agrees; and decks with many
+refused pairs (Bangerz, GhosTown, partly Pirhanas) cannot be judged until the engine covers
+their cards.
+
 The plan as first written, for a search from scratch:
 
 Needs: phases 5-6, the cache, and a surrogate. The position heuristic costs 5.4 ms and correlates

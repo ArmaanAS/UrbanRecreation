@@ -199,6 +199,12 @@ const gain = diffs.reduce((s, d) => s + d, 0) / Math.max(1, diffs.length);
 const gainErr = Math.sqrt(diffs.reduce((s, d) => s + (d - gain) ** 2, 0) / Math.max(1, diffs.length - 1) / Math.max(1, diffs.length));
 const check = { seed: CHECK_SEED, before: summarize(was).mean, after: summarize(now).mean, gain, gainErr, pairs: diffs.length };
 
+if (!check.pairs && !swaps.length) {
+  // Nothing was learnt: say why rather than offer the deck back as a "suggestion".
+  console.log(`  no hand pair with this deck could be scored ${options.night ? "at night" : "by day"}: the engine refuses its cards; nothing written`);
+  Deno.exit(0);
+}
+
 const out = `data/analysis/deck-search-${start.id}-${format.id}-${options.night ? "night" : "day"}${
   options.onlyFormat ? "-only-format" : ""
 }.json`;
@@ -227,7 +233,9 @@ console.log(`${out}, ${((performance.now() - started) / 60000).toFixed(0)} min`)
 if (!swaps.length) console.log("  no swap gained more than twice its error: the deck stays as it is");
 for (const s of swaps) console.log(`  ${name(s.out)} -> ${name(s.in)}: ${pp(s.gain)} ±${(s.gainErr * 50).toFixed(1)} on the search hands`);
 console.log(
-  `  on ${check.pairs} hands the search never saw: ${((check.before + 1) * 50).toFixed(1)}% -> ${((check.after + 1) * 50).toFixed(1)}%, ` +
-    `change ${pp(check.gain)} ±${(check.gainErr * 50).toFixed(1)}`,
+  check.pairs
+    ? `  on ${check.pairs} hands the search never saw: ${((check.before + 1) * 50).toFixed(1)}% -> ` +
+      `${((check.after + 1) * 50).toFixed(1)}%, change ${pp(check.gain)} ±${(check.gainErr * 50).toFixed(1)}`
+    : "  no hand the search never saw could be scored with both decks: the change is unchecked",
 );
 console.log(`  final: ${deck.map(name).join(", ")}`);
