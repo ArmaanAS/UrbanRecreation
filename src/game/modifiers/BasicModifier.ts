@@ -181,7 +181,19 @@ export default class BasicModifier extends Modifier {
       return false;
     }
 
-    if (this.always) return true;
+    // A permanent pays whatever its owner's card does this round, except under an opposing
+    // Cancel of the resource it writes: "The effects of your opponent's poison, heal, regen,
+    // toxin, consume and dope abilities will be deactivated for the round" (1655). The
+    // Cancel flags the owner's current card, which is `data.card` from the latching round
+    // on. Babe's "Cancel Opp. Pillz & Life Modif." keeps Kontrø Ld's latched "Combust 1,
+    // Min 0" from taking 1 Life and 1 Pillz in 1508676 r2, and it pays again in r3.
+    if (this.always) {
+      return this.type === Type.LIFE
+        ? !data.card.life.blocked
+        : this.type === Type.PILLZ
+        ? !data.card.pillz.blocked
+        : true;
+    }
     if (this.win && !data.card.won) return false;
 
     if (this.opp) {

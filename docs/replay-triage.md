@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 420 captured battles
-(414 replay-ready; 6 ignored because they stopped mid-match): 412 replay exactly and 2
+Status from `deno test -A --no-check tests/replay/` against 438 captured battles
+(430 replay-ready; 8 ignored because they stopped mid-match): 427 replay exactly and 3
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -53,6 +53,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 402 | 12 | +20 Training captures (Labs 3-6): second rounds for Exchange (1507008), Cancel (1506931, 1507792) and Protection: Cards (1507713, 1507819), all open |
 | 2026-09-27 | 408 | 6 | A Cancel Opp. Modif. spares the canceller's own reductions (1089974, 1506931, 1507792); Exchange and Impose run before every increase (1059149, 1507008, 874712) |
 | 2026-09-27 | 412 | 2 | Protection: Cards guards both cards (1507819); Growth: Opp. Attack raises the opposing Attack (1414749, 1507713); same-family permanents replace (1506438) |
+| 2026-09-27 | 427 | 3 | +18 Training captures (Labs 6-8, the Team Leaders); an opposing resource Cancel deactivates permanents for its round (1508676); 1508712 is a third Protection: Cards round; 1508932 is a new single point (a binding cap beside a same-stat bonus) |
 
 ## Fixed
 
@@ -532,6 +533,24 @@ the stat (PRE4) still skips the swap, and every such write reads printed values,
 Exchanges, or an Exchange against a Copy, cannot depend on their order. Fixed 1059149, 1507008
 and 874712. Tests in `tests/ability/Exchange.test.ts`.
 
+### An opposing resource Cancel deactivates permanents for its round - 1508676 (fixed)
+A permanent's modifiers carry `always`, which returned before every other check, so no Cancel
+could touch one. The server prints the opposite on Babe's `Cancel Opp. Pillz & Life Modif.`
+(1655): "The effects of your opponent's poison, heal, regen, toxin, consume and dope
+abilities will be deactivated for the round". 1508676 shows it on Combust, which that list
+leaves out: Kontrø Ld's `Combust 1, Min 0` latches in r0 and takes 1 Life and 1 Pillz at the
+end of r1 (10 - 2 - 1 = 7) and r3 (4 - 1 = 3), but not of r2, where Babe cancels (7 - 3 = 4,
+and the Pillz stay on 2; the engine gave 3 and 1). Maelt Riv's latched `Consume 1, Min 2`
+sits on its Min in r2 and shows nothing either way.
+
+A permanent's Life or Pillz modifier now refuses to pay while its owner's current card has
+that resource cancelled - the flag a `Cancel Opp. <resource> Modif.` sets, and `data.card`
+from the latching round on. It is the only round in the corpus where a latched permanent meets
+an opposing resource Cancel (an instrumented run found no other), so the printed text carries
+the other families. A permanent still latches under a Cancel; no round shows whether the
+server lets it. The Rust engine keeps refusing a resource canceller against a permanent.
+Fixed 1508676. Test in `tests/ability/CancelPermanent.test.ts`.
+
 ## Previously triaged open rules
 
 ### End-of-round order: the round-one second mover goes first — 1093173, 1496283 (fixed)
@@ -648,6 +667,15 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
 - 1025413 r1: Dark Kaizerin (Oculus) infiltrates GhosTown at night and fights with the night
   bonus `Night: -1 Opp Pow. And Damage, Min 1` (1442); the hand stores the host's day bonus
   before the game switches to night. It is the only such round.
+- 1508932 r2: P. Steevens Cr's `+1 Damage Per Life Lost Max. 7` with its own La Junta bonus
+  `Damage +2`, 9 Life down. The server gives 9 Damage: the capped ability on the printed 2
+  (2 + 9, capped at 7), then the bonus's +2. The engine runs the bonus first, as it does for
+  every same-phase pair (`Ability.card`), and caps the total: 2 + 2 + 9, capped at 7. Two
+  readings fit - the cap measured on the printed stat, or the ability before the bonus - and
+  they differ elsewhere. An instrumented run over the corpus found six other binding caps
+  (Wachtmann, Veles Cr, Sir Taco, Noeptus, KinGreow twice, Jochar), each on an untouched
+  printed value, so this is the only round that can tell. A second needs a capped increase
+  that binds beside another change to the same stat.
 
 ### An increase to the opposing card - 1414749, 1507713 (fixed)
 Pepo Brahms' `Growth: Opp. Attack +1` (level 4, `abilityData` 5210) and `Growth: Opp. Attack
@@ -720,14 +748,14 @@ Power And Damage guards both cards**, and 1507713 r3 turned out to be the second
 
 ## Fresh capture backlog
 
-Nothing is untriaged. The two remaining mismatches are the single points 1079078 and 1025413,
-each waiting on a second capture. The 2026-09-27 test-deck captures settled 1059149 (Exchange,
+Nothing is untriaged. The three remaining mismatches are the single points 1079078, 1025413
+and 1508932, each waiting on a second capture. The 2026-09-27 test-deck captures settled 1059149 (Exchange,
 with 874712's Damage Impose beside it), 1089974 (Cancel), 1506438 (same-family Poison
 replaces), 1414749 (an increase to the opposing card) and the Protection: Cards pair 1507713
 and 1507819, all fixed above; the 2026-09-26 Training captures settled 1093173 (end-of-round
 order) and 947670 (Perfect). The backlog of 39 that the expanded
 corpus brought on 2026-09-14 and 2026-09-17, and the three from the 2026-09-23 session, are
-fixed above or among those two. A fourth 2026-09-23 capture, 1414087, deals card 2714
+fixed above or among those three. A fourth 2026-09-23 capture, 1414087, deals card 2714
 (Gloria, level 2, `Brawl: Damage + 1`), which the 2026-09-10 character dump predated; since
 the 2026-09-26 card refresh it has a testcase and replays exactly.
 

@@ -2173,11 +2173,12 @@ fn support_abilities_execute_while_capped_increases_remain_disabled() {
 fn every_observed_basic_combat_stat_support_definition_executes_as_an_ability() {
     let catalog = catalog();
     let registry = registry();
-    // 271, 697 and 1013 arrived with the 2026-09-27 Training captures.
+    // 271, 697 and 1013 arrived with the 2026-09-27 Training captures, and 324, 329 and 1743
+    // with the later ones.
     let expected = BTreeSet::from([
-        266, 271, 272, 295, 367, 391, 412, 469, 472, 514, 532, 546, 567, 574, 697, 739, 899, 1013,
-        1269, 1297, 1325, 1330, 1735, 1805, 2535, 2556, 3197, 3475, 3719, 4068, 4297, 4593, 4824,
-        4839, 4857, 5483, 5841,
+        266, 271, 272, 295, 324, 329, 367, 391, 412, 469, 472, 514, 532, 546, 567, 574, 697, 739,
+        899, 1013, 1269, 1297, 1325, 1330, 1735, 1743, 1805, 2535, 2556, 3197, 3475, 3719, 4068,
+        4297, 4593, 4824, 4839, 4857, 5483, 5841,
     ]);
     let observed: BTreeSet<_> = registry
         .iter()

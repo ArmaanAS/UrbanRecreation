@@ -1,0 +1,258 @@
+{
+  "id": 1508706,
+  "capturedAt": "2026-09-27T11:04:11.932Z",
+  "creationTime": 1790507052,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1814,
+          "name": "Babe",
+          "clan": "Dominion",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1655,
+            "description": "Cancel Opp. Pillz & Life Modif."
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1895,
+          "name": "BroKen",
+          "clan": "Dominion",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1747,
+            "description": "Degrowth: -1 Opp Pow. & Dam., Min 2"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1822,
+          "name": "Kaboom",
+          "clan": "Dominion",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1662,
+            "description": "Degrowth: -1 Opp Damage, Min 2"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 2101,
+          "name": "Khrull Cr",
+          "clan": "Dominion",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 2255,
+            "description": "Protection: Cards Power And Damage"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1783,
+          "name": "Frogo",
+          "clan": "Dominion",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1625,
+            "description": "Defeat : Heal 1 Max. 13"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 2667,
+          "name": "SpineHeadMan",
+          "clan": "Dominion",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 5575,
+            "description": "Killshot: -2 Opp. Pillz And Life, Min 2"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 529,
+          "name": "Cyan",
+          "clan": "Piranas",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 348,
+            "description": "Copy: Opp. Damage"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 1075,
+          "name": "Morgane",
+          "clan": "Piranas",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 902,
+            "description": "Defeat: Recover 1 Pillz Out Of 2"
+          },
+          "bonus": {
+            "id": 333,
+            "description": "Stop Opp. Bonus"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [],
+      "resolution": [
+        null,
+        null
+      ],
+      "life": [
+        15,
+        15
+      ],
+      "pillz": [
+        12,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 3264
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": false,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 15,
+      "pillz": 12,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 15,
+      "pillz": 12
+    },
+    "rewards": [],
+    "t": 1790507058620
+  },
+  "finalStatus": "playing",
+  "snapshots": 3,
+  "issues": [
+    "round 0: expected 2 moves, saw 0"
+  ],
+  "testcase": {
+    "cards": [
+      "Babe",
+      "BroKen",
+      "Kaboom",
+      "Khrull Cr",
+      "Frogo",
+      "SpineHeadMan",
+      "Cyan",
+      "Morgane"
+    ],
+    "levels": [
+      4,
+      4,
+      3,
+      4,
+      2,
+      2,
+      3,
+      3
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": []
+  }
+}

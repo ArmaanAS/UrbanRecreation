@@ -1,0 +1,275 @@
+{
+  "id": 1508710,
+  "capturedAt": "2026-09-27T11:04:21.179Z",
+  "creationTime": 1790507062,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1754,
+          "name": "Dookor",
+          "clan": "Dominion",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1589,
+            "description": "Cancel Opp. Power And Damage Modif."
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1822,
+          "name": "Kaboom",
+          "clan": "Dominion",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1662,
+            "description": "Degrowth: -1 Opp Damage, Min 2"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 2101,
+          "name": "Khrull Cr",
+          "clan": "Dominion",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 2255,
+            "description": "Protection: Cards Power And Damage"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1747,
+          "name": "Zigal",
+          "clan": "Dominion",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1583,
+            "description": "Degrowth: Damage +1"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2426,
+          "name": "Dark Desmond",
+          "clan": "Oculus",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3725,
+            "description": "[clan:38][clan:25][clan:3][clan:10] Cancel Opp. Attack Modif."
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 559,
+          "name": "Aurora",
+          "clan": "Rescue",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 377,
+            "description": "+3 Life"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 443,
+          "name": "Elvira Cr",
+          "clan": "Rescue",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 269,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        },
+        {
+          "id": 504,
+          "name": "Pam",
+          "clan": "Rescue",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 324,
+            "description": "Support: Attack +2"
+          },
+          "bonus": {
+            "id": 266,
+            "description": "Support: Attack +3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 504,
+          "pillz": 0,
+          "pillzUsed": 0,
+          "fury": false,
+          "t": 1790507064355
+        }
+      ],
+      "resolution": [
+        null,
+        {
+          "power": -1,
+          "damage": -1,
+          "damageAfter": -1,
+          "attack": -1,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        15
+      ],
+      "pillz": [
+        12,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 3354
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": false,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 15,
+      "pillz": 12,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 15,
+      "pillz": 12
+    },
+    "rewards": [],
+    "t": 1790507066019
+  },
+  "finalStatus": "playing",
+  "snapshots": 3,
+  "issues": [
+    "round 0: no resolution snapshot captured for side 1 (attack unknown)",
+    "round 0: expected 2 moves, saw 1"
+  ],
+  "testcase": {
+    "cards": [
+      "Dark Desmond",
+      "Aurora",
+      "Elvira Cr",
+      "Pam",
+      "Dookor",
+      "Kaboom",
+      "Khrull Cr",
+      "Zigal"
+    ],
+    "levels": [
+      5,
+      5,
+      3,
+      3,
+      3,
+      3,
+      4,
+      2
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": []
+  }
+}

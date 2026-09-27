@@ -342,7 +342,7 @@ mod tests {
             "capture errors: {:#?}",
             corpus.errors
         );
-        assert_eq!(corpus.skipped.len(), 6);
+        assert_eq!(corpus.skipped.len(), 8);
         assert!(corpus.ready.len() >= 354);
 
         let skipped: Vec<_> = corpus
@@ -353,7 +353,8 @@ mod tests {
         // 830285 left this list when Dojo battles started being extracted like any other
         // battle, and 1414087 when the 2026-09-26 card refresh brought in card 2714 (the
         // extractor had written null for its name and clan). Every skip left is a capture
-        // that stopped mid-match.
+        // that stopped mid-match; 1508706 and 1508710 are 2026-09-27 Training games left
+        // before their first round resolved.
         use ReplaySkipReason::InProgress;
         assert_eq!(
             skipped,
@@ -364,6 +365,8 @@ mod tests {
                 (1024388, InProgress),
                 (1092729, InProgress),
                 (1145959, InProgress),
+                (1508706, InProgress),
+                (1508710, InProgress),
             ]
         );
 
