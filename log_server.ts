@@ -198,6 +198,11 @@ const DECK_SERVICE = "http://127.0.0.1:8788";
 async function proxyDecks(r: Request, path: string): Promise<Response> {
   // The panel's POST is preflighted; answer that here rather than forwarding it.
   if (r.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  // Only Deck Lab queues a deck write (src/decks/Apply.ts); the site's page may read the
+  // pending one and report how it went, never ask for one itself.
+  if (r.method === "POST" && path === "/api/apply") {
+    return Response.json({ error: "only Deck Lab can ask for a deck to be saved" }, { status: 403, headers: cors });
+  }
   try {
     const res = await fetch(DECK_SERVICE + path, {
       method: r.method,

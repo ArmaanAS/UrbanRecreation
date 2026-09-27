@@ -15,7 +15,7 @@
     <label class="check"><input type="checkbox" id="night"> Night</label>
     <button id="clansToggle" class="secondary" title="Clans against each other in the chosen format">Clans</button>
     <span id="freshness" class="dim"></span>
-    <span class="dim readonly">Read-only: nothing here changes your account.</span>
+    <span class="dim readonly" title="Send to site queues the draft; only your click on Apply in the UR Lab panel on Collection Pro saves it">Changes your account only when you confirm in the site's UR Lab panel.</span>
   </header>
   <section id="clans" hidden></section>
   <main>
@@ -56,6 +56,20 @@
         <select id="loadDeck"><option value="">Load a saved deck…</option></select>
         <button id="clear" class="secondary">Clear</button>
         <button id="export" class="secondary" title="Download the draft as JSON">Export</button>
+        <button id="send" title="Save the draft to your account: you confirm it in the UR Lab panel on Collection Pro">Send to site…</button>
+      </div>
+      <div id="sendBox" hidden>
+        <div class="send-row">
+          <label>Save as <select id="sendTarget"></select></label>
+          <label>Name <input id="sendName" maxlength="32" placeholder="Deck name"></label>
+          <label class="check" title="Sent as savedeck's set_current; the current deck stays current either way"><input type="checkbox" id="sendCurrent"> Make it current</label>
+        </div>
+        <div id="sendOut"></div>
+        <div class="send-row">
+          <button id="sendGo" disabled>Send to the UR Lab panel</button>
+          <button id="sendWithdraw" class="secondary" hidden>Withdraw</button>
+          <button id="sendClose" class="secondary">Close</button>
+        </div>
       </div>
       <div id="draftCards"></div>
       <div id="solver">

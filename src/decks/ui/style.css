@@ -146,3 +146,13 @@ code { font-size: 12px; background: #0d0f12; padding: 0 3px; border-radius: 3px;
 #scoreOut table.swap td, #scoreOut table.swap th { padding: 2px 6px; border-top: 1px solid var(--line); text-align: left; }
 #scoreOut table.swap th { color: var(--dim); font-weight: 600; }
 .draft-row { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+
+#sendBox { margin: 0 0 10px; padding: 8px; border: 1px solid var(--gold); border-radius: 6px; }
+.send-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0; }
+.send-row input:not([type]) { width: 15em; }
+#sendOut { margin: 6px 0; }
+#sendOut ul { margin: 4px 0 4px 18px; padding: 0; }
+#sendOut .headline { font-weight: 600; }
+#sendOut .waiting { color: var(--gold); margin-top: 6px; }
+#sendOut .last { margin-bottom: 6px; }
+#sendOut a { color: var(--gold); }

@@ -1,7 +1,9 @@
 # Deck builder on the Urban Rivals site: design proposal (draft)
 
 Draft for the owner to react to, 2026-09-26. **Phases 0 and 1 are built** (read-only; see
-"Status" below); everything from phase 2 on is still a proposal. It builds on
+"Status" below), and so are first cuts of phases 2, 3, 5, 6 and 7 and, since 2026-09-27, the
+phase 4 guarded apply (the one path that writes to the account, only on the owner's click in
+the site's panel). The rest is still a proposal. It builds on
 `docs/deck-building.md` (the backlog write-up) and three read-only investigations of the same
 day: `docs/site-api.md` (what the site exposes, from captured traffic), how the userscript and
 log server work, and the solver's coverage and solve costs (the last two are summarised here and
@@ -63,6 +65,12 @@ Leaders, two for Anita's Courage Life conversion, one for an After-clan ability)
 To use it: update the userscript from http://localhost:8787/ur-logger.user.js, run
 `deno task decks` beside the log server, open Collection Pro and click "UR Lab", or open
 http://127.0.0.1:8788 for Deck Lab.
+
+**Phase 4, the guarded apply, followed on 2026-09-27** (userscript 0.9.2, `src/decks/Apply.ts`):
+Deck Lab's **Send to site…** saves a draft to the account, new or over a saved deck, with
+the owner's confirmation in the Collection Pro panel. The design and what the live test must
+check are under phase 4 below. Nothing was sent to the site while building it: the panel's
+code was run against a fake `/ajax/collection/`, in the tests and in a headless browser.
 
 ## What changed since the backlog write-up
 
@@ -170,7 +178,7 @@ or regenerable.
 | `data/site_cards.json` | public card fields per id: name, clan, rarity, kind, level range, per-level power/damage/ability `{id, typeID, unlockLevel, description}`, night ability, bonus, night bonus, ban flags, `efc_bonus_low/high`, picture URL, release date | card part of `collectiondata` | gitignored (large). It can also become the complete source for `deno task cards`. |
 | `data/my_collection.json` | `{fetchedAt, cards:{<id>:{<level>:{<state>:count}}}}` with states `""`, `p`, `s`, `m1..m3`, `rp`, `i` | `collectionData` of `collectiondata` (or `collections.get`) | gitignored |
 | `data/my_decks.json` | `{fetchedAt, maxDecks, decks:[{id, name, isCurrent, characters:[{id, level, state}]}]}` | `collections.decks`, `loaddeck`, `savedeck` | gitignored |
-| `data/deck_history.jsonl` | one line per applied write: `{t, deckId, before, after, siteResponse}` | the apply path | gitignored. This is the undo log. |
+| `data/deck_history.jsonl` | one line per write that reached the site: `{t, requestId, deckId, name, before, after, verified, siteResponse, error?}`, `before` and `after` as `{id, name, isCurrent, characters}` (`before` null for a new deck, `after` what `loaddeck` returned afterwards) | the deck service, from the panel's report | gitignored. This is the undo log; Deck Lab lists its `before` decks as drafts. |
 | `data/deck_drafts.json` | your drafts in the own UI: `{draftId, name, targetFormat, characters, notes}` | own UI | gitignored |
 | `data/card_coverage.json` | per `(id, level, day/night)`: `exact`, `bonus_refused`, `bonus_untested`, `refused`, `leader` or `missing`, each refusal classed as uncaptured text, uncaptured id or not executable, plus the binary's provenance | `deno task card-coverage` over the Rust probe (the TS parser column is not built) | gitignored: regenerate |
 | `cache/matchups/v1-<provenance hash>.jsonl` | one `{k, r}` line per solve: key = night, life, pillz and both sorted `(id, level)` hands, first mover's first; result = `{value, worst, best_move, ko_share, koed_share, ms}` or `{refused}`; a `.provenance.json` beside it says what the hash stands for | `src/decks/Matchup.ts` | gitignored |
@@ -256,13 +264,61 @@ Served by the deck service at `http://127.0.0.1:8788/`.
 
 The own UI does not depend on phases 5-7. It can go in parallel with them.
 
-### Phase 4: guarded apply (userscript 0.9)
+### Phase 4: guarded apply (userscript 0.9.2)
 
-Needs: the live checks marked (P4), and your agreement on a dedicated deck slot.
-- The panel shows a pending proposal (a draft you marked "send to site" in the own UI). An
-  explicit click saves it via `savedeck` under the rules in section 4. The result is verified by
-  re-loading the deck and logged to `deck_history.jsonl`.
-- "Make current" is a second, separate button.
+**Built 2026-09-27, not yet tried on the live site.** The site's session is a cookie on
+www.urban-rivals.com, so Deck Lab cannot save anything itself; only the userscript, running on
+the site, can post `/ajax/collection/` the way the page does. The path, in order:
+
+1. **Deck Lab**: Send to site… on the draft opens a box: save as a new deck (the default) or
+   over one of the captured decks, a name (1-32 characters), and "Make it current". While the
+   owner picks, a dry run (`POST /api/apply {dryRun: true}`) shows what would change or why it
+   cannot be sent: "Will overwrite "Lab 3" (8 cards, 31★): 8 cards replaced by ...", the cards
+   out and in, stars before and after, a rename, the formats it is legal in, and warnings (the
+   account may have no free slot for a new deck; the old cards go to the undo log).
+2. **Deck service** (`POST /api/apply`, `src/decks/Apply.ts`): validates 4-30 cards, levels
+   1-5, no card twice, the name, every card owned at that level **and edition** in
+   `data/my_collection.json`, and an overwrite target present in `data/my_decks.json`, whose
+   cards are stored as `before`. An overwrite that changes nothing is refused. It keeps **one**
+   request (in memory only, so a restart forgets it); another one is refused with 409 unless
+   Deck Lab says `replace`. Only Deck Lab or a local tool may queue one: the site's origin gets
+   403 here and the log server's `/decks/` proxy refuses `POST /api/apply` outright.
+3. **UR Lab panel** on Collection Pro polls `GET /decks/api/apply` every 3 s. A pending request
+   opens the panel with the summary, the literal fields it would send (deck id, name, make
+   current, every card) and two buttons, "Overwrite "<deck>"" (or "Create "<name>"") and
+   Dismiss. It re-checks the request itself before offering the button.
+4. **Apply** (the only click that writes): the panel claims the request
+   (`POST /api/apply/:id/claim`, so a second tab, a withdrawal or a replacement can no longer
+   race it), then, for an overwrite, `loaddeck`s the target and stops without saving if its
+   cards are no longer the `before` the owner was shown (the log server captures that
+   `loaddeck`, so Deck Lab then has the site's version). Then `savedeck` with
+   `id=<deck id or 0>&name=...&set_current=true|false&characters[i][id|level|state]=...`,
+   form-encoded with `X-Requested-With: XMLHttpRequest`, through the page's own (patched)
+   `fetch` so the log records it like the site's calls; then `loaddeck` of the id the site
+   returned. It reports `{ok, sent, deck, siteResponse, error}` to `/api/apply/:id/result` and
+   asks the owner to reload the page, whose own deck list is stale.
+5. **Deck service** again: decides itself whether the site's deck holds exactly the requested
+   cards (order aside, the site reorders), marks the request applied or failed, and appends
+   every write that reached the site - verified or not - to `data/deck_history.jsonl`. Deck Lab
+   shows the outcome, follows the saved deck, and lists each overwritten deck under "As they
+   were before Send to site" in Load a saved deck: loading one and sending it back is the undo.
+
+Where it departs from section 4: "make current" is `savedeck`'s own `set_current` field (a
+checkbox in Deck Lab, shown in the panel), not a separate `setcurrentdeck` button, and the
+current deck is always saved with `set_current=true`, as Collection Pro's own Save sends the
+loaded deck's flag. There is no dedicated slot and no typed confirmation: any captured deck can
+be overwritten, and the button names it. Format legality is shown, not enforced (Training takes
+any deck). The panel's allowlist is `loaddeck` and `savedeck`; `tests/decks/Userscript.test.ts`
+runs the panel's apply code against a fake site and fails if the script names `deletedeck`,
+`setcurrentdeck`, `evolve` or `purchase`.
+
+What the first live use should check (the P4 items of section 5 cover the rest): that
+`savedeck` from `fetch` with `X-Requested-With` answers like the jQuery one (`{deck: {...,
+Characters}}`); what it answers for a refused save (a full account, a name too long); that
+`id=0` creates a deck and `set_current=true` makes it current; that the logged `loaddeck` and
+`savedeck` refresh `data/my_decks.json`; and whether overwriting the current deck with
+`set_current=false` would have unset it (the code never sends that). Try it first over a
+spare deck such as "Lab 4".
 
 ### Phase 5: deck versus deck evaluation
 

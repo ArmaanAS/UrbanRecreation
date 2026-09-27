@@ -15,6 +15,9 @@ captures/.player-id
 data/site_cards.json
 data/my_collection.json
 data/my_decks.json
+# deck builder: the undo log of every deck the UR Lab panel saved to the site (card lists
+# before and after, and the site's answer)
+data/deck_history.jsonl
 
 # deck builder: solved hand pairs (keyed by engine and data provenance) and the per-card
 # coverage report; both regenerate from the solver

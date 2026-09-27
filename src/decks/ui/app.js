@@ -1,6 +1,7 @@
 // Deck Lab: browse the collection, draft a deck and see its report, all from the data the
-// log server captured while Collection Pro was open. Served by src/decks/Service.ts. It is
-// read-only: nothing here talks to urban-rivals.com, so it cannot change the account.
+// log server captured while Collection Pro was open. Served by src/decks/Service.ts. Nothing
+// here talks to urban-rivals.com: "Send to site" only queues the draft in the deck service,
+// and the userscript's UR Lab panel on Collection Pro saves it after the owner clicks there.
 const $ = (id) => document.getElementById(id);
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -24,6 +25,8 @@ const state = {
   matchupTimer: 0,
   /** Decks improved by `deno task deck-search` (GET /api/suggestions). */
   suggestions: [],
+  /** Deck writes made through the UR Lab panel, newest first (GET /api/apply/history). */
+  history: [],
 };
 
 // ---- per-viewer draft persistence (a convenience: the page works without it) -------------
@@ -448,6 +451,7 @@ function draftChanged() {
   renderCoverageLine();
   renderScore();
   requestReport();
+  previewSend();
 }
 
 function renderDraft() {
@@ -535,16 +539,204 @@ function renderReport(report) {
     report.notes.map((n) => `<div class="note">${esc(n)}</div>`).join("");
 }
 
+// ---- sending the draft to the site (the deck service's /api/apply) ------------------------
+// Deck Lab cannot reach the site: the site's session is a cookie that only a page on
+// urban-rivals.com carries. Send queues one request in the deck service; the userscript's
+// UR Lab panel on Collection Pro shows it and saves it only when the owner clicks Apply
+// there. This box shows a dry run of the same checks first, then the wait, then the outcome.
+const send = { request: null, preview: null, timer: 0, previewTimer: 0 };
+const COLLECTION_PRO = "https://www.urban-rivals.com/collection/pro/";
+/** Queued and not over yet: waiting for the owner's click, or being saved after it. */
+const waiting = (r) => r?.state === "pending" || r?.state === "applying";
+
+function sendBody(extra = {}) {
+  const target = $("sendTarget").value;
+  return {
+    characters: state.draft.cards,
+    name: $("sendName").value,
+    target: target === "new" ? "new" : { deckId: Number(target) },
+    setCurrent: $("sendCurrent").checked,
+    ...extra,
+  };
+}
+
+function openSend() {
+  $("sendTarget").innerHTML = '<option value="new">a new deck</option>' + state.decks.map((d) =>
+    `<option value="${d.id}">over "${esc(d.name)}"${d.isCurrent ? " (current)" : ""} · ${d.characters.length} cards</option>`
+  ).join("");
+  // A request still waiting is shown as it was sent; otherwise a new deck, named after the draft.
+  const r = waiting(send.request) ? send.request : null;
+  $("sendTarget").value = r?.deckId && state.decks.some((d) => d.id === r.deckId) ? String(r.deckId) : "new";
+  $("sendName").value = r ? r.name : state.draft.name.slice(0, 32);
+  $("sendCurrent").checked = r ? r.setCurrent : false;
+  $("sendBox").hidden = false;
+  previewSend();
+}
+
+const summaryHtml = (s) =>
+  `<div class="headline">${esc(s.headline)}</div>` +
+  (s.lines.length ? `<ul>${s.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : "") +
+  s.warnings.map((w) => `<div class="note">${esc(w)}</div>`).join("");
+
+function outcomeHtml(r) {
+  const when = r.finishedAt ? ` <span class="dim">(${esc(r.finishedAt.slice(11, 16))} UTC)</span>` : "";
+  const what = `Last send, "${esc(r.name)}": `;
+  if (r.state === "applied") {
+    return `<div class="ok">${what}saved on the site and read back, it holds exactly the ${r.characters.length} cards sent. ` +
+      `Reload Collection Pro to see it there.${when}</div>`;
+  }
+  if (r.state === "failed") {
+    return `<div class="bad">${what}${r.result?.sent ? "the site was asked to save it, but " : "nothing was saved: "}` +
+      `${esc(r.result?.error ?? "no reason given")}${when}</div>` +
+      (r.result?.sent ? '<div class="dim">Check the deck in Collection Pro; data/deck_history.jsonl keeps its old cards.</div>' : "");
+  }
+  if (r.state === "dismissed") return `<div class="dim">${what}dismissed in the UR Lab panel, nothing was sent.${when}</div>`;
+  if (r.state === "discarded") return `<div class="dim">${what}withdrawn, nothing was sent.${when}</div>`;
+  return "";
+}
+
+function renderSend() {
+  if ($("sendBox").hidden) return;
+  const r = send.request;
+  const busy = waiting(r);
+  for (const id of ["sendTarget", "sendName", "sendCurrent"]) $(id).disabled = busy;
+  // Once the panel has claimed it, it is being saved and can no longer be withdrawn.
+  $("sendWithdraw").hidden = r?.state !== "pending";
+  $("sendGo").hidden = busy;
+  if (busy) {
+    $("sendOut").innerHTML = summaryHtml(r.summary) + (r.state === "applying"
+      ? '<div class="waiting">You clicked Apply in the UR Lab panel: it is saving the deck on the site now…</div>'
+      : `<div class="waiting">Waiting for you to confirm in the UR Lab panel on <a href="${COLLECTION_PRO}" target="_blank" ` +
+        'rel="noopener">Collection Pro</a> (it opens by itself within a few seconds). Nothing reaches the site until you ' +
+        "click there.</div>");
+    return;
+  }
+  const p = send.preview;
+  const check = !p
+    ? '<div class="dim">Checking…</div>'
+    : p.errors
+    ? `<div class="note">Cannot send it:</div><ul class="errs">${p.errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`
+    : summaryHtml(p.summary);
+  $("sendOut").innerHTML = (r ? `<div class="last">${outcomeHtml(r)}</div>` : "") + check;
+  $("sendGo").disabled = !p || !!p.errors;
+}
+
+/** The same checks as a real send, without queueing anything. */
+function previewSend() {
+  clearTimeout(send.previewTimer);
+  if ($("sendBox").hidden || waiting(send.request)) return renderSend();
+  send.preview = null;
+  renderSend();
+  send.previewTimer = setTimeout(async () => {
+    try {
+      const res = await fetch("/api/apply", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(sendBody({ dryRun: true })),
+      });
+      const body = await res.json();
+      send.preview = res.ok ? body : { errors: body.errors ?? [body.error ?? `the deck service answered ${res.status}`] };
+    } catch (e) {
+      send.preview = { errors: [`the deck service does not answer (${e.message})`] };
+    }
+    renderSend();
+  }, 200);
+}
+
+async function queueSend(replace = false) {
+  $("sendGo").disabled = true;
+  try {
+    const res = await fetch("/api/apply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(sendBody(replace ? { replace: true } : {})),
+    });
+    const body = await res.json();
+    if (res.status === 409 && body.pending) {
+      const question = `${body.error}:\n\n${body.pending.summary.headline}\n\nReplace it with this one?`;
+      if (confirm(question)) return queueSend(true);
+      send.request = body.pending;
+    } else if (!res.ok) {
+      send.preview = { errors: body.errors ?? [body.error ?? `the deck service answered ${res.status}`] };
+    } else send.request = body;
+  } catch (e) {
+    send.preview = { errors: [`the deck service does not answer (${e.message})`] };
+  }
+  renderSend();
+  pollSend();
+}
+
+function pollSend() {
+  clearTimeout(send.timer);
+  if (!waiting(send.request)) return;
+  send.timer = setTimeout(async () => {
+    const was = send.request;
+    try {
+      const latest = await fetch("/api/apply").then((r) => r.json());
+      send.request = latest.state === "none" ? null : latest;
+      if (latest.id === was.id && latest.state === "applied") await savedOnSite(latest);
+    } catch { /* the service is restarting; ask again */ }
+    if (!waiting(send.request)) previewSend();
+    else renderSend();
+    pollSend();
+  }, 1500);
+}
+
+/** The site now holds the draft: follow its deck, as the site's own loaddeck returned it. */
+async function savedOnSite(request) {
+  const deck = request.result?.deck;
+  if (!deck) return;
+  if (deck.isCurrent) for (const d of state.decks) d.isCurrent = false;
+  state.decks = [...state.decks.filter((d) => d.id !== deck.id), deck];
+  state.draft.name = deck.name;
+  state.draft.sourceId = deck.id;
+  saveDraft();
+  try {
+    state.history = await fetch("/api/apply/history").then((r) => r.json());
+  } catch { /* the undo list refreshes on the next load */ }
+  renderDeckChoices();
+  renderOpponents();
+  renderDraft();
+  requestReport();
+}
+
+// ---- saved decks, deck-search results and the undo log, as drafts to load ----------------
+function renderDeckChoices() {
+  const decks = state.decks.map((d) =>
+    `<option value="${d.id}">${esc(d.name)}${d.isCurrent ? " (current)" : ""} · ${d.characters.length}</option>`
+  ).join("");
+  const suggestions = state.suggestions.length
+    ? `<optgroup label="Improved by deno task deck-search">${
+      state.suggestions.map((s, i) => {
+        const gain = s.check ? ` (${s.check.gain >= 0 ? "+" : "−"}${Math.abs(s.check.gain * 50).toFixed(1)} on unseen hands)` : "";
+        const legal = s.keptLegal?.length ? `, legal in ${s.keptLegal.join(", ")}` : "";
+        return `<option value="suggestion:${i}">${esc(s.start.name)} vs ${esc(s.format.name)}${s.night ? " night" : ""}: ` +
+          `${s.swaps.length ? `${s.swaps.length} swaps${gain}` : "no better swap"}${esc(legal)}</option>`;
+      }).join("")
+    }</optgroup>`
+    : "";
+  // Every overwrite keeps the deck's old cards: loading them and sending them back undoes it.
+  const undo = state.history.filter((h) => h.before).map((h, i) =>
+    `<option value="history:${i}">"${esc(h.before.name)}" before ${esc(h.t.slice(0, 16).replace("T", " "))} UTC</option>`
+  ).join("");
+  $("loadDeck").innerHTML = '<option value="">Load a saved deck…</option>' + decks + suggestions +
+    (undo ? `<optgroup label="As they were before Send to site">${undo}</optgroup>` : "");
+}
+
 // ---- wiring -----------------------------------------------------------------------------
 async function main() {
-  const [collection, decks, coverage, matchup, suggestions] = await Promise.all([
+  const [collection, decks, coverage, matchup, suggestions, apply, history] = await Promise.all([
     fetch("/api/collection").then((r) => r.json()),
     fetch("/api/decks").then((r) => r.json()),
     fetch("/api/coverage").then((r) => r.json()).catch(() => null),
     fetch("/api/matchup").then((r) => r.json()).catch(() => null),
     fetch("/api/suggestions").then((r) => r.json()).catch(() => []),
+    fetch("/api/apply").then((r) => r.json()).catch(() => null),
+    fetch("/api/apply/history").then((r) => r.json()).catch(() => []),
   ]);
   state.suggestions = Array.isArray(suggestions) ? suggestions : [];
+  state.history = Array.isArray(history) ? history : [];
+  send.request = apply?.id ? apply : null;
   state.coverage = coverage && !coverage.missing ? coverage : null;
   state.matchup = matchup;
   $("solverOnly").disabled = !state.coverage;
@@ -562,18 +754,7 @@ async function main() {
   $("format").value = String(state.formats.find((f) => f.name === "Tourney")?.id ?? state.formats[0]?.id ?? "");
   const clans = [...new Map(state.cards.map((c) => [c.clanId, c.clan])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   $("clan").innerHTML += clans.map(([id, name]) => `<option value="${id}">${esc(name)}</option>`).join("");
-  $("loadDeck").innerHTML += state.decks.map((d) =>
-    `<option value="${d.id}">${esc(d.name)}${d.isCurrent ? " (current)" : ""} · ${d.characters.length}</option>`
-  ).join("") + (state.suggestions.length
-    ? `<optgroup label="Improved by deno task deck-search">${
-      state.suggestions.map((s, i) => {
-        const gain = s.check ? ` (${s.check.gain >= 0 ? "+" : "−"}${Math.abs(s.check.gain * 50).toFixed(1)} on unseen hands)` : "";
-        const legal = s.keptLegal?.length ? `, legal in ${s.keptLegal.join(", ")}` : "";
-        return `<option value="suggestion:${i}">${esc(s.start.name)} vs ${esc(s.format.name)}${s.night ? " night" : ""}: ` +
-          `${s.swaps.length ? `${s.swaps.length} swaps${gain}` : "no better swap"}${esc(legal)}</option>`;
-      }).join("")
-    }</optgroup>`
-    : "");
+  renderDeckChoices();
 
   for (const id of ["search", "clan", "rarity", "levelMode", "sort", "ownedOnly", "legalOnly", "solverOnly"]) {
     $(id).addEventListener(id === "search" ? "input" : "change", () => {
@@ -654,6 +835,13 @@ async function main() {
   $("loadDeck").addEventListener("change", () => {
     const value = $("loadDeck").value;
     $("loadDeck").value = "";
+    const undo = value.startsWith("history:") ? state.history.filter((h) => h.before)[Number(value.slice("history:".length))] : null;
+    if (undo) {
+      // Its source is the deck as it is now, so the diff line shows what sending it back undoes.
+      state.draft = { name: undo.before.name, sourceId: undo.deckId, cards: undo.before.characters.map((c) => ({ ...c })) };
+      draftChanged();
+      return;
+    }
     const suggestion = value.startsWith("suggestion:") ? state.suggestions[Number(value.slice("suggestion:".length))] : null;
     if (suggestion) {
       // Its source is the deck it started from, so the diff line shows the swaps.
@@ -674,6 +862,25 @@ async function main() {
     state.draft = { name: "", sourceId: 0, cards: [] };
     draftChanged();
   });
+  $("send").addEventListener("click", openSend);
+  $("sendClose").addEventListener("click", () => {
+    $("sendBox").hidden = true;
+  });
+  $("sendTarget").addEventListener("change", () => {
+    const deck = state.decks.find((d) => d.id === Number($("sendTarget").value));
+    if (deck && !$("sendName").value.trim()) $("sendName").value = deck.name;
+    previewSend();
+  });
+  $("sendName").addEventListener("input", previewSend);
+  $("sendCurrent").addEventListener("change", previewSend);
+  $("sendGo").addEventListener("click", () => queueSend());
+  $("sendWithdraw").addEventListener("click", async () => {
+    try {
+      const latest = await fetch("/api/apply", { method: "DELETE" }).then((r) => r.json());
+      send.request = latest.state === "none" ? null : latest;
+    } catch { /* the poll catches up */ }
+    previewSend();
+  });
   $("export").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(state.draft, null, 1)], { type: "application/json" });
     const a = document.createElement("a");
@@ -692,6 +899,11 @@ async function main() {
   renderScore();
   pollScore();
   requestReport();
+  // A request still waiting in the UR Lab panel is shown, and followed, after a reload too.
+  if (waiting(send.request)) {
+    openSend();
+    pollSend();
+  }
 }
 
 main().catch((e) => {

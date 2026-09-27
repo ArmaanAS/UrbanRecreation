@@ -3,13 +3,17 @@
 //
 //   deno task decks        # http://127.0.0.1:8788 - open it in a browser for Deck Lab
 //
-// It only reads the data files the log server writes (see scripts/DeckCapture.ts), and it
-// never talks to the site: nothing here can change the owner's account. Kept out of
-// log_server.ts on purpose - that process has to keep up with the game client's polling.
+// It reads the data files the log server writes (see scripts/DeckCapture.ts), and it never
+// talks to the site. The one path towards the account is `/api/apply` (src/decks/Apply.ts):
+// Deck Lab queues a draft there, and only the owner's click in the userscript's UR Lab panel
+// on Collection Pro sends it to the site; the panel reports back here, and this service
+// appends every write to data/deck_history.jsonl. Kept out of log_server.ts on purpose -
+// that process has to keep up with the game client's polling.
 // Deck scoring runs the release `urban-recreation-matchup` binary (`deno task rust:matchup`)
 // and caches its solves under cache/matchups/, like `deno task matchup`.
 import "colors";
 import { readRustV1Provenance } from "../solver/RustProvenance.ts";
+import { type ApplyRequest, type HistoryEntry, prepareApply, recordResult } from "./Apply.ts";
 import { handClan } from "./ClanMatrix.ts";
 import { compactCoverage, type CoverageFile, describeRefusal } from "./Coverage.ts";
 import {
@@ -49,7 +53,15 @@ const FILES = {
   cards: "data/site_cards.json",
   collection: "data/my_collection.json",
   decks: "data/my_decks.json",
+  /** The undo log: one line per write the UR Lab panel made to the site. Written here. */
+  history: "data/deck_history.jsonl",
 };
+/** For tests: read and write other files. Returns the paths it replaced. */
+export function useDataFiles(files: Partial<typeof FILES>): Partial<typeof FILES> {
+  const previous = Object.fromEntries(Object.keys(files).map((k) => [k, FILES[k as keyof typeof FILES]]));
+  Object.assign(FILES, files);
+  return previous;
+}
 
 // deno-lint-ignore no-explicit-any
 type Json = any;
@@ -404,6 +416,105 @@ async function startMatchup(body: Json): Promise<Response> {
   return json(view, 202);
 }
 
+// ---- guarded writes to the site (src/decks/Apply.ts) ----------------------------------------
+// One request at a time: Deck Lab queues it (POST /api/apply), the UR Lab panel polls for it
+// (GET), shows it and - only on the owner's click - claims it (POST /api/apply/:id/claim),
+// saves it and reports how it went (POST /api/apply/:id/result). The last few are kept by id
+// so a result that arrives after Deck Lab replaced its request still reaches the undo log.
+// Nothing survives a restart, so a stale request can never be applied later.
+const applyRequests = new Map<string, ApplyRequest>();
+let applyCurrent: ApplyRequest | undefined;
+const KEEP_REQUESTS = 20;
+
+async function queueApply(body: Json): Promise<Response> {
+  const [c, decks] = await Promise.all([catalog(), readData(FILES.decks)]);
+  const prepared = prepareApply(body, {
+    ...c,
+    decks: (decks?.decks ?? []) as SiteDeck[],
+    maxDecks: typeof decks?.maxDecks === "number" ? decks.maxDecks : undefined,
+  });
+  if ("errors" in prepared) return json({ error: prepared.errors.join("; "), errors: prepared.errors }, 400);
+  // A dry run is what Deck Lab shows while the owner picks the target and the name.
+  if (body?.dryRun === true) return json({ dryRun: true, ...prepared.draft });
+  if (applyCurrent?.state === "pending" || applyCurrent?.state === "applying") {
+    // Replacing one the panel is saving right now is for a panel that went away mid-save: its
+    // result, should it still come, is recorded all the same.
+    if (body?.replace !== true) {
+      const error = applyCurrent.state === "pending"
+        ? "another deck is already waiting for your confirmation in the UR Lab panel"
+        : "the UR Lab panel is saving another deck right now";
+      return json({ error, pending: applyCurrent }, 409);
+    }
+    applyCurrent.state = "discarded";
+    applyCurrent.finishedAt = new Date().toISOString();
+  }
+  const request: ApplyRequest = { id: crypto.randomUUID(), createdAt: new Date().toISOString(), state: "pending", ...prepared.draft };
+  applyRequests.set(request.id, request);
+  for (const id of applyRequests.keys()) {
+    if (applyRequests.size <= KEEP_REQUESTS) break;
+    applyRequests.delete(id);
+  }
+  applyCurrent = request;
+  console.log(`deck write queued: ${request.summary.headline} Waiting for the owner in the UR Lab panel.`.yellow);
+  return json(request, 201);
+}
+
+/**
+ * The owner clicked Apply: the panel takes the request before it sends anything, so a second
+ * tab, a replacement or a withdrawal can no longer race it to the site.
+ */
+function claimApply(id: string): Response {
+  const request = applyRequests.get(id);
+  if (!request) return json({ error: "no such request: the deck service may have restarted since it was queued" }, 404);
+  if (request.state !== "pending" || request !== applyCurrent) {
+    return json({ error: `this request is no longer waiting (${request.state})`, request }, 409);
+  }
+  request.state = "applying";
+  request.claimedAt = new Date().toISOString();
+  return json(request);
+}
+
+async function applyResult(id: string, r: Request): Promise<Response> {
+  const request = applyRequests.get(id);
+  if (!request) return json({ error: "no such request: the deck service may have restarted since it was queued" }, 404);
+  let body: Json;
+  try {
+    body = await r.json();
+  } catch {
+    return json({ error: "expected a JSON body" }, 400);
+  }
+  const outcome = recordResult(request, body);
+  if ("error" in outcome) return json({ error: outcome.error }, request.result || request.state === "dismissed" ? 409 : 400);
+  const verdict = request.state === "applied" ? "saved and verified".green : request.state === "failed" ? "failed".red : request.state.yellow;
+  console.log(`deck write ${verdict}: "${request.name}"${request.result?.error ? ` - ${request.result.error}` : ""}`);
+  if (outcome.history) {
+    try {
+      await Deno.writeTextFile(FILES.history, JSON.stringify(outcome.history) + "\n", { append: true });
+    } catch (error) {
+      return json({ ...request, error: `${FILES.history} could not be written: ${(error as Error).message}` }, 500);
+    }
+  }
+  return json(request);
+}
+
+/** The newest writes first, for Deck Lab's "load the deck as it was before". */
+async function applyHistory(): Promise<HistoryEntry[]> {
+  let text: string;
+  try {
+    text = await Deno.readTextFile(FILES.history);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return [];
+    throw error;
+  }
+  return text.split("\n").filter(Boolean).flatMap((line) => {
+    try {
+      return [JSON.parse(line) as HistoryEntry];
+    } catch {
+      return [];
+    }
+  }).reverse().slice(0, 20);
+}
+
 // Deck Lab's own page, and the site (the userscript panel, via the log server's proxy or
 // directly). Every other origin is refused, so no other page can read the owner's decks.
 const OWN_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
@@ -449,6 +560,36 @@ export async function handle(r: Request): Promise<Response> {
       }
       return startMatchup(body);
     }
+  }
+  if (path === "/api/apply") {
+    if (r.method === "GET") return json(applyCurrent ?? { state: "none" });
+    if (r.method === "DELETE") {
+      if (applyCurrent?.state === "applying") {
+        return json({ ...applyCurrent, error: "the UR Lab panel is saving it right now" }, 409);
+      }
+      if (applyCurrent?.state === "pending") {
+        applyCurrent.state = "discarded";
+        applyCurrent.finishedAt = new Date().toISOString();
+      }
+      return json(applyCurrent ?? { state: "none" });
+    }
+    if (r.method === "POST") {
+      // Only Deck Lab (or a local tool) asks for a write; a page on the site may only answer one.
+      if (origin === SITE_ORIGIN) return json({ error: "only Deck Lab can ask for a deck to be saved" }, 403);
+      let body: Json;
+      try {
+        body = await r.json();
+      } catch {
+        return json({ error: "expected a JSON body" }, 400);
+      }
+      return queueApply(body);
+    }
+  }
+  if (r.method === "GET" && path === "/api/apply/history") return json(await applyHistory());
+  const applyStep = /^\/api\/apply\/([0-9a-f-]{36})\/(claim|result)$/.exec(path);
+  if (r.method === "POST" && applyStep) {
+    const [, id, step] = applyStep;
+    return step === "claim" ? claimApply(id) : applyResult(id, r);
   }
   if (r.method === "GET" && path === "/api/meta") {
     const formatId = Number(new URL(r.url).searchParams.get("format"));
@@ -500,7 +641,9 @@ if (import.meta.main) {
     port: PORT,
     onListen: () =>
       console.log(
-        `deck service on http://127.0.0.1:${PORT} - open it for Deck Lab (reads ${Object.values(FILES).join(", ")})`.green,
+        `deck service on http://127.0.0.1:${PORT} - open it for Deck Lab (reads ${
+          [FILES.formats, FILES.cards, FILES.collection, FILES.decks].join(", ")
+        }; logs deck writes to ${FILES.history})`.green,
       ),
   }, handle);
 }
