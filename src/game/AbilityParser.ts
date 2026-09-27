@@ -124,7 +124,13 @@ export class AbilityParser {
         stat++;
       }
       const lost = tokens[stat + 1] === "Lost";
-      mod.setPer(tokens[stat] + (lost ? "_LOST" : ""), opp);
+      // An Attack bonus per opposing Damage counts the printed Damage (see
+      // `OPP_PRINTED_DAMAGE` in BasicModifier).
+      if (opp && tokens[stat] === "Damage" && mod.type?.name === "ATTACK") {
+        mod.setPer("PRINTED_DAMAGE", true);
+      } else {
+        mod.setPer(tokens[stat] + (lost ? "_LOST" : ""), opp);
+      }
 
       return stat - i + 1 + +lost;
     }

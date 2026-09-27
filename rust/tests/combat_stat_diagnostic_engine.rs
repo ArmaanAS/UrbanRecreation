@@ -4796,11 +4796,12 @@ fn an_asymmetry_copy_adopts_only_on_differing_hand_slots() {
     }
 }
 
-/// `+N Attack Per Opp. Damage` scales by the opposing card's Damage as the Attack phase
-/// sees it: resolved, but before Fury. Battle 1130726 r3 is the one that separates the
-/// two - Goran's +2 is worth 4 against a Fury Uuber, not 8.
+/// `+N Attack Per Opp. Damage` scales by the opposing card's printed Damage (semantic revision
+/// 81): not its own `Damage +2` (1515692/3 and three rounds of the 2026-09-27 autoplay runs
+/// 3-5), not Fury (1130726/3: Goran's +2 is worth 4 against a Fury Uuber, not 8), and, unobserved,
+/// not the converting card's own reduction of it either.
 #[test]
-fn attack_per_opponent_damage_reads_the_damage_before_fury() {
+fn attack_per_opponent_damage_reads_the_printed_damage() {
     let base = base_spec(8, 2);
     let mut cards = plans(&base);
     cards[PlayerId::P1][0].ability = execute(
@@ -4829,7 +4830,24 @@ fn attack_per_opponent_damage_reads_the_damage_before_fury() {
     assert_eq!(report.cards[PlayerId::P2].damage, 4); // 2 printed + 2 Fury
     assert_eq!(report.cards[PlayerId::P1].attack, 36); // still 2 x 2, not 2 x 4
 
-    // A reduction of the opposing Damage does count: it is resolved before this phase.
+    // The opposing card's own increase does not count: 1515692/3 has Shawnia's +3 read
+    // Helsa's printed 2 under her La Junta `Damage +2`.
+    let mut boosted = cards.clone();
+    boosted[PlayerId::P2][0].bonus = execute(
+        38,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 2),
+    );
+    boosted[PlayerId::P2][0].source_bonus_support_count = 1;
+    let mut game_boosted = game(base.clone(), boosted);
+    let (report, _) = game_boosted
+        .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].damage, 4);
+    assert_eq!(report.cards[PlayerId::P1].attack, 36); // 8 x 4 + 2 x 2, not 2 x 4
+
+    // Nor does the converting card's own reduction of it, which no round shows; revision 80
+    // counted it (34).
     let mut reduced = cards;
     reduced[PlayerId::P1][0].bonus = execute(
         916,
@@ -4842,7 +4860,7 @@ fn attack_per_opponent_damage_reads_the_damage_before_fury() {
         .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
         .unwrap();
     assert_eq!(report.cards[PlayerId::P2].damage, 1);
-    assert_eq!(report.cards[PlayerId::P1].attack, 34); // 32 + 2 x 1
+    assert_eq!(report.cards[PlayerId::P1].attack, 36); // 32 + 2 x 2
 }
 
 /// `Xantiax: -N Life, Min. M` charges both players whatever the round did, floors each of

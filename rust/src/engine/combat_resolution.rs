@@ -567,11 +567,16 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         )?;
     }
 
-    // The Attack phase reads the opposing Damage as it stands here: every Power/Damage
-    // modifier has run, and Fury has not. Battle 1130726 r3 is what fixes that order -
-    // Goran's "+2 Attack Per Opp. Damage" is worth +4 against a Fury Uuber, whose printed
-    // 2 Damage becomes 4 only where the damage is dealt.
-    let pre_fury_damage = damage;
+    // `+N Attack Per Opp. Damage` reads the opposing card's printed Damage, before its own
+    // modifiers, a Copy and Fury (semantic revision 81; revision 25 read it resolved, before
+    // Fury). Four rounds pin it against four kinds of modifier on the opposing card: a clan
+    // bonus (1515692/3: Shawnia's +3 counts Helsa's 2, not her La Junta 4), a Support ability
+    // (1518052/0: Coby Cr's 3, not 7), an ability and a bonus together (1518765/1: Kinjo Cr's 5,
+    // not 10) and a Copy (1519829/1: Baxter's 3, not the 7 he copied). Goran's +2 against a
+    // Fury Uuber (1130726/3) reads the printed 2 as well. No round has the converting card's own
+    // side reducing the opposing Damage; the printed value reads before that too, as in the
+    // TypeScript reference.
+    let printed_damage = ByPlayer::new(printed[PlayerId::P1].1, printed[PlayerId::P2].1);
     // `+N Attack Per Opp. Power` reads the opposing Power from the same point: resolved by
     // every Power/Damage modifier (1089513/2: Mel-T's 2 per Power is taken against the 6 of a
     // Wesley whose Confidence has already cut Mel-T itself to 4), and before the `Tune Out`
@@ -622,7 +627,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
-                pre_fury_damage[origin.other()],
+                printed_damage[origin.other()],
                 resolved_power[origin.other()],
                 &mut attack,
             )?;
@@ -637,7 +642,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
-                pre_fury_damage[origin.other()],
+                printed_damage[origin.other()],
                 resolved_power[origin.other()],
                 &mut attack,
             )?;
@@ -656,7 +661,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 StatMask::default(),
                 rounds_played,
                 opponent_stars[origin],
-                pre_fury_damage[origin.other()],
+                printed_damage[origin.other()],
                 resolved_power[origin.other()],
                 &mut attack,
             )?;
@@ -681,7 +686,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
             protections[origin.other()],
             rounds_played,
             opponent_stars[origin],
-            pre_fury_damage[origin.other()],
+            printed_damage[origin.other()],
             resolved_power[origin.other()],
             &mut attack,
         )?;
@@ -697,7 +702,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 protections[origin.other()],
                 rounds_played,
                 opponent_stars[origin],
-                pre_fury_damage[origin.other()],
+                printed_damage[origin.other()],
                 resolved_power[origin.other()],
                 &mut attack,
             )?;
@@ -1395,7 +1400,7 @@ fn effect_amount(
     owner_life_lost: u16,
     rounds_played: u8,
     opponent_stars: u16,
-    // The opposing card's Damage as the Attack phase sees it: resolved, but before Fury.
+    // The opposing card's printed Damage, which the Attack phase reads (semantic revision 81).
     // Zero on the Power/Damage path, which never applies an Attack effect.
     opponent_damage: u16,
     // The opposing card's Power as the Attack phase sees it: resolved, before any `Tune

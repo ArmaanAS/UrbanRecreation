@@ -65,8 +65,42 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 568 | 6 | A capped increase is measured before its card's same-stat bonus (1516811, 1516832, 1516846, 1516906, 1517271, and the single point 1508932) |
 | 2026-09-27 | 569 | 5 | Latched permanents pay after the round's own effects (1517029; Rust semantic revision 80) |
 | 2026-09-27 | 570 | 4 | Versus and After read an Oculus by its printed clan (1517121); 1517236 is a new single point (an opposing `Players Life` gain revives a knocked-out player) |
+| 2026-09-27 | 748 | 13 | +188 Training captures (autoplay runs 3-5): nine fresh mismatches (1518052, 1518765, 1519318, 1519333, 1519829, 1519871, 1520327, 1520579, 1521010) |
+| 2026-09-27 | 752 | 9 | `+N Attack Per Opp. Damage` counts the printed opposing Damage (1515692, 1518052, 1518765, 1519829; Rust semantic revision 81) |
 
 ## Fixed
+
+### `+N Attack Per Opp. Damage` counts the printed opposing Damage - 1515692, 1518052, 1518765, 1519829 (fixed)
+1515692 r3 was a single point: Shawnia's `+3 Attack Per Opp. Damage` against Helsa level 2
+(8/2), whose La Junta `Damage +2` takes her to 4. The server has 7 x 1 + 3 x 2 = 13, the printed
+Damage; the engine read the modified 4 and had 19. Autoplay runs 3-5 brought three more rounds,
+each against a different kind of modifier on the opposing card's own Damage, and every one counts
+the printed value:
+- 1518052 r0: Shawnia again, against Coby Cr level 4 (8/3) on 7 under his Sentinel `Support:
+  Damage +1` x 4: 7 x 4 + 3 x 3 = 37 (the engine had 49).
+- 1518765 r1: Adytia Ld level 2's `+2 Attack Per Opp. Damage` against Kinjo Cr level 5 (6/5) on 10
+  under his `Damage +3` and the Fang Pi Clang `Damage +2`: 8 x 1 + 2 x 5 = 18 (28).
+- 1519829 r1: Cobretti level 5's `+2` against Baxter level 3 (6/3), whose `Copy: Power And Damage
+  Opp.` gives him Cobretti's printed 7/7: 7 x 1 + 2 x 3 + 8 (Sentinel `Attack +8`) - 8 (Sakrohm
+  `-8 Opp Attack, Min 3`) = 13 (21).
+
+Goran's `+2` against a Fury Uuber (1130726 r3) reads the printed 2 too, which settling Fury late
+had already modelled. Of the 78 captured card-rounds that play a `Per Opp.` card, eight face an
+opposing stat that ends away from its printed value: these four, 1130726 r3, and three that pay
+nothing either way - 1515465 r2 and 1518648 r2 (Kenny West's and AbsorptionBoy's `+1 Life Per Opp.
+Damage` lose) and 1520737 r1 (Genash's `Cancel Opp. Attack Modif.` switches Adytia Ld's off). No
+round has the converting card's own side reducing the opposing Damage, so whether the reading is
+before that reduction as well is unobserved; the printed value reads before it.
+
+`BasicModifier` has a new multiplier, `OPP_PRINTED_DAMAGE` (the opposing card's `damage.base`),
+which `AbilityParser.per` picks at compile time for an Attack modifier per opposing Damage. The
+other two `Per Opp.` grammars keep what they read: `+N Life Per Opp. Damage` the final Damage
+(Fury included), and `+N Attack Per Opp. Power` the resolved Power, since no round has shown
+either against a modified stat. These four rounds suggest the Power form reads the printed Power
+too; a `Per Opp. Power` card against a card with its own Power modifier would say. Fixed 1515692,
+1518052, 1518765 and 1519829. Tests in `tests/ability/PerOppDamage.test.ts`. The Rust engine read
+the resolved Damage before Fury (semantic revision 25); semantic revision 81 reads the printed one,
+so the two engines agree again (`docs/rust-migration.md`).
 
 ### Versus and After read an Oculus by its printed clan - 1517121 (fixed)
 1517121 r1: Predtr Ld lv3 (Vortex, 9/4) meets Nobutomo lv2, whose `Equalizer: -1 Opp Damage,
@@ -309,8 +343,8 @@ Own and opposing Damage modifiers were already earlier than this (PRE2 / PRE1) a
 unaffected. Fixed 1093129, 1130726. Tests in `tests/ability/FuryDamage.test.ts`.
 
 Whether the multiplier is the opponent's printed Damage or their modified Damage minus Fury
-is still open: the only two captured rounds with a Per Opp. Damage card (925899 r0, 1130726
-r3) agree on both readings. This implements the second.
+was open until the autoplay runs 3-5: it is the printed Damage (see "`+N Attack Per Opp.
+Damage` counts the printed opposing Damage" above).
 
 ### A gift of Opp. Pillz does not need a non-empty pool
 `BasicModifier.canApply` required `data.opp.pillz > 0` for every opposing Pillz effect. That
@@ -891,17 +925,6 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   Naja exception was only coded after its second round. A second needs a Players Life card
   (Slobodan Cr, El Toucan, Ambazaak, El Cascabel) in a round where either player ends on 0, or
   where its owner is knocked out while losing. The Rust engine refuses `2433`.
-- 1515692 r3: Shawnia's `+3 Attack Per Opp. Damage` against Helsa level 2 (8/2), whose La
-  Junta bonus `Damage +2` takes her Damage to 4. The server has 7 x 1 + 3 x 2 = 13, the
-  printed Damage; the engine reads the modified 4 and has 19. The only other round that
-  separates the two readings of an opposing stat is 1130726 r3, where Goran's `+2 Attack Per
-  Opp. Damage` reads Uuber's 2 before Fury, which the engine already models by settling Fury
-  late. Of the other 47 captured rounds that play a `Per Opp. Damage` or `Per Opp. Power`
-  card, 46 face an unmodified opposing stat, and in 1515465 r2 Kenny West's `+1 Life Per Opp.
-  Damage` loses and pays nothing. So the rule - the printed stat, before the opponent's own
-  modifiers - rests on one round. A second needs a `Per Opp.` card against a card whose own
-  ability or clan bonus changes the named stat, such as a La Junta `Damage +2`, or against an
-  opposing reduction of it, which would say whether the reading is before every modifier.
 
 ### An increase to the opposing card - 1414749, 1507713 (fixed)
 Pepo Brahms' `Growth: Opp. Attack +1` (level 4, `abilityData` 5210) and `Growth: Opp. Attack

@@ -27,6 +27,19 @@ const Per: Record<string, PerType> = {
   OPP_PILLZ: { opp: true, type: 4, name: "OPP_PILLZ" },
   OPP_LIFE_LOST: { opp: true, type: 12, name: "OPP_LIFE_LOST" },
   OPP_PILLZ_LOST: { opp: true, type: 13, name: "OPP_PILLZ_LOST" },
+  /**
+   * `+N Attack Per Opp. Damage` reads the opposing card's printed Damage, before that card's
+   * own modifiers. Four rounds, four kinds of modifier: Shawnia's `+3` counts Helsa's 2 under
+   * her La Junta `Damage +2` (1515692 r3, 7 x 1 + 3 x 2 = 13) and Coby Cr's 3 under his
+   * Sentinel `Support: Damage +1` x 4 (1518052 r0, 7 x 4 + 3 x 3 = 37); Adytia Ld's `+2`
+   * counts Kinjo Cr's 5 under his `Damage +3` and Fang Pi Clang `Damage +2` (1518765 r1,
+   * 8 x 1 + 2 x 5 = 18); Cobretti's `+2` counts Baxter's 3 under his `Copy: Power And Damage
+   * Opp.` (1519829 r1, 7 x 1 + 2 x 3 + 8 - 8 = 13). Goran's `+2` reads Uuber's 2 before Fury
+   * (1130726 r3), which the printed value covers too. Chosen at compile time
+   * (`AbilityParser.per`) for the Attack form only: `+N Life Per Opp. Damage` has no round
+   * against a modified Damage, and neither has `+N Attack Per Opp. Power`.
+   */
+  OPP_PRINTED_DAMAGE: { opp: true, type: 14, name: "OPP_PRINTED_DAMAGE" },
 };
 function perFromObject(o: PerType): PerType {
   return o && Per[o.name];
@@ -301,6 +314,8 @@ export default class BasicModifier extends Modifier {
         // deducts the current bet after Attack is resolved. That matches 1060510 r3, where
         // Nolegs had already fallen from 12 to 0 and received +2 x 12 = +24 Attack.
         return Math.max(0, player.basePillz - player.pillz);
+      case 14:
+        return card.damage.base;
       default:
         return 1;
     }

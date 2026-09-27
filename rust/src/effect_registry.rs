@@ -251,8 +251,8 @@ pub enum MagnitudeMultiplierV1 {
     Growth,
     Degrowth,
     OpponentStars,
-    /// Scaled by the opposing selected card's Damage as resolved for that round, before
-    /// Fury is added to it.
+    /// Scaled by the opposing selected card's printed Damage, before its own modifiers, a
+    /// Copy and Fury (1515692/3, 1518052/0, 1518765/1, 1519829/1).
     OpponentDamage,
     /// Scaled by the opposing selected card's Power as resolved for that round: every
     /// Power/Damage modifier has run, and a `Tune Out` reset of Power to 1 has not.

@@ -4391,6 +4391,50 @@ gap.
 (`combat_stat_diagnostic_engine.rs`) plays the Heal's owner on 9 into a 3-Damage loss and the
 `-4, Min 2` cut, for both seats: 6 - 4 held at 2, + 4 = 6. Revision 79 gave a P1 healer 3.
 
+Semantic revision 81 changes what `+N Attack Per Opp. Damage` reads: the opposing card's printed
+Damage, where revision 25 read its Damage as resolved by every Power/Damage modifier, before
+Fury. It admits nothing, and the eligible draws do not change. Revision 25 said the question was
+formally open, since no captured round both modified the opposing Damage and converted it; the
+autoplay runs brought four, each against a different kind of modifier on the opposing card's
+own Damage, and all four count the printed value. The TypeScript engine changes to it in the
+same commit (docs/replay-triage.md, "`+N Attack Per Opp. Damage` counts the printed opposing
+Damage").
+
+**Evidence.**
+- 1515692/3: Shawnia's `+3` against Helsa L2 (8/2) on 4 under her La Junta `Damage +2`: 7 x 1 +
+  3 x 2 = 13 (the resolved reading gives 19).
+- 1518052/0: Shawnia again, against Coby Cr L4 (8/3) on 7 under his Sentinel `Support: Damage
+  +1` x 4: 7 x 4 + 3 x 3 = 37 (49).
+- 1518765/1: Adytia Ld L2's `+2` against Kinjo Cr L5 (6/5) on 10 under his `Damage +3` and the
+  Fang Pi Clang `Damage +2`: 8 x 1 + 2 x 5 = 18 (28).
+- 1519829/1: Cobretti L5's `+2` against Baxter L3 (6/3) on 7 under `Copy: Power And Damage Opp.`:
+  7 x 1 + 2 x 3 + 8 - 8 = 13 (21). Baxter's own text says the same of what he copies: "only takes
+  into account the figure shown on the opponent's card and does not include changes connected to
+  an Ability or a Bonus" (`948`).
+- 1130726/3, revision 25's round: Goran's `+2` against a Fury Uuber reads the printed 2, which the
+  resolved-before-Fury reading also gave.
+
+Of the other captured rounds that play the conversion, every one faces an unmodified opposing
+Damage, or does not fire (1520737/1: Genash's `Cancel Opp. Attack Modif.`). None has the
+converting card's own side reducing the opposing Damage, which the engine test used to count; the
+printed value reads before that too, as the TypeScript reference does, and it is recorded here as
+unobserved rather than pinned. `+N Attack Per Opp. Power` keeps its resolved Power (revision 72):
+no round has shown it against a modified one, though these four suggest it reads the printed
+Power as well. `+N Life Per Opp. Damage` keeps the final Damage its END phase sees.
+
+**The change.** `prepare_combat_resolution_with_post_round` passes the opposing card's printed
+Damage (`printed`, taken before the Copy phase) to the Attack effects where it passed
+`pre_fury_damage`; `DiagnosticMagnitudeV1::OpponentDamage` reads it through `effect_amount` as
+before. `attack_per_opponent_damage_reads_the_printed_damage`
+(`combat_stat_diagnostic_engine.rs`) plays an opposing `Damage +2` bonus, which does not count
+(8 x 4 + 2 x 2 = 36), a Fury (36) and the converting card's own reduction of the opposing Damage
+(36, where revision 80 gave 34).
+
+`deno task pins:update` moves the compiler revision (80 to 81) and `tests/expect/rust-provenance.json`
+(compiler 81). The gate rounds, the eligible and scanned draws, the gate ids and dispositions and
+both data fingerprints are unchanged: no gate round meets a modified opposing Damage under the
+conversion.
+
 #### Two registry regressions from the autoplay runs 2-3 data
 
 The 242 records the 2026-09-27 autoplay runs 2-3 added to `captures/abilities.json` cost the

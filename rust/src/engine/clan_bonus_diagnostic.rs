@@ -57,7 +57,7 @@ pub enum DiagnosticMagnitudeV1 {
     Growth,
     Degrowth,
     OpponentStars,
-    /// Scaled by the opposing selected card's resolved Damage, before Fury.
+    /// Scaled by the opposing selected card's printed Damage (semantic revision 81).
     OpponentDamage,
     /// Scaled by the opposing selected card's resolved Power, before any `Tune Out` reset.
     OpponentPower,
