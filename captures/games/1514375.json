@@ -1,0 +1,415 @@
+{
+  "id": 1514375,
+  "capturedAt": "2026-09-27T15:07:40.034Z",
+  "creationTime": 1790521660,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1778,
+          "name": "B Mappe Cr",
+          "clan": "All Stars",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "m1",
+          "ability": {
+            "id": 1614,
+            "description": "Equalizer: -1 Opp Pow. & Dam., Min 1"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        },
+        {
+          "id": 329,
+          "name": "Dan",
+          "clan": "All Stars",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 5553,
+            "description": "Night: Degrowth: Damage +1 Max. 7"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        },
+        {
+          "id": 734,
+          "name": "Essie",
+          "clan": "All Stars",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 553,
+            "description": "Revenge: Power +3"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        },
+        {
+          "id": 832,
+          "name": "Karen",
+          "clan": "All Stars",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 652,
+            "description": "Stop: -3 Opp. Life, Min 0"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1530,
+          "name": "Leone Cr",
+          "clan": "Montana",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1337,
+            "description": "Reprisal: Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        },
+        {
+          "id": 340,
+          "name": "Simon",
+          "clan": "Montana",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 176,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        },
+        {
+          "id": 1626,
+          "name": "Pr Priest",
+          "clan": "Riots",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1438,
+            "description": "Copy: Opp. Bonus"
+          },
+          "bonus": {
+            "id": 1034,
+            "description": "Victory Or Defeat : +1 Pillz"
+          }
+        },
+        {
+          "id": 2278,
+          "name": "Sling",
+          "clan": "Riots",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 3064,
+            "description": "+2 Attack Per Opp. Power"
+          },
+          "bonus": {
+            "id": 1034,
+            "description": "Victory Or Defeat : +1 Pillz"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 2278,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790521660686
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1778,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1790521666523
+        }
+      ],
+      "resolution": [
+        {
+          "power": 3,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 12,
+          "won": true
+        },
+        {
+          "power": 1,
+          "damage": 1,
+          "damageAfter": 5,
+          "attack": 7,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        7
+      ],
+      "pillz": [
+        9,
+        13
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 6667
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 832,
+          "pillz": 9,
+          "pillzUsed": 10,
+          "fury": false,
+          "t": 1790521677237
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1530,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1790521678326
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 58,
+          "won": true
+        },
+        {
+          "power": 5,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 20,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        0
+      ],
+      "pillz": [
+        0,
+        10
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 64101,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": false,
+          "quantity": 3
+        }
+      ],
+      "durationMs": 11625
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 15,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 10
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 4000
+      },
+      {
+        "type": "playerXP",
+        "value": 104
+      },
+      {
+        "type": "characterXP",
+        "value": 900
+      }
+    ],
+    "t": 1790521678427
+  },
+  "finalStatus": "done",
+  "snapshots": 12,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Leone Cr",
+      "Simon",
+      "Pr Priest",
+      "Sling",
+      "B Mappe Cr",
+      "Dan",
+      "Essie",
+      "Karen"
+    ],
+    "levels": [
+      5,
+      3,
+      5,
+      4,
+      5,
+      3,
+      5,
+      3
+    ],
+    "night": true,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          3,
+          0,
+          false
+        ],
+        "s2": [
+          0,
+          3,
+          false
+        ],
+        "p1life": 7,
+        "p2life": 15,
+        "p1pillz": 13,
+        "p2pillz": 9,
+        "r1": {
+          "power": 1,
+          "damage": 1,
+          "attack": 7,
+          "won": false
+        },
+        "r2": {
+          "power": 3,
+          "damage": 8,
+          "attack": 12,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          9,
+          false
+        ],
+        "s2": [
+          0,
+          3,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 15,
+        "p1pillz": 10,
+        "p2pillz": 0,
+        "r1": {
+          "power": 5,
+          "damage": 7,
+          "attack": 20,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 4,
+          "attack": 58,
+          "won": true
+        }
+      }
+    ]
+  }
+}

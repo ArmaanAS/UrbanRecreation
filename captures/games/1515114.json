@@ -1,0 +1,255 @@
+{
+  "id": 1515114,
+  "capturedAt": "2026-09-27T15:41:05.559Z",
+  "creationTime": 1790523665,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1108,
+          "name": "Dao Wang",
+          "clan": "Fang Pi Clang",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 935,
+            "description": "-2 Opp. Life Min 1"
+          },
+          "bonus": {
+            "id": 36,
+            "description": "Damage +2"
+          }
+        },
+        {
+          "id": 1022,
+          "name": "Muntendon",
+          "clan": "Fang Pi Clang",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 848,
+            "description": "Stop: Atk. +12"
+          },
+          "bonus": {
+            "id": 36,
+            "description": "Damage +2"
+          }
+        },
+        {
+          "id": 642,
+          "name": "Nakata",
+          "clan": "Fang Pi Clang",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 460,
+            "description": "Stop: Power +2"
+          },
+          "bonus": {
+            "id": 36,
+            "description": "Damage +2"
+          }
+        },
+        {
+          "id": 619,
+          "name": "Sung Tsu",
+          "clan": "Fang Pi Clang",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 437,
+            "description": "Stop: Power +2"
+          },
+          "bonus": {
+            "id": 36,
+            "description": "Damage +2"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 844,
+          "name": "Lucas",
+          "clan": "Bangers",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 664,
+            "description": "Protection: Bonus"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 564,
+          "name": "Sleam",
+          "clan": "Bangers",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 382,
+            "description": "Courage: Power +4"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 187,
+          "name": "Vermyn N Cr",
+          "clan": "Bangers",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 72,
+            "description": "-4 Opp Damage, Min 1"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 693,
+          "name": "Glenn",
+          "clan": "Uppers",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 512,
+            "description": "-3 Opp. Life Min 3"
+          },
+          "bonus": null
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 844,
+          "pillz": 0,
+          "pillzUsed": 0,
+          "fury": false,
+          "t": 1790523665857
+        }
+      ],
+      "resolution": [
+        null,
+        {
+          "power": -1,
+          "damage": -1,
+          "damageAfter": -1,
+          "attack": -1,
+          "won": false
+        }
+      ],
+      "life": [
+        null,
+        null
+      ],
+      "pillz": [
+        null,
+        null
+      ],
+      "postRoundAbilities": [],
+      "durationMs": null
+    }
+  ],
+  "result": null,
+  "finalStatus": "playing",
+  "snapshots": 4,
+  "issues": [
+    "round 0: no resolution snapshot captured for side 1 (attack unknown)",
+    "round 0: expected 2 moves, saw 1"
+  ],
+  "testcase": {
+    "cards": [
+      "Lucas",
+      "Sleam",
+      "Vermyn N Cr",
+      "Glenn",
+      "Dao Wang",
+      "Muntendon",
+      "Nakata",
+      "Sung Tsu"
+    ],
+    "levels": [
+      4,
+      4,
+      4,
+      5,
+      2,
+      2,
+      3,
+      5
+    ],
+    "night": true,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": []
+  }
+}

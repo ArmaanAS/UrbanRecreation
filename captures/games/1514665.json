@@ -1,0 +1,241 @@
+{
+  "id": 1514665,
+  "capturedAt": "2026-09-27T15:19:35.780Z",
+  "creationTime": 1790522375,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": true,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 408,
+          "name": "BB Cool G",
+          "clan": "Bangers",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 234,
+            "description": "-3 Opp Attack, Min 1"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 1312,
+          "name": "Clifford",
+          "clan": "Bangers",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1136,
+            "description": "Protection: Attack"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 1376,
+          "name": "DJ LBerto",
+          "clan": "Bangers",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1201,
+            "description": "Defeat: +2 Pillz Max. 10"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 1185,
+          "name": "Duke",
+          "clan": "Bangers",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1012,
+            "description": "Courage: +1 Atk Per Pillz Left"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2379,
+          "name": "Doggonuts",
+          "clan": "Cosmohnuts",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3495,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 3496,
+            "description": "Tune Out"
+          }
+        },
+        {
+          "id": 2531,
+          "name": "Tatiana",
+          "clan": "Cosmohnuts",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 4382,
+            "description": "Perfect: +2 Pillz"
+          },
+          "bonus": {
+            "id": 3496,
+            "description": "Tune Out"
+          }
+        },
+        {
+          "id": 1249,
+          "name": "Earl",
+          "clan": "Sentinel",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1078,
+            "description": "Growth: -1 Opp Power, Min 5"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 1666,
+          "name": "Lara Hate",
+          "clan": "Sentinel",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1492,
+            "description": "-1 Opp Power And Damage, Min 2"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [],
+      "resolution": [
+        null,
+        null
+      ],
+      "life": [
+        null,
+        null
+      ],
+      "pillz": [
+        null,
+        null
+      ],
+      "postRoundAbilities": [],
+      "durationMs": null
+    }
+  ],
+  "result": null,
+  "finalStatus": "playing",
+  "snapshots": 2,
+  "issues": [
+    "round 0: expected 2 moves, saw 0"
+  ],
+  "testcase": {
+    "cards": [
+      "BB Cool G",
+      "Clifford",
+      "DJ LBerto",
+      "Duke",
+      "Doggonuts",
+      "Tatiana",
+      "Earl",
+      "Lara Hate"
+    ],
+    "levels": [
+      3,
+      5,
+      2,
+      4,
+      2,
+      4,
+      3,
+      4
+    ],
+    "night": true,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": []
+  }
+}
