@@ -87,8 +87,9 @@ engine recorded the previous card's infiltrated clan, so an Oculus that joined F
 fired Noma's `After [clan:47]` and missed the Tolvack bonus. It now records the printed clan. No
 captured round tells the two apart for After: in the four rounds where an After source follows an
 Oculus (1022847 r3, 1066481 r3, 1073107 r1, 1090096 r1), the Oculus had joined Tolvack and every
-text there either names both or neither. A Versus that names the clan an Oculus joined (a Versus [Montana] against Dark Sentogan
-here) is unobserved; the rule reads it as printed, so it does not count. Fixed 1517121. Tests in
+text there either names both or neither. A Versus that names the clan an Oculus joined (a Versus
+[Montana] against Dark Sentogan here) is unobserved; the rule reads it as printed, so it does not
+count. Fixed 1517121. Tests in
 `tests/ability/VersusClan.test.ts` and `tests/ability/After.test.ts`. The Rust engine already reads
 canonical clans for both and refuses a draw where an infiltrating Oculus would make the canonical
 and effective readings disagree; these rounds pin the canonical reading for a slice that wants to
@@ -98,8 +99,8 @@ lift that.
 1517029 r2: Lakit Cr's owner (internal P2) has a `Heal 4 Max. 7` latched from round one and is
 on 15. Owen wins for 5 Damage, 10, and his `-4 Opp. Life Min 2` takes that to 6. The server ends
 on 7: the Heal paid after the cut, 6 + 4 capped at 7. The engine ended on 6, because its end of
-the round (the order the previous entry below settled) paid every increase first, latched ones
-included, and the Heal found 10 above its cap and paid nothing.
+the round (the order "End-of-round order" below settled) paid every increase first, latched
+ones included, and the Heal found 10 above its cap and paid nothing.
 
 The raw battle files say which order the server uses. The resolution snapshot lists the round's
 end-of-round effects on each player as `post` entries, and the list is in application order: in
@@ -110,8 +111,9 @@ Over every capture, a player's list puts the round's own entries ahead of the la
 never the other way round. A latched gain follows a current-round cut in 1516124 r0, 1516372 r1
 and r2, 924669 r0 and 1514883 r2 as well, where no cap binds; within the round's own entries the
 increases come first (15 lists, 1093173 r1 and 1514836 r0 among them), and within the latched
-ones the gains (1515451 r1 and r3, 1516711 r3, 1517078 r2 and r3). The only list with a latched cut ahead of a
-latched gain, 1515238 r3, has the gain as the zero entry of a Heal latching in that round.
+ones the gains (1515451 r1 and r3, 1516711 r3, 1517078 r2 and r3). The only list with a latched
+cut ahead of a latched gain, 1515238 r3, has the gain as the zero entry of a Heal latching in
+that round.
 
 `Events.executeEnd` now pays the round's own increases, then its decreases by descending Min, and
 only then every latched increase and every latched decrease, internal P2 before P1 within a pass
@@ -193,8 +195,9 @@ The condition now treats `GLOBAL_ABILITY`/`GLOBAL_BONUS` like the one-round type
 half, a stopped `Stop:` permanent latching, follows the printed text: no capture has one stopped
 yet (the fourth captured round, Ylati's `Stop: Heal 3 Max. 14` in 1516862 r3, is the last round
 and wins unstopped). The three texts the registry prints are Giacomo's `1147`, Ylati's `1312`
-and Ardwizz's `1629`. Fixed 1516740 and 1517419; 1517397 then failed in round 3 on the next
-entry. Tests in `tests/ability/StopPermanent.test.ts`. The Rust engine admits none of the three.
+and Ardwizz's `1629`. Fixed 1516740 and 1517419; 1517397 then failed in round 3 on the prefixed
+Impose (the entry above). Tests in `tests/ability/StopPermanent.test.ts`. The Rust engine admits
+none of the three.
 
 ### A recap snapshot is not the round's resolution - 1514649 (fixed)
 1514649 r0 failed on El Toucan's Attack: the engine had 20, the record 14. El Toucan level 3
@@ -779,7 +782,7 @@ a binding floor or cap on one resource (the "1093173/1 order rule" in `docs/rust
 because the server's order was unknown; the rounds above now pin it, which a Rust slice could
 use to lift those refusals. Not every such match is refused, though: a latched Heal beside an
 opposing current-round Life cut is admitted, and there the two engines disagreed until semantic
-revision 80 (next entry above).
+revision 80 (see "Latched permanents pay after the round's own effects" above).
 
 ### Same-family permanents replace, as the server text says — 1506438 (fixed)
 The server prints "If two poisons or toxins are applied, the second will replace the first as
