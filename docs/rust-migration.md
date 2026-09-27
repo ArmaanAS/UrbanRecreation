@@ -4391,6 +4391,30 @@ gap.
 (`combat_stat_diagnostic_engine.rs`) plays the Heal's owner on 9 into a 3-Damage loss and the
 `-4, Min 2` cut, for both seats: 6 - 4 held at 2, + 4 = 6. Revision 79 gave a P1 healer 3.
 
+#### Two registry regressions from the autoplay runs 2-3 data
+
+The 242 records the 2026-09-27 autoplay runs 2-3 added to `captures/abilities.json` cost the
+strict projection in two places. Neither is fixed here, because each is a policy choice, not a
+data update:
+- **Twelve draws dropped out.** Scar's `2470` prints `Copy: Opp. Power` over a record with
+  `value: 5, valueMin: 8`, where the other seventeen `Copy: Opp. Power` records print zeros. The
+  description is now ambiguous, and the Copy path lists its provenance aliases with
+  `lookup_description`, which refuses an ambiguous text, so every draw dealing a `Copy: Opp.
+  Power` is refused: 876635, 943111, 946112, 1011643, 1065812, 1069608, 1337230, 1337321,
+  1495980, 1506852, 1507792 and 1508992 (329 -> 322 eligible with the five new draws). The Stop
+  Opp. Ability path already had this problem (Angelo's `877`) and lists as provenance only the
+  same-text records whose record compiles to the same effect (`prepare_control_source`); doing
+  the same for the Copy path would bring the twelve back and leave Scar refused.
+- **The worker rejects an All Stars hand.** The runs captured a card ability `140` that prints
+  `-2 Opp Power, Min 1`, the All Stars bonus's text over the same record. As the lowest
+  structural alias it is now the registry definition catalog preparation names for that bonus,
+  while a capture observes the bonus as `156`, and the worker's strict clan-bonus identity check
+  (`validate_observed_source`, "clan bonuses retain the registry definition selected by
+  preparation") refuses the request. `deno task rust:worker:test` fails at 1069813 for this
+  reason; every other decision in that gate still matches the TypeScript search. In live play
+  such a hand falls back to TypeScript under `--rust=use`. Accepting a structural alias there,
+  or pinning each clan bonus to the id the server sends for it, would fix it.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

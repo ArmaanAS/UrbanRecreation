@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 491 captured battles
-(479 replay-ready; 12 ignored because they stopped mid-match): 475 replay exactly and 4
+Status from `deno test -A --no-check tests/replay/` against 586 captured battles
+(574 replay-ready; 12 ignored because they stopped mid-match): 570 replay exactly and 4
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -64,7 +64,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 562 | 12 | A condition prefix no longer swallows an Impose (1517397) |
 | 2026-09-27 | 568 | 6 | A capped increase is measured before its card's same-stat bonus (1516811, 1516832, 1516846, 1516906, 1517271, and the single point 1508932) |
 | 2026-09-27 | 569 | 5 | Latched permanents pay after the round's own effects (1517029; Rust semantic revision 80) |
-| 2026-09-27 | 570 | 4 | Versus and After read an Oculus by its printed clan (1517121) |
+| 2026-09-27 | 570 | 4 | Versus and After read an Oculus by its printed clan (1517121); 1517236 is a new single point (an opposing `Players Life` gain revives a knocked-out player) |
 
 ## Fixed
 
@@ -85,9 +85,9 @@ even when infiltrated into the Frozn clan, do not activate this condition" (5602
 the Oculus (`[clan:56][clan:60]`, 5585 and 5750) say "played an Oculus or Tolvack character". The
 engine recorded the previous card's infiltrated clan, so an Oculus that joined Frozn would have
 fired Noma's `After [clan:47]` and missed the Tolvack bonus. It now records the printed clan. No
-captured round tells the two apart for After: in the five After rounds that follow an Oculus
-(1022847 r3, 1066481 r3, 1073107 r1, 1090096 r1), the Oculus had joined Tolvack and the text names
-both. A Versus that names the clan an Oculus joined (a Versus [Montana] against Dark Sentogan
+captured round tells the two apart for After: in the four rounds where an After source follows an
+Oculus (1022847 r3, 1066481 r3, 1073107 r1, 1090096 r1), the Oculus had joined Tolvack and every
+text there either names both or neither. A Versus that names the clan an Oculus joined (a Versus [Montana] against Dark Sentogan
 here) is unobserved; the rule reads it as printed, so it does not count. Fixed 1517121. Tests in
 `tests/ability/VersusClan.test.ts` and `tests/ability/After.test.ts`. The Rust engine already reads
 canonical clans for both and refuses a draw where an infiltrating Oculus would make the canonical
@@ -873,6 +873,21 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   before the game switches to night. It is the only such round.
 - 1508932 r2, fixed with five Razor rounds: see "A capped increase is measured before its
   card's bonus" above.
+- 1517236 r3: Slobodan Cr's `+1 Players Life` ("If Slobodan Cr wins the fight, the two competing
+  players will receive 1 Life points at the end of the round", `abilityData` 2433) wins for 3
+  Damage against a player on 2. The server ends that player on 1, not 0: the result block says
+  `byKo: false` and `life: 1`, and both players get a `life +1` post entry. So the damage is
+  floored at 0 and the opposing half of the gain then revives the knocked-out player; the engine
+  guards an opposing Life modifier with `data.opp.life > 0` and ends the match on 0. It is the
+  only captured round with a `Players Life` card in a round that knocks someone out (El Toucan,
+  Ambazaak and El Cascabel's `Victory Or Defeat : +N Players Life` have eleven rounds between
+  them, none a knockout). It sits beside Naja Ld's `Victory Or Defeat : +3 Players Pillz`, whose
+  own half pays its knocked-out owner (1024592 r2, 1024732 r3, identity-locked in
+  `Condition.compile`), so the likely rule is "a Players gain pays both players through the
+  knockout" - but Kubra, Argos and El Gascaro show ordinary gains stopping at a knockout, and the
+  Naja exception was only coded after its second round. A second needs a Players Life card
+  (Slobodan Cr, El Toucan, Ambazaak, El Cascabel) in a round where either player ends on 0, or
+  where its owner is knocked out while losing. The Rust engine refuses `2433`.
 - 1515692 r3: Shawnia's `+3 Attack Per Opp. Damage` against Helsa level 2 (8/2), whose La
   Junta bonus `Damage +2` takes her Damage to 4. The server has 7 x 1 + 3 x 2 = 13, the
   printed Damage; the engine reads the modified 4 and has 19. The only other round that
@@ -968,7 +983,16 @@ Power And Damage guards both cards**, and 1507713 r3 turned out to be the second
 ## Fresh capture backlog
 
 Nothing is untriaged. The four remaining mismatches are single points waiting on a second
-capture: 1079078, 1025413, 1508932 and 1515692. The 2026-09-27 autoplay run (53 Training
+capture: 1079078, 1025413, 1515692 and 1517236. Autoplay runs 2-3 (95 Training battles,
+2026-09-27, none stopped before its first round resolved) brought eleven mismatches, and they
+came down to six rules: `Stop:` permanents latching unstopped (1516740, 1517397, 1517419), a
+prefixed Impose that compiled to nothing (1517397 again), a capped increase measured after its
+card's bonus (Razor in 1516811, 1516832, 1516846, 1516906 and 1517271, which also settled the
+single point 1508932), latched permanents paying before the round's own effects (1517029),
+Versus reading an infiltrated Oculus by its host clan (1517121), all fixed above, and
+Slobodan Cr's `+1 Players Life` reviving a knocked-out player (1517236), filed with the single
+points. None was a capture artifact: each diff is in the live resolution snapshot, and 1517236's
+Life is the result block's. The first autoplay run (53 Training
 battles, four of them stopped before their first round resolved) brought six mismatches: a
 recap snapshot (1514649), three rounds of the end-of-round order (1514836, 1515298, 1515451),
 a single-stat Protection (1515574), all fixed above, and 1515692, filed with the single points.
