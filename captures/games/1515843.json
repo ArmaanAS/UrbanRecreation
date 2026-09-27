@@ -1,0 +1,493 @@
+{
+  "id": 1515843,
+  "capturedAt": "2026-09-27T16:11:00.600Z",
+  "creationTime": 1790525460,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1312,
+          "name": "Clifford",
+          "clan": "Bangers",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1136,
+            "description": "Protection: Attack"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 1376,
+          "name": "DJ LBerto",
+          "clan": "Bangers",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1201,
+            "description": "Defeat: +2 Pillz Max. 10"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 292,
+          "name": "MC Decay",
+          "clan": "Bangers",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 140,
+            "description": "-2 Opp Power, Min 1"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        },
+        {
+          "id": 186,
+          "name": "Platoona",
+          "clan": "Bangers",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 5570,
+            "description": "Versus [clan:56][clan:28] : Defeat: -1 Opp. Pillz, Min 2"
+          },
+          "bonus": {
+            "id": 43,
+            "description": "Power +2"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2581,
+          "name": "Gorgorax",
+          "clan": "Dominion",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 4766,
+            "description": "Asymmetry: +1 Attack Per Life Left"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1751,
+          "name": "Lord Oon Ld",
+          "clan": "Dominion",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 5381,
+            "description": "Equalizer: -4 Opp Attack, Min 5"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1662,
+          "name": "Digging Bill",
+          "clan": "GhosTown",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1479,
+            "description": "-6 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 1441,
+            "description": "Day: Power And Damage + 1"
+          }
+        },
+        {
+          "id": 1709,
+          "name": "Tannen",
+          "clan": "GhosTown",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1538,
+            "description": "Day: Backlash: - 2 Life Min 4"
+          },
+          "bonus": {
+            "id": 1441,
+            "description": "Day: Power And Damage + 1"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 1751,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1790525461725
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1376,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": true,
+          "t": 1790525463460
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 6,
+          "won": false
+        },
+        {
+          "power": 5,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 10,
+          "won": true
+        }
+      ],
+      "life": [
+        10,
+        15
+      ],
+      "pillz": [
+        10,
+        11
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 2957
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 292,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790525475229
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 2581,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1790525476325
+        }
+      ],
+      "resolution": [
+        {
+          "power": 4,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 4,
+          "won": false
+        },
+        {
+          "power": 4,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 43,
+          "won": true
+        }
+      ],
+      "life": [
+        2,
+        15
+      ],
+      "pillz": [
+        10,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 12856
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1709,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790525476413
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1312,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790525486240
+        }
+      ],
+      "resolution": [
+        {
+          "power": 9,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 9,
+          "won": false
+        },
+        {
+          "power": 9,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 9,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        13
+      ],
+      "pillz": [
+        7,
+        5
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 64101,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": false,
+          "quantity": 2
+        }
+      ],
+      "durationMs": 9827
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 0,
+      "pillz": 7,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 13,
+      "pillz": 5
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 9
+      },
+      {
+        "type": "characterXP",
+        "value": 600
+      }
+    ],
+    "t": 1790525486340
+  },
+  "finalStatus": "done",
+  "snapshots": 8,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Gorgorax",
+      "Lord Oon Ld",
+      "Digging Bill",
+      "Tannen",
+      "Clifford",
+      "DJ LBerto",
+      "MC Decay",
+      "Platoona"
+    ],
+    "levels": [
+      5,
+      3,
+      4,
+      5,
+      5,
+      2,
+      2,
+      4
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          1,
+          false
+        ],
+        "s2": [
+          1,
+          1,
+          true
+        ],
+        "p1life": 15,
+        "p2life": 10,
+        "p1pillz": 11,
+        "p2pillz": 10,
+        "r1": {
+          "power": 5,
+          "damage": 5,
+          "attack": 10,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 4,
+          "attack": 6,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          0,
+          false
+        ],
+        "s2": [
+          0,
+          6,
+          false
+        ],
+        "p1life": 15,
+        "p2life": 2,
+        "p1pillz": 5,
+        "p2pillz": 10,
+        "r1": {
+          "power": 4,
+          "damage": 8,
+          "attack": 43,
+          "won": true
+        },
+        "r2": {
+          "power": 4,
+          "damage": 4,
+          "attack": 4,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          3,
+          0,
+          false
+        ],
+        "s2": [
+          0,
+          0,
+          true
+        ],
+        "p1life": 13,
+        "p2life": 0,
+        "p1pillz": 5,
+        "p2pillz": 7,
+        "r1": {
+          "power": 9,
+          "damage": 8,
+          "attack": 9,
+          "won": true
+        },
+        "r2": {
+          "power": 9,
+          "damage": 8,
+          "attack": 9,
+          "won": false
+        }
+      }
+    ]
+  }
+}
