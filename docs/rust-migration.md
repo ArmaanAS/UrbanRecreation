@@ -4394,8 +4394,7 @@ gap.
 #### Two registry regressions from the autoplay runs 2-3 data
 
 The 242 records the 2026-09-27 autoplay runs 2-3 added to `captures/abilities.json` cost the
-strict projection in two places. Neither is fixed here, because each is a policy choice, not a
-data update:
+strict projection in two places. The notes below say what each was and how it was fixed:
 - **Twelve draws dropped out.** Scar's `2470` prints `Copy: Opp. Power` over a record with
   `value: 5, valueMin: 8`, where the other seventeen `Copy: Opp. Power` records print zeros. The
   description is now ambiguous, and the Copy path lists its provenance aliases with
@@ -4412,8 +4411,31 @@ data update:
   (`validate_observed_source`, "clan bonuses retain the registry definition selected by
   preparation") refuses the request. `deno task rust:worker:test` fails at 1069813 for this
   reason; every other decision in that gate still matches the TypeScript search. In live play
-  such a hand falls back to TypeScript under `--rust=use`. Accepting a structural alias there,
-  or pinning each clan bonus to the id the server sends for it, would fix it.
+  such a hand falls back to TypeScript under `--rust=use`.
+
+  **Fixed in catalog-context revision 9.** A clan bonus now carries the registry identity its
+  captures send wherever another record shares its text: `CLAN_BONUS_REGISTRY_BRIDGES` lists
+  (effective clan, catalog bonus id, text, captured id), and the generic path takes that id
+  instead of the lowest structural alias, like the Piranas and GHEIST Stop bridges. Five rows,
+  each one id in every capture of that clan's bonus (and of an Oculus infiltrated into it):
+  - All Stars `-2 Opp Power, Min 1` is `156` (102 captured cards), where MC Decay L2's ability
+    `140` is lower - the regression;
+  - Dominion `Growth: -1 Opp Power, Min 4` is `1578` (86), where Aamir L3's ability `1159` is
+    lower. This one predates the runs;
+  - Bangers `Power +2` is `43` (83), La Junta `Damage +2` is `38` (58) and Sentinel `Attack +8`
+    is `93` (65), whose text another clan's bonus shares (Ulu Watu's `39`, Fang Pi Clang's `36`,
+    Junkz's `37`). These predate the runs too.
+
+  The effects are the same record in every case, so only the identity moves. A bridged id must
+  still be a structural alias of the printed text, or the source is refused. The four
+  pre-existing rows had the same worker refusal all along; the gate simply held no such hand.
+  `strict_catalog_clan_bonus_identity_is_the_captured_one_in_every_prepared_draw` checks every
+  clan bonus of every prepared captured draw against the captured id: without the bridges it
+  lists 1009234 (Dominion), 1011712 (Bangers), 1024592, 1024732 and 1025031 (La Junta), 1069813
+  (All Stars) and more. `strict_catalog_match_separates_same_text_clans_and_executes_support`
+  now expects Fang Pi Clang on `36` and La Junta on `38`. `deno task rust:worker:test` passes
+  again. The eligible and scanned draws, the gate and the compiler revision do not change;
+  `tests/expect/rust-provenance.json` moves to catalog-context 9.
 
 #### The clan gate, measured but not taken
 

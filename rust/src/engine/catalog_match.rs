@@ -168,6 +168,25 @@ const OBLIVION_CLAN_ID: u32 = 57;
 const OBLIVION_CATALOG_BONUS_ID: u32 = 56;
 const OBLIVION_COPY_ABILITY_BONUS_REGISTRY_ID: u32 = 2918;
 const COPY_OPPONENT_ABILITY_DESCRIPTION: &str = "Copy: Opp. Ability";
+/// Clan bonuses whose text other registry records share, so the lowest structural alias of
+/// the text - which the generic path resolves a source to - is not the record their captures
+/// carry. Each row is (effective clan id, catalog bonus id, printed text, captured registry
+/// id), and every capture of that clan's bonus (or of an Oculus infiltrated into it) sends
+/// that id. Two of them are taken over by a printed card ability of the same text and record:
+/// MC Decay L2's `140` since the 2026-09-27 autoplay runs 2-3 (All Stars sends `156`), and
+/// Aamir L3's `1159` (Dominion sends `1578`). The other three share their text with another
+/// clan's bonus: Bangers' `43` with Ulu Watu's `39`, La Junta's `38` with Fang Pi Clang's
+/// `36` and Sentinel's `93` with Junkz's `37`. Resolving them to the lowest alias gave the
+/// right effect under the wrong identity, which the JSONL worker's clan-bonus identity check
+/// refuses. A bridged id must still be a structural alias of the printed text
+/// (`lookup_description`), so a changed record fails closed.
+const CLAN_BONUS_REGISTRY_BRIDGES: [(u32, u32, &str, u32); 5] = [
+    (38, 37, "-2 Opp Power, Min 1", 156),
+    (53, 52, "Growth: -1 Opp Power, Min 4", 1578),
+    (31, 30, "Power +2", 43),
+    (27, 25, "Damage +2", 38),
+    (33, 31, "Attack +8", 93),
+];
 /// Revision 5 (compiler revision 69) lets a selected night variant, which the catalog gives
 /// no numeric identity, reach the post-round grammars that print a `Night:` form - by its
 /// exact text in a night match only (`require_catalog_alias_or_night_variant`).
@@ -183,7 +202,10 @@ const COPY_OPPONENT_ABILITY_DESCRIPTION: &str = "Copy: Opp. Ability";
 /// a lone Ashigaru L5, whose `Counter-attack` (printed id 124) decides only the round-one
 /// first mover. Both kinds of Leader source are `Inert`, and `leader_hand_hazard` still
 /// refuses the contexts no captured round shows.
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 8;
+/// Revision 9 (compiler revision 80) gives five clan bonuses the registry identity their
+/// captures carry rather than the lowest structural alias of their text
+/// (`CLAN_BONUS_REGISTRY_BRIDGES`). The effects are unchanged; only the identity is.
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 9;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -2789,7 +2811,29 @@ fn prepare_catalog_source(
             source,
         }
     })?;
-    let definition = match_.definition();
+    let definition =
+        match clan_bonus_registry_bridge(source_kind, effective_clan_id, catalog_id, description) {
+            Some(bridged) if match_.alias_ids().contains(&bridged) => registry
+                .get(bridged)
+                .expect("a structural alias id is a registry definition"),
+            Some(_) => {
+                let definition = match_.definition();
+                return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+                    player,
+                    hand_slot,
+                    source_kind,
+                    catalog_id,
+                    description: description.to_owned(),
+                    registry_definition_id: definition.id(),
+                    registry_reasons: definition
+                        .compiled()
+                        .unsupported_reasons()
+                        .to_vec()
+                        .into_boxed_slice(),
+                });
+            }
+            None => match_.definition(),
+        };
     let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) else {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player,
@@ -3453,6 +3497,26 @@ fn prepare_reanimate_life_source(
             ))
         },
     )
+}
+
+/// The captured registry identity of an active clan bonus whose text the registry shares with
+/// another record (`CLAN_BONUS_REGISTRY_BRIDGES`): the Bonus slot, the effective clan, the
+/// catalog bonus id and the exact text must all match a row.
+fn clan_bonus_registry_bridge(
+    source_kind: CombatStatEffectSourceV1,
+    effective_clan_id: u32,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Option<u32> {
+    if source_kind != CombatStatEffectSourceV1::Bonus {
+        return None;
+    }
+    CLAN_BONUS_REGISTRY_BRIDGES
+        .iter()
+        .find(|(clan, bonus, text, _)| {
+            *clan == effective_clan_id && catalog_id == Some(*bonus) && *text == description
+        })
+        .map(|(_, _, _, registry_id)| *registry_id)
 }
 
 /// Resolves only the reviewed recovery identities. In particular, catalog bonus id 43 is

@@ -442,7 +442,14 @@ fn strict_catalog_match_separates_same_text_clans_and_executes_support() {
     };
     assert_eq!((fpc.catalog_id, junta.catalog_id), (Some(23), Some(25)));
     assert_eq!(fpc.description, junta.description);
-    assert_eq!(fpc.registry_definition_id, junta.registry_definition_id);
+    // One structural record, two captured identities: Fang Pi Clang's bonus is sent as `36`
+    // and La Junta's as `38`, and since catalog-context revision 9 each keeps its own
+    // (`CLAN_BONUS_REGISTRY_BRIDGES`). Until then both resolved to the lowest alias, `36`.
+    assert_eq!(
+        (fpc.registry_definition_id, junta.registry_definition_id),
+        (36, 38)
+    );
+    assert_eq!(fpc.registry_alias_ids, junta.registry_alias_ids);
 
     let CatalogCombatStatSourceDispositionV1::Execute {
         identity: rescue, ..
@@ -3071,7 +3078,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 8);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 9);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -5069,6 +5076,89 @@ fn captured_input(id: u64) -> CatalogCombatStatMatchInputV1 {
         night: capture["night"].as_bool().unwrap(),
         players: ByPlayer::new(side(0), side(1)),
     }
+}
+
+/// Catalog-context revision 9: every clan bonus a strictly prepared captured draw executes
+/// carries the registry identity its capture sent, which is what the JSONL worker's clan-bonus
+/// identity check compares. Five clan bonuses share their text with a lower registry record
+/// and are bridged to their captured id (`CLAN_BONUS_REGISTRY_BRIDGES`); before revision 9
+/// they resolved to that lower record, and since the 2026-09-27 autoplay runs 2-3 captured MC
+/// Decay L2's ability `140` the All Stars bonus did too, which failed the worker gate at
+/// 1069813. An Oculus infiltrated into one of the five clans carries that clan's bonus and id.
+#[test]
+fn strict_catalog_clan_bonus_identity_is_the_captured_one_in_every_prepared_draw() {
+    let catalog = catalog();
+    let registry = registry();
+    let mut paths = fs::read_dir(root_path("captures/games"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    let mut checked = 0_usize;
+    let mut bridged = BTreeSet::new();
+    let mut mismatches = Vec::new();
+    for path in paths {
+        let capture: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let id = capture["id"].as_u64().unwrap();
+        let players = capture["players"].as_array().unwrap();
+        if players.len() != 2
+            || players
+                .iter()
+                .any(|player| player["hand"].as_array().unwrap().len() != 4)
+        {
+            continue;
+        }
+        let Ok(prepared) =
+            CatalogCombatStatMatchV1::new(captured_input(id), &catalog, &registry, PROJECTION)
+        else {
+            continue;
+        };
+        for (side, player) in PlayerId::ALL.into_iter().enumerate() {
+            let mut cards = players[side]["hand"].as_array().unwrap().clone();
+            cards.sort_by_key(|card| card["index"].as_u64().unwrap());
+            for (slot, card) in cards.iter().enumerate() {
+                let identity = match &prepared.preparation()[player][slot].bonus {
+                    CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
+                    | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. }
+                    | CatalogCombatStatSourceDispositionV1::Inert { identity, .. } => identity,
+                    _ => continue,
+                };
+                let captured = card["bonus"]["id"].as_u64().map(|id| id as u32);
+                checked += 1;
+                if captured != Some(identity.registry_definition_id) {
+                    mismatches.push((id, side, slot, captured, identity.registry_definition_id));
+                } else if identity.registry_alias_ids.first()
+                    != Some(&identity.registry_definition_id)
+                {
+                    bridged.insert((
+                        identity.description.clone(),
+                        identity.registry_definition_id,
+                    ));
+                }
+            }
+        }
+    }
+    assert!(checked >= 900, "{checked}");
+    assert_eq!(mismatches, Vec::new());
+    // The bridged identities the eligible draws reach; the Piranas and GHEIST Stops and the
+    // Vortex recovery are bridged by their own paths.
+    let expected: BTreeSet<(String, u32)> = [
+        ("-2 Opp Power, Min 1", 156),
+        ("Attack +8", 93),
+        ("Damage +2", 38),
+        ("Growth: -1 Opp Power, Min 4", 1578),
+        ("Power +2", 43),
+        ("Stop Opp. Ability", 94),
+        ("Stop Opp. Bonus", 333),
+    ]
+    .into_iter()
+    .map(|(text, id)| (text.to_owned(), id))
+    .collect();
+    assert_eq!(bridged, expected);
 }
 
 /// Revision 70: every draw the slice unlocks, prepared from its captured hands. The carrier
