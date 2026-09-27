@@ -15,8 +15,9 @@ export default class ProtectionModifier extends Modifier {
   prot: Prot;
   both: boolean;
   /**
-   * Also refuse the opposing card's reductions of the protected Power or Damage, not only
-   * a Cancel. Set for exactly `Protection: Power And Damage`, which the server shows
+   * Refuse the opposing card's reductions of the protected Power or Damage. (It used to be
+   * "also", beside resisting a Cancel; the Cancel wins, see `apply`.) Set for exactly
+   * `Protection: Power And Damage`, which the server shows
    * keeping both stats at their own values against an opposing ability, bonus or Support
    * reduction: Miss Pandora stays 7/4 against Sue's "-1 Opp Power And Damage, Min 3"
    * (1069506 r0, 7 x 5 = 35), Nebula keeps 7 Power against Olga Cr's "-2 Opp Power, Min 5"
@@ -66,28 +67,35 @@ export default class ProtectionModifier extends Modifier {
     return this;
   }
 
+  /**
+   * A stat Protection sets only the guard: it does not shield its card's own modifiers of the
+   * stat from an opposing `Cancel Opp. <stat> Modif.` ("Any modifier of the opposing character
+   * affecting attack will be deactivated", captures/abilities.json 1163). Three rounds show the
+   * Cancel winning. Gemini's `Protection: Attack` keeps nothing of its Hive bonus `Equalizer:
+   * -3 Opp Attack, Min 5` against the Raptors bonus `Cancel Opp. Attack Modif.`: Sauropsite
+   * fights at 8 x 7 = 56 in 1519871 r0 and St4rve Ld at 6 x 3 + 5 x 4 (Brawl) = 38 in 1521010
+   * r0, where the Equalizer would take 9 and 6. Davis's `Protection : Damage` keeps nothing of
+   * his La Junta `Damage +2` against Lenora's `Cancel Opp. Damage Modif.`: 3 Damage, not 5
+   * (1520579 r1). A stat's `prot` used to be set here, which made its `blocked` false under the
+   * Cancel. None of the three rounds shows whether the Cancel also switches off the guard (an
+   * opposing reduction of the protected stat beside the Cancel); the guard stays.
+   */
   apply(data: BattleData) {
     if (this.both) {
       switch (this.prot) {
         case Prot.POWER:
-          data.oppCard.power.prot = true;
-          data.card.power.prot = true;
           if (this.guard) {
             data.oppCard.power.guard = true;
             data.card.power.guard = true;
           }
           break;
         case Prot.DAMAGE:
-          data.oppCard.damage.prot = true;
-          data.card.damage.prot = true;
           if (this.guard) {
             data.oppCard.damage.guard = true;
             data.card.damage.guard = true;
           }
           break;
         case Prot.ATTACK:
-          data.oppCard.attack.prot = true;
-          data.card.attack.prot = true;
           if (this.guard) {
             data.oppCard.attack.guard = true;
             data.card.attack.guard = true;
@@ -105,15 +113,12 @@ export default class ProtectionModifier extends Modifier {
     } else {
       switch (this.prot) {
         case Prot.POWER:
-          data.card.power.prot = true;
           if (this.guard) data.card.power.guard = true;
           break;
         case Prot.DAMAGE:
-          data.card.damage.prot = true;
           if (this.guard) data.card.damage.guard = true;
           break;
         case Prot.ATTACK:
-          data.card.attack.prot = true;
           if (this.guard) data.card.attack.guard = true;
           break;
         case Prot.ABILITY:

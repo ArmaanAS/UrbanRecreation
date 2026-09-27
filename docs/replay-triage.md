@@ -67,8 +67,40 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 570 | 4 | Versus and After read an Oculus by its printed clan (1517121); 1517236 is a new single point (an opposing `Players Life` gain revives a knocked-out player) |
 | 2026-09-27 | 748 | 13 | +188 Training captures (autoplay runs 3-5): nine fresh mismatches (1518052, 1518765, 1519318, 1519333, 1519829, 1519871, 1520327, 1520579, 1521010) |
 | 2026-09-27 | 752 | 9 | `+N Attack Per Opp. Damage` counts the printed opposing Damage (1515692, 1518052, 1518765, 1519829; Rust semantic revision 81) |
+| 2026-09-27 | 755 | 6 | An opposing `Cancel Opp. <stat> Modif.` beats a stat Protection (1519871, 1520579, 1521010) |
 
 ## Fixed
+
+### An opposing Cancel beats a stat Protection - 1519871, 1520579, 1521010 (fixed)
+Three autoplay rounds, two cards and two stats, have a stat Protection's own modifier of that stat
+meet an opposing `Cancel Opp. <stat> Modif.` ("Any modifier of the opposing character affecting
+attack will be deactivated. This applies to attack reductions AND increases", 1163), and each time
+the Cancel wins:
+- 1519871 r0: Gemini level 3's `Protection: Attack` beside its Hive bonus `Equalizer: -3 Opp
+  Attack, Min 5`, against the Raptors bonus `Cancel Opp. Attack Modif.`: Sauropsite fights at
+  8 x 7 = 56, where the Equalizer would take 3 x 3 (the engine had 47).
+- 1521010 r0: the same Gemini against St4rve Ld level 2, 6 x 3 + 5 x 4 (`Brawl: Attack +5` over
+  four Hive) = 38, where the Equalizer would take 3 x 2 (32).
+- 1520579 r1: Davis level 3's `Protection : Damage` beside his La Junta `Damage +2`, against
+  Lenora's `Cancel Opp. Damage Modif.`: Davis wins on his printed 3 Damage (the engine had 5).
+
+`ProtectionModifier` set the protected stat's `prot` bit, which makes the stat's `blocked`
+(cancelled and not protected) false, so an opposing Cancel left the card's own modifiers of the
+stat alone. That was the engine's original model of every Protection ("resisted a Cancel only",
+see "Protection: Power And Damage refuses an opposing reduction"), and no round had pinned it for
+a stat: over the corpus these three are the only rounds where a stat Protection's card has a
+modifier of the protected stat facing a Cancel of it. 1515809 r3 (Clifford's `Protection: Attack`,
+whose only other text is `Power +2`), 1519762 r2 (Gregor Ld's `Asymmetry: Protection: Power`,
+with nothing of its own on Power) and 962404 r1 (Nebula's `Protection: Power And Damage` against
+a Cancel of Attack) have nothing for the Cancel to decide. A stat Protection now sets only its
+guard, which still refuses an opposing reduction of the stat. Whether the Cancel also switches
+the guard off - an opposing reduction of the protected stat beside the Cancel - is unobserved,
+so the guard stays. `Protection: Ability` and `Protection: Bonus` keep resisting a Stop. Fixed
+1519871, 1520579 and 1521010. Tests in `tests/ability/ProtectionCancel.test.ts`. The Rust engine
+already let the Cancel win (its cancellation and protection masks are independent in
+`apply_power_damage_effect`), and it refuses a single-stat Protection facing an opposing Cancel
+of its stat (`SingleStatProtectionAgainstUnpinnedEffect`); these rounds pin that meeting for the
+Attack and Damage forms, for a slice that wants to lift it.
 
 ### `+N Attack Per Opp. Damage` counts the printed opposing Damage - 1515692, 1518052, 1518765, 1519829 (fixed)
 1515692 r3 was a single point: Shawnia's `+3 Attack Per Opp. Damage` against Helsa level 2

@@ -296,8 +296,9 @@ export class PowerStat implements Stat {
   }
   /**
    * Refuses the opposing card's reductions of this stat (`Protection: Power And Damage`,
-   * `Protection: Power`). Separate from `prot`, which only resists a Cancel: a Cancel of
-   * the stat is resisted by every Protection, a reduction only by one that sets this.
+   * `Protection: Power`). Separate from `prot`, which resists a Cancel: no stat Protection
+   * sets a stat's `prot` any more, since an opposing Cancel of the stat beats the Protection
+   * (1519871, 1520579, 1521010; `ProtectionModifier.apply`). Tune Out still clears it.
    */
   get guard(): boolean {
     return !!(this.d.a >> 26 & 1);
