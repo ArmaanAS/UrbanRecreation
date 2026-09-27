@@ -213,7 +213,7 @@
         {
           "power": 7,
           "damage": 6,
-          "damageAfter": 6,
+          "damageAfter": 4,
           "attack": 49,
           "won": true
         }

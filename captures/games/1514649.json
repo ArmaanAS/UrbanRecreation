@@ -217,7 +217,7 @@
           "power": 5,
           "damage": 4,
           "damageAfter": 4,
-          "attack": 14,
+          "attack": 20,
           "won": false
         }
       ],
@@ -467,7 +467,7 @@
         "r2": {
           "power": 5,
           "damage": 4,
-          "attack": 14,
+          "attack": 20,
           "won": false
         }
       },

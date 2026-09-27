@@ -265,7 +265,7 @@
         {
           "power": 6,
           "damage": 4,
-          "damageAfter": 4,
+          "damageAfter": 1,
           "attack": 6,
           "won": false
         },

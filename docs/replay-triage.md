@@ -54,8 +54,25 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 408 | 6 | A Cancel Opp. Modif. spares the canceller's own reductions (1089974, 1506931, 1507792); Exchange and Impose run before every increase (1059149, 1507008, 874712) |
 | 2026-09-27 | 412 | 2 | Protection: Cards guards both cards (1507819); Growth: Opp. Attack raises the opposing Attack (1414749, 1507713); same-family permanents replace (1506438) |
 | 2026-09-27 | 427 | 3 | +18 Training captures (Labs 6-8, the Team Leaders); an opposing resource Cancel deactivates permanents for its round (1508676); 1508712 is a third Protection: Cards round; 1508932 is a new single point (a binding cap beside a same-stat bonus) |
+| 2026-09-27 | 470 | 9 | +53 Training captures (autoplay run 1): six fresh mismatches (1514649, 1514836, 1515298, 1515451, 1515574, 1515692) |
+| 2026-09-27 | 471 | 8 | A recap snapshot no longer overwrites a round's resolution (1514649) |
 
 ## Fixed
+
+### A recap snapshot is not the round's resolution - 1514649 (fixed)
+1514649 r0 failed on El Toucan's Attack: the engine had 20, the record 14. El Toucan level 3
+(7/4) is cut to 5 Power by Kaskar's `Equalizer: -1 Opp Pow. & Dam., Min 5` (x3 stars, held at
+Min 5) and adds its Huracan `+1 Attack Per Life Left` on 15 Life: 5 + 15 = 20, which is what
+the snapshot taken as the round resolved says. The 14 came from a later snapshot that
+reported round 0 again. After a game the site fetches recaps of the earlier rounds, and the
+server rebuilds each one with the Life of the moment - 9 after round one, so 5 + 9 = 14. The
+extractor kept the last snapshot that showed a round's Attack, so the recap overwrote the live
+value. `ExtractBattle.ts` now ignores a snapshot whose round is below one it has already seen,
+for anything a live snapshot has already recorded. 27 captures carry such recaps; re-extracting
+changed 1514649's Attack and only the transport field `damageAfter` of seven others (925169,
+1080464, 1090887, 1130454, 1414581, 1514836, 1514916), which no replay reads. Fixed 1514649.
+The first reading of this round, that El Toucan's bonus counts something other than the Life
+left, was the artifact: every other captured `Per Life Left` round reads the full Life.
 
 ### A stale final round is attributed from the result block
 When the extractor cannot tell which side is the recorder's (`mySide` is null), it could not

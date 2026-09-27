@@ -312,14 +312,14 @@
         {
           "power": 6,
           "damage": 1,
-          "damageAfter": 1,
+          "damageAfter": 5,
           "attack": 36,
           "won": true
         },
         {
           "power": 6,
           "damage": 9,
-          "damageAfter": 9,
+          "damageAfter": 10,
           "attack": 30,
           "won": false
         }

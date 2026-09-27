@@ -222,7 +222,7 @@
         {
           "power": 9,
           "damage": 5,
-          "damageAfter": 5,
+          "damageAfter": 2,
           "attack": 18,
           "won": false
         }

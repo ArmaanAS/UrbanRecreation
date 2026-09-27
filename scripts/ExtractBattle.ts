@@ -244,8 +244,17 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
   // Walk the snapshots in order to recover move order, timing and transient resolution values.
   const seen = new Set<string>();
   const roundStart = new Map<number, number>();
+  let latestRound = -1;
   for (const { t, battle } of statuses) {
     if (!roundStart.has(battle.round)) roundStart.set(battle.round, t);
+    // A snapshot whose round is below one already seen is a recap of an earlier round, not
+    // the live resolution. The site fetches them after a game (27 captures carry some), and
+    // the server rebuilds them from the current life: in 1514649 the recap of round 0 put
+    // El Toucan's `+1 Attack Per Life Left` at the Life left after round 1 (5 + 9 = 14),
+    // where the snapshot taken as round 0 resolved had 5 + 15 = 20. A recap never replaces
+    // what the live snapshots recorded.
+    const recap = battle.round < latestRound;
+    latestRound = Math.max(latestRound, battle.round);
     for (const side of [0, 1] as Side[]) {
       for (const c of battle[sides[side]].characters as Character[]) {
         if (c.roundPlayed < 0) continue;
@@ -257,6 +266,7 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
           // pillz/fury are hidden until the round resolves; filled in from the final snapshot below.
           round.moves.push({ side, index: c.index, cardId: c.id, pillz: Math.max(0, c.pillzUsed - 1), pillzUsed: c.pillzUsed, fury: !!c.isFury, t });
         }
+        if (recap && round.resolution[side]) continue;
         if (c.roundAttack >= 0) {
           round.resolution[side] = { power: c.roundPower, damage: c.roundDamage, damageAfter: c.roundDamage, attack: c.roundAttack, won: !!c.roundWon };
         } else if (round.resolution[side]) {
