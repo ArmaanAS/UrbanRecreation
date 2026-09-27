@@ -62,8 +62,39 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 559 | 15 | +95 Training captures (autoplay runs 2-3): eleven fresh mismatches (1516740, 1516811, 1516832, 1516846, 1516906, 1517029, 1517121, 1517236, 1517271, 1517397, 1517419) |
 | 2026-09-27 | 561 | 13 | A `Stop:` permanent latches only when its ability is stopped (1516740, 1517419; 1517397 moves on to round 3) |
 | 2026-09-27 | 562 | 12 | A condition prefix no longer swallows an Impose (1517397) |
+| 2026-09-27 | 568 | 6 | A capped increase is measured before its card's same-stat bonus (1516811, 1516832, 1516846, 1516906, 1517271, and the single point 1508932) |
 
 ## Fixed
+
+### A capped increase is measured before its card's bonus - Razor and 1508932 (fixed)
+Five autoplay rounds failed on one card: Razor level 4 (Ulu Watu, 5/6), `+1 Power Per Life Lost
+Max. 9` (`abilityData` 5556: "increased by 1 point for every Life point lost ... up to a maximum
+of 9"), beside its clan bonus `Power +2`. The server has 11 Power every time:
+- 1516811 r1: 5 lost, 5 + 5 = 10 capped at 9, + 2 = 11 (the engine had 9);
+- 1516832 r1: 7 lost, 12 capped at 9, + 2 = 11;
+- 1516846 r1: 5 lost, 11, then Kruger's `-2 Opp Power And Damage, Min 4` = 9 (the engine had 7);
+- 1516906 r2: 6 lost, 11 capped at 9, + 2 = 11;
+- 1517271 r1: 4 lost, 9, + 2 = 11, and 11 x 8 = 88 (the engine had 72).
+
+The engine ran the bonus first, as it does for every same-phase pair, and capped the total:
+5 + 2 + lost, capped at 9. That is exactly the single point 1508932 r2 recorded (P. Steevens Cr
+lv4's `+1 Damage Per Life Lost Max. 7` beside La Junta's `Damage +2`, 9 lost: the server's 9 is
+2 + 9 capped at 7, + 2), so six rounds on two cards and two stats now say the cap is measured
+before the bonus lands. The two readings the single point left open - the cap measured on the
+printed stat, or the capped ability before the bonus - agree on every captured shape: only card
+abilities print a capped combat-stat increase (no clan bonus does), and a card has one bonus.
+They would part only where something writes the stat before the card's own modifiers, such as
+an Exchange or an Impose, which no capture shows beside a cap.
+
+`Ability.capsOwnStat` now queues a card ability that caps an own Power, Damage or Attack increase
+at the front of its phase (`Events.addFirst`), ahead of the bonus. It is a compile-time choice,
+so the solver's hot path is unchanged. The six other binding caps the corpus has (Wachtmann,
+Veles Cr, Sir Taco, Noeptus, KinGreow twice, Jochar) are on untouched printed values and move
+nothing. Fixed 1508932, 1516811, 1516832, 1516846, 1516906 and 1517271. Tests in
+`tests/ability/CapBeforeBonus.test.ts`. The Rust engine refuses Razor's and P. Steevens Cr's
+texts, and refuses its one admitted capped increase, Jochar's `Power +N, Max. M`, wherever
+another own Power increase could meet it (`CappedPowerIncreaseAgainstOwnPowerIncrease`); these
+rounds pin that order for a slice that wants to lift it.
 
 ### A condition prefix no longer swallows an Impose - 1517397 (fixed)
 With its Stop fixed (next entry), 1517397 failed in r3 on Noma's Power: the engine had 9, the
@@ -776,15 +807,8 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
 - 1025413 r1: Dark Kaizerin (Oculus) infiltrates GhosTown at night and fights with the night
   bonus `Night: -1 Opp Pow. And Damage, Min 1` (1442); the hand stores the host's day bonus
   before the game switches to night. It is the only such round.
-- 1508932 r2: P. Steevens Cr's `+1 Damage Per Life Lost Max. 7` with its own La Junta bonus
-  `Damage +2`, 9 Life down. The server gives 9 Damage: the capped ability on the printed 2
-  (2 + 9, capped at 7), then the bonus's +2. The engine runs the bonus first, as it does for
-  every same-phase pair (`Ability.card`), and caps the total: 2 + 2 + 9, capped at 7. Two
-  readings fit - the cap measured on the printed stat, or the ability before the bonus - and
-  they differ elsewhere. An instrumented run over the corpus found six other binding caps
-  (Wachtmann, Veles Cr, Sir Taco, Noeptus, KinGreow twice, Jochar), each on an untouched
-  printed value, so this is the only round that can tell. A second needs a capped increase
-  that binds beside another change to the same stat.
+- 1508932 r2, fixed with five Razor rounds: see "A capped increase is measured before its
+  card's bonus" above.
 - 1515692 r3: Shawnia's `+3 Attack Per Opp. Damage` against Helsa level 2 (8/2), whose La
   Junta bonus `Damage +2` takes her Damage to 4. The server has 7 x 1 + 3 x 2 = 13, the
   printed Damage; the engine reads the modified 4 and has 19. The only other round that

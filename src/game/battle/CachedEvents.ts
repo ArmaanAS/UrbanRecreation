@@ -28,6 +28,12 @@ export default class CachedEvents {
     this.eventsMask |= 1 << event;
   }
 
+  /** `add`, ahead of what the time already holds (`Ability.capsOwnStat`). */
+  addFirst(event: EventTime, ability: Ability) {
+    this.events[event].unshift(ability);
+    this.eventsMask |= 1 << event;
+  }
+
   addGlobal(event: EventTime, ability: Ability) {
     this._repeat ??= new Array(10).fill(undefined).map<Ability[]>(() => []);
     this._repeat[event].push(ability);

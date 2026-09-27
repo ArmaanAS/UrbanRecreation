@@ -131,6 +131,12 @@ export default class Events {
     this.mask |= 1 << event;
   }
 
+  /** `add`, ahead of what the time already holds (`Ability.capsOwnStat`). */
+  addFirst(event: EventTime, ability: Ability) {
+    this.events[event].unshift(ability);
+    this.mask |= 1 << event;
+  }
+
   addGlobal(event: EventTime, ability: Ability) {
     this.repeat[event].push(ability);
     this.mask |= 1 << event;

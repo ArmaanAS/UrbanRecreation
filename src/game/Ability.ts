@@ -670,7 +670,8 @@ export default class Ability {
         switch (this.type) {
           case AbilityType.ABILITY:
           case AbilityType.BONUS:
-            data.events.add(this.mods[0].eventTime, this);
+            if (this.capsOwnStat()) data.events.addFirst(this.mods[0].eventTime, this);
+            else data.events.add(this.mods[0].eventTime, this);
             break;
           case AbilityType.GLOBAL:
           case AbilityType.GLOBAL_ABILITY:
@@ -682,6 +683,25 @@ export default class Ability {
     } else {
       if (DEBUG) console.log(`[Failed] ${this.ability}`.red);
     }
+  }
+
+  /**
+   * A capped increase of the card's own Power, Damage or Attack ("+1 Power Per Life Lost Max.
+   * 9", "Power +3, Max. 8") runs ahead of the rest of its phase, so its cap is measured on the
+   * stat as printed and the same-stat clan bonus lands on top. Razor level 4 (5 Power, Ulu Watu
+   * `Power +2`) fights at 11 in five autoplay rounds: 5 + 5 capped at 9, + 2, where bonus-first
+   * gave 5 + 2 + 5 capped at 9 (1516811 r1, 1516832 r1 on 7 lost, 1516846 r1 before Kruger's
+   * -2, 1516906 r2, 1517271 r1). P. Steevens Cr's `+1 Damage Per Life Lost Max. 7` with La
+   * Junta's `Damage +2` does the same with Damage, 2 + 9 capped at 7, + 2 = 9 (1508932 r2).
+   * Only card abilities print a cap on a combat stat, and a card has one bonus, so the two
+   * readings - the cap measured on the printed stat, or the ability before the bonus - agree
+   * on every captured shape; they would part only after an Exchange or Impose wrote the stat.
+   */
+  private capsOwnStat() {
+    if (this.type !== AbilityType.ABILITY) return false;
+    const mod = this.mods[0];
+    return mod instanceof BasicModifier && !mod.opp && mod.max !== Infinity &&
+      mod.change > 0 && (mod.eventTime === EventTime.PRE2 || mod.eventTime === EventTime.POST1);
   }
 
   /**
