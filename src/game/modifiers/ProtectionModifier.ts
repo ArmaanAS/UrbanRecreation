@@ -29,6 +29,14 @@ export default class ProtectionModifier extends Modifier {
    * condition holds, by composition: `Reprisal: Protect. Power And Damage` (tested; the Rust
    * engine admits it since semantic revision 75) and, unobserved in any capture, the Revenge
    * and Courage forms, which the Rust engine still refuses.
+   *
+   * Khrull Cr's `Protection: Cards Power And Damage` sets it on both cards: "The Power and
+   * Damage of both characters cannot be reduced by the opposing character" (abilityData
+   * 2255, sideAffected "both"). Its owner's own Dominion `Growth: -1 Opp Power, Min 4` is
+   * refused on the opposing card - Twyh stays 5 x 4 = 20 in 1507713 r1, Nancy 7 x 1 + 12 =
+   * 19 in 1507819 r2 - so a reduction is refused whichever side the Khrull Cr is on. Only
+   * cross-card reductions: neither round shows an increase to a guarded stat, and the text
+   * names reductions only, so increases still land.
    */
   guard = false;
   constructor(prot: Prot | string, both = false, et = EventTime.PRE3) {
@@ -60,10 +68,18 @@ export default class ProtectionModifier extends Modifier {
         case Prot.POWER:
           data.oppCard.power.prot = true;
           data.card.power.prot = true;
+          if (this.guard) {
+            data.oppCard.power.guard = true;
+            data.card.power.guard = true;
+          }
           break;
         case Prot.DAMAGE:
           data.oppCard.damage.prot = true;
           data.card.damage.prot = true;
+          if (this.guard) {
+            data.oppCard.damage.guard = true;
+            data.card.damage.guard = true;
+          }
           break;
         case Prot.ATTACK:
           data.oppCard.attack.prot = true;

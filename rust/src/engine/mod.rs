@@ -234,6 +234,24 @@ impl LatchedEffectV1 {
         })
     }
 
+    /// The replace-not-stack family this permanent belongs to, if any. The server prints "If
+    /// two poisons or toxins are applied, the second will replace the first as soon as the
+    /// latter takes effect" on every Toxin, and the same note for two Heal or Regen, two Dope
+    /// and two Consume; Combust prints none and keeps stacking. A family also fixes whose
+    /// resource it writes, so two latches of one family in one owner's list aim at the same
+    /// player. 1506438 pins it for two Freaks `Poison 2, Min 3` latches (semantic revision 78).
+    pub const fn family(self) -> Option<LatchFamilyV1> {
+        match self {
+            Self::HealLife { .. } | Self::RegenLife { .. } => Some(LatchFamilyV1::HealOrRegen),
+            Self::PoisonOpponentLife { .. } | Self::ToxinOpponentLife { .. } => {
+                Some(LatchFamilyV1::PoisonOrToxin)
+            }
+            Self::ConsumeOpponentPillz { .. } => Some(LatchFamilyV1::Consume),
+            Self::DopePillz { .. } => Some(LatchFamilyV1::Dope),
+            Self::CombustOpponentLifeAndPillz { .. } => None,
+        }
+    }
+
     /// Whether the round that latches this effect also pays it.
     pub const fn pays_in_latching_round(self) -> bool {
         match self {
@@ -269,6 +287,16 @@ impl LatchedEffectV1 {
             Self::ConsumeOpponentPillz { .. } | Self::DopePillz { .. } => LifeWritesV1::NONE,
         }
     }
+}
+
+/// A family of permanents whose newer latch replaces the older one; see
+/// [`LatchedEffectV1::family`] and [`LatchedEffectsV1::replaced_this_round`].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum LatchFamilyV1 {
+    HealOrRegen,
+    PoisonOrToxin,
+    Consume,
+    Dope,
 }
 
 /// Whose Life an end-of-round effect writes, and how. An uncapped own gain commutes with
@@ -384,6 +412,35 @@ impl LatchedEffectsV1 {
 
     pub fn is_empty(&self) -> bool {
         self.effects.iter().all(Option::is_none)
+    }
+
+    /// Whether the effect at `index` pays at the end of a round that began with
+    /// `latched_before` entries: one latched by an earlier round always does, and one this
+    /// round latched only if its kind pays at once.
+    pub fn pays_this_round(&self, index: usize, latched_before: usize) -> bool {
+        self.iter()
+            .nth(index)
+            .is_some_and(|effect| index < latched_before || effect.pays_in_latching_round())
+    }
+
+    /// Whether the effect at `index` has been replaced by the end of this round: a newer entry
+    /// of its family pays this round. A delayed newcomer (Poison, Heal) does not pay in the
+    /// round it latches, so the older latch pays once more there (1131208/2, 1092369/2 and
+    /// 926420/3 each take the old latch's 2); from the next round on only the newer one pays
+    /// (1506438/2 takes 2, not 4). An immediate newcomer (Toxin, Regen, Dope, Consume) stops
+    /// the older one in its own round, as printed; no round shows that yet. Nothing is
+    /// removed, so the list stays the whole latch history and the position needs no new
+    /// state: a newer latch keeps paying every round, so the older one stays replaced.
+    pub fn replaced_this_round(&self, index: usize, latched_before: usize) -> bool {
+        let Some(family) = self.iter().nth(index).and_then(LatchedEffectV1::family) else {
+            return false;
+        };
+        self.iter()
+            .enumerate()
+            .skip(index + 1)
+            .any(|(later, newer)| {
+                newer.family() == Some(family) && self.pays_this_round(later, latched_before)
+            })
     }
 
     /// Append in latch order. `Err` returns the effect when the list is already full, which
@@ -2072,11 +2129,15 @@ impl BaseRulesGame {
             // latched just above sits past the pre-round length and pays this round only if
             // its kind does. A KO is terminal for the owner's own gains - a player at zero
             // is never revived - while an opposing reduction still lands on a living target
-            // whether or not its owner was just knocked out.
+            // whether or not its owner was just knocked out. An entry a newer latch of its
+            // family has replaced pays nothing (semantic revision 78), which is the
+            // TypeScript reference's `Events.executeRepeat` rule.
             let latched_before = self.position.latched[owner].len();
             let latched = position.latched[owner];
             for (index, effect) in latched.iter().enumerate() {
-                if index >= latched_before && !effect.pays_in_latching_round() {
+                if !latched.pays_this_round(index, latched_before)
+                    || latched.replaced_this_round(index, latched_before)
+                {
                     continue;
                 }
                 match effect {

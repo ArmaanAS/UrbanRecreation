@@ -212,6 +212,11 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1091904, 4),
     (1092369, 4),
     (1092294, 4),
+    // Revision 78: a newer latch of a family replaces the older one once it pays. The
+    // opposing Freaks bonus `Poison 2, Min 3` latches with Zera in round 0 and with Olga Cr
+    // in round 1; round 1 still pays the older one (12 - 3 - 2 = 7), round 2 only the newer
+    // one (7 - 2 = 5, where stacking took 4), and round 3 again one entry of 2 (5 - 2 = 3).
+    (1506438, 4),
     // Revision 29 plain `+N Pillz`. The winner's own Pillz rise after the bet is paid:
     // Archimedes' `1150` takes 12 - 7 + 2 to 7 in 1092141/0 (Petra's Stop Opp. Bonus
     // silences the Riots VOD but not the ability), 12 - 5 + 2 to 9 in 1092201/0, 12 - 9 + 2

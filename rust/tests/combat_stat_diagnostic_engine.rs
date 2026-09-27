@@ -543,9 +543,10 @@ fn toxin_can_end_the_match_after_the_rounds_own_effects_as_in_capture_963039() {
 }
 
 #[test]
-fn poison_waits_a_round_stops_at_its_minimum_and_stacks_from_the_bonus_slot() {
+fn poison_waits_a_round_and_stops_at_its_minimum_from_the_bonus_slot() {
     // A Freaks-style bonus Poison: latch round pays nothing, later rounds pay 2, never
-    // below Min 3, and a second latched Poison is its own payment.
+    // below Min 3. The second latched Poison replaces the first from round 3 on (see the
+    // next test); on 4 Life either reading ends on the Min.
     let mut base = base_spec(6, 3);
     base.players[PlayerId::P2].initial_life = 12;
     let mut cards = plans(&base);
@@ -566,8 +567,8 @@ fn poison_waits_a_round_stops_at_its_minimum_and_stacks_from_the_bonus_slot() {
     assert!(second.cards[PlayerId::P1].won);
     assert_eq!(second.players[PlayerId::P2].life, 4);
     assert_eq!(diag.position().latched[PlayerId::P1].len(), 2);
-    // Round 3: P1 loses; both Poisons pay, the first to the Min 3 and the second nothing,
-    // as the two Freaks latches report 2 and 0 in 926420/3.
+    // Round 3: P1 loses; the second Poison, now paying, has replaced the first and takes
+    // 4 to the Min 3.
     let (third, _) = diag
         .make(input(PlayerId::P2, (2, 0, false), (2, 2, false)))
         .unwrap();
@@ -579,6 +580,99 @@ fn poison_waits_a_round_stops_at_its_minimum_and_stacks_from_the_bonus_slot() {
         .make(input(PlayerId::P2, (3, 0, false), (3, 2, false)))
         .unwrap();
     assert_eq!(fourth.players[PlayerId::P2].life, 3);
+}
+
+/// The Freaks bonus `Poison 2, Min 3` on slot 0 and a second permanent on slot 1, on enough
+/// Life that stacking and replacement come apart. A second Poison is the same bonus, as in
+/// 1506438; Toxin and Combust are card abilities only.
+fn two_latches(second: CombatStatEffectV1) -> CombatStatDiagnosticV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P2].initial_life = 16;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].bonus = execute(206, CombatStatPredicateV1::Always, POISON);
+    cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    if second == POISON {
+        cards[PlayerId::P1][1].bonus = execute(206, CombatStatPredicateV1::Always, second);
+        cards[PlayerId::P1][1].source_bonus_support_count = 1;
+    } else {
+        cards[PlayerId::P1][1].ability = execute(1508, CombatStatPredicateV1::Always, second);
+    }
+    game(base, cards)
+}
+
+#[test]
+fn a_second_poison_replaces_the_first_once_it_pays_as_in_capture_1506438() {
+    // The server prints "If two poisons or toxins are applied, the second will replace the
+    // first as soon as the latter takes effect" (semantic revision 78).
+    let mut diag = two_latches(POISON);
+    let start = diag.position().clone();
+    let (first, undo_first) = diag
+        .make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(first.players[PlayerId::P2].life, 13);
+    // Round 2: the newer Poison is in its delayed round, so the older one pays once more:
+    // 13 - 3 - 2 = 8, as 1506438/1 (12 - 3 - 2 = 7) and 1131208/2 do.
+    let (second, undo_second) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P2].life, 8);
+    assert_eq!(diag.position().latched[PlayerId::P1].len(), 2);
+    // Round 3: only the newer one pays, 8 - 2 = 6 (stacking took 4), as 1506438/2 goes from
+    // 7 to 5; and again in round 4, 6 - 2 = 4.
+    let (third, undo_third) = diag
+        .make(input(PlayerId::P2, (2, 0, false), (2, 2, false)))
+        .unwrap();
+    assert!(!third.cards[PlayerId::P1].won);
+    assert_eq!(third.players[PlayerId::P2].life, 6);
+    let (fourth, undo_fourth) = diag
+        .make(input(PlayerId::P2, (3, 0, false), (3, 2, false)))
+        .unwrap();
+    assert_eq!(fourth.players[PlayerId::P2].life, 4);
+    // The replaced latch is still in the list: nothing but the list and its length at the
+    // start of the round decides who pays, so undo is the ordinary position restore.
+    assert_eq!(diag.position().latched[PlayerId::P1].len(), 2);
+    for undo in [undo_fourth, undo_third, undo_second, undo_first] {
+        diag.unmake(undo);
+    }
+    assert_eq!(diag.position(), &start);
+}
+
+#[test]
+fn an_immediate_newcomer_replaces_the_older_latch_in_its_own_round() {
+    // Unobserved, from the printed text: a Toxin pays in the round it latches, so the older
+    // Poison, which would pay its first 2 here, stops at once: 13 - 3 - 1 = 9, where stacking
+    // took 7. From then on only the Toxin's 1.
+    let mut diag = two_latches(TOXIN);
+    diag.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P2].life, 9);
+    let (third, _) = diag
+        .make(input(PlayerId::P2, (2, 0, false), (2, 2, false)))
+        .unwrap();
+    assert_eq!(third.players[PlayerId::P2].life, 8);
+}
+
+#[test]
+fn latches_of_different_families_both_pay() {
+    // Combust prints no replacement note and is no Poison: both pay from round 3, the Poison's
+    // 2 and the Combust's 1 on each resource. 13 - 3 - 2 = 8 in round 2, then 8 - 2 - 1 = 5.
+    let mut diag = two_latches(CombatStatEffectV1::CombustOpponentLifeAndPillzOnVictory {
+        amount: 1,
+        minimum: 0,
+    });
+    diag.make(input(PlayerId::P1, (0, 2, false), (0, 0, false)))
+        .unwrap();
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (1, 2, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(second.players[PlayerId::P2].life, 8);
+    let (third, _) = diag
+        .make(input(PlayerId::P2, (2, 0, false), (2, 2, false)))
+        .unwrap();
+    assert_eq!(third.players[PlayerId::P2].life, 5);
 }
 
 #[test]
@@ -10410,7 +10504,8 @@ fn hand_clan_gated_post_round_sources_pay_only_under_their_gate() {
 }
 
 /// Revision 73: the `Unison :` latches are admitted only where no second latch of their family
-/// could target the same player, since the server prints replacement and the engine stacks.
+/// could target the same player. The server prints replacement, which the engine models since
+/// revision 78, but no round shows a Unison latch replace or be replaced.
 #[test]
 fn unison_latches_are_refused_beside_a_second_latch_of_their_family() {
     let toxin = execute(

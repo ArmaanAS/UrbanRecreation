@@ -9,6 +9,8 @@
 // later round reads: a Growth permanent that freezes its amount when it latches (Mildred),
 // Revenge and Confidence (Boomer, Selene), "After [clan]" against the previous round's clan
 // (Rauta, Frau Vanda), an Oculus infiltration (Dark Smokey), and a match played at night.
+// The last pair (1506438's) latches two Freaks Poisons on one player, so a newer latch
+// replaces an older one under every round-three unit.
 import "colors";
 import { HandGenerator } from "@/game/Hand.ts";
 import Player from "@/game/Player.ts";
@@ -75,6 +77,7 @@ interface Case {
   h1: string[];
   h2: string[];
   levels1?: (number | undefined)[];
+  levels2?: (number | undefined)[];
   life: number;
   pillz: number;
   /**
@@ -86,6 +89,8 @@ interface Case {
   night?: boolean;
   /** A permanent latched before the round-two root is still in every unit under it. */
   latchedThroughout?: boolean;
+  /** Every unit under the round-three root has replaced a latch with a newer one. */
+  replacesInRoundThree?: boolean;
 }
 
 const CASES: Case[] = [
@@ -142,6 +147,21 @@ const CASES: Case[] = [
     rounds: [[1, 1, false], [0, 0, false], [1, 2, false], [0, 1, false]],
     latchedThroughout: true,
   },
+  {
+    // 1506438's hands: the Freaks bonus "Poison 2, Min 3" latches on P1 with Zera in round
+    // one and with Olga Cr in round two, so every unit under the round-three root replaces
+    // the first latch with the second, and a replaced latch is state the key must carry.
+    name: "same-family poisons replace",
+    h1: ["Hammer Cr", "Keanew", "Emma", "Wanda Cr"],
+    levels1: [5, 3, 5, 2],
+    h2: ["Olga Cr", "Schaap", "Zera", "Shayna"],
+    levels2: [3, 4, 4, 4],
+    life: 15,
+    pillz: 6,
+    rounds: [[3, 0, false], [2, 2, false], [0, 1, false], [1, 0, false]],
+    latchedThroughout: true,
+    replacesInRoundThree: true,
+  },
 ];
 
 function build(c: Case, rounds: number): Game {
@@ -153,7 +173,10 @@ function build(c: Case, rounds: number): Game {
         c.h1 as HandOf<string>,
         c.levels1 as HandOf<number | undefined>,
       ),
-      HandGenerator.handOf(c.h2 as HandOf<string>),
+      HandGenerator.handOf(
+        c.h2 as HandOf<string>,
+        c.levels2 as HandOf<number | undefined>,
+      ),
       Turn.PLAYER_1,
       false,
       c.night ?? false,
@@ -184,9 +207,15 @@ const latched = (g: Game) =>
     e.repeat.some((bucket) => bucket.some((a) => a.won === true))
   );
 
+const replaced = (g: Game) =>
+  [g.events1, g.events2].some((e) =>
+    e.repeat.some((bucket) => bucket.some((a) => a.won === false))
+  );
+
 interface Tally {
   units: number;
   latched: number;
+  replaced: number;
 }
 
 /**
@@ -210,6 +239,7 @@ function compareRoot(root: Game, cached: PolicyStack, tally: Tally) {
       });
       if (game.winner !== Winner.PLAYING) continue;
       if (latched(game)) tally.latched++;
+      if (replaced(game)) tally.replaced++;
       for (const us of [Turn.PLAYER_1, Turn.PLAYER_2]) {
         const before = fingerprint(game);
         const fast = quiet(() => policyValue(game, us, cached));
@@ -245,7 +275,7 @@ for (const c of CASES) {
       const root = build(c, rounds);
       assertEquals(root.round, rounds + 1);
       assertEquals(root.winner, Winner.PLAYING);
-      const tally = { units: 0, latched: 0 };
+      const tally = { units: 0, latched: 0, replaced: 0 };
       compareRoot(root, stack, tally);
       assert(tally.units > 0, `round ${rounds + 1} compared nothing`);
       if (c.latchedThroughout && rounds > 0) {
@@ -253,6 +283,13 @@ for (const c of CASES) {
           tally.latched,
           tally.units,
           "a permanent latched before this root should be in every unit",
+        );
+      }
+      if (c.replacesInRoundThree && rounds === 2) {
+        assertEquals(
+          tally.replaced,
+          tally.units,
+          "every unit under this root should have replaced a latch",
         );
       }
     }

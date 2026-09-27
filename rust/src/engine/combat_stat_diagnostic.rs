@@ -1028,15 +1028,17 @@ pub enum InvalidCombatStatPlanReasonV1 {
     HandClanGatedPostRoundAgainstUnpinnedEffect,
     /// A revision-73 `Unison :` Toxin or Consume beside another latch of its family that
     /// could target the same player. The server prints that a second latch replaces the
-    /// first while the engine stacks them, and which it is remains an open decision.
+    /// first. The engine stacked them when this was written and replaces them since revision
+    /// 78 (1506438 pins two plain Poisons), but no round shows a Unison latch replace or be
+    /// replaced, so the refusal stays.
     UnisonLatchAgainstSameFamilyLatch,
     /// A revision-74 `Growth:` permanent beside another latch of its family that could target
     /// the same player (Heal or Regen for the Heal, Poison or Toxin for the Poison), or an
-    /// opposing Copy of its slot: the same open replacement question as revision 73's.
+    /// opposing Copy of its slot: the same unobserved replacement as revision 73's.
     GrowthLatchAgainstSameFamilyLatch,
     /// A revision-70 clan-gated Toxin or Consume beside another latch of its family that could
-    /// target the same player, or an opposing Copy of its slot: revision 73's open replacement
-    /// question, applied to the older gated latches since revision 76.
+    /// target the same player, or an opposing Copy of its slot: revision 73's unobserved
+    /// replacement, applied to the older gated latches since revision 76.
     ClanGatedLatchAgainstSameFamilyLatch,
     /// Revision 60's `Killshot: Toxin` beside another Poison or Toxin latch that could target
     /// the same player, or an opposing Copy of its slot (revision 76).
@@ -2060,12 +2062,13 @@ pub(crate) fn unmodelled_source_context(
             Some(InvalidCombatStatPlanReasonV1::HandClanGatedPostRoundAgainstUnpinnedEffect)
         }
         // Revision 73's `Unison :` latches. The server prints that a second Poison or Toxin
-        // (or a second Consume) replaces the first, while the engine stacks them, and no round
-        // separates the two (docs/replay-triage.md, "Same-family permanents", an open
-        // decision). So the new forms are admitted only where no second latch of their family
-        // could target the same player: none elsewhere in the owner's hand, none an own Copy
-        // could import from the opposing hand, and no opposing Copy that could take the
-        // Unison latch to the other side.
+        // (or a second Consume) replaces the first. When this was written the engine stacked
+        // them and no round separated the two; since revision 78 it replaces them, as 1506438
+        // shows for two plain Poisons (docs/replay-triage.md, "Same-family permanents"), but
+        // no round shows a Unison latch in either role. So the new forms are still admitted
+        // only where no second latch of their family could target the same player: none
+        // elsewhere in the owner's hand, none an own Copy could import from the opposing hand,
+        // and no opposing Copy that could take the Unison latch to the other side.
         CombatStatSourcePlanV1::Execute {
             predicate: CombatStatPredicateV1::OwnerHandUnison,
             effect:

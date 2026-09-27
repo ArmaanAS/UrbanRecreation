@@ -4048,6 +4048,86 @@ Kate (Illusion): 874590, 1023946, 1024821, 1069938, 1078820, 1089830 and 1130527
 1414699, whose room was not recorded. The slice keeps all of those refused, so the matrix's
 Leader pairs stay where they were. The four draws it unlocks are Training games.
 
+Semantic revision 78 models same-family replacement in the latch. It admits no new source, and
+the eligible draws do not change. Until now `LatchedEffectsV1` stacked: the pay loop paid
+every latched entry. The server prints "If two poisons or toxins are applied, the second will
+replace the first as soon as the latter takes effect" on every Toxin, and the same note for two
+Heal or Regen, two Dope and two Consume. Combust prints none. 1506438 (2026-09-27) is the first
+round that tells the two readings apart, and the TypeScript engine replaces from the same
+commit (docs/replay-triage.md, "Same-family permanents replace").
+
+**The rule.** `LatchedEffectV1::family` puts Heal and Regen, Poison and Toxin, Consume, and Dope
+in four families, and Combust in none. A family also fixes whose resource it writes, so two
+entries of one family in one owner's list aim at the same player. An entry pays nothing once a
+newer entry of its family pays in the same round
+(`LatchedEffectsV1::replaced_this_round`, beside `pays_this_round`, which is the old "latched
+earlier, or pays in its latching round" test):
+- A delayed newcomer (Poison, Heal) does not pay in the round it latches, so the older latch
+  pays once more there. From the next round on only the newer one pays.
+- An immediate newcomer (Toxin, Regen, Dope, Consume) pays in its own round, so the older one
+  stops at once, as printed. No round shows that yet.
+
+Nothing is removed from the list. A newer latch keeps paying every round, so the older one stays
+replaced, and the rule reads only the list and its length at the start of the round. So
+`BaseRulesPosition` gains no state, undo is the ordinary position restore, and the policy's
+continuation cache key (the position) is still complete.
+
+**Search.** Values change only in lines that put two latches of one family on one player. The
+eligible draws that can reach one are the ten Freaks decks carrying bonus 206 on two to four
+cards (963847, 1023274, 1025181, 1025525, 1060510, 1073010, 1087712, 1089742, 1092369,
+1131208), 1506438 itself, and the two with Poisons of different sizes (1092294, 1092454). The
+TypeScript policy replaces the same way, so the two engines still agree there. Matchup solves
+are cached by provenance, and the new compiler revision recomputes them.
+
+**Evidence.**
+- 1506438: the opposing Freaks bonus `Poison 2, Min 3` latches with Zera in round 0 and with Olga
+  Cr in round 1. In round 1 the newer latch is still in its delayed round, and the older one
+  pays: 12 - 3 - 2 = 7. In round 2 only the newer one pays: 7 - 2 = 5, where stacking took 4
+  (7 to 3). Round 3 posts a single permanent entry of 2 (5 to 3).
+- 1131208/2, 1092369/2 and 926420/3 each post the entries [2, 0] and take the older latch's 2 in
+  the newcomer's latching round. That was already pinned, and it still holds.
+- The replay suite's other two replacing rounds, 1092369/3 and 1131208/3, come out the same under
+  either reading: the target is knocked out, or on its Min 3.
+
+**What is not taken.** The construction refusals that revisions 73 to 76 put on a Unison, Growth,
+Killshot or clan-gated latch beside a second latch of its family stay:
+`UnisonLatchAgainstSameFamilyLatch`, `GrowthLatchAgainstSameFamilyLatch`,
+`KillshotToxinLatchAgainstSameFamilyLatch` and `ClanGatedLatchAgainstSameFamilyLatch`. They cost
+no draw, no round shows one of those latches replace or be replaced, and lifting them is a slice
+of its own with its own measurement. Unison Poison `4033` stays closed; its only draw, 926226, is
+the replacement case. Also still unobserved, and following the printed text:
+- a newer latch of a different size or kind (Toxin over Poison);
+- the immediate newcomer;
+- two owners' latches on one player. The projection has no own-target Poison (`Backlash:
+  Poison` is refused), so every family's target is fixed by its owner.
+
+**Tests.** In `combat_stat_diagnostic_engine.rs`:
+- `a_second_poison_replaces_the_first_once_it_pays_as_in_capture_1506438`: 16 Life, so the two
+  readings come apart. 13, then 8 (the older latch's last pay), then 6 and 4 where stacking gives
+  4 and 3. It unmakes all four rounds back to the start.
+- `an_immediate_newcomer_replaces_the_older_latch_in_its_own_round`: 13 - 3 - 1 = 9, where
+  stacking took 7.
+- `latches_of_different_families_both_pay`: Poison beside Combust.
+
+The old `poison_waits_a_round_stops_at_its_minimum_and_stacks_from_the_bonus_slot` is renamed
+`poison_waits_a_round_and_stops_at_its_minimum_from_the_bonus_slot`. Its numbers hold under both
+readings, because its round 3 ends on the Min.
+
+**Gate.** 1506438 joins the gate as a four-round fixture. With the skip disabled, the gate fails
+at 1506438 round 2: `players.P1.life: expected 5, actual 3`.
+
+`deno task pins:update` moves these files:
+- the gate rounds (916 to 920);
+- the gate's absent dispositions (75 to 78): the lone-clan Hammer Cr, Keanew and Shayna have no
+  live bonus;
+- the executed ids, which gain six the gate never selected before, all from 1506438's cards:
+  `48`, `258`, `290`, `369`, `2831` and `4889`;
+- the compiler revision (77 to 78);
+- `tests/expect/rust-provenance.json` (compiler 78).
+
+The eligible draws, the scanned draws, the disabled and inert ids and both data fingerprints are
+unchanged.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

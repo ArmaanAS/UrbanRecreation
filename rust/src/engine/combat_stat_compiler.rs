@@ -235,7 +235,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 77;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 78;
 
 /// The registry definition of Ashigaru L5's `Counter-attack`. Its printed levels 1-4
 /// (`3178`-`3181`) have no registry definition, so they stay fail-closed.

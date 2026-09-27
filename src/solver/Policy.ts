@@ -67,10 +67,13 @@ export const CACHE_CAPACITY = 1 << 19;
  * A repeat entry is keyed by structure, not identity - every battle merges fresh clones -
  * so its fixed part (type, text, conditions, and each modifier with its class) is
  * serialised once per object and interned, with its won/delayed flags read live. (Every
- * permanent a battle merges either latches in it or removes itself, and a delayed Poison or
- * Heal clears `delayed` in that same battle, so between rounds a permanent is always won
- * and never delayed and a Leader's entry never has either set; both are keyed anyway.) The
- * fixed part is settled by then: a Growth permanent freezes its amount when it latches.
+ * permanent a battle merges either latches in it, removes itself or is replaced by a newer
+ * one of its family, and a delayed Poison or Heal clears `delayed` in that same battle, so
+ * between rounds a permanent is won (true) or replaced (false), only one replaced before it
+ * could latch is still delayed, and a Leader's entry never has either set; both are keyed
+ * anyway. A replaced entry stays in `repeat` so that `Undo` can walk it back, and its false
+ * flag is what tells it apart from the latch that replaced it.) The fixed part is settled
+ * by then: a Growth permanent freezes its amount when it latches.
  * Entries that serialise differently but behave alike only cost a miss; entries that behave
  * differently cannot serialise alike, since that is their whole state.
  *

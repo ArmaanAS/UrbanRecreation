@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
 Status from `deno test -A --no-check tests/replay/` against 420 captured battles
-(414 replay-ready; 6 ignored because they stopped mid-match): 408 replay exactly and 6
+(414 replay-ready; 6 ignored because they stopped mid-match): 412 replay exactly and 2
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -52,6 +52,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 387 | 7 | +6 Training captures (Lab 1 by day, Lab 3); Solomon's Tie-break wins tied rounds (1506259); 1506438 settles same-family Poison as replace, not stack (open) |
 | 2026-09-27 | 402 | 12 | +20 Training captures (Labs 3-6): second rounds for Exchange (1507008), Cancel (1506931, 1507792) and Protection: Cards (1507713, 1507819), all open |
 | 2026-09-27 | 408 | 6 | A Cancel Opp. Modif. spares the canceller's own reductions (1089974, 1506931, 1507792); Exchange and Impose run before every increase (1059149, 1507008, 874712) |
+| 2026-09-27 | 412 | 2 | Protection: Cards guards both cards (1507819); Growth: Opp. Attack raises the opposing Attack (1414749, 1507713); same-family permanents replace (1506438) |
 
 ## Fixed
 
@@ -370,8 +371,8 @@ plain form's refusal. No captured round shows one live against a reduction - For
 `Reprisal: Protect. Power And Damage` is live with nothing to refuse in 1131114 r2 - and the
 Reprisal form lets Callie's cut land when its condition is off (1089830 r1). The replays are
 unchanged, 368 exact and 8 mismatches before and after; the Rust engine admits the Reprisal
-form under the same rule since semantic revision 75. The Cards (both sides) form stays
-Cancel-only. `Protection: Power`, `Protection : Damage`, `Protection: Attack` and the
+form under the same rule since semantic revision 75. The Cards (both sides) form was
+Cancel-only until 2026-09-27 (next entry). `Protection: Power`, `Protection : Damage`, `Protection: Attack` and the
 clan-gated ones have no round showing them meet a reduction of the stat they name, so they
 stay Cancel-only; the first two print "cannot be reduced by an opposing character" and are
 the likely next candidates once a capture shows one. Fixed 924320, 949439, 1069506, 1078555, 1078820, 1091235 and 1093569; 942983 and 943111
@@ -379,6 +380,23 @@ now fail only on their stale last round (above). Tests in `tests/ability/Protect
 including a constructed Forjoten Ld that keeps 8/5 against Sue's cut when it moves second and
 falls to 7/4 when it moves first. The Rust engine has refused these reductions since semantic
 revision 23.
+
+### Protection: Cards Power And Damage guards both cards
+Khrull Cr's `Protection: Cards Power And Damage` (`abilityData` 2255, sideAffected "both":
+"The Power and Damage of both characters cannot be reduced by the opposing character") only
+resisted a Cancel, so its owner's own Dominion bonus `Growth: -1 Opp Power, Min 4` still cut
+the opposing card. Two rounds pin it, with the Khrull Cr on each side of the table:
+- 1507713 r1: Twyh keeps 5 Power, 5 x 4 = 20, where round two's -2 (clamped at 4) gave 16.
+- 1507819 r2: Nancy keeps 7 Power, 7 x 1 + 12 (her Rescue `Support: Attack +3` x 4) = 19,
+  where round three's -3 gave 4 + 12 = 16.
+
+The guard that `Protection: Power And Damage` sets on its own card is now set on both cards,
+so every reduction either card aims at the other's Power or Damage is refused. Neither round
+shows an opposing reduction of the Khrull Cr itself, which "both characters" covers, or an
+increase to a guarded stat, which the text does not name, so increases still land. These are
+the only captured rounds with the ability, and Khrull Cr (levels 3 and 4) is the only card
+that prints it. Fixed 1507819; 1507713 also needed the Pepo Brahms fix below. Tests in
+`tests/ability/Protection.test.ts`. The Rust engine does not admit 2255.
 
 ### Corrupt lowers its owner's own Life
 The TypeScript engine did not implement `Corrupt N Min. M` at all, so Nega D Ld's `Corrupt 2
@@ -540,53 +558,67 @@ each resolved round against the server and carries on from the server's totals, 
 latest disagreement on screen, and returns "cannot replay" instead of throwing
 (`tests/solver/Advisor.test.ts`).
 
-### Same-family permanents: the server text says replace, both engines stack
-**Settled for two identical Poisons by 1506438 (2026-09-27, Lab 3 test deck); not fixed yet.**
-The opposing Freaks hand (three Freaks cards, bonus `Poison 2, Min 3`) won rounds 0 and 1, so
-two Poison 2 latches sat on the owner, who went into round 2's end on 7 Life. Stacking takes 4
-(7 to 3, still above Min 3); the server took 2 (7 to 5), and round 3 posts a single permanent
-entry of 2 (5 to 3). So the second Poison replaced the first, as printed. Both engines still
-stack, so 1506438 r2 is an open TypeScript mismatch until the latch replaces. Still unobserved:
-different magnitudes (which one's value pays), cross-kind replacement (Toxin over Poison), the
-immediate-newcomer case (a Toxin, Regen, Dope or Consume over an older latch) and two latches
-from different owners.
-
+### Same-family permanents replace, as the server text says — 1506438 (fixed)
 The server prints "If two poisons or toxins are applied, the second will replace the first as
 soon as the latter takes effect" on every Toxin, and the same note for two Heal or Regen, two
-Dope and two Consume (Combust, Mindwipe and Repair print none; Consume 5275 carries the
-poison note, apparently a copy error). Both engines stack instead: TypeScript pays every entry
+Dope and two Consume (Combust, Mindwipe and Repair print none; Consume 5275 carries the poison
+note, apparently a copy error). Both engines used to stack instead: TypeScript paid every entry
 in `Events.repeat`, and Rust every entry in `LatchedEffectsV1`.
 
-A corpus-wide scan of every permanent post entry in the 383 raw battle files, adversarially
-re-checked, finds **no round that tells the two apart**. Every round where one target holds
-two latches of a family either has the second still in its delayed latching round, or has the
-target at or below Min or knocked out - and a floored Poison posts no entry at all (1060510
-r2, 963847 r2, 1059648 r3, 1087712 r3, 1089742 r3), so a single entry proves nothing. What
-is pinned: a delayed newcomer (Poison, Heal) lets the old latch pay once more in its own
-latching round - 1131208 r2, 1092369 r2 and 926420 r3 each post the permanent entries [2, 0]
-and the Life drops by the old latch's 2. Every current replay and every Rust gate round comes
-out the same under either model.
+1506438 (2026-09-27, Lab 3 test deck) settles it for two identical Poisons. The opposing Freaks
+hand (three Freaks cards, bonus `Poison 2, Min 3`) won rounds 0 and 1, so two Poison 2 latches
+sat on the owner, who went into round 2's end on 7 Life. Stacking takes 4 (7 to 3, still above
+Min 3); the server took 2 (7 to 5), and round 3 posts a single permanent entry of 2 (5 to 3).
+What was already pinned still holds: a delayed newcomer (Poison, Heal) lets the old latch pay
+once more in its own latching round. 1131208 r2, 1092369 r2 and 926420 r3 each post the
+permanent entries [2, 0] and the Life drops by the old latch's 2, and 1506438 r1 does the same
+(12 - 3 - 2 = 7).
 
-It still matters for the solver: 12 draws eligible in Rust can reach two live latches of one
-family in search - ten Freaks decks carrying bonus 206 on two to four cards (963847, 1023274,
-1025181, 1025525, 1060510, 1073010, 1087712, 1089742, 1092369, 1131208) and two with Poisons of
-different sizes (1092294, 1092454), where replacement also changes the amount. Open for the
-owner: model replacement as printed (free in eligibility and gate rounds; in Rust the undo is
-a whole-position snapshot already), refuse those draws (12), or keep stacking. **To settle it,
-win two rounds with a Freaks deck (or a Toxin card and then a Freaks win) while the target
-stays at 8 Life or more going into the next round's end**: stacking posts two entries and
-takes 4, replacement posts one and takes 2. The immediate-newcomer case (a Toxin, Regen, Dope
-or Consume latching over an older one, which the text says stops the old one paying that very
-round), cross-kind replacement (Toxin over Poison) and a weaker newcomer replacing a stronger
-latch are all unobserved.
+Both engines now replace. A newer latch of a family, aimed at the same player, replaces an
+older one as soon as it pays: a delayed one from the round after it latches, an immediate one
+(Toxin, Regen, Dope, Consume) in its own round.
+- TypeScript: the text sets `Ability.family` (`LatchFamily`). Before paying an entry,
+  `Events.executeRepeat` asks whether a newer entry of its family on the same player pays this
+  round (`Ability.paysNow`); if so it marks the entry replaced (`won = false`) and skips it. The
+  entry stays in `repeat`, so `Undo` restores its flag with the others and truncation still
+  restores the rest, and the continuation cache key already carries the flag.
+- Rust, semantic revision 78: `LatchedEffectV1::family`, and the pay loop skips an entry that
+  `LatchedEffectsV1::replaced_this_round` reports. The list itself is unchanged, so the position
+  needs no new state.
 
-Rust semantic revision 73 admits `Unison : Toxin` and `Unison : Consume` without touching this
-question: construction refuses either one wherever a second latch of its family could target
-the same player (`UnisonLatchAgainstSameFamilyLatch`), which costs no draw. Unison Poison
-(`4033`) stays closed, since its only draw, 926226, is exactly the replacement case.
-Revision 74 admits the `Growth:` Heal and Poison under the same refusal
-(`GrowthLatchAgainstSameFamilyLatch`, Heal or Regen for the Heal, Poison or Toxin for the
-Poison), which also costs no draw.
+Across the replays a replacement fires in three rounds - 1506438 r2, 1092369 r3 (target knocked
+out) and 1131208 r3 (target on its Min 3) - and changes a number only in 1506438. Fixed 1506438.
+Tests in `tests/ability/LatchReplace.test.ts`, a replacing hand pair in
+`tests/solver/PolicyCache.test.ts`, and in Rust
+`a_second_poison_replaces_the_first_once_it_pays_as_in_capture_1506438` plus 1506438 as a
+four-round gate fixture.
+
+Still unobserved, and following the printed text:
+- different magnitudes (the newer one's value pays);
+- cross-kind replacement (Toxin over Poison, Regen over Heal);
+- the immediate-newcomer case, where the old latch stops in the newcomer's own round;
+- a weaker newcomer replacing a stronger latch;
+- two latches from different owners on one player, such as a `Backlash: Poison` on its owner
+  beside an opposing Poison. The engines still pay both, since each compares one side's latches
+  only.
+
+To see the first three, win with a Toxin card over a latched Freaks Poison while the target
+stays above both Mins.
+
+Before 1506438, a corpus-wide scan of every permanent post entry, adversarially re-checked,
+found no round that told the two apart. Every round where one target held two latches of a
+family had the second still in its delayed latching round, or had the target at or below Min or
+knocked out, and a floored Poison posts no entry at all (1060510 r2, 963847 r2, 1059648 r3,
+1087712 r3, 1089742 r3), so a single entry proved nothing.
+
+For the solver, the Rust-eligible draws that can reach two live latches of one family in search
+now follow replacement in both engines. There are ten Freaks decks carrying bonus 206 on two to
+four cards (963847, 1023274, 1025181, 1025525, 1060510, 1073010, 1087712, 1089742, 1092369,
+1131208), 1506438 itself, and two with Poisons of different sizes (1092294, 1092454). Rust's
+construction refusals for a second latch beside a Unison, Growth, Killshot or clan-gated latch
+of its family (`UnisonLatchAgainstSameFamilyLatch` and its siblings, revisions 73-76) are
+unchanged. They cost no draw, and lifting them is a slice of its own. Unison Poison (`4033`)
+stays closed; its only draw, 926226, is the replacement case.
 
 ### Inactive clan bonuses — nothing to do
 Across the captures there are 23 played rounds where the server sends no clan bonus, and in
@@ -617,13 +649,23 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   bonus `Night: -1 Opp Pow. And Damage, Min 1` (1442); the hand stores the host's day bonus
   before the game switches to night. It is the only such round.
 
-### An increase to the opposing card - 1414749 (single point)
-- 1414749 r2: Pepo Brahms' `Growth: Opp. Attack +1` (`abilityData` 5210, `sideAffected:
-  "opponent"`, increase) raises the opposing Schredder's Attack: the server gives 6 x 3 + 3 =
-  21 in round 3, the engine 18. Normalised it reads `Opp +1 Attack`, which neither numeric
-  branch of `compileAbility` accepts, so it compiles to nothing. 5210 is the only
-  opponent-increase combat-stat definition in `captures/abilities.json` and this is its only
-  selected round, so it is recorded rather than coded.
+### An increase to the opposing card - 1414749, 1507713 (fixed)
+Pepo Brahms' `Growth: Opp. Attack +1` (level 4, `abilityData` 5210) and `Growth: Opp. Attack
++2` (level 5, 5214) raise the *opposing* card's Attack by N x the round number (sideAffected
+"opponent", increase). Normalised, both read `Opp +1 Attack`, which neither numeric branch of
+`compileAbility` accepts, so they compiled to nothing. 1414749 r2 was a single point until
+1507713 r3 brought the second:
+- 1414749 r2: Schredder (Fury, two pillz) fights at 6 x 3 + 1 x 3 = 21 in round three, where
+  the engine had 18.
+- 1507713 r3: Filomena on nine pillz fights at 4 x 10 + 2 x 4 = 48 in round four, where it had
+  40. Pepo is 7 x 2 = 14, cut to 8 by Filomena's Montana `-12 Opp Attack, Min 8`.
+
+`Abilities.normalise` now puts the sign in front, `+1 Opp Attack`, which is the shape `+1 Opp
+Life` already has, so it compiles as an opposing Attack modifier scaled by Growth. It runs with
+the opposing Attack reductions (POST2, after the target's own Attack modifiers). Neither round
+has another Attack modifier on the target, so the order against one is unobserved. Pepo Brahms
+is the only card that prints this shape. Fixed 1414749 and 1507713. Tests in
+`tests/ability/OppIncrease.test.ts`. The Rust engine still refuses 5210 and 5214.
 
 ### Two Oculus in one hand - no capture yet
 The rules text quoted in `Hand.from` says a hand holding more than one Oculus gets no
@@ -669,25 +711,23 @@ the fight. (These effects are cancelled out if your opponent also has Solomon)"
 going to Solomon's owner, is coded from the text alone: no capture has ended level with a
 Solomon in play. The Rust catalog still refuses every Leader.
 
-### Second rounds from the 2026-09-27 test decks (open)
-The Exchange round (1507008 r0) and the two Cancel rounds (1506931 r3, 1507792 r3) settled
-their rules and are fixed above. The Protection: Cards pair is still open:
-- 1507713 r1 is new: Khrull Cr's `Protection: Cards Power And Damage` faces Twyh while Khrull's
-  own Dominion bonus `Growth: -1 Opp Power, Min 4` is live. The server leaves Twyh at 5 Power
-  (Attack 20), the engine takes it to 4 (16). "Cards" means both cards, as in `Cards Damage +2`.
-  1507819 r2 is the second round: the owner's Khrull Cr against Nancy with Khrull's Dominion
-  Growth live in round three; the server leaves Nancy at 7 Power (Attack 19), the engine 4 (16).
+### Second rounds from the 2026-09-27 test decks (fixed)
+All five rounds are fixed above. The Exchange round (1507008 r0) and the two Cancel rounds
+(1506931 r3, 1507792 r3) settled their rules; 1507713 r1 and 1507819 r2, Khrull Cr's
+`Protection: Cards Power And Damage` against its own Dominion Growth, are **Protection: Cards
+Power And Damage guards both cards**, and 1507713 r3 turned out to be the second round for
+**An increase to the opposing card** (1414749).
 
 ## Fresh capture backlog
 
-Nothing is untriaged. Of the six remaining mismatches, 1506438 (same-family Poison replaces)
-and the Protection: Cards pair 1507713 and 1507819 are settled and wait on their fixes; the
-other three wait on a second capture: 1414749 (an increase to the opposing card) and the
-single points 1079078 and 1025413. The 2026-09-27 test-deck captures settled 1059149
-(Exchange, with 874712's Damage Impose beside it) and 1089974 (Cancel), all fixed above; the
-2026-09-26 Training captures settled 1093173 (end-of-round order) and 947670 (Perfect). The backlog of 39 that the expanded
+Nothing is untriaged. The two remaining mismatches are the single points 1079078 and 1025413,
+each waiting on a second capture. The 2026-09-27 test-deck captures settled 1059149 (Exchange,
+with 874712's Damage Impose beside it), 1089974 (Cancel), 1506438 (same-family Poison
+replaces), 1414749 (an increase to the opposing card) and the Protection: Cards pair 1507713
+and 1507819, all fixed above; the 2026-09-26 Training captures settled 1093173 (end-of-round
+order) and 947670 (Perfect). The backlog of 39 that the expanded
 corpus brought on 2026-09-14 and 2026-09-17, and the three from the 2026-09-23 session, are
-fixed above or among those six. A fourth 2026-09-23 capture, 1414087, deals card 2714
+fixed above or among those two. A fourth 2026-09-23 capture, 1414087, deals card 2714
 (Gloria, level 2, `Brawl: Damage + 1`), which the 2026-09-10 character dump predated; since
 the 2026-09-26 card refresh it has a testcase and replays exactly.
 

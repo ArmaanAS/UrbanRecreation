@@ -5696,7 +5696,8 @@ fn strict_catalog_match_admits_revision_74_growth_permanents_and_own_decrease() 
 /// The contexts revision 74 refuses rather than guesses. Hachi's `Growth: Poison 1, Min 2`
 /// faces Anita's Courage conversion, which raises the Poison's target's own Life in rounds the
 /// latch pays (1089001) - the 1093173/1 order question. Sarah's Poison beside H4rp3r's plain
-/// `Poison 1, Min 2` in her own hand is the open same-family replacement question. Abby
+/// `Poison 1, Min 2` in her own hand is a same-family replacement no round shows for a Growth
+/// latch (the engine replaces since revision 78; 1506438 pins two plain Poisons). Abby
 /// Salia's capped Heal facing that plain Poison in the opposing hand meets a floor on its own
 /// owner's Life. And Bugamon's decrease facing Zlatar Cr's `Copy: Opp. Ability` could be
 /// adopted onto the copier's card, which no round shows.

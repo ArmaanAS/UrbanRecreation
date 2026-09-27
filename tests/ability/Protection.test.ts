@@ -153,3 +153,55 @@ Deno.test("Reprisal: Protect. Power And Damage refuses an opposing reduction whe
   first.select(1, 5, false, false); // P1 Sue lv2, 6/3
   assertEquals(stats(first.h2[0]), [7, 4, 35]);
 });
+
+Deno.test("Protection: Cards Power And Damage refuses its owner's own reduction of the opposing card", () => {
+  // Captured battle 1507713 r1. "The Power and Damage of both characters cannot be reduced by
+  // the opposing character" (captures/abilities.json 2255, sideAffected "both"). Khrull Cr's
+  // own Dominion bonus "Growth: -1 Opp Power, Min 4" would take Twyh from 5 to 4 in round
+  // two (-2, clamped at 4) and 16 Attack; the server keeps 5 x 4 = 20, and Twyh's +5 Life.
+  const g = new Game(
+    new Player(15, 12, 0),
+    new Player(15, 12, 1),
+    hand(["Karl", "BroKen", "Khrull Cr", "Pepo Brahms"], [5, 4, 4, 5]),
+    hand(["Twyh", "Filomena", "Ricardo", "Copper Cr"], [3, 2, 2, 3]),
+    Turn.PLAYER_1,
+    false,
+  );
+
+  g.select(0, 4, false, false); // P1 Karl
+  g.select(2, 0, false, false); // P2 Ricardo
+  g.select(0, 3, false, false); // P2 Twyh lv3, 5/2
+  g.select(2, 0, false, false); // P1 Khrull Cr lv4, 8/5
+
+  const [khrull, twyh] = [g.h1[2], g.h2[0]];
+  assertEquals(stats(twyh), [5, 2, 20]);
+  assertEquals(stats(khrull), [8, 5, 8]);
+  assertEquals(twyh.won, true);
+  assertEquals([g.p1.life, g.p2.life], [13, 16]);
+});
+
+Deno.test("Protection: Cards Power And Damage protects the opposing card on either side", () => {
+  // Captured battle 1507819 r2, with the Khrull Cr on the other side of the table: its own
+  // Dominion Growth would be -3 in round three and take Nancy from 7 to 4 (4 + 12 = 16).
+  // The server keeps 7 x 1 plus her Rescue "Support: Attack +3" x 4 = 19; Khrull is 8 x 5.
+  const g = new Game(
+    new Player(15, 12, 0),
+    new Player(15, 12, 1),
+    hand(["Dark Desmond", "Alec Cr", "Dr L Home", "Nancy"], [5, 4, 4, 5]),
+    hand(["BroKen", "Golrock", "Kaboom", "Khrull Cr"], [4, 5, 3, 4]),
+    Turn.PLAYER_1,
+    false,
+  );
+
+  g.select(2, 0, false, false); // P1 Dr L Home
+  g.select(0, 0, false, false); // P2 BroKen
+  g.select(2, 2, false, false); // P2 Kaboom
+  g.select(0, 5, true, false); // P1 Dark Desmond, Fury
+  g.select(3, 0, false, false); // P1 Nancy lv5, 7/5
+  g.select(3, 4, false, false); // P2 Khrull Cr lv4, 8/5
+
+  const [nancy, khrull] = [g.h1[3], g.h2[3]];
+  assertEquals(stats(nancy), [7, 5, 19]);
+  assertEquals(stats(khrull), [8, 5, 40]);
+  assertEquals(khrull.won, true);
+});

@@ -24,6 +24,21 @@ export enum AbilityType {
   GLOBAL_BONUS = 5,
 }
 
+/**
+ * The permanents whose server text says a second latch replaces the first: "If two poisons
+ * or toxins are applied, the second will replace the first as soon as the latter takes
+ * effect", and the same note for two Heal or Regen, two Dope and two Consume
+ * (captures/abilities.json, e.g. 1197, 1458, 1451, 5871). Combust, Mindwipe and Repair
+ * print no such note and keep stacking. See `Events.executeRepeat`.
+ */
+export enum LatchFamily {
+  NONE = 0,
+  POISON = 1,
+  HEAL = 2,
+  DOPE = 3,
+  CONSUME = 4,
+}
+
 // const abilityCache: string[] = [];
 // const abilityIndexCache: {[key: string]: number} = {};
 
@@ -35,7 +50,14 @@ export default class Ability {
   mods: Modifier[] = [];
   conditions: Condition[];
   delayed?: boolean = undefined;
+  /**
+   * A permanent's latch: undefined until the round that merged it decides, true once it has
+   * latched, false once a newer latch of its `family` has replaced it (or it was replaced
+   * in the round it would have latched in). `Undo` saves and restores it.
+   */
   won?: boolean = undefined;
+  /** Which replace-not-stack family this permanent belongs to; fixed by its text. */
+  family = LatchFamily.NONE;
   /**
    * Whether the printed text names the opponent. Normalising drops the "Opp" after a
    * negative number, so it has to be read from the raw text: only compile() uses it.
@@ -80,6 +102,7 @@ export default class Ability {
       mods: this.mods.map(clone),
       delayed: this.delayed,
       won: this.won,
+      family: this.family,
     }, Ability.prototype);
   }
 
@@ -129,12 +152,27 @@ export default class Ability {
     return this.mods[0].win === false || data.player.won === true;
   }
 
+  /**
+   * Whether this permanent pays at this round's end: one latched in an earlier round always
+   * does (a delayed one latched last round starts now), and one merged this round does if it
+   * latches and is not delayed (Toxin, Regen, Dope, Consume). A replaced one never does.
+   * `Events.executeRepeat` asks it of the newer entries of a family before paying an older
+   * one. It changes nothing: `latches` only reads, and no permanent carries Reanimate, the
+   * one condition that writes.
+   */
+  paysNow(data: BattleData) {
+    if (this.won !== undefined) return this.won;
+    return !this.delayed && this.latches(data);
+  }
+
   canApply(data: BattleData) {
     // let apply = true;
 
     // Permanents latch once and then repeat at the end of every later round, so the
     // conditions gate the latch only.
     if (this.permanent) {
+      // Replaced by a newer latch of the same family (Events.executeRepeat).
+      if (this.won === false) return false;
       if (this.won === undefined) {
         if (!this.latches(data)) {
           data.events.removeGlobal(this.mods[0].eventTime, this);
@@ -359,9 +397,12 @@ export default class Ability {
         // Reprisal's already gates the whole ability, so the guard is set exactly when the
         // Protection is live. No captured round shows a conditional form meeting a reduction
         // (1131114 r2 is a live no-op); this composes the plain form's refusal with the
-        // condition, as the Rust engine does since semantic revision 75. The Cards (both
-        // sides) form stays Cancel-only.
-        const guard = !both && tokens[i] === "Power&Damage";
+        // condition, as the Rust engine does since semantic revision 75. Khrull Cr's
+        // "Protection: Cards Power And Damage" guards both cards ("The Power and Damage of
+        // both characters cannot be reduced by the opposing character", captures/abilities.json
+        // 2255, sideAffected "both"): its owner's own reductions of the opposing card are
+        // refused too (1507713 r1, 1507819 r2).
+        const guard = tokens[i] === "Power&Damage";
         for (const prot of tokens[i].split("&")) {
           const mod = new ProtectionModifier(prot, both);
           mod.guard = guard;
@@ -524,6 +565,16 @@ export default class Ability {
 
       if (type == "Poison" || type == "Heal") {
         this.delayed = true;
+      }
+
+      if (this.permanent) {
+        this.family = type == "Poison" || type == "Toxin"
+          ? LatchFamily.POISON
+          : type == "Heal" || type == "Regen"
+          ? LatchFamily.HEAL
+          : type == "Dope"
+          ? LatchFamily.DOPE
+          : LatchFamily.CONSUME;
       }
 
       // A latched Dope still pays its owner in the round that knocks that owner out:

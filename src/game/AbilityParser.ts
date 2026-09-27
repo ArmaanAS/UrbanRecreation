@@ -45,6 +45,12 @@ export class Abilities {
       // other modifier, with "Cards" left in front of the stat to mark both sides - the
       // shape "-2 Cards Damage Min 1" already has.
       .replace(/^(Cards|Players) ([+-][xy\d]+)/, "$2 $1")
+      // Pepo Brahms' "Growth: Opp. Attack +1" / "+2" comes out of the same swap as "Opp +1
+      // Attack". It raises the *opposing* card's Attack (captures/abilities.json 5210/5214,
+      // sideAffected "opponent", increase): 1414749 r2 has Schredder at 6 x 3 + 3 in round
+      // three, 1507713 r3 Filomena at 4 x 10 + 8 in round four. With the sign in front it
+      // parses like "+1 Opp Life", on the opposing card. It is the only text of this shape.
+      .replace(/(?<=^|: )Opp ([+-][xy\d]+)/, "$1 Opp")
       .replace(/([a-z]+)(?<!Min|Max) ([xy\d]+)/i, "$2 $1")
       .replace(/(\w+) And (\w+)/gi, "$1&$2")
       .replace(/(?<=[xy\d] )(\w+) (Opp)/gi, "$2 $1")

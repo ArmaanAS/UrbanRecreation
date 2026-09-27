@@ -1,6 +1,7 @@
-import Ability, { AbilityType } from "../Ability.ts";
+import Ability, { AbilityType, LatchFamily } from "../Ability.ts";
 import BattleData from "./BattleData.ts";
 import EventTime from "../types/EventTime.ts";
+import type BasicModifier from "../modifiers/BasicModifier.ts";
 import CancelModifier, { Cancel } from "../modifiers/CancelModifier.ts";
 
 function sourceCancel(ability: Ability) {
@@ -34,6 +35,24 @@ function hasPendingBlocker(
 ) {
   for (let i = 0; i < blockers.length; i++) {
     if ((done & (1 << i)) === 0 && blocks(blockers[i], target)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether an entry after `repeat[i]`, of its family and aimed at the same player, pays this
+ * round, which replaces `repeat[i]` (see `Events.executeRepeat`). Later entries are newer:
+ * a battle appends what it merges, bonus before ability.
+ */
+function replacedLater(repeat: Ability[], i: number, data: BattleData) {
+  const a = repeat[i];
+  const opp = (a.mods[0] as BasicModifier).opp;
+  for (let j = i + 1; j < repeat.length; j++) {
+    const b = repeat[j];
+    if (
+      b.family === a.family && (b.mods[0] as BasicModifier).opp === opp &&
+      b.paysNow(data)
+    ) return true;
   }
   return false;
 }
@@ -116,12 +135,34 @@ export default class Events {
    * when an effect fails to latch and removes itself. A `for...of` iterator advances its
    * index after that splice, so two same-time effects could leave the second one unlatched
    * in `repeat` (battle 1145959: copied Dope followed by Pere Barali's Heal).
+   *
+   * A latch of a replace-not-stack family (`LatchFamily`) gives way to a newer one of its
+   * family aimed at the same player as soon as the newer one pays. The older entry is
+   * marked replaced (`won = false`) instead of being taken out, so `Undo` restores it with
+   * the other flags and the saved prefix of `repeat` stays intact. A delayed newcomer
+   * (Poison, Heal) does not pay in the round it latches, so the old latch pays once more
+   * there: 1131208 r2, 1092369 r2 and 926420 r3 each take the old latch's 2. 1506438 then
+   * shows the replacement: the opposing Freaks bonus `Poison 2, Min 3` latches in rounds
+   * zero and one, and round two takes 2 (7 -> 5), not 4, and round three one entry of 2. An
+   * immediate newcomer (Toxin, Regen, Dope, Consume) pays in its own round, so the old one
+   * stops that very round, as printed; no capture shows that case yet.
+   *
+   * Only one side's latches are compared: a player's own `Backlash: Poison` and an opposing
+   * Poison land on the same player from two `Events`, and still both pay (unobserved).
    */
   private executeRepeat(event: EventTime, data: BattleData) {
     const repeat = this.repeat[event];
     let i = 0;
     while (i < repeat.length) {
       const ability = repeat[i];
+      if (
+        ability.family !== LatchFamily.NONE && ability.won !== false &&
+        replacedLater(repeat, i, data)
+      ) {
+        ability.won = false;
+        i++;
+        continue;
+      }
       ability.apply(data);
       if (repeat[i] === ability) i++;
     }
