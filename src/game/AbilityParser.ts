@@ -38,7 +38,13 @@ export class Abilities {
       .replace(/(?<=(Copy|Cancel|Stop).*) (Opp|Mod|Left)\w*/gi, "")
       .replace(/(?<=Per.*) Left\w*/gi, "")
       .replace("Bonus Protection", "Protection Bonus")
-      .replace(/^(.+) Impose/, "Impose $1")
+      // "Power Impose" -> "Impose Power", after any condition prefix. The old `^(.+) Impose`
+      // swallowed the prefix too - "Day: Power Impose" came out as "Impose Day: Power", an
+      // unknown condition over an ability that compiles to nothing - so every prefixed
+      // Impose (Reprisal, Unison, Day, Versus) did nothing. Zodiack's "Day: Power Impose"
+      // (captures/abilities.json 5560, "The opposing character has equal Power to Zodiack")
+      // takes Noma from 9 to 5 Power by day in 1517397 r3 (5 x 1 = 5, under Montana's Min 8).
+      .replace(/(^|: )([^:]+?) Impose$/, "$1Impose $2")
       .replace(/(\w+(?: \w+ \w+)?) ([+-][xy\d]+|Exchange)/i, "$2 $1")
       // The swap above only takes one or three words, not two, so "Cards Damage +2"
       // comes out as "Cards +2 Damage". Put the sign back in front so it parses like any

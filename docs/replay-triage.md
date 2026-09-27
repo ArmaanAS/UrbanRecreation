@@ -61,8 +61,25 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 475 | 4 | A single-stat Protection refuses an opposing reduction of its stat (1515574); 1515692 is a new single point (Per Opp. Damage against an opposing Damage bonus) |
 | 2026-09-27 | 559 | 15 | +95 Training captures (autoplay runs 2-3): eleven fresh mismatches (1516740, 1516811, 1516832, 1516846, 1516906, 1517029, 1517121, 1517236, 1517271, 1517397, 1517419) |
 | 2026-09-27 | 561 | 13 | A `Stop:` permanent latches only when its ability is stopped (1516740, 1517419; 1517397 moves on to round 3) |
+| 2026-09-27 | 562 | 12 | A condition prefix no longer swallows an Impose (1517397) |
 
 ## Fixed
+
+### A condition prefix no longer swallows an Impose - 1517397 (fixed)
+With its Stop fixed (next entry), 1517397 failed in r3 on Noma's Power: the engine had 9, the
+server 5. Zodiack lv3 fights it by day with `Day: Power Impose` ("The opposing character has
+equal Power to Zodiack. This number only takes into account the figure shown on Zodiack",
+`abilityData` 5560): 5 x 1 = 5, which Montana's `-12 Opp Attack, Min 8` leaves alone below its
+Min. `Abilities.normalise` moved "Impose" to the front of the whole text with `^(.+) Impose`,
+prefix and all, so the text came out as `Impose Day: Power` - an unknown condition `Impose Day`
+over an ability `Power` that compiles to nothing. Every prefixed Impose the card list prints
+did nothing: five `Reprisal: Damage Impose`, `Unison : Damage Impose`, `Day: Power Impose` and
+Oryon's `Versus [clan:56][clan:30] : Power Impose`. The swap now starts after the last
+condition prefix. It is a parse fix, not a new rule: Impose itself is pinned (see "Exchange and
+Impose write printed values before every increase"), and so are the prefixes. Oryon is played
+in six autoplay rounds, all against hands with neither an Oculus nor a Sakrohm, so its Versus
+is off and nothing else moves. Fixed 1517397. Tests in `tests/ability/ImposePrefix.test.ts`. The
+Rust engine refuses `Day:` Impose (`DescriptionContext Day`).
 
 ### A `Stop:` permanent latches only when its ability is stopped - 1516740, 1517397, 1517419 (fixed)
 `Stop: X` fires only when the opposing card cancels this card's ability: "If Ardwizz's ability
