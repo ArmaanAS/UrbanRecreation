@@ -342,7 +342,7 @@ mod tests {
             "capture errors: {:#?}",
             corpus.errors
         );
-        assert_eq!(corpus.skipped.len(), 8);
+        assert_eq!(corpus.skipped.len(), 12);
         assert!(corpus.ready.len() >= 354);
 
         let skipped: Vec<_> = corpus
@@ -354,7 +354,8 @@ mod tests {
         // battle, and 1414087 when the 2026-09-26 card refresh brought in card 2714 (the
         // extractor had written null for its name and clan). Every skip left is a capture
         // that stopped mid-match; 1508706 and 1508710 are 2026-09-27 Training games left
-        // before their first round resolved.
+        // before their first round resolved, and so are 1514405, 1514665, 1514925 and 1515114
+        // from the autoplay run of the same day.
         use ReplaySkipReason::InProgress;
         assert_eq!(
             skipped,
@@ -367,6 +368,10 @@ mod tests {
                 (1145959, InProgress),
                 (1508706, InProgress),
                 (1508710, InProgress),
+                (1514405, InProgress),
+                (1514665, InProgress),
+                (1514925, InProgress),
+                (1515114, InProgress),
             ]
         );
 

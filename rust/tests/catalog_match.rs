@@ -745,10 +745,11 @@ fn strict_catalog_match_executes_audited_ability_recovery_and_restores_undo() {
     assert_eq!(identity.catalog_id, Some(1418));
     assert_eq!(identity.registry_definition_id, 1418);
     // `2996` is the same record, first captured 2026-09-26 on Anita level 3 (1496094), whose
-    // ability Administrator's `Hazard` had replaced with it.
+    // ability Administrator's `Hazard` had replaced with it, and so are Sasl Lovelace level
+    // 5's `1005` and Tortuga level 4's `1674`, first captured in the 2026-09-27 autoplay run.
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [577, 729, 1316, 1418, 2475, 2996]
+        [577, 729, 1005, 1316, 1418, 1674, 2475, 2996]
     );
     assert_eq!(identity.description, "Defeat: Recover 2 Pillz Out Of 3");
     assert!(matches!(
@@ -856,10 +857,11 @@ fn strict_catalog_match_bridges_only_active_vortex_bonus_and_stop_bonus_disables
     assert_eq!(identity.catalog_id, Some(43));
     assert_eq!(identity.registry_definition_id, 577);
     // `2996` is the same record, first captured 2026-09-26 on Anita level 3 (1496094), whose
-    // ability Administrator's `Hazard` had replaced with it.
+    // ability Administrator's `Hazard` had replaced with it, and so are Sasl Lovelace level
+    // 5's `1005` and Tortuga level 4's `1674`, first captured in the 2026-09-27 autoplay run.
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [577, 729, 1316, 1418, 2475, 2996]
+        [577, 729, 1005, 1316, 1418, 1674, 2475, 2996]
     );
     assert!(matches!(
         prepared.match_spec().cards[PlayerId::P1][0].bonus,
@@ -2098,7 +2100,10 @@ fn strict_catalog_match_admits_alias_bound_defeat_life_and_lobos_reanimate_only(
     };
     assert_eq!(identity.catalog_id, Some(4951));
     assert_eq!(identity.registry_definition_id, 4951);
-    assert_eq!(identity.registry_alias_ids.as_ref(), [4951]);
+    // Car0 level 5's `3928` is the same record, first captured in the 2026-09-27 autoplay
+    // run (1514597 r2, where it revives 2 -> 4); the Reanimate identity lock below keeps it
+    // out of catalog execution all the same.
+    assert_eq!(identity.registry_alias_ids.as_ref(), [3928, 4951]);
     assert_eq!(
         *effect,
         CombatStatPostRoundEffectV1::ReanimateLife { life: 2 }
@@ -2110,6 +2115,32 @@ fn strict_catalog_match_admits_alias_bound_defeat_life_and_lobos_reanimate_only(
             predicate: CombatStatPredicateV1::Always,
             effect: urban_recreation_rust::engine::CombatStatEffectV1::ReanimateLife { life: 2 },
         }
+    ));
+
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(
+                [
+                    CardKey::new(2481, 5), // Car0: Reanimate: +2 Life, Ability:3928
+                    CardKey::new(123, 1),
+                    CardKey::new(124, 1),
+                    CardKey::new(138, 1),
+                ],
+                opponent,
+                false,
+            ),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            hand_slot,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(3928),
+            ref description,
+            ..
+        }) if hand_slot.get() == 0 && description == "Reanimate: +2 Life"
     ));
 
     let eugene_hand = [
@@ -2350,8 +2381,10 @@ fn strict_catalog_match_bridges_only_the_active_komboka_victory_pillz_and_life_b
         };
         assert_eq!(identity.catalog_id, Some(53));
         assert_eq!(identity.registry_definition_id, 1714);
-        // Carnibox Ability:3356 is a structural alias, never catalog execution authority.
-        assert_eq!(identity.registry_alias_ids.as_ref(), [1714, 3356]);
+        // Carnibox Ability:3356 is a structural alias, never catalog execution authority, and
+        // so is Van Dijk L3's Ability:3457, first captured in the 2026-09-27 autoplay run
+        // (1514925, 1515555).
+        assert_eq!(identity.registry_alias_ids.as_ref(), [1714, 3356, 3457]);
         assert!(matches!(
             prepared.match_spec().cards[PlayerId::P1][slot].bonus,
             CombatStatSourcePlanV1::Execute {
@@ -2430,7 +2463,7 @@ fn strict_catalog_match_bridges_only_the_active_komboka_victory_pillz_and_life_b
     };
     assert_eq!(identity.catalog_id, Some(3356));
     assert_eq!(identity.registry_definition_id, 1714);
-    assert_eq!(identity.registry_alias_ids.as_ref(), [1714, 3356]);
+    assert_eq!(identity.registry_alias_ids.as_ref(), [1714, 3356, 3457]);
     assert!(matches!(
         carnibox.match_spec().cards[PlayerId::P1][0].ability,
         CombatStatSourcePlanV1::Execute {
@@ -2868,11 +2901,29 @@ fn strict_catalog_match_admits_recover_by_grammar_through_real_aliases_only() {
         )
     };
     // Sasl Lovelace's level-4 `2475`, locked out until revision 63, Octana's `1035` and
-    // Kyrioz Ld's `5651` each execute under their own alias.
+    // Kyrioz Ld's `5651` each execute under their own alias, and so, since the 2026-09-27
+    // autoplay run captured their records (1514860, 1515298), do Sasl Lovelace's level-5
+    // `1005` and Tortuga's `1674`.
     for (card, catalog_id, expected) in [
         (
             CardKey::new(1178, 4),
             2475,
+            CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat {
+                numerator: 2,
+                denominator: 3,
+            },
+        ),
+        (
+            CardKey::new(1178, 5),
+            1005,
+            CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat {
+                numerator: 2,
+                denominator: 3,
+            },
+        ),
+        (
+            CardKey::new(1831, 4),
+            1674,
             CombatStatPostRoundEffectV1::RecoverPaidPillzOnDefeat {
                 numerator: 2,
                 denominator: 3,
@@ -2910,15 +2961,8 @@ fn strict_catalog_match_admits_recover_by_grammar_through_real_aliases_only() {
         assert_eq!(*predicate, CombatStatPredicateV1::Always);
     }
     // A printed level whose catalog id no registry definition owns has no alias to borrow:
-    // Sasl Lovelace's level 5 (`1005`) and Kyrioz Ld's level 1 (`5917`).
-    for (card, catalog_id, text) in [
-        (
-            CardKey::new(1178, 5),
-            1005,
-            "Defeat: Recover 2 Pillz Out Of 3",
-        ),
-        (CardKey::new(2659, 1), 5917, "Recover 1 Pillz Out Of 3"),
-    ] {
+    // Kyrioz Ld's level 1 (`5917`).
+    for (card, catalog_id, text) in [(CardKey::new(2659, 1), 5917, "Recover 1 Pillz Out Of 3")] {
         assert!(
             matches!(
                 prepare(card),
@@ -4599,6 +4643,15 @@ fn strict_catalog_match_prepares_post_round_brawl_from_the_printed_ability() {
                 minimum: 3,
             },
         ),
+        // Buga Baga Ld L1's `5506`, first captured in the 2026-09-27 autoplay run (1515555).
+        (
+            CardKey::new(1729, 1),
+            5506,
+            CombatStatPostRoundEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport {
+                per_count: 1,
+                minimum: 5,
+            },
+        ),
         (
             CardKey::new(1679, 2),
             5172,
@@ -4646,14 +4699,12 @@ fn strict_catalog_match_prepares_post_round_brawl_from_the_printed_ability() {
     }
 
     // The printed levels whose catalog ids no registry definition owns stay fail-closed:
-    // the same text never lends another card's definition. Fomalhaut Ld L2 and L1, Buga
-    // Baga Ld L1, Eeok Ld L1, Newell L3, and Sirrena L3's `Max. 11`. The two level-one
-    // `Min 5` texts are not in the registry at all, so they fail at the text lookup rather
-    // than at the alias rule; either way nothing is admitted.
+    // the same text never lends another card's definition. Fomalhaut Ld L2 and L1, Eeok Ld
+    // L1, Newell L3, and Sirrena L3's `Max. 11`. Eeok Ld L1 prints Buga Baga Ld L1's text
+    // under its own `5509`, which is no alias of `5506`; nothing is admitted.
     for (key, catalog_id) in [
         (CardKey::new(1582, 2), 5456),
         (CardKey::new(1582, 1), 5529),
-        (CardKey::new(1729, 1), 5506),
         (CardKey::new(2027, 1), 5509),
         (CardKey::new(1679, 3), 1504),
         (CardKey::new(2563, 3), 5824),
@@ -5784,10 +5835,14 @@ fn strict_catalog_match_admits_revision_74_growth_permanents_and_own_decrease() 
             .map(|card| card.ability.clone())
             .collect::<Vec<_>>()
     };
-    for (capture, id, expected) in [
+    // Litchxxt level 2's `1813` is the same record as Abby Salia's `4959`, first captured in
+    // the 2026-09-27 autoplay run (1515238); as the lowest structural alias it became the
+    // canonical registry definition, while Abby Salia is still reached by her own catalog id.
+    for (capture, id, canonical, expected) in [
         (
             1414168,
             4959,
+            1813,
             CombatStatPostRoundEffectV1::HealLifeOnVictoryPerRound {
                 per_round: 1,
                 maximum: 12,
@@ -5796,6 +5851,7 @@ fn strict_catalog_match_admits_revision_74_growth_permanents_and_own_decrease() 
         (
             925169,
             1282,
+            1282,
             CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictoryPerRound {
                 per_round: 1,
                 minimum: 1,
@@ -5803,6 +5859,7 @@ fn strict_catalog_match_admits_revision_74_growth_permanents_and_own_decrease() 
         ),
         (
             1009386,
+            1282,
             1282,
             CombatStatPostRoundEffectV1::PoisonOpponentLifeOnVictoryPerRound {
                 per_round: 1,
@@ -5817,8 +5874,8 @@ fn strict_catalog_match_admits_revision_74_growth_permanents_and_own_decrease() 
                     identity,
                     effect,
                     predicate,
-                } if identity.registry_definition_id == id => {
-                    assert_eq!(identity.catalog_id, Some(id), "{capture}");
+                } if identity.catalog_id == Some(id) => {
+                    assert_eq!(identity.registry_definition_id, canonical, "{capture}");
                     Some((effect, predicate))
                 }
                 _ => None,

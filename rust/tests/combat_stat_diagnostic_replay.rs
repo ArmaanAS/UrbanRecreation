@@ -2294,12 +2294,16 @@ fn every_observed_basic_combat_stat_support_definition_executes_as_an_ability() 
     let catalog = catalog();
     let registry = registry();
     // 271, 697 and 1013 arrived with the 2026-09-27 Training captures, and 324, 329 and 1743
-    // with the later ones.
+    // with the later ones; 625, 1121 and 1624 with that day's autoplay run.
     let expected = BTreeSet::from([
-        266, 271, 272, 295, 324, 329, 367, 391, 412, 469, 472, 514, 532, 546, 567, 574, 697, 739,
-        899, 1013, 1269, 1297, 1325, 1330, 1735, 1743, 1805, 2535, 2556, 3197, 3475, 3719, 4068,
-        4297, 4593, 4824, 4839, 4857, 5483, 5841,
+        266, 271, 272, 295, 324, 329, 367, 391, 412, 469, 472, 514, 532, 546, 567, 574, 625, 697,
+        739, 899, 1013, 1121, 1269, 1297, 1325, 1330, 1624, 1735, 1743, 1805, 2535, 2556, 3197,
+        3475, 3719, 4068, 4297, 4593, 4824, 4839, 4857, 5483, 5841,
     ]);
+    // Pere Fourrure's `Support: -1 Cards Damage, Min 0` (`3278`, autoplay run) lowers both
+    // cards' Damage; the Support grammar does not read a `Cards` context, so it stays a
+    // visible-but-disabled Support ability rather than executing on one side only.
+    let disabled = BTreeSet::from([3278]);
     let observed: BTreeSet<_> = registry
         .iter()
         .filter_map(|(id, definition)| {
@@ -2315,11 +2319,34 @@ fn every_observed_basic_combat_stat_support_definition_executes_as_an_ability() 
             .then_some(id)
         })
         .collect();
-    assert_eq!(observed, expected);
+    assert_eq!(
+        observed,
+        expected.union(&disabled).copied().collect::<BTreeSet<_>>()
+    );
 
     let mut template = replay(875032, &catalog);
     template.rounds.clear();
     clear_sources(&mut template);
+    for id in disabled {
+        let definition = registry.get(id).unwrap();
+        let mut source = template.clone();
+        source.players[0].hand[0].source_ability = Some(SourceModifier {
+            id,
+            description: definition.description().to_owned(),
+        });
+        let prepared =
+            CombatStatDiagnosticReplayV1::new(source, &catalog, &registry, PROJECTION).unwrap();
+        assert!(
+            matches!(
+                prepared.preparation()[PlayerId::P1][0].ability,
+                CombatStatProjectionDispositionV1::Disabled {
+                    reason: CombatStatDisabledReasonV1::SupportAbility { .. },
+                    ..
+                }
+            ),
+            "effect {id}"
+        );
+    }
     for id in expected {
         let definition = registry.get(id).unwrap();
         let mut source = template.clone();
