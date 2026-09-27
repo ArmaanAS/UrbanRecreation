@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 400 captured battles
-(394 replay-ready; 6 ignored because they stopped mid-match): 387 replay exactly and 7
+Status from `deno test -A --no-check tests/replay/` against 420 captured battles
+(414 replay-ready; 6 ignored because they stopped mid-match): 402 replay exactly and 12
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -50,6 +50,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-26 | 376 | 8 | +7 Training captures (Leader test deck); Counter-attack only decides round one (1495980) |
 | 2026-09-26 | 382 | 6 | +4 Training captures (GhosTown/Oculus test deck); the round-one second mover's END effects run first (1093173, 1496283); Perfect pays only on the exact bet (947670, 1496258) |
 | 2026-09-27 | 387 | 7 | +6 Training captures (Lab 1 by day, Lab 3); Solomon's Tie-break wins tied rounds (1506259); 1506438 settles same-family Poison as replace, not stack (open) |
+| 2026-09-27 | 402 | 12 | +20 Training captures (Labs 3-6): second rounds for Exchange (1507008), Cancel (1506931, 1507792) and Protection: Cards (1507713, 1507819), all open |
 
 ## Fixed
 
@@ -633,6 +634,25 @@ the fight. (These effects are cancelled out if your opponent also has Solomon)"
 `CardBattle` gives that side every tied round. The second clause, a level match at the end
 going to Solomon's owner, is coded from the text alone: no capture has ended level with a
 Solomon in play. The Rust catalog still refuses every Leader.
+
+### Second rounds from the 2026-09-27 test decks (open)
+- 1507008 r0 is the second round for **Exchange overwrites the increases before it** (1059149):
+  Calamity's `Power Exchange` meets Tatane with Calamity's own GhosTown day bonus `Day: Power
+  And Damage + 1` live. The server gives Calamity 7 Power and 9 Attack (7 x 3 - 12, Tatane's
+  `-12 Opp Attack, Min 5`), the engine 6 and 6: the swap wipes the owner's +1 registered
+  before it, as in 1059149.
+- 1506931 r3 is the second round for **Cancel Opp. Modif. only cancels the cancelled card's own
+  modifiers** (1089974): Eyrton Cr's `Cancel Opp. Power And Damage Modif.` faces Hammer Cr while
+  Eyrton's own All Stars bonus `-2 Opp Power, Min 1` is live. The server gives Hammer Cr 4
+  Power (6 - 2) and 28 Attack; the engine refuses Eyrton's own reduction and gives 6 and 42.
+  1507792 r3 is a third: the owner's Dookor cancels against Angie (`Copy: Opp. Power`, Bangers
+  `Power +2`) with Dookor's own Dominion `Growth: -1 Opp Power, Min 4` live in round four; the
+  server leaves Angie at 4 Power (the Min), the engine refuses the reduction and gives 6.
+- 1507713 r1 is new: Khrull Cr's `Protection: Cards Power And Damage` faces Twyh while Khrull's
+  own Dominion bonus `Growth: -1 Opp Power, Min 4` is live. The server leaves Twyh at 5 Power
+  (Attack 20), the engine takes it to 4 (16). "Cards" means both cards, as in `Cards Damage +2`.
+  1507819 r2 is the second round: the owner's Khrull Cr against Nancy with Khrull's Dominion
+  Growth live in round three; the server leaves Nancy at 7 Power (Attack 19), the engine 4 (16).
 
 ## Fresh capture backlog
 

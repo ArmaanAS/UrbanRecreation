@@ -9825,11 +9825,12 @@ mod tests {
         // `Confidence: Attack +12`, `644` `Revenge: -2 Opp. Power, Min 5` and `2194`
         // `Confidence: Power And Damage +2`, which arrived with the 2026-09-23 captures, and
         // Kid Teleon's `Revenge: Power +2` (`5146`), with the 2026-09-26 Training captures, and
-        // Aaron's `Confidence: Attack +10` (`1022`), with the 2026-09-27 ones.
+        // Aaron's `Confidence: Attack +10` (`1022`) and `Confidence : -3 Opp. Power, Min 2`
+        // (`1780`), with the 2026-09-27 ones.
         let admitted = BTreeSet::from([
             463, 465, 478, 513, 520, 553, 555, 556, 560, 585, 591, 634, 644, 784, 801, 859, 883,
-            884, 921, 938, 965, 1022, 1053, 1091, 1107, 1278, 1286, 1303, 1395, 1417, 1839, 2194,
-            2628, 2657, 3827, 3829, 4316, 4399, 4464, 4623, 4711, 4838, 5146, 5406, 5881,
+            884, 921, 938, 965, 1022, 1053, 1091, 1107, 1278, 1286, 1303, 1395, 1417, 1780, 1839,
+            2194, 2628, 2657, 3827, 3829, 4316, 4399, 4464, 4623, 4711, 4838, 5146, 5406, 5881,
         ]);
         // Since revision 47 the `Confidence:` and `Revenge:` Stops are admitted by the
         // conditional-Stop grammar, card abilities only.
@@ -9838,11 +9839,13 @@ mod tests {
         // Since revision 72 Betul's `Revenge: + 2 Attack Per Opp. Power` too, by its own
         // grammar and from card abilities only.
         let ability_only = BTreeSet::from([490, 589, 1409, 1680, 1713, 1719]);
-        // Fjell's `Revenge : +4 Life` (`5666`) and Zhiara's `Revenge: Poison 2, Min 1` (`4903`),
-        // both from the 2026-09-27 captures, are post-round Life effects, not combat stats.
+        // Fjell's `Revenge : +4 Life` (`5666`), Zhiara's `Revenge: Poison 2, Min 1` (`4903`),
+        // `Day: Confidence: +1 Life Per Damage` (`1471`), `Confidence: +1 Life Per Dmg.` (`787`)
+        // and `Confidence : +5 Life` (`1756`), all from the 2026-09-27 captures, are post-round
+        // Life effects, not combat stats.
         let deferred = BTreeSet::from([
-            814, 1643, 1652, 1661, 1702, 1751, 1810, 2113, 2582, 3016, 3301, 3546, 4301, 4449,
-            4903, 4972, 5666,
+            787, 814, 1471, 1643, 1652, 1661, 1702, 1751, 1756, 1810, 2113, 2582, 3016, 3301, 3546,
+            4301, 4449, 4903, 4972, 5666,
         ]);
         let observed: BTreeSet<_> = registry
             .iter()

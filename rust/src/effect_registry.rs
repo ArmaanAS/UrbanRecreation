@@ -2292,7 +2292,8 @@ mod tests {
 
         let rescue = registry.lookup_description("Support: Attack +3").unwrap();
         assert_eq!(rescue.definition().id(), 266);
-        assert_eq!(rescue.alias_ids(), [266, 546, 5841]);
+        // 1013 joined the aliases with the 2026-09-27 Training captures.
+        assert_eq!(rescue.alias_ids(), [266, 546, 1013, 5841]);
 
         let catalog = CardCatalog::load(root_path("data/data.json")).unwrap();
         assert!(catalog

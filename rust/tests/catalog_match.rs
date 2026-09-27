@@ -452,7 +452,7 @@ fn strict_catalog_match_separates_same_text_clans_and_executes_support() {
     };
     assert_eq!(rescue.catalog_id, Some(39));
     assert_eq!(rescue.registry_definition_id, 266);
-    assert_eq!(rescue.registry_alias_ids.as_ref(), [266, 546, 5841]);
+    assert_eq!(rescue.registry_alias_ids.as_ref(), [266, 546, 1013, 5841]);
     assert!(!rescue.registry_alias_ids.contains(&39));
 
     let mut game = prepared.new_game();
@@ -748,7 +748,7 @@ fn strict_catalog_match_executes_audited_ability_recovery_and_restores_undo() {
     // ability Administrator's `Hazard` had replaced with it.
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [577, 729, 1418, 2475, 2996]
+        [577, 729, 1316, 1418, 2475, 2996]
     );
     assert_eq!(identity.description, "Defeat: Recover 2 Pillz Out Of 3");
     assert!(matches!(
@@ -859,7 +859,7 @@ fn strict_catalog_match_bridges_only_active_vortex_bonus_and_stop_bonus_disables
     // ability Administrator's `Hazard` had replaced with it.
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [577, 729, 1418, 2475, 2996]
+        [577, 729, 1316, 1418, 2475, 2996]
     );
     assert!(matches!(
         prepared.match_spec().cards[PlayerId::P1][0].bonus,
@@ -4752,7 +4752,8 @@ fn strict_catalog_match_bridges_night_variants_of_post_round_grammars_by_text_at
     );
 
     // By day Mandrak's capped gain is still admitted by its catalog alias, and Nox and Lyra
-    // show day abilities the registry has never captured, so the draw stays fail-closed.
+    // show day abilities the engine does not execute, so the draw stays fail-closed (Nox's
+    // `Day: -2 Opp Pillz. Min 0`, first captured 2026-09-27, is a known but unsupported source).
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(
@@ -4768,11 +4769,12 @@ fn strict_catalog_match_bridges_night_variants_of_post_round_grammars_by_text_at
     ));
     assert!(matches!(
         CatalogCombatStatMatchV1::new(input(hand, p2, false), &catalog, &registry, PROJECTION),
-        Err(CatalogCombatStatMatchErrorV1::Lookup {
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player: PlayerId::P1,
             source_kind: CombatStatEffectSourceV1::Ability,
+            ref description,
             ..
-        })
+        }) if description == "Day: -2 Opp Pillz. Min 0"
     ));
 
     // A row with no catalog id is not admitted on that alone: not the night text shown in a
@@ -5396,15 +5398,10 @@ fn strict_catalog_match_refuses_revision_72_sources_in_unpinned_contexts() {
     assert!(
         CatalogCombatStatMatchV1::new(input(p1, p2, true), &catalog, &registry, PROJECTION).is_ok()
     );
-    let result =
-        CatalogCombatStatMatchV1::new(input(p1, p2, false), &catalog, &registry, PROJECTION);
+    // Its day text `Day: Power +4` was first captured on 2026-09-27 and executes by day too.
     assert!(
-        matches!(
-            &result,
-            Err(CatalogCombatStatMatchErrorV1::Lookup { description, .. })
-                if description == "Day: Power +4"
-        ),
-        "{result:?}"
+        CatalogCombatStatMatchV1::new(input(p1, p2, false), &catalog, &registry, PROJECTION)
+            .is_ok()
     );
 }
 
