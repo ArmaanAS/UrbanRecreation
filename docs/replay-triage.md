@@ -63,8 +63,42 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 561 | 13 | A `Stop:` permanent latches only when its ability is stopped (1516740, 1517419; 1517397 moves on to round 3) |
 | 2026-09-27 | 562 | 12 | A condition prefix no longer swallows an Impose (1517397) |
 | 2026-09-27 | 568 | 6 | A capped increase is measured before its card's same-stat bonus (1516811, 1516832, 1516846, 1516906, 1517271, and the single point 1508932) |
+| 2026-09-27 | 569 | 5 | Latched permanents pay after the round's own effects (1517029; Rust semantic revision 80) |
 
 ## Fixed
+
+### Latched permanents pay after the round's own effects - 1517029 (fixed)
+1517029 r2: Lakit Cr's owner (internal P2) has a `Heal 4 Max. 7` latched from round one and is
+on 15. Owen wins for 5 Damage, 10, and his `-4 Opp. Life Min 2` takes that to 6. The server ends
+on 7: the Heal paid after the cut, 6 + 4 capped at 7. The engine ended on 6, because its end of
+the round (the order the previous entry below settled) paid every increase first, latched ones
+included, and the Heal found 10 above its cap and paid nothing.
+
+The raw battle files say which order the server uses. The resolution snapshot lists the round's
+end-of-round effects on each player as `post` entries, and the list is in application order: in
+1517029 r2 Lakit Cr's owner gets `life -4` and then `life +1 (permanent)`. (The extractor keeps
+the entries of the snapshot after the round, which in these Training captures usually has none,
+so `postRoundAbilities` in `captures/games/` is often empty; the resolution snapshot has them.)
+Over every capture, a player's list puts the round's own entries ahead of the latched ones,
+never the other way round. A latched gain follows a current-round cut in 1516124 r0, 1516372 r1
+and r2, 924669 r0 and 1514883 r2 as well, where no cap binds; within the round's own entries the
+increases come first (15 lists, 1093173 r1 and 1514836 r0 among them), and within the latched
+ones the gains (1515451 r1 and r3, 1516711 r3, 1517078 r2 and r3). The only list with a latched cut ahead of a
+latched gain, 1515238 r3, has the gain as the zero entry of a Heal latching in that round.
+
+`Events.executeEnd` now pays the round's own increases, then its decreases by descending Min, and
+only then every latched increase and every latched decrease, internal P2 before P1 within a pass
+as before. Replaying every round on its own with the server's totals before it, the new order fits
+every round the previous one fitted, plus 1517029 r2; the rounds either order fails are the other
+fresh mismatches. Fixed 1517029. Test in `tests/ability/EndOrder.test.ts`.
+
+The Rust engine paid each owner's latches right after its own current-round effects, P1 first:
+right for this round by seat (the Heal was P2's), wrong with the seats swapped - and the previous
+TypeScript order was wrong on the other seat, so the two engines disagreed on an admitted pairing
+(a catalog probe prepares Lakit Cr L4 beside Owen L5 either way round). Semantic revision 80 moves
+its latched pay after both owners' current-round effects, gains before reductions, so the two
+agree again (`docs/rust-migration.md`). A latched gain of P2 beside a latched cut of P1's on the
+same player follows the rule unobserved: every round above with both has the gain on P1.
 
 ### A capped increase is measured before its card's bonus - Razor and 1508932 (fixed)
 Five autoplay rounds failed on one card: Razor level 4 (Ulu Watu, 5/6), `+1 Power Per Life Lost
@@ -698,13 +732,14 @@ under any of its tie-breaks, and no other candidate does:
   descending Min from the old bonus-before-ability order, which fits the other two.
 - 1496283 r2 is the ninth only under the old infiltration, and fits once it is gone.
 
-`Events.executeEnd` runs P2's increases, P2's latched increases, P1's increases and P1's latched
+`Events.executeEnd` ran P2's increases, P2's latched increases, P1's increases and P1's latched
 increases; then every current-round decrease of both sides by descending Min (ties: P2 first,
-bonus before ability), then P2's and P1's latched decreases. The replay-per-round check does
-not separate the remaining ties (which seat first within a pass, a latched decrease against a
-current-round one), so they keep the old order. It is allocation-free, like `executeCancels`.
-Fixed 1514836, 1515298 and 1515451; no other replay moves. Tests in
-`tests/ability/EndOrder.test.ts`.
+bonus before ability), then P2's and P1's latched decreases. The replay-per-round check did not
+separate the remaining ties (which seat first within a pass, a latched decrease against a
+current-round one), so they kept the old order. It is allocation-free, like `executeCancels`.
+Fixed 1514836, 1515298 and 1515451; no other replay moved. Tests in
+`tests/ability/EndOrder.test.ts`. Since the autoplay runs 2-3 the latched increases no longer
+pay with the round's own: see "Latched permanents pay after the round's own effects" above.
 
 In 1496283 the old infiltration also crashed the live advisor once: the engine left the
 opponent 2 pillz instead of 3, and replaying their 3-pill bet in round four threw.
@@ -712,10 +747,12 @@ opponent 2 pillz instead of 3, and replaying their 3-pill bet in round four thre
 server's totals, keeps the latest disagreement on screen, and returns "cannot replay" instead
 of throwing (`tests/solver/Advisor.test.ts`).
 
-The Rust engine is unchanged. It refuses every match where a cross-owner order could meet a
-binding floor or cap on one resource (the "1093173/1 order rule" in `docs/rust-migration.md`),
+The Rust engine was left unchanged. It refuses many matches where a cross-owner order could meet
+a binding floor or cap on one resource (the "1093173/1 order rule" in `docs/rust-migration.md`),
 because the server's order was unknown; the rounds above now pin it, which a Rust slice could
-use to lift those refusals.
+use to lift those refusals. Not every such match is refused, though: a latched Heal beside an
+opposing current-round Life cut is admitted, and there the two engines disagreed until semantic
+revision 80 (next entry above).
 
 ### Same-family permanents replace, as the server text says — 1506438 (fixed)
 The server prints "If two poisons or toxins are applied, the second will replace the first as

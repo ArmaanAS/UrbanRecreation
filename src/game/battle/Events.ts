@@ -295,11 +295,19 @@ export default class Events {
   }
 
   /**
-   * Settle the end of the round: every increase of both players first, then every decrease,
-   * the decreases in descending order of their Min clamp - the order the server already uses
-   * for the opposing combat-stat reductions (`execute`). Within a pass the order is the old
-   * one: internal P2 before P1, bonus before ability, a side's current-round effects before
-   * the permanents it has latched, and all current-round decreases before the latched ones.
+   * Settle the end of the round: the round's own effects first - every increase of both
+   * players, then every decrease, the decreases in descending order of their Min clamp, the
+   * order the server already uses for the opposing combat-stat reductions (`execute`) - and
+   * only then the permanents latched on either side, their increases before their decreases.
+   * Within a pass the order is the old one: internal P2 before P1, bonus before ability.
+   *
+   * The latched effects come after every current-round one, not with the increases: in
+   * 1517029 r2 Owen's `-4 Opp. Life Min 2` takes Lakit Cr's owner from 10 to 6 and only then
+   * does the latched `Heal 4 Max. 7` pay, to 7; the Heal first would find 10 above its cap,
+   * pay nothing and leave 6. The server posts the round's effects on each player in the order
+   * it applies them, and every post list in the corpus has the current-round entries ahead of
+   * the latched ones: a latched gain after a current decrease in 1516124 r0, 1516372 r1 and
+   * r2, 924669 r0 and 1514883 r2 as well, where no cap binds, and never the other way round.
    *
    * Four captured rounds put an increase before a decrease that would have clamped it, on
    * either seat and whoever won: 1093173 r1 (P2's Riots `+1 Pillz` before P1's Goose `-2 Opp.
@@ -333,11 +341,9 @@ export default class Events {
     for (let i = 0; i < secondEvents.length; i++) {
       if (endPass(secondEvents[i]) === 0) secondEvents[i].apply(secondData);
     }
-    second.executeRepeat(event, secondData, 0);
     for (let i = 0; i < firstEvents.length; i++) {
       if (endPass(firstEvents[i]) === 0) firstEvents[i].apply(firstData);
     }
-    first.executeRepeat(event, firstData, 0);
 
     let secondDone = 0;
     let firstDone = 0;
@@ -375,6 +381,8 @@ export default class Events {
     clear(secondEvents);
     clear(firstEvents);
 
+    second.executeRepeat(event, secondData, 0);
+    first.executeRepeat(event, firstData, 0);
     second.executeRepeat(event, secondData, 1);
     first.executeRepeat(event, firstData, 1);
     if (second.repeat[event].length === 0) second.mask &= ~(1 << event);

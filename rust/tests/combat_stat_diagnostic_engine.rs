@@ -473,6 +473,55 @@ const REGEN: CombatStatEffectV1 = CombatStatEffectV1::RegenLifeOnVictory {
     maximum: 6,
 };
 
+/// Semantic revision 80: a latched permanent pays after both owners' current-round effects.
+/// In 1517029/2 Owen's `-4 Opp. Life Min 2` takes Lakit Cr's owner from 10 to 6 before the
+/// latched `Heal 4 Max. 7` pays to 7; with the Heal first it would find 10 above its cap and
+/// leave 6. Here the Heal's owner is on 9, loses 3 and then meets the reduction: 6 -> 2 (its
+/// Min), then the Heal 2 + 4 = 6. Until revision 79 a P1 latch paid right after P1's own
+/// current-round effects, before P2's reduction: 6 + 1 (capped at 7), then 7 - 4 = 3. The
+/// result no longer depends on the seat.
+#[test]
+fn a_latched_heal_pays_after_the_opposing_reduction_of_the_round_as_in_capture_1517029() {
+    const LAKIT_HEAL: CombatStatEffectV1 = CombatStatEffectV1::HealLifeOnVictory {
+        life: 4,
+        maximum: 7,
+    };
+    const OWEN_CUT: CombatStatEffectV1 = CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+        life: 4,
+        minimum: 2,
+    };
+    for healer in PlayerId::ALL {
+        let cutter = healer.other();
+        let mut base = base_spec(6, 3);
+        base.players[healer].initial_life = 9;
+        let mut cards = plans(&base);
+        cards[healer][0].ability = execute(839, CombatStatPredicateV1::Always, LAKIT_HEAL);
+        cards[cutter][0].ability = execute(535, CombatStatPredicateV1::Always, OWEN_CUT);
+        let mut diag = game(base, cards);
+        let start = diag.position().clone();
+        let bets = |healer_bet: (u8, u16, bool), cutter_bet: (u8, u16, bool)| {
+            if healer == PlayerId::P1 {
+                (healer_bet, cutter_bet)
+            } else {
+                (cutter_bet, healer_bet)
+            }
+        };
+        // Round 1: the Heal wins and latches; it waits a round, as every Heal does.
+        let (p1, p2) = bets((0, 2, false), (1, 0, false));
+        let (first, undo_first) = diag.make(input(healer, p1, p2)).unwrap();
+        assert!(first.cards[healer].won, "{healer:?}");
+        assert_eq!(first.players[healer].life, 9, "{healer:?}");
+        // Round 2: the reduction wins for 3 Damage: 9 - 3 = 6, - 4 held at Min 2, + 4 = 6.
+        let (p1, p2) = bets((1, 0, false), (0, 2, false));
+        let (second, undo_second) = diag.make(input(cutter, p1, p2)).unwrap();
+        assert!(second.cards[cutter].won, "{healer:?}");
+        assert_eq!(second.players[healer].life, 6, "{healer:?}");
+        diag.unmake(undo_second);
+        diag.unmake(undo_first);
+        assert_eq!(diag.position(), &start);
+    }
+}
+
 #[test]
 fn toxin_pays_in_its_latching_round_after_damage_and_keeps_paying_after_its_owner_is_ko() {
     // Round 1: P1 wins with 3 Damage and the Toxin takes one more at once: 12 - 3 - 1 = 8,

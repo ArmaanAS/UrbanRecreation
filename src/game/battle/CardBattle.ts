@@ -144,8 +144,8 @@ export default class CardBattle {
       p1.life -= card2.damage.final;
     }
 
-    // The end of the round settles every increase before every decrease, the decreases by
-    // descending Min (Events.executeEnd, docs/replay-triage.md).
+    // The end of the round settles the round's own increases, then its decreases by
+    // descending Min, then the latched permanents (Events.executeEnd, docs/replay-triage.md).
     if ((events1.mask | events2.mask) & (1 << EventTime.END)) {
       Events.executeEnd(events1, b1, events2, b2);
     }

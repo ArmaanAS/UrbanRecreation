@@ -235,7 +235,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 79;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 80;
 
 /// Revision 79: the lone Team Leaders the corpus pins, each by identity - the registry
 /// definition the captures deal, its exact printed text, and the effect it compiles to. Only

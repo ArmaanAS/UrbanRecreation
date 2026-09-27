@@ -252,6 +252,19 @@ impl LatchedEffectV1 {
         }
     }
 
+    /// Whether this permanent raises its owner's own Life or Pillz (Heal, Regen, Dope) rather
+    /// than lowering the opposing player's. The end of the round pays every latched gain
+    /// before any latched reduction (semantic revision 80).
+    pub const fn is_own_gain(self) -> bool {
+        match self {
+            Self::HealLife { .. } | Self::RegenLife { .. } | Self::DopePillz { .. } => true,
+            Self::PoisonOpponentLife { .. }
+            | Self::ToxinOpponentLife { .. }
+            | Self::ConsumeOpponentPillz { .. }
+            | Self::CombustOpponentLifeAndPillz { .. } => false,
+        }
+    }
+
     /// Whether the round that latches this effect also pays it.
     pub const fn pays_in_latching_round(self) -> bool {
         match self {
@@ -390,8 +403,9 @@ impl PillzWritesV1 {
 }
 
 /// The permanents one player has latched so far, in latch order, which is also the order
-/// they are applied in. Each card is played once and this projection latches at most one
-/// source per card, so the hand size bounds the list.
+/// they are applied in within each of the end of the round's two latched passes, the gains
+/// and then the reductions (semantic revision 80). Each card is played once and this
+/// projection latches at most one source per card, so the hand size bounds the list.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct LatchedEffectsV1 {
     effects: [Option<LatchedEffectV1>; HAND_SIZE],
@@ -2132,76 +2146,90 @@ impl BaseRulesGame {
                     PostRoundEffect::LatchOnDefeat(_) => {}
                 }
             }
-            // Latched permanents repeat now, after this owner's own current-round effects
-            // and before the other owner's, which is the TypeScript reference's END order:
-            // each side's fresh effects, then its `repeat` bucket in latch order. Anything
-            // latched just above sits past the pre-round length and pays this round only if
-            // its kind does. A KO is terminal for the owner's own gains - a player at zero
-            // is never revived - while an opposing reduction still lands on a living target
-            // whether or not its owner was just knocked out. An entry a newer latch of its
-            // family has replaced pays nothing (semantic revision 78), which is the
-            // TypeScript reference's `Events.executeRepeat` rule.
-            let latched_before = self.position.latched[owner].len();
-            let latched = position.latched[owner];
-            for (index, effect) in latched.iter().enumerate() {
-                if !latched.pays_this_round(index, latched_before)
-                    || latched.replaced_this_round(index, latched_before)
-                {
-                    continue;
-                }
-                match effect {
-                    LatchedEffectV1::HealLife { life, maximum }
-                    | LatchedEffectV1::RegenLife { life, maximum } => {
-                        let current = position.players[owner].life;
-                        if current > 0 && current < maximum {
-                            position.players[owner].life = current
-                                .checked_add(life)
-                                .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?
-                                .min(maximum);
-                        }
+        }
+        // Latched permanents repeat once both owners' current-round effects are settled, the
+        // gains of both owners before their reductions (semantic revision 80), which is the
+        // TypeScript reference's END order (`Events.executeEnd`): the round's fresh effects,
+        // then every `repeat` bucket's increases, then its decreases. 1517029/2 pins it: Owen's
+        // `-4 Opp. Life Min 2` takes Lakit Cr's owner from 10 to 6 before the latched `Heal 4
+        // Max. 7` pays to 7, and the server posts every round's current-round entries ahead of
+        // the latched ones. Until revision 79 an owner's latches paid right after its own
+        // current-round effects, so a P1 latch landed before P2's current-round writes. A
+        // gain and a reduction of two owners' latches can only meet on one player, the gain's
+        // owner, and there the gain goes first, as in the reference. The rounds that post
+        // both (1515451/1 and /3, 1516711/3, 1517078/2 and /3) all have the gain on P1, where
+        // the old per-owner order put it first too; a P2 gain before a P1 latch's reduction
+        // follows the reference unobserved. Anything latched this round sits past the
+        // pre-round length and pays this round only if its kind does. A KO is terminal for the owner's own gains - a player at zero is never revived
+        // - while an opposing reduction still lands on a living target whether or not its
+        // owner was just knocked out. An entry a newer latch of its family has replaced pays
+        // nothing (semantic revision 78), which is the TypeScript reference's
+        // `Events.executeRepeat` rule.
+        for gains in [true, false] {
+            for owner in PlayerId::ALL {
+                let latched_before = self.position.latched[owner].len();
+                let latched = position.latched[owner];
+                for (index, effect) in latched.iter().enumerate() {
+                    if effect.is_own_gain() != gains
+                        || !latched.pays_this_round(index, latched_before)
+                        || latched.replaced_this_round(index, latched_before)
+                    {
+                        continue;
                     }
-                    LatchedEffectV1::PoisonOpponentLife { life, minimum }
-                    | LatchedEffectV1::ToxinOpponentLife { life, minimum } => {
-                        let target = owner.other();
-                        let current = position.players[target].life;
-                        if current > minimum {
-                            position.players[target].life =
-                                current.saturating_sub(life).max(minimum);
+                    match effect {
+                        LatchedEffectV1::HealLife { life, maximum }
+                        | LatchedEffectV1::RegenLife { life, maximum } => {
+                            let current = position.players[owner].life;
+                            if current > 0 && current < maximum {
+                                position.players[owner].life = current
+                                    .checked_add(life)
+                                    .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?
+                                    .min(maximum);
+                            }
                         }
-                    }
-                    // The Pillz reduction reads the target's Pillz after both bets, like
-                    // the plain `-N Opp Pillz. Min M`, and does not ask whether the target
-                    // is still living.
-                    LatchedEffectV1::ConsumeOpponentPillz { pillz, minimum } => {
-                        let target = owner.other();
-                        let current = position.players[target].pillz;
-                        if current > minimum {
-                            position.players[target].pillz =
-                                current.saturating_sub(pillz).max(minimum);
+                        LatchedEffectV1::PoisonOpponentLife { life, minimum }
+                        | LatchedEffectV1::ToxinOpponentLife { life, minimum } => {
+                            let target = owner.other();
+                            let current = position.players[target].life;
+                            if current > minimum {
+                                position.players[target].life =
+                                    current.saturating_sub(life).max(minimum);
+                            }
                         }
-                    }
-                    LatchedEffectV1::CombustOpponentLifeAndPillz { amount, minimum } => {
-                        let target = owner.other();
-                        let life = position.players[target].life;
-                        if life > minimum {
-                            position.players[target].life =
-                                life.saturating_sub(amount).max(minimum);
+                        // The Pillz reduction reads the target's Pillz after both bets, like
+                        // the plain `-N Opp Pillz. Min M`, and does not ask whether the target
+                        // is still living.
+                        LatchedEffectV1::ConsumeOpponentPillz { pillz, minimum } => {
+                            let target = owner.other();
+                            let current = position.players[target].pillz;
+                            if current > minimum {
+                                position.players[target].pillz =
+                                    current.saturating_sub(pillz).max(minimum);
+                            }
                         }
-                        let pillz = position.players[target].pillz;
-                        if pillz > minimum {
-                            position.players[target].pillz =
-                                pillz.saturating_sub(amount).max(minimum);
+                        LatchedEffectV1::CombustOpponentLifeAndPillz { amount, minimum } => {
+                            let target = owner.other();
+                            let life = position.players[target].life;
+                            if life > minimum {
+                                position.players[target].life =
+                                    life.saturating_sub(amount).max(minimum);
+                            }
+                            let pillz = position.players[target].pillz;
+                            if pillz > minimum {
+                                position.players[target].pillz =
+                                    pillz.saturating_sub(amount).max(minimum);
+                            }
                         }
-                    }
-                    // Dope is Regen on the owner's Pillz with no living guard: the server pays
-                    // an owner the round has just knocked out (924853 r3, 956902 r2).
-                    LatchedEffectV1::DopePillz { pillz, maximum } => {
-                        let current = position.players[owner].pillz;
-                        if current < maximum {
-                            position.players[owner].pillz = current
-                                .checked_add(pillz)
-                                .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?
-                                .min(maximum);
+                        // Dope is Regen on the owner's Pillz with no living guard: the server pays
+                        // an owner the round has just knocked out (924853 r3, 956902 r2).
+                        LatchedEffectV1::DopePillz { pillz, maximum } => {
+                            let current = position.players[owner].pillz;
+                            if current < maximum {
+                                position.players[owner].pillz = current
+                                    .checked_add(pillz)
+                                    .ok_or(BaseRulesError::PillzIncreaseOverflow { player: owner })?
+                                    .min(maximum);
+                            }
                         }
                     }
                 }

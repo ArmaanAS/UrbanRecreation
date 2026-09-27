@@ -1,9 +1,10 @@
-// The end of the round settles every increase before every decrease, on either seat and
-// whoever won, and the decreases in descending order of their Min clamp (Events.executeEnd).
-// The rule it replaced ran the round-one second mover's (internal P2's) END effects first;
-// that fitted 1093173 r1 and 1496283 r2 only, and 1496283 r2 stopped constraining the order
-// once its two Oculus were left uninfiltrated. Every round below is a captured one, with the
-// server's numbers.
+// The end of the round settles the round's own effects - every increase before every
+// decrease, on either seat and whoever won, the decreases in descending order of their Min
+// clamp - and then the permanents latched on either side, increases before decreases
+// (Events.executeEnd). The rule it replaced ran the round-one second mover's (internal P2's)
+// END effects first; that fitted 1093173 r1 and 1496283 r2 only, and 1496283 r2 stopped
+// constraining the order once its two Oculus were left uninfiltrated. Every round below is a
+// captured one, with the server's numbers.
 import { HandGenerator } from "@/game/Hand.ts";
 import Player from "@/game/Player.ts";
 import Game from "@/game/Game.ts";
@@ -79,6 +80,32 @@ Deno.test("Gains and a latched Regen land before a latched Poison (1515451 r2)",
   g.select(1, 0, false, false); // P2 Miloz
   assertEquals(g.h1[1].won, true);
   assertEquals(state(g), [16, 0, 10, 1]);
+});
+
+Deno.test("A latched Heal pays after the opposing reduction of the round (1517029 r2)", () => {
+  // Lakit Cr (internal P2) latches `Heal 4 Max. 7` in round one. In round two Owen wins for 5
+  // Damage, 15 -> 10; his `-4 Opp. Life Min 2` takes that to 6, and only then does the Heal
+  // pay, 6 + 4 capped at 7. Latched gains with the round's own increases paid first, found 10
+  // above the cap, paid nothing and ended on 6. The server posts the -4 before the Heal's +1.
+  const g = new Game(
+    new Player(15, 12, 0),
+    new Player(15, 12, 1),
+    hand(["Agnes", "Daphne", "Piche", "Owen"], [4, 4, 4, 5]),
+    hand(["Cyloxxt", "Lakit Cr", "Oryon", "TrinmkkT"], [1, 4, 3, 4]),
+    Turn.PLAYER_1,
+    false,
+    false,
+  );
+  g.select(0, 3, false, false); // P1 Agnes
+  g.select(3, 10, false, false); // P2 TrinmkkT wins
+  assertEquals(state(g), [9, 10, 15, 2]);
+  g.select(1, 1, false, false); // P2 Lakit Cr lv4 wins, latches its Heal
+  g.select(2, 0, false, false); // P1 Piche
+  assertEquals(state(g), [5, 11, 15, 1]);
+  g.select(3, 2, false, false); // P1 Owen lv5, 7 x 3 = 21, wins
+  g.select(0, 0, false, false); // P2 Cyloxxt lv1
+  assertEquals(g.h1[3].won, true);
+  assertEquals(state(g), [5, 9, 7, 1]);
 });
 
 Deno.test("Two reductions of one Life resolve by descending Min, bonus first (876752 r1)", () => {

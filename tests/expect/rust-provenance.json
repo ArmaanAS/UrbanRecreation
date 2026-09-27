@@ -5,7 +5,7 @@
     "effectiveCatalogFingerprintFnv1a64": "66477dd01875098b",
     "effectRegistryFingerprintFnv1a64": "95499942b3e59818",
     "effectRegistrySchemaVersion": 1,
-    "compilerPolicySemanticRevision": 79,
+    "compilerPolicySemanticRevision": 80,
     "catalogContextPolicySemanticRevision": 8,
     "advisorPolicySemanticRevision": 3
   }

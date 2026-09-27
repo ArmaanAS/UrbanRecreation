@@ -183,8 +183,10 @@ UR_DEBUG=1 deno test -A --no-check tests/ability/   # verbose engine tracing (of
    and the four plain permanent Life grammars - `Heal N Max. M`, `Regen N, Max. M`,
    `Poison N, Min M` (abilities and the active Freaks bonus) and `Toxin N, Min M` - on one
    latch: a live source whose card wins writes the effect into its owner's
-   `BaseRulesPosition::latched`, and every later round pays it after that owner's own
-   current-round effects, in latch order. Heal and Poison pay nothing in the latching round;
+   `BaseRulesPosition::latched`, and every later round pays it after both owners'
+   current-round effects, every latched gain before every latched reduction, in latch order
+   (since revision 80; until then after that owner's own effects, 1517029 r2 settled it).
+   Heal and Poison pay nothing in the latching round;
    Toxin and Regen pay at once. Heal and Regen pay a living owner below the cap and never past
    it; Poison and Toxin take from the opposing player above the floor and never below it,
    still pay in the round their owner is knocked out, and a Min 0 Toxin can end the match

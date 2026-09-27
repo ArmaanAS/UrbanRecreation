@@ -944,7 +944,9 @@ post-round plan; the commit turns it into `LatchHealLifeOnVictory`, which writes
 into the winner's list and pays nothing in that round. Every later commit then walks each
 owner's pre-round list after that owner's own current-round effects and before the other
 owner's, which is the TypeScript reference's END order - each side's fresh effects, then its
-`repeat` bucket - and pays `life` while the owner is living and below `maximum`, capped at
+`repeat` bucket - (since semantic revision 80, after both owners' current-round effects, the
+gains of both before their reductions) and pays `life` while the owner is living and below
+`maximum`, capped at
 `maximum` and never lowering a value already above it. Reading the pre-round list is what
 keeps the round's own latch out of the round's own repeats.
 
@@ -4344,6 +4346,50 @@ The scanned draws, the disabled and inert ids and both data fingerprints are unc
   None has a capture, except John Doom's one round in 901186, a draw Merrie's `Stop:` source
   blocks. The other lone Leaders stay refused too: Morphun, Eklore, Solomon's Tie-break,
   Robert Cobb, Memento, Fractal, Hekate, Administrator's Hazard and Kate's Illusion.
+
+Semantic revision 80 moves the latched permanents after both owners' current-round effects. It
+admits nothing, and the eligible draws do not change. Until now `commit` paid each owner's
+latched list right after that owner's own current-round effects and before the other owner's,
+so a P1 latch landed before P2's current-round writes on the same player. 1517029/2 (2026-09-27,
+autoplay) shows the server's order, and the TypeScript engine changes to it in the same commit
+(docs/replay-triage.md, "Latched permanents pay after the round's own effects").
+
+**The rule.** After both owners' bonus, ability and Team effects, one pass pays every owner's
+latched gains (Heal, Regen, Dope: `LatchedEffectV1::is_own_gain`) and a second every owner's
+latched reductions (Poison, Toxin, Consume, Combust). Within a pass it is P1's list, then P2's,
+each in latch order. A latched gain writes its owner and a latched reduction the other player, so
+two owners' latches meet only on a gain's owner, and the two passes decide every such case.
+Replacement (revision 78), `pays_this_round` and the KO guards are unchanged.
+
+**Evidence.**
+- 1517029/2: Lakit Cr's owner (P2) is on 15 and loses 5 to Owen, 10. Owen's `-4 Opp. Life Min
+  2` takes that to 6, and only then does Lakit Cr's latched `Heal 4 Max. 7` pay, to 7. The Heal
+  first would find 10 above its cap and leave 6. The Heal is P2's here, which the old per-owner
+  order also put after P1's Owen; the seat-independent rule is what the next point adds.
+- The server posts each player's end-of-round entries in the order it applies them. In every
+  captured post list the current-round entries come ahead of the latched ones: a latched gain
+  after a current-round reduction in 1516124/0, 1516372/1 and /2, 924669/0, 1514883/2 and
+  1517029/2, and never a latched entry ahead of a current-round one.
+- Latched gains come before latched reductions in 1515451/1 and /3, 1516711/3 and 1517078/2 and
+  /3. All five have the gain on P1, where the old order put it first too. A P2 gain beside a P1
+  latch's reduction is unobserved and follows the reference.
+
+**Search.** Values change only where a P1 latched gain meets a P2 current-round write on the
+same player with a cap or floor binding, or a P2 latched gain meets a P1 latched reduction the
+same way. Construction admits such pairs: a catalog probe of Lakit Cr L4 beside Owen L5 prepares
+either way round. The TypeScript engine made the same move in the same commit. Its previous
+order (44c8b39, every increase first) had disagreed with this engine on the mirrored seat: a P2
+latched Heal paid before a P1 current-round reduction there, and after it here. Matchup solves
+are cached by provenance, and the new compiler revision recomputes them.
+
+`deno task pins:update` moves the compiler revision (79 to 80) and `tests/expect/rust-provenance.json`
+(compiler 80). The gate rounds (950), the eligible and scanned draws, the gate ids and dispositions
+and both data fingerprints are unchanged: no gate round meets a binding clamp in the two orders'
+gap.
+
+**Test.** `a_latched_heal_pays_after_the_opposing_reduction_of_the_round_as_in_capture_1517029`
+(`combat_stat_diagnostic_engine.rs`) plays the Heal's owner on 9 into a 3-Damage loss and the
+`-4, Min 2` cut, for both seats: 6 - 4 held at 2, + 4 = 6. Revision 79 gave a P1 healer 3.
 
 #### The clan gate, measured but not taken
 
