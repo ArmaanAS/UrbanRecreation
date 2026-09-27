@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UR logger
 // @namespace    urban-recreation
-// @version      0.10.0
+// @version      0.10.1
 // @description  Mirror Urban Rivals network traffic to a local log server (see log_server.ts)
 // @match        https://www.urban-rivals.com/*
 // @run-at       document-start
@@ -23,7 +23,7 @@
 (() => {
   // Keep equal to @version above; log_server.ts compares it with the repository copy and
   // says when this one is out of date.
-  const VERSION = '0.10.0';
+  const VERSION = '0.10.1';
   const SERVER_ROOT = 'http://localhost:8787';
   const SERVER = SERVER_ROOT + '/log';
   const CONTROL = SERVER_ROOT + '/control';
@@ -37,6 +37,7 @@
     wsInLog = wsInLog.then(() => ready.then((value) => log('ws_in', value)));
   };
   let apiCall;
+  let session = null;
   // While the autoplay bridge is driving a battle (see autoplayLoop), the driver's own status
   // polls are the capture; the game client's polls of the same battle lag behind in a hidden
   // tab and would interleave stale rounds with it, so they are not logged until this passes.
@@ -133,6 +134,12 @@
   const inspectApiResponse = (text) => {
     let json;
     try { json = JSON.parse(text); } catch { return; }
+    // The session the game client just opened or renewed; the autoplay bridge keeps it alive
+    // once the client is shut down (renewSession). It never leaves the page from here.
+    const auth = (json['auth.exchangeToken'] || json['auth.refresh'] || {}).data;
+    if (auth && auth.accessToken && auth.refreshToken) {
+      session = { accessToken: auth.accessToken, refreshToken: auth.refreshToken, at: Date.now() };
+    }
     const status = json['battles.status'] && json['battles.status'].data;
     if (status && status.battle && status.battle.id) lastBattleId = status.battle.id;
     const result = json['battles.result'] && json['battles.result'].data;
@@ -246,6 +253,15 @@
   };
   window.__ur = {
     apiCall,
+    // What the autoplay bridge knows about the session, without any token in it.
+    autoplayStatus: () => ({
+      version: VERSION,
+      autoplayMode,
+      session: !!session,
+      sessionAgeMs: session ? Date.now() - session.at : null,
+      renewable: !!(session && lastApiInit && Object.values(lastApiInit.headers || {}).some((v) => typeof v === 'string' && v.includes(session.accessToken))),
+      keepAwake: window.__urKeepAwake ? window.__urKeepAwake.state : null,
+    }),
     // Dump the site's own card database (every card at every level) to the log server,
     // which writes data/site_characters.jsonl. `since` = timestampLastUpdate (0 = everything).
     async dumpCharacters(since = 0) {
@@ -394,12 +410,68 @@
   // actions only. Every call is logged like the client's own traffic, so the capture pipeline
   // records the driver's battles exactly as it records the owner's.
   const AUTOPLAY = SERVER_ROOT + '/autoplay';
+  // The access token lasts 30 minutes. While autoplay drives the page the game client is shut
+  // down (startAutoplayMode), so nothing else renews it: renew it the way the client does, with
+  // auth.refresh and the latest refresh token, and put the new access token wherever the old
+  // one sat in the captured request headers. False when that is not possible here.
+  const renewSession = async () => {
+    if (!session || !lastApiInit) return false;
+    const old = session.accessToken;
+    const entries = Object.entries(lastApiInit.headers || {});
+    if (!entries.some(([, v]) => typeof v === 'string' && v.includes(old))) return false;
+    const body = 'requests=' + encodeURIComponent(JSON.stringify([{ call: 'auth.refresh', params: { refreshToken: session.refreshToken } }]));
+    const res = await nativeFetch(API, { ...lastApiInit, method: 'POST', body });
+    const data = ((await res.json())['auth.refresh'] || {}).data;
+    if (!data || !data.accessToken) return false;
+    lastApiInit = {
+      ...lastApiInit,
+      headers: Object.fromEntries(entries.map(([k, v]) => [k, typeof v === 'string' ? v.split(old).join(data.accessToken) : v])),
+    };
+    session = { accessToken: data.accessToken, refreshToken: data.refreshToken || session.refreshToken, at: Date.now() };
+    console.log('UR logger: autoplay renewed the game session');
+    return true;
+  };
+  const expired = (txt) => /expired or invalid access token/i.test(txt);
+  // Once a driver sends work, the tab is an unattended player: shut the game client down (in a
+  // hidden, awake tab its main loop spins a core and hangs the page when a battle opens) and
+  // keep the tab awake, since a hidden tab is frozen unless it plays audio. The tone is 20 Hz
+  // at -30 dBFS and needs one click on the page to start.
+  let autoplayMode = false;
+  const startAutoplayMode = () => {
+    if (autoplayMode) return;
+    autoplayMode = true;
+    try { if (window.unityGame && window.unityGame.Quit) window.unityGame.Quit(); } catch { /* already gone */ }
+    try { navigator.locks.request('ur-autoplay-keepawake', () => new Promise(() => {})); } catch { /* no Web Locks */ }
+    try {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 20;
+      gain.gain.value = 0.03;
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      window.__urKeepAwake = ctx;
+      if (ctx.state !== 'running') {
+        const button = document.createElement('div');
+        button.id = '__keepAwakeBtn';
+        button.style.cssText = 'position:fixed;left:0;top:0;width:320px;height:320px;z-index:2147483647;background:rgba(0,0,0,0.01)';
+        button.addEventListener('pointerdown', () => { ctx.resume(); setTimeout(() => button.remove(), 0); }, { capture: true });
+        document.body.appendChild(button);
+      }
+    } catch { /* no audio */ }
+  };
   const runAutoplayCommand = async (cmd) => {
     if (typeof cmd.call === 'string') {
       if (!lastApiInit) throw new Error('No private API call seen yet - wait until the game has loaded.');
+      startAutoplayMode();
+      if (session && Date.now() - session.at > 20 * 60 * 1000) await renewSession().catch(() => false);
       const body = 'requests=' + encodeURIComponent(JSON.stringify([{ call: cmd.call, params: cmd.params || {} }]));
-      const res = await nativeFetch(API, { ...lastApiInit, method: 'POST', body });
-      const txt = await res.text();
+      let res = await nativeFetch(API, { ...lastApiInit, method: 'POST', body });
+      let txt = await res.text();
+      if (expired(txt) && await renewSession().catch(() => false)) {
+        res = await nativeFetch(API, { ...lastApiInit, method: 'POST', body });
+        txt = await res.text();
+      }
       inspectApiResponse(txt);
       await log('fetch', { m: 'POST', u: API, body, status: res.status, resp: txt });
       return JSON.parse(txt)[cmd.call];
