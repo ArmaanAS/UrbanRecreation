@@ -62,10 +62,12 @@ export default class Hand extends Array<Card> {
     for (let i = 0; i < 4; i++) {
       const card = hand[i];
       if (card.baseClan === "Oculus") {
+        // A second Oculus leaves both uninfiltrated. The scan used to stop at the first, so
+        // this could never fire; 1496283 (two Oculus beside two GhosTown) has the server send
+        // no bonus on either Oculus and Dark Kaizerin's GhosTown-gated ability take nothing.
         if (oculus !== undefined) return hand;
         oculus = card;
         oculusIndex = i;
-        break;
       }
     }
 

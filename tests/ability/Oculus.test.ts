@@ -14,6 +14,7 @@ import Game from "@/game/Game.ts";
 import { assertEquals } from "@std/assert";
 import { CardGenerator } from "@/game/Card.ts";
 import { Turn } from "@/game/types/Types.ts";
+import { type HandOf } from "@/game/types/CardTypes.ts";
 
 const stats = (
   c: { power: { final: number }; damage: { final: number }; attack: { final: number } },
@@ -204,4 +205,58 @@ Deno.test("Two copies of one Oculus infiltrate independently", () => {
   assertEquals(g.h2[0].bonusString, "Victory Or Defeat : +1 Pillz");
   assertEquals(g.h1[0].baseClan, "Oculus");
   assertEquals(g.h2[0].baseClan, "Oculus");
+});
+
+// "If three other clans are present in the draw, or if you have more than one Oculus in your
+// hand, the Infiltrated bonus has no effect" (the rules text quoted in Hand.from). The scan
+// used to stop at the first Oculus, so the guard for a second one could never fire, and the
+// first still joined the hand's clan. Training capture 1496283 holds two Oculus beside two
+// GhosTown: the server sends no bonus on either Oculus card (a lone Oculus carries the clan
+// bonus it infiltrated, as in 1025413), and in round two Dark Kaizerin's `[clan:52]...
+// -2 Opp Pillz. Min 2`, which "only activates if Dark Kaizerin infiltrates GhosTown, ...",
+// takes nothing: Naele's owner goes from 2 to 3 on the Vortex recovery alone.
+Deno.test("Two Oculus in one hand infiltrate nothing", () => {
+  const vortex = HandGenerator.handOf(
+    ["Naliah Cr", "Stanly", "Dregn Cr", "Naele"] as HandOf<string>,
+    [5, 5, 5, 5] as HandOf<number | undefined>,
+  );
+  const twoOculus = () =>
+    HandGenerator.handOf(
+      ["Ford", "Wild Holiday Ld", "Dark Kaizerin", "Dark Morphun"] as HandOf<string>,
+      [4, 3, 2, 5] as HandOf<number | undefined>,
+    );
+  const h2 = twoOculus();
+  assertEquals([h2[2].clan, h2[3].clan], ["Oculus", "Oculus"]);
+  assertEquals([h2[2].bonusString, h2[3].bonusString], ["Infiltrated", "Infiltrated"]);
+
+  const g = new Game(new Player(15, 12, 0), new Player(15, 12, 1), vortex, h2, Turn.PLAYER_1, false, true);
+  g.select(3, 0, false, false); // P1 Naele lv5, 8/5 (no previous round for its Confidence)
+  g.select(2, 3, true, false); // P2 Dark Kaizerin lv2, 7 x 4 = 28, Fury
+  assertEquals([g.h1[3].won, g.h2[2].won], [false, true]);
+  // 12 - 0 bet, + the Vortex `Defeat: Recover 2 Pillz Out Of 3` minimum of 1, and no -2.
+  assertEquals(g.p1.pillz, 13);
+  assertEquals(g.p2.pillz, 6);
+
+  // One Oculus in the same hand does infiltrate GhosTown, and the reduction then lands.
+  const one = HandGenerator.handOf(
+    ["Ford", "Wild Holiday Ld", "Dark Kaizerin", "Guy"] as HandOf<string>,
+    [4, 3, 2, 5] as HandOf<number | undefined>,
+  );
+  assertEquals(one[2].clan, "GhosTown");
+  const control = new Game(
+    new Player(15, 12, 0),
+    new Player(15, 12, 1),
+    HandGenerator.handOf(
+      ["Naliah Cr", "Stanly", "Dregn Cr", "Naele"] as HandOf<string>,
+      [5, 5, 5, 5] as HandOf<number | undefined>,
+    ),
+    one,
+    Turn.PLAYER_1,
+    false,
+    true,
+  );
+  control.select(3, 0, false, false);
+  control.select(2, 3, true, false);
+  assertEquals(control.h2[2].won, true);
+  assertEquals(control.p1.pillz, 11); // 12 + 1 recovered, then -2 (Min 2)
 });

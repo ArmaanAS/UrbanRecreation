@@ -56,6 +56,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 427 | 3 | +18 Training captures (Labs 6-8, the Team Leaders); an opposing resource Cancel deactivates permanents for its round (1508676); 1508712 is a third Protection: Cards round; 1508932 is a new single point (a binding cap beside a same-stat bonus) |
 | 2026-09-27 | 470 | 9 | +53 Training captures (autoplay run 1): six fresh mismatches (1514649, 1514836, 1515298, 1515451, 1515574, 1515692) |
 | 2026-09-27 | 471 | 8 | A recap snapshot no longer overwrites a round's resolution (1514649) |
+| 2026-09-27 | 471 | 8 | Two Oculus in one hand infiltrate nothing (1496283; no replay moves on its own) |
 
 ## Fixed
 
@@ -712,15 +713,26 @@ has another Attack modifier on the target, so the order against one is unobserve
 is the only card that prints this shape. Fixed 1414749 and 1507713. Tests in
 `tests/ability/OppIncrease.test.ts`. The Rust engine still refuses 5210 and 5214.
 
-### Two Oculus in one hand - no capture yet
+### Two Oculus in one hand infiltrate nothing - 1496283 (fixed)
 The rules text quoted in `Hand.from` says a hand holding more than one Oculus gets no
 Infiltrated effect, and the Rust catalog (`derive_effective_catalog_hand`) infiltrates only
-when exactly one Oculus is in the hand. The TypeScript scan `break`s at the first Oculus,
-so its `if (oculus !== undefined) return hand` guard can never fire: with two Oculus the
-first one still infiltrates, counting only the non-Oculus cards. No captured hand holds two
-Oculus cards (0 of 766 hands on 2026-09-25), so neither reading is evidenced and the code is
-left as it is. The two engines would disagree on such a draw, and `--rust=compare` would
-report it. A hand with two Oculus cards and a lone clan-mate for the first would settle it.
+when exactly one Oculus is in the hand. The TypeScript scan `break`s at the first Oculus, so
+its `if (oculus !== undefined) return hand` guard could never fire: with two Oculus the first
+one still infiltrated, counting only the non-Oculus cards. This entry used to say no captured
+hand held two Oculus; 1496283 (2026-09-26, Training) does, Dark Kaizerin and Dark Morphun
+beside two GhosTown, and it settles the text:
+- the server sends no bonus on either Oculus card, where a lone Oculus carries the clan bonus
+  it infiltrated (1025413 sends Dark Kaizerin the GhosTown `Night: -1 Opp Pow. And Damage,
+  Min 1`);
+- in round two Dark Kaizerin wins with `[clan:52]... -2 Opp Pillz. Min 2`, which "only
+  activates if Dark Kaizerin infiltrates GhosTown, Komboka, La Junta, Oblivion or Pussycats",
+  and Naele's owner goes from 2 to 3 on the Vortex `Defeat: Recover 2 Pillz Out Of 3` alone.
+
+The engine had been infiltrating Dark Kaizerin into GhosTown and reaching the 3 only through
+the end-of-round order it then adopted (reduction first, held at Min 2, then the recovery); see
+"End-of-round order" above. The scan now runs to the end, so a second Oculus leaves both
+uninfiltrated. The replays are unchanged, 471 exact before and after: 1496283 replays either
+way. Test in `tests/ability/Oculus.test.ts`, with a one-Oculus control that does infiltrate.
 
 ### Counter-attack only decides round one - settled 2026-09-26
 The engine kept the owner of a Counter-attack Leader (Ashigaru) second in every round. The
