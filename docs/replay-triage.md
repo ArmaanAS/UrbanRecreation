@@ -68,8 +68,26 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 748 | 13 | +188 Training captures (autoplay runs 3-5): nine fresh mismatches (1518052, 1518765, 1519318, 1519333, 1519829, 1519871, 1520327, 1520579, 1521010) |
 | 2026-09-27 | 752 | 9 | `+N Attack Per Opp. Damage` counts the printed opposing Damage (1515692, 1518052, 1518765, 1519829; Rust semantic revision 81) |
 | 2026-09-27 | 755 | 6 | An opposing `Cancel Opp. <stat> Modif.` beats a stat Protection (1519871, 1520579, 1521010) |
+| 2026-09-27 | 756 | 5 | `Disunion:` is Unison's complement (1519333) |
 
 ## Fixed
+
+### Disunion is Unison's complement - 1519333 (fixed)
+1519333 r0: Bernardite level 3's `Disunion: +1 Life` wins on 5 pillz under the opposing
+Cosmohnuts `Tune Out`, in a hand of four Rescue, and her owner stays on 15; the engine gave 16.
+`Disunion` was not a known condition, so it was met unconditionally. The server's text is Unison's
+complement: "The ability is only activated if your hand contains at least one character from a
+clan other than the Disunion character. Oculus characters who have infiltrated the clan do not
+count towards the activation of the ability" (4388; Karsen's `Disunion: -10 Opp Attack, Min 0`,
+5751, says the same, and both records carry `isAntiClanmatesCountLinked`). 1509142 r0 is the other
+direction: Bernardite wins beside a Frozn card and her owner goes 15 -> 16. The other three
+captured Disunion rounds decide nothing: 1130654 r2 loses, and in 1081037 r0 and 1089262 r2
+Spidee's `Reprisal: Stop Opp. Ability` stops Karsen. `ConditionType.DISUNION` holds when fewer than
+four of the hand's distinct characters share the card's clan, which is `Unison`'s count
+(`Hand.getClanCards`, where an infiltrated Oculus is a clan-mate). Fixed 1519333. Tests in
+`tests/ability/Disunion.test.ts`, and `tests/solver/Policy.test.ts` moves with it (see "Reanimate
+is an immediate Defeat life gain"). The Rust registry lists the anti-clan-mates link as an
+unsupported linked magnitude and no compiler grammar reads it, so neither text is admitted there.
 
 ### An opposing Cancel beats a stat Protection - 1519871, 1520579, 1521010 (fixed)
 Three autoplay rounds, two cards and two stats, have a stat Protection's own modifier of that stat
@@ -349,7 +367,10 @@ Reanimate activates whenever its card loses, not only when the incoming damage w
 lethal. In 1130654 round 1, Lobo's owner started on 7 Life and Miyo dealt 5; the server left
 them on 4, exactly `7 - 5 + 2`. The engine required Life to have reached zero, left them on
 2, and consequently advertised Miyo with one pill as a 100% win. With the rule corrected,
-the same fully searched recommendation is 86%. Reanimate is also allowed to lift its owner
+the same fully searched recommendation is 86%. Since `Disunion:` stopped paying Bernardite's
++1 Life in that all-Rescue hand (see "Disunion is Unison's complement"), one pill wins every
+line again, for the right reason, and the policy test pins Reanimate on Miyo's two-pill line
+instead: 91%, where a lethal-only Reanimate gives 100%. Reanimate is also allowed to lift its owner
 from zero and prevent KO, while a stopped Reanimate does nothing; 1080877 supplies the
 captured Stop Opp. Ability case. Tests in `tests/ability/Reanimate.test.ts` and
 `tests/solver/Policy.test.ts` pin all three behaviours plus the displayed percentage.

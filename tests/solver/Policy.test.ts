@@ -175,12 +175,19 @@ Deno.test("battle 1130654 accounts for Lobo's Reanimate", () => {
   const search = new Search(reanimatePosition());
   while (search.step()) { /* finish every hidden Lobo bet */ }
 
-  const miyoOne = search.candidates.find((candidate) =>
-    candidate.index === 1 && candidate.pillz === 1 && !candidate.fury
-  );
-  if (!miyoOne) throw new Error("Miyo with one pill was not searched");
+  const miyo = (pillz: number) => {
+    const candidate = search.candidates.find((candidate) =>
+      candidate.index === 1 && candidate.pillz === pillz && !candidate.fury
+    );
+    if (!candidate) throw new Error(`Miyo with ${pillz} pillz was not searched`);
+    return search.shownPercent(candidate.average);
+  };
 
-  assertEquals(search.shownPercent(miyoOne.average), 86);
+  // Lobo's Reanimate pays whenever it loses, so Miyo on two pillz is 91%; a lethal-only
+  // Reanimate made it 100%. One pill was 86% until Bernardite's `Disunion: +1 Life` stopped
+  // paying in this all-Rescue hand (1519333 r0), which leaves it winning every line.
+  assertEquals(miyo(2), 91);
+  assertEquals(miyo(1), 100);
 });
 
 Deno.test("battle 1131463 uses Quetzal Cr's live EFC semi-evo", () => {

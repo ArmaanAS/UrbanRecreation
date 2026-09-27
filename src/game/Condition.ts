@@ -51,6 +51,7 @@ export enum ConditionType {
   AFTER = 24,
   BET = 25,
   PERFECT = 26,
+  DISUNION = 27,
 }
 
 export default class Condition {
@@ -137,6 +138,16 @@ export default class Condition {
 
       case ConditionType.UNISON:
         return data.round.hand.getClanCards(data.card) === 4;
+      // Unison's complement: "The ability is only activated if your hand contains at least one
+      // character from a clan other than the Disunion character. Oculus characters who have
+      // infiltrated the clan do not count towards the activation of the ability"
+      // (captures/abilities.json 4388, 5751; `isAntiClanmatesCountLinked`). An infiltrated
+      // Oculus fights as a clan-mate, which `getClanCards` already counts. It was an unknown
+      // condition, met unconditionally: Bernardite's `Disunion: +1 Life` wins in an all-Rescue
+      // hand in 1519333 r0 and the server pays nothing (15, not 16), while beside a Frozn card
+      // in 1509142 r0 it pays (15 -> 16).
+      case ConditionType.DISUNION:
+        return data.round.hand.getClanCards(data.card) !== 4;
       case ConditionType.INFILTRATED:
         return this.clans.includes(data.card.clan);
       // "After [clan:56][clan:60]": only active if the card this player played in the
