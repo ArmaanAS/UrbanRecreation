@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 438 captured battles
-(430 replay-ready; 8 ignored because they stopped mid-match): 427 replay exactly and 3
+Status from `deno test -A --no-check tests/replay/` against 491 captured battles
+(479 replay-ready; 12 ignored because they stopped mid-match): 475 replay exactly and 4
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -430,7 +430,10 @@ refused and an increase still lands; the Attack guard is a new bit in the card's
 and is checked beside the other two. The Power and Attack forms follow the printed text alone:
 no captured round shows one against a reduction of its stat, and none shows the clan-gated
 Damage one live against a reduction. Fixed 1515574. Test in `tests/ability/Protection.test.ts`.
-The Rust engine still refuses every single-stat Protection.
+The Rust engine has admitted the single-stat forms since semantic revision 62, holding the
+stat as its Power And Damage mask does, but refuses construction wherever the opposing hand
+could change the protected stat, because no round had shown that half; 1515574 r3 is the
+first that does, for `Protection : Damage`, and would lift that refusal for the Damage form.
 
 ### Corrupt lowers its owner's own Life
 The TypeScript engine did not implement `Corrupt N Min. M` at all, so Nega D Ld's `Corrupt 2
@@ -834,14 +837,17 @@ Power And Damage guards both cards**, and 1507713 r3 turned out to be the second
 
 ## Fresh capture backlog
 
-Nothing is untriaged. The three remaining mismatches are the single points 1079078, 1025413
-and 1508932, each waiting on a second capture. The 2026-09-27 test-deck captures settled 1059149 (Exchange,
-with 874712's Damage Impose beside it), 1089974 (Cancel), 1506438 (same-family Poison
-replaces), 1414749 (an increase to the opposing card) and the Protection: Cards pair 1507713
-and 1507819, all fixed above; the 2026-09-26 Training captures settled 1093173 (end-of-round
-order) and 947670 (Perfect). The backlog of 39 that the expanded
+Nothing is untriaged. The four remaining mismatches are single points waiting on a second
+capture: 1079078, 1025413, 1508932 and 1515692. The 2026-09-27 autoplay run (53 Training
+battles, four of them stopped before their first round resolved) brought six mismatches: a
+recap snapshot (1514649), three rounds of the end-of-round order (1514836, 1515298, 1515451),
+a single-stat Protection (1515574), all fixed above, and 1515692, filed with the single points.
+The 2026-09-27 test-deck captures settled 1059149 (Exchange, with 874712's Damage Impose
+beside it), 1089974 (Cancel), 1506438 (same-family Poison replaces), 1414749 (an increase to
+the opposing card) and the Protection: Cards pair 1507713 and 1507819, all fixed above; the
+2026-09-26 Training captures settled 947670 (Perfect). The backlog of 39 that the expanded
 corpus brought on 2026-09-14 and 2026-09-17, and the three from the 2026-09-23 session, are
-fixed above or among those three. A fourth 2026-09-23 capture, 1414087, deals card 2714
+fixed above or among those four. A fourth 2026-09-23 capture, 1414087, deals card 2714
 (Gloria, level 2, `Brawl: Damage + 1`), which the 2026-09-10 character dump predated; since
 the 2026-09-26 card refresh it has a testcase and replays exactly.
 
