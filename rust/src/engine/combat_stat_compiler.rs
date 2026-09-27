@@ -235,7 +235,222 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 78;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 79;
+
+/// Revision 79: the lone Team Leaders the corpus pins, each by identity - the registry
+/// definition the captures deal, its exact printed text, and the effect it compiles to. Only
+/// the level-5 identities have registry definitions (Hugo `4233`-`4236`, Timber `2568`,
+/// `2444`, `2445`, Vholt `4243`-`4246` and Vansaar `3538`-`3540`, `3479` have none), so the
+/// lower levels stay refused, as Ashigaru L1-L4 do.
+///
+/// The server applies a Team ability to whichever card its owner plays, the Leader itself
+/// included, once (1508894/1: Hugo 7 x 1 + 7 = 14; 1509105/3: Timber 6 + 1 = 7; 1509037/3:
+/// El Gringo 7 - 2 = 5 against Vholt). The compact effect is the one an ordinary card source
+/// of the same shape executes; the engine carries it in the lone Leader's Ability slot and
+/// applies it as a third source of every other selected card (`ResolutionCardPlan::team`).
+pub(crate) const TEAM_LEADER_SOURCES: [TeamLeaderSourceV1; 4] = [
+    TeamLeaderSourceV1 {
+        registry_id: 4237,
+        description: "Team: +7 Attack",
+        compact: CombatStatEffectV1::ModifyCombatStat {
+            side: CombatStatAffectedSideV1::Player,
+            stat: CombatStatAttributeV1::Attack,
+            operation: CombatStatOperationV1::Increase,
+            value: 7,
+            minimum: None,
+            maximum: None,
+            multiplier: CombatStatMagnitudeV1::Fixed,
+        },
+    },
+    TeamLeaderSourceV1 {
+        registry_id: 121,
+        description: "Team: +1 Damage",
+        compact: CombatStatEffectV1::ModifyCombatStat {
+            side: CombatStatAffectedSideV1::Player,
+            stat: CombatStatAttributeV1::Damage,
+            operation: CombatStatOperationV1::Increase,
+            value: 1,
+            minimum: None,
+            maximum: None,
+            multiplier: CombatStatMagnitudeV1::Fixed,
+        },
+    },
+    TeamLeaderSourceV1 {
+        registry_id: 5014,
+        description: "Team: -2 Opp. Damage, Min 2",
+        compact: CombatStatEffectV1::ModifyCombatStat {
+            side: CombatStatAffectedSideV1::Opponent,
+            stat: CombatStatAttributeV1::Damage,
+            operation: CombatStatOperationV1::Decrease,
+            value: 2,
+            minimum: Some(2),
+            maximum: None,
+            multiplier: CombatStatMagnitudeV1::Fixed,
+        },
+    },
+    TeamLeaderSourceV1 {
+        registry_id: 3480,
+        description: "Team: Killshot: -2 Opp. Life Min 2",
+        compact: CombatStatEffectV1::ReduceOpponentLifeOnKillshot {
+            life: 2,
+            minimum: 2,
+        },
+    },
+];
+
+/// One reviewed Team Leader identity; see [`TEAM_LEADER_SOURCES`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TeamLeaderSourceV1 {
+    pub(crate) registry_id: u32,
+    pub(crate) description: &'static str,
+    pub(crate) compact: CombatStatEffectV1,
+}
+
+/// What a reviewed Team Leader source records as provenance: a combat-stat modifier for the
+/// three stat Team abilities, and the Killshot opponent-Life reduction for Vansaar.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TeamLeaderPublicEffectV1 {
+    CombatStat(SupportedEffectV1),
+    PostRound(CombatStatPostRoundEffectV1),
+}
+
+/// Whether `source_id` is one of the reviewed Team Leader identities. The engine keeps these
+/// ids for a lone Leader's Ability slot and the exact effect each compiles to.
+pub(crate) fn team_leader_source(source_id: u32) -> Option<TeamLeaderSourceV1> {
+    TEAM_LEADER_SOURCES
+        .into_iter()
+        .find(|source| source.registry_id == source_id)
+}
+
+/// Revision 79: a lone Team Leader's ability, by identity - the registry definition must be
+/// one of [`TEAM_LEADER_SOURCES`], print exactly its text, and carry exactly its record: the
+/// printed magnitude and floor, `sideAffected`, the stat, the direction and, for Vansaar, the
+/// `sureshot` round requirement, with everything else neutral. The registry itself keeps
+/// every `Team:` record unsupported (`DescriptionContextV1::Team`), because the whole-hand
+/// scope is not in the structured data; this classifier is the only way one is admitted.
+pub(crate) fn classify_team_leader(
+    definition: &EffectDefinitionV1,
+) -> Option<(TeamLeaderPublicEffectV1, CombatStatEffectV1)> {
+    let source = team_leader_source(definition.id())?;
+    if definition.description() != source.description {
+        return None;
+    }
+    let (record, public) = match source.compact {
+        CombatStatEffectV1::ModifyCombatStat {
+            side,
+            stat,
+            operation,
+            value,
+            minimum,
+            maximum: None,
+            multiplier: CombatStatMagnitudeV1::Fixed,
+        } => {
+            let side_affected = match side {
+                CombatStatAffectedSideV1::Player => AffectedSideV1::Player,
+                CombatStatAffectedSideV1::Opponent => AffectedSideV1::Opponent,
+                CombatStatAffectedSideV1::Both => return None,
+            };
+            let (attribute_affected, registry_stat) = match stat {
+                CombatStatAttributeV1::Attack => {
+                    (AttributeAffectedV1::Attack, CombatStatV1::Attack)
+                }
+                CombatStatAttributeV1::Damage => {
+                    (AttributeAffectedV1::Damage, CombatStatV1::Damage)
+                }
+                CombatStatAttributeV1::Power | CombatStatAttributeV1::PowerAndDamage => {
+                    return None
+                }
+            };
+            let (attribute_action, registry_operation) = match operation {
+                CombatStatOperationV1::Increase => {
+                    (AttributeActionV1::Increase, StatOperationV1::Increase)
+                }
+                CombatStatOperationV1::Decrease => {
+                    (AttributeActionV1::Decrease, StatOperationV1::Decrease)
+                }
+            };
+            (
+                team_leader_record(
+                    value,
+                    minimum.unwrap_or(0),
+                    CurrentRoundRequirementV1::Any,
+                    side_affected,
+                    attribute_affected,
+                    attribute_action,
+                ),
+                TeamLeaderPublicEffectV1::CombatStat(SupportedEffectV1::ModifyCombatStat {
+                    side: side_affected,
+                    stat: registry_stat,
+                    operation: registry_operation,
+                    value,
+                    minimum,
+                    maximum: None,
+                    multiplier: MagnitudeMultiplierV1::Fixed,
+                }),
+            )
+        }
+        CombatStatEffectV1::ReduceOpponentLifeOnKillshot { life, minimum } => (
+            team_leader_record(
+                life,
+                minimum,
+                CurrentRoundRequirementV1::Sureshot,
+                AffectedSideV1::Opponent,
+                AttributeAffectedV1::Life,
+                AttributeActionV1::Decrease,
+            ),
+            TeamLeaderPublicEffectV1::PostRound(
+                CombatStatPostRoundEffectV1::ReduceOpponentLifeOnKillshot { life, minimum },
+            ),
+        ),
+        _ => return None,
+    };
+    (*definition.structured_input() == record).then_some((public, source.compact))
+}
+
+/// The exact record a reviewed Team Leader identity carries: a plain unconditional modifier
+/// with only the printed magnitude, floor, round requirement, side, attribute and direction
+/// set.
+fn team_leader_record(
+    value: u16,
+    value_min: u16,
+    current_round_requirement: CurrentRoundRequirementV1,
+    side_affected: AffectedSideV1,
+    attribute_affected: AttributeAffectedV1,
+    attribute_action: AttributeActionV1,
+) -> StructuredEffectV1 {
+    StructuredEffectV1 {
+        value,
+        value_min,
+        value_max: 0,
+        value_condition: 0,
+        position_requirement: PositionRequirementV1::Both,
+        previous_round_requirement: PreviousRoundRequirementV1::Any,
+        current_round_requirement,
+        index_requirement: IndexRequirementV1::Any,
+        clan_requirement: ClanIdsV1::default(),
+        opponent_clan_requirement: ClanIdsV1::default(),
+        previous_clan_requirement: ClanIdsV1::default(),
+        bet_pillz_link: BetPillzLinkV1::No,
+        side_affected,
+        attribute_affected,
+        attribute_action,
+        special_action: SpecialActionV1::None,
+        is_inverted: false,
+        is_support: false,
+        is_anti_support: false,
+        is_overdrive: false,
+        is_divide: false,
+        is_life_linked: false,
+        is_pillz_linked: false,
+        is_lost_life_linked: false,
+        is_lost_pillz_linked: false,
+        is_opponent_stars_linked: false,
+        is_clanmates_count_linked: false,
+        is_anti_clanmates_count_linked: false,
+        is_permanent: false,
+        is_immediate_permanent: false,
+    }
+}
 
 /// The registry definition of Ashigaru L5's `Counter-attack`. Its printed levels 1-4
 /// (`3178`-`3181`) have no registry definition, so they stay fail-closed.
@@ -6332,6 +6547,91 @@ mod tests {
         .unwrap()
     }
 
+    /// Revision 79: the four lone Team Leaders are admitted by identity - registry id, exact
+    /// text and exact record - and nothing else. The registry keeps every `Team:` record
+    /// unsupported, the lower levels have no registry definition, and a record whose number,
+    /// round requirement, side or text is changed is refused.
+    #[test]
+    fn team_leaders_are_exact_identity_description_and_record_locked() {
+        let registry = registry();
+        for team in TEAM_LEADER_SOURCES {
+            let definition = registry
+                .lookup_capture(team.registry_id, team.description)
+                .unwrap();
+            assert!(definition.compiled().unsupported_reasons().contains(
+                &crate::effect_registry::UnsupportedReasonV1::DescriptionContext {
+                    context: crate::effect_registry::DescriptionContextV1::Team,
+                }
+            ));
+            let (public, compact) = classify_team_leader(definition)
+                .unwrap_or_else(|| panic!("Team identity {} refused", team.registry_id));
+            assert_eq!(compact, team.compact, "definition {}", team.registry_id);
+            match public {
+                TeamLeaderPublicEffectV1::CombatStat(effect) => {
+                    assert_eq!(compact_effect(effect), Some(compact));
+                }
+                TeamLeaderPublicEffectV1::PostRound(effect) => assert_eq!(
+                    effect,
+                    CombatStatPostRoundEffectV1::ReduceOpponentLifeOnKillshot {
+                        life: 2,
+                        minimum: 2
+                    }
+                ),
+            }
+            // No other grammar claims a Team record.
+            for kind in [
+                CombatStatEffectSourceV1::Ability,
+                CombatStatEffectSourceV1::Bonus,
+            ] {
+                assert_eq!(classify_combat_stat_effect(definition, kind), None);
+                assert_eq!(classify_killshot_opponent_life(definition, kind), None);
+            }
+        }
+        // Hugo, Timber, Vholt and Vansaar below level 5 print the same text under ids no
+        // registry definition owns, and no reviewed identity names them.
+        for id in [
+            4233, 4234, 4235, 4236, 2568, 2444, 2445, 4243, 4244, 4245, 4246, 3538, 3539, 3540,
+            3479,
+        ] {
+            assert!(registry.get(id).is_none(), "definition {id}");
+            assert_eq!(team_leader_source(id), None, "identity {id}");
+        }
+
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../captures/abilities.json");
+        let source: serde_json::Value = serde_json::from_reader(File::open(path).unwrap()).unwrap();
+        for (id, field, value) in [
+            ("4237", "value", serde_json::json!(6)),
+            ("4237", "positionRequirement", serde_json::json!("attacker")),
+            ("121", "sideAffected", serde_json::json!("opponent")),
+            ("121", "isSupport", serde_json::json!(true)),
+            ("5014", "valueMin", serde_json::json!(3)),
+            ("5014", "attributeAffected", serde_json::json!("pwr&dmg")),
+            ("3480", "currentRoundRequirement", serde_json::json!("win")),
+            ("3480", "valueMin", serde_json::json!(0)),
+        ] {
+            let mut malformed = source.clone();
+            malformed[id]["abilityData"][field] = value;
+            let malformed =
+                EffectRegistryV1::from_reader(serde_json::to_vec(&malformed).unwrap().as_slice())
+                    .unwrap();
+            let definition = malformed.get(id.parse().unwrap()).unwrap();
+            assert_eq!(
+                classify_team_leader(definition),
+                None,
+                "definition {id} with {field} changed"
+            );
+        }
+        // The text is part of the identity.
+        let mut retexted = source.clone();
+        retexted["4237"]["description"] = serde_json::json!("Team: +7 Atk");
+        let retexted =
+            EffectRegistryV1::from_reader(serde_json::to_vec(&retexted).unwrap().as_slice())
+                .unwrap();
+        assert_eq!(classify_team_leader(retexted.get(4237).unwrap()), None);
+        // So is the id: Hugo's record under an ordinary `+7 Attack` id is no Team ability.
+        assert_eq!(classify_team_leader(registry.get(5229).unwrap()), None);
+    }
+
     #[test]
     fn anita_courage_damage_life_is_exact_identity_description_and_shape_locked() {
         let registry = registry();
@@ -9848,8 +10148,8 @@ mod tests {
         // Life effects, not combat stats. `Revenge: +1 Atk Per Life Left` (`1070`), from the
         // later 2026-09-27 captures, is a combat stat under a multiplier no grammar admits.
         let deferred = BTreeSet::from([
-            787, 814, 1070, 1471, 1643, 1652, 1661, 1702, 1751, 1756, 1810, 2113, 2582, 3016,
-            3301, 3546, 4301, 4449, 4903, 4972, 5666,
+            787, 814, 1070, 1471, 1643, 1652, 1661, 1702, 1751, 1756, 1810, 2113, 2582, 3016, 3301,
+            3546, 4301, 4449, 4903, 4972, 5666,
         ]);
         let observed: BTreeSet<_> = registry
             .iter()

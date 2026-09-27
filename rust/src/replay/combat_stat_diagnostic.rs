@@ -58,8 +58,8 @@ use crate::engine::combat_stat_compiler::{
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
 use crate::engine::combat_stat_compiler::{
-    classify_cancel_leader, classify_counter_attack, CANCEL_LEADER_DESCRIPTION,
-    COUNTER_ATTACK_DESCRIPTION,
+    classify_cancel_leader, classify_counter_attack, classify_team_leader, team_leader_source,
+    TeamLeaderPublicEffectV1, CANCEL_LEADER_DESCRIPTION, COUNTER_ATTACK_DESCRIPTION,
 };
 use crate::engine::{
     derive_effective_catalog_hand, effect_reads_support_count, leader_hand_hazard,
@@ -673,7 +673,8 @@ fn prepare_combat_stat_cards(
                 .get(card.key)
                 .expect("BaseRulesReplay validated every canonical card key");
             if canonical.clan_id == LEADER_CLAN_ID {
-                let Some((ability, bonus)) = prepare_leader_sources(registry, card, leader_count)
+                let Some((ability, ability_plan, bonus)) =
+                    prepare_leader_sources(registry, card, leader_count)
                 else {
                     return Err(
                         CombatStatDiagnosticPreparationErrorV1::WholeHandExecutionHazard {
@@ -704,7 +705,7 @@ fn prepare_combat_stat_cards(
                         effective_clan_id: effective[slot].effective_clan_id,
                         source_bonus_support_count: 0,
                         source_ability_support_count: 0,
-                        ability: CombatStatSourcePlanV1::Absent,
+                        ability: ability_plan,
                         bonus: CombatStatSourcePlanV1::Absent,
                     },
                 });
@@ -775,16 +776,20 @@ fn prepare_combat_stat_cards(
     })
 }
 
-/// A Leader's captured sources (revision 77), or `None` when they are not the reviewed ones.
-/// Beside another Leader the server deactivates the Leader's ability and records it as absent,
-/// and records the Leader clan's live `Cancel Leader`; a lone Ashigaru records its
-/// `Counter-attack` and no bonus. Every other captured Leader stays a whole-hand hazard.
+/// A Leader's captured sources (revision 77), or `None` when they are not the reviewed ones:
+/// the Ability disposition, the Ability slot's compact plan and the Bonus disposition. Beside
+/// another Leader the server deactivates the Leader's ability and records it as absent, and
+/// records the Leader clan's live `Cancel Leader`; a lone Ashigaru records its
+/// `Counter-attack` and no bonus; and since revision 79 a lone Team Leader records its Team
+/// ability, which executes, and no bonus. Every other captured Leader stays a whole-hand
+/// hazard.
 fn prepare_leader_sources(
     registry: &EffectRegistryV1,
     card: &super::model::ReplayCard,
     leader_count: usize,
 ) -> Option<(
     CombatStatProjectionDispositionV1,
+    CombatStatSourcePlanV1,
     CombatStatProjectionDispositionV1,
 )> {
     let inert = |source: &super::model::SourceModifier,
@@ -816,17 +821,63 @@ fn prepare_leader_sources(
             CANCEL_LEADER_DESCRIPTION,
             InertSourceV1::CancelLeader,
         )?;
-        Some((CombatStatProjectionDispositionV1::Absent, bonus))
+        Some((
+            CombatStatProjectionDispositionV1::Absent,
+            CombatStatSourcePlanV1::Absent,
+            bonus,
+        ))
     } else {
         if card.source_bonus.is_some() {
             return None;
         }
+        let source = card.source_ability.as_ref()?;
+        // Revision 79: the captured id is the reviewed registry definition itself.
+        if team_leader_source(source.id).is_some() {
+            let definition = registry
+                .lookup_capture(source.id, &source.description)
+                .ok()?;
+            let (public, compact) = classify_team_leader(definition)?;
+            let identity = CombatStatModifierIdentityV1 {
+                id: source.id,
+                description: source.description.clone(),
+            };
+            let predicate = CombatStatPredicateV1::Always;
+            let disposition = match public {
+                TeamLeaderPublicEffectV1::CombatStat(effect) => {
+                    CombatStatProjectionDispositionV1::Execute {
+                        identity,
+                        effect,
+                        predicate,
+                    }
+                }
+                TeamLeaderPublicEffectV1::PostRound(effect) => {
+                    CombatStatProjectionDispositionV1::ExecutePostRound {
+                        identity,
+                        effect,
+                        predicate,
+                    }
+                }
+            };
+            return Some((
+                disposition,
+                CombatStatSourcePlanV1::Execute {
+                    source_id: source.id,
+                    predicate,
+                    effect: compact,
+                },
+                CombatStatProjectionDispositionV1::Absent,
+            ));
+        }
         let ability = inert(
-            card.source_ability.as_ref()?,
+            source,
             COUNTER_ATTACK_DESCRIPTION,
             InertSourceV1::CounterAttack,
         )?;
-        Some((ability, CombatStatProjectionDispositionV1::Absent))
+        Some((
+            ability,
+            CombatStatSourcePlanV1::Absent,
+            CombatStatProjectionDispositionV1::Absent,
+        ))
     }
 }
 

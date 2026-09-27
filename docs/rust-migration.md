@@ -694,7 +694,8 @@ recorded resolved source and never emits a Copy plan.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
 Mock/Illusion sources are fatal even when unplayed, because they may execute off-card (since
-revision 77, except the two kinds of Leader hand written up with it).
+revision 77, except the two kinds of Leader hand written up with it, and since revision 79 a
+lone level-5 Hugo, Timber, Vholt or Vansaar, whose Team ability executes from its own slot).
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
 retained as visible Disabled metadata but reject atomically if selected. The 33 observed
 ordinary Support combat-stat definitions are admitted only for an otherwise-neutral,
@@ -737,7 +738,8 @@ and `O+A+B+C` does not infiltrate; multiple Oculus cards disable infiltration. A
 card receives the target clan's selected day/night printed bonus before activation and
 Support counting. Duplicate character ids and any Leader are rejected by strict solver
 construction (since revision 77, every Leader hand but two kinds: two or more Leaders, and a
-lone Ashigaru L5). Catalog source ids remain distinct from registry definition ids, so source
+lone Ashigaru L5; since revision 79 also a lone level-5 Team Leader - Hugo, Timber, Vholt or
+Vansaar). Catalog source ids remain distinct from registry definition ids, so source
 structure is resolved by conflict-checking exact description lookup. The reviewed recovery
 bridge is intentionally narrower still: active effective Vortex clan `45` with catalog bonus
 id `43` and the exact recovery description resolves to registry definition `577`; catalog
@@ -4127,6 +4129,221 @@ at 1506438 round 2: `players.P1.life: expected 5, actual 3`.
 
 The eligible draws, the scanned draws, the disabled and inert ids and both data fingerprints are
 unchanged.
+
+Semantic revision 79 admits the lone Team Leaders the corpus pins. Revision 77 admitted two kinds
+of Leader hand and refused every other lone Leader as `UnreviewedLeaderSource`. Revision 79 adds
+a third kind: a lone Hugo, Timber, Vholt or Vansaar at level 5, each by identity.
+- **Hugo** L5, `Team: +7 Attack` (`4237`).
+- **Timber** L5, `Team: +1 Damage` (`121`).
+- **Vholt** L5, `Team: -2 Opp. Damage, Min 2` (`5014`).
+- **Vansaar** L5, `Team: Killshot: -2 Opp. Life Min 2` (`3480`).
+
+Only the level-5 ids have registry definitions. Hugo L1-L4 print their text under `4233`-`4236`,
+Timber L2-L4 under `2568`, `2444` and `2445` (L1 prints no ability), Vholt L1-L4 under
+`4243`-`4246`, and Vansaar L1-L4 under `3538`-`3540` and `3479`. No capture deals any of them, so
+they stay refused, as Ashigaru L1-L4 do. The catalog-context revision stays at 8, because the
+catalog derivation is unchanged: `derive_catalog_hand` already gave a lone Leader its printed
+ability and no bonus.
+
+**What a Team ability is.** The TypeScript reference compiles a lone Leader's ability every round
+as an `AbilityType.GLOBAL` source of its owner, whichever card the owner plays
+(`BattleData`/`CachedBattleData`, `Ability.leader`). It skips the Leader's own card sources
+when the Leader itself is played, so the Team ability lands once. A `GLOBAL` source is no ability
+or bonus of the played card, so no Stop reaches it. It sits in the owner's `repeat` bucket, which
+runs after the round's fresh sources at each event time. The projection models exactly that:
+- `classify_team_leader` admits the four identities from the exact registry id, text and
+  record, and the compiler table `TEAM_LEADER_SOURCES` gives each its compact effect. The
+  registry itself keeps every `Team:` record unsupported (`DescriptionContextV1::Team`), since
+  the whole-hand scope is not in the structured data.
+- The lone Leader's Ability slot carries the plan: an ordinary `Execute` with that id, no
+  condition and that effect. The engine locks the id to that effect, the Ability slot, no
+  condition and a lone Leader (`InvalidCombatStatPlanReasonV1::TeamLeaderIdentity`,
+  `validate_team_leader_plans`). A Leader beside another Leader still refuses any plan
+  (`LeaderSourcePlan`).
+- `CombatStatDiagnosticV1` derives each player's Team plan once. When another card is selected,
+  `ResolutionCardPlan::team` carries it as a third source. That source is always live and in no
+  Stop graph, and it runs after the card's Bonus and Ability in each phase. A selected Leader
+  applies it from its own Ability slot instead, so it lands once either way.
+- Own gains land with the owner's own modifiers, before the opposing reductions. The Team
+  reduction lands after the card's own reductions, outside their descending-Min order. The Team
+  Killshot pays after the card's own end-of-round work and before the owner's latched
+  permanents (`PostRoundPlan::team`).
+
+Catalog and replay record the Leader's ability as `Execute` (Hugo, Timber, Vholt) or
+`ExecutePostRound` (Vansaar) under the captured identity. So `--replay` grading and the V3
+worker check it like any executed ability: the printed id is the registry definition.
+`deno task rust:advise --replay 1509037` (Vholt) and `--replay 1509076` (Vansaar) grade all four
+decisions and verify every server round. 1508894 and 1509105 stop before grading at their
+opposing Bangers bonus, captured as alias `43`, which has nothing to do with Leaders; 1495980
+stopped there too.
+
+**Measured before admitting.** The coverage report already attributes a refused lone Leader to
+its printed ability. Revision 79 adds a line per Team Leader and a union. At revision 78 these
+read:
+- lone Hugo 1 (1508894);
+- lone Timber 2 (1508957, 1509105);
+- lone Vholt 1 (1509037);
+- lone Vansaar 1 (1509076);
+- the union 5.
+
+After admission, eligibility goes from 317 to 321 of 438. The eligible-set diff adds exactly
+1508894, 1509037, 1509076 and 1509105, and removes none. 1508957 stays refused, on two
+contexts listed below, and the Timber line now reads 1. The other lone Team Leader draws need
+at least one more source as well:
+- 1509206 needs Cacto's `3963`;
+- 1207123 needs Ellie's `843` and Segar's `2000`;
+- 901292 needs Azhdar's `5702`, and it also faces the Oblivion bonus `Copy: Opp. Ability`;
+- 1509014 (Cacto's `3963`), 1509142 (Bernardite's `4388`) and 1509177 (Zbuz's `1070`) also face
+  a `Stop Opp. Ability`.
+
+The Copy and the Stops are refused below.
+
+**Evidence, from selected rounds.** Each piece is pinned by arithmetic:
+- **The Team gain lands on the other cards.** Hugo: GraksmxxT 8 x 3 + 7 = 31 in 901292/0;
+  Wesley 6 x 2 + 9 (Rescue Support x 3, so the Leader is nobody's Support) + 7 = 28 in 1509206/1;
+  Callie 6 x 1 + 7 = 13 in 1508894/2. Timber: Anagone 7 + 3 (Asymmetry) + 1 = 11 in
+  1509105/0, and Leonaparte 3 + 3 + 1 = 7 in 1509105/1. Vholt: El Matador goes 5 to 3 in
+  1509037/0.
+- **It lands on the Leader itself, once.** Hugo 7 x 1 + 7 = 14 in 1508894/1 (Sukareto's Courage
+  cut takes 9 to 7), and 9 x 5 + 7 = 52 in 1509206/0. Timber 6 + 1 = 7 in 1509105/3. Against
+  Vholt played, El Gringo goes 7 to 5 in 1509037/3.
+- **Order against an opposing reduction.** In 901292/1, Miss Stella's 7 x 1 + 7 = 14 is cut by
+  Oblivion's copied `-8 Opp Attack, Min 11` to 11. Had the gain come after the cut, 7 would
+  have stayed under the Min and ended on 14.
+- **The Damage phases.** Doela Noel 2 + 3 (Asymmetry) + 1 = 6, less Kurt's opposing Growth cut
+  of 3, is 3, and Fury makes 5 in 1509105/2. No Min binds there, so the round fixes the sum and
+  not the order. For Vholt, Aneta's own `-2 Opp Pow. & Dam., Min 2` and the Team cut take El
+  Común from 4 to 2 in 1509037/1. Equal floors commute, so this does not tell the two orders
+  apart either, and construction admits Vholt only beside own cuts of that floor.
+- **A Stop reaches neither Team source.** An opposing `Stop Opp. Bonus` meets Hugo played (the
+  live Nightmare bonus on Sukareto, 1508894/1) and Callie (Hel's, 1508894/2), and the gain lands
+  both times. Timber's gain lands on a stopped Jairin (Jean's `Stop Opp. Ability`, 1508957/0:
+  3 + 1 = 4) and a stopped Anagone (Tekumman's, 1509014/1: 7 + 3 + 1 = 11). Neither draw is
+  admitted; the refusals below say why.
+- **An opposing Copy takes the played card's ability, never the Team gain.** In 901292/1
+  El-Khazari's Oblivion Copy adopts Miss Stella's `-8 Opp Attack, Min 11`, the cut that takes
+  her 14 to 11, and El-Khazari gains no +7: its 9 x 2 = 18 falls to 3 under Miss Stella's own
+  two cuts.
+- **The Team Killshot pays on the ratio after the damage.** Gretchen's 56 against Aneta's 6 takes
+  Aneta's owner 15 - 5 - 2 = 8 in 1509076/0 (admitted). The same holds in 1509142/1 (Spidee's
+  45 against 15, 16 - 6 - 2 = 8) and 1509177/0 (Anita's 71 against 7, 15 - 5 - 2 = 8), which
+  both stay refused. A win below the ratio pays only the damage: 1509142/2, 65 against 56,
+  8 - 5 = 3.
+- **Beside another Leader a Team ability is deactivated**, as revision 77 derived and as its
+  list of what would settle the Team Leaders asked to see:
+  - Hugo 9 x 6 - 15 (Hive Equalizer) = 39 with no +7 in 1508787/1.
+  - Vansaar's Killshot pays nothing on three wins at the ratio: 1508787/1 and /2
+    (15 - 6 = 9 and 9 - 3 = 6), and 1508823/1 (15 - 6 = 9).
+  - Timber deals his printed 6 in 1508992/1, and Poncho keeps his 6 against Vholt in
+    1508992/2.
+
+**The contexts no captured round shows stay refused.** They are refused as new
+`LeaderHandHazardV1` reasons from the shared `leader_hand_hazard`, in catalog construction,
+replay preparation and the engine alike (`team_leader_context_hazard`). The Team ability
+co-fires with every card its owner plays. So what an ordinary source's check reads from its
+own card's other slot, this reads from the whole hand, together with anything an own Copy could
+import:
+- `OpposingStopAbilityAgainstTeamLeader`: an opposing `Stop Opp. Ability` under any condition.
+  The Team ability survives one when another card is played, but no round shows the Leader
+  itself played into one, where the stopped ability is the Team ability. This refusal and
+  revision 77's `OpposingBrawlAgainstLeader` are what keep 1508957 out.
+- `OpposingCopyAgainstTeamLeader`: an opposing `Copy: Opp. Ability`, which facing a played
+  Leader would adopt the Team ability (the reference would), and beside Vansaar any opposing
+  Copy, which could import a write on the Killshot's target.
+- `OpposingCancelAgainstTeamLeader`: an opposing cancel of the Team stat, or an opposing Copy
+  that could import one. That is Attack for Hugo, Damage or Power And Damage for Timber and
+  Vholt, and any resource canceller for Vansaar. The reference would cancel the Team modifier
+  with the card's own, and no round shows it.
+- `OpposingProtectionAgainstTeamLeader`: an opposing Protection of Damage (or of Power And
+  Damage) against Vholt's reduction.
+- `AttackSimplificationBesideTeamLeader`: `Tune Out` in either hand beside Hugo. Beside Vansaar,
+  the generic Killshot refusals already apply to the plan the Leader's slot carries, both
+  `Tune Out` and a pair of Attacks that could both reach 0.
+- `TeamAbilityOrderAgainstOwnSource`: an own source whose order against the Team ability would
+  show. Beside Hugo and Timber, that is an own change of the same stat under a cap or downwards
+  (Bugamon's own Growth cut, the own half of a `Cards` cut). Beside Vholt, an own opposing
+  Damage change that does not share its `Min 2`. Beside Vansaar, an own floor on the opposing
+  Life (current-round or latched) or an own both-players Life gain.
+- `TeamKillshotAgainstOpposingLifeWrite`: the 1093173/1 order rule, which a newly admitted write
+  must carry. An opposing own Life gain, or an order-sensitive own Life write, that can land on
+  the opposing loss (or any latched one) meets the Killshot.
+
+None of these costs an eligible draw today. The eligible-set diff is exactly the five draws the
+lines priced, less 1508957, which revision 77's Brawl refusal keeps out whatever this slice does.
+
+**Admitted by composition, and labelled so.**
+- *Vansaar played and winning at the ratio.* The corpus shows him played four times, and he loses
+  each time. Hugo, Timber and Vholt show that the played Leader takes the Team ability once, and
+  Vansaar's plan lands the same way.
+- *Vholt's reduction and Vansaar's Killshot against an opposing `Stop Opp. Bonus`.* Pinned only
+  for Hugo's gain. A Team ability is no bonus in either model.
+- *An opposing `Copy: Opp. Bonus` beside Hugo, Timber or Vholt.* A lone Leader has no live bonus
+  to adopt. The reference would copy `Cancel Leader`, which compiles to nothing. Against the other
+  cards it adopts their bonus as it always does.
+- *Timber's gain before an opposing Damage cut.* No Timber round has a binding Min, so this is
+  the order every own gain has, which the reference also gives it.
+- *Two lone Team Leaders facing each other.* Each Team ability changes a different card or a
+  different player, in the phase order above.
+
+**Search and deck building.** A lone Team Leader decides nothing about round one, so
+`round_one_order()` stays `Usual`, and the matchup batch scores such a deck like any other. The
+per-card probe no longer reports the four level-5 Team Leaders as `leader`. Matchup solves are
+cached by provenance, and the new compiler revision recomputes them.
+
+**Gate.** The combat-stat gate grows from 920 to 950 rounds. Each new fixture is the complete
+replayable prefix of its draw:
+- the lone Team Leaders: 901292 (3 rounds), 1508894 (4), 1509206 (2, whose round 2 selects
+  Cacto's closed `3963`), 1509105 (4), 1509037 (4) and 1509076 (4). Replay consumes the recorded
+  resolved Copy in 901292, so its Oblivion hand is no Copy there;
+- the Team Leader pairs, which revision 77 admitted but the gate had never seen: 1508787 (4),
+  1508823 (2, whose round 2 selects Ghoonbones' closed `1590`) and 1508992 (3).
+
+With the Team source left out beside another card, the gate fails at the first new fixture:
+901292 round 0, `cards.P1.attack: expected 31, actual 24`.
+
+`deno task pins:update` moves these files:
+- the eligible draws (four added: 1508894, 1509037, 1509076 and 1509105);
+- the gate rounds (920 to 950);
+- the gate's absent dispositions (78 to 92): a played lone Leader's empty Bonus (five rounds), a
+  paired Leader's deactivated Ability (five), Leonaparte's missing ability, and the lone-clan
+  Esther, Sofilia and Zerkov with no live bonus;
+- the executed ids, which gain 26 the gate never selected before. Four are the Team identities
+  `121`, `3480`, `4237` and `5014`. The rest are the new fixtures' other cards: `79`, `186`,
+  `247`, `350`, `623`, `731`, `926`, `1177`, `1189`, `1339`, `1376`, `1387`, `1441`, `1743`,
+  `3067`, `4469`, `4513`, `4530`, `4620`, `5140`, `5390` and `5840`;
+- the compiler revision (78 to 79);
+- `tests/expect/rust-provenance.json` (compiler 79; catalog-context stays 8).
+
+The scanned draws, the disabled and inert ids and both data fingerprints are unchanged.
+
+**Tests.**
+- `team_leaders_are_exact_identity_description_and_record_locked` (compiler) checks the four
+  identities, the unsupported registry records, the missing lower levels, and refuses a changed
+  number, round requirement, side, text or id.
+- In `combat_stat_diagnostic_engine.rs`:
+  - `a_lone_team_leader_applies_its_gain_to_every_card_its_owner_plays_once`;
+  - `team_damage_changes_land_with_the_owners_own_before_opposing_reductions_and_fury`;
+  - `a_team_killshot_pays_on_the_ratio_after_damage_down_to_its_floor`;
+  - `a_lone_team_leader_is_refused_wherever_its_context_is_unpinned`;
+  - `a_team_leader_identity_belongs_to_a_lone_leaders_ability_slot_only`.
+- `strict_catalog_match_admits_the_four_lone_team_leaders_by_identity` (catalog).
+- `lone_team_leaders_execute_their_captured_team_ability_by_identity` (replay).
+- Two revision-77 tests now name a lower level (Hugo L4, Vansaar L4) where they named level 5.
+
+**Questions left for the owner.**
+- *The Leader played into a `Stop Opp. Ability`.* Timber pins that the Team ability survives a
+  Stop that hits another card. If the owner reads that as "no Stop reaches a Team ability", the
+  refusal can go. Lifting it alone moves no draw, because 1508957 also faces Fowl's Brawl. A round
+  with a Team Leader itself played into a `Stop Opp. Ability` would settle it.
+- *Brawl against a lone Leader.* 1508957/1 has Fowl's `Brawl: -1 Opp Damage, Min 1` against
+  Timber played: 6 + 1 - 1 = 6. Given the Team gain, which 1509105/3 pins, Brawl counts the lone
+  Leader's clan-mates as 1. Lifting both refusals for a lone Leader would add 1508957. The
+  conservative choice keeps both.
+- *Every other Team Leader* (Ambre's Courage, Bridget's Victory Or Defeat, Eyrik's Power cut,
+  Melody's Recover, John Doom's Reprisal, Mr Big Duke's cancels, Sakrh's Perfect) stays refused.
+  None has a capture, except John Doom's one round in 901186, a draw Merrie's `Stop:` source
+  blocks. The other lone Leaders stay refused too: Morphun, Eklore, Solomon's Tie-break,
+  Robert Cobb, Memento, Fractal, Hekate, Administrator's Hazard and Kate's Illusion.
 
 #### The clan gate, measured but not taken
 

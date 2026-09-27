@@ -11,7 +11,7 @@ use super::combat_stat_compiler::{
     anita_courage_damage_to_life_identity_matches, argos_defeat_capped_pillz_identity_matches,
     conditional_stop_predicate_admitted, equalizer_opponent_life_on_victory_identity_matches,
     komboka_victory_pillz_and_life_identity_matches, opponent_can_stop_an_ability,
-    permanent_predicate_admitted, victory_opponent_life_identity_matches,
+    permanent_predicate_admitted, team_leader_source, victory_opponent_life_identity_matches,
     victory_opponent_life_predicate, victory_or_defeat_pillz_identity_matches,
 };
 use super::{
@@ -1216,6 +1216,9 @@ pub enum InvalidCombatStatPlanReasonV1 {
     ReprisalStopOpponentAbilityEffect,
     ReprisalStopOpponentAbilityIdentity,
     ReprisalStopOpponentAbilityPredicate,
+    /// Revision 79: a reviewed Team Leader identity outside its lock - another effect, a
+    /// condition, the Bonus slot, or any card but a lone Leader (`validate_team_leader_plans`).
+    TeamLeaderIdentity,
     /// The ability uses Support outside the unconditional basic-stat subset admitted by
     /// this projection. The legacy variant name is retained for source compatibility.
     SupportAbility,
@@ -1265,18 +1268,26 @@ pub enum CombatStatPlanErrorV1 {
 /// - a lone Ashigaru L5, whose `Counter-attack` (`124`) only decides who moves first in round
 ///   one - which every replay and search position is already given.
 ///
-/// Each Leader then carries two absent plans, and the whole hand is still refused wherever a
+/// Since revision 79 a third kind is admitted: a lone Team Leader - Hugo, Timber, Vholt or
+/// Vansaar at level 5 - whose Team ability applies to whichever card its owner plays, the
+/// Leader included, once. The Leader's Ability slot carries it as the one reviewed plan
+/// (`TEAM_LEADER_SOURCES`) and the engine applies it beside every other selected card's own
+/// sources (`ResolutionCardPlan::team`).
+///
+/// Each other Leader carries two absent plans, and the whole hand is still refused wherever a
 /// Leader could change something no captured round shows.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LeaderHandHazardV1 {
-    /// A Leader source outside the two reviewed ones: a lone Leader other than the
-    /// identity-locked `Counter-attack` (a Team, Hazard, Illusion or Tie-break ability, or no
-    /// ability at all), or a Leader beside another Leader whose sources are not the deactivated
-    /// ability and the live `Cancel Leader`. Only the catalog and replay boundaries, which see
-    /// the printed or captured sources, can raise it.
+    /// A Leader source outside the reviewed ones: a lone Leader other than the identity-locked
+    /// `Counter-attack` and the four Team identities (another Team, Hazard, Illusion or
+    /// Tie-break ability, a lower level of a reviewed one, or no ability at all), or a Leader
+    /// beside another Leader whose sources are not the deactivated ability and the live
+    /// `Cancel Leader`. Only the catalog and replay boundaries, which see the printed or
+    /// captured sources, can raise it.
     UnreviewedLeaderSource,
-    /// A Leader's ability or bonus reached the engine as a plan. Every admitted Leader source is
-    /// realized at construction, so a Leader card always carries two absent plans.
+    /// A Leader's ability or bonus reached the engine as a plan other than a lone Leader's
+    /// reviewed Team ability. Every other admitted Leader source is realized at construction,
+    /// so such a Leader always carries two absent plans.
     LeaderSourcePlan,
     /// An Oculus in the Leader's own hand. Infiltration counts clans, and no round shows
     /// whether a Leader counts as one.
@@ -1292,6 +1303,40 @@ pub enum LeaderHandHazardV1 {
     /// An opposing `Stop Opp. Bonus` against a hand of two or more Leaders. Their `Cancel
     /// Leader` is what deactivates their abilities, and no round shows it stopped.
     OpposingStopBonusAgainstCancelLeader,
+    /// Revision 79: an opposing `Stop Opp. Ability`, under any condition, against a lone Team
+    /// Leader. The Team ability survives one when another card is played (1508957/0, 1509014/1:
+    /// Timber's `+1 Damage` lands on a stopped Jairin and Anagone), but no round shows the
+    /// Leader itself played into one, where the stopped ability is the Team ability.
+    OpposingStopAbilityAgainstTeamLeader,
+    /// Revision 79: an opposing Copy against a lone Team Leader. A `Copy: Opp. Ability` facing
+    /// the Leader would adopt the Team ability, which no round shows; beside Vansaar any Copy
+    /// could also bring in a write on the Killshot's target (`life_writes` reports nothing for
+    /// a Copy). 901292 shows an opposing Copy facing the other cards take their own ability,
+    /// never the Team gain, but that draw stays refused on another source.
+    OpposingCopyAgainstTeamLeader,
+    /// Revision 79: an opposing `Cancel Opp. ... Modif.` of the stat a Team ability changes -
+    /// Attack for Hugo, Damage for Timber and Vholt, Life for Vansaar - or an opposing Copy that
+    /// could import one. No round shows a Team modifier cancelled.
+    OpposingCancelAgainstTeamLeader,
+    /// Revision 79: an opposing Protection of Damage against Vholt's `-2 Opp. Damage, Min 2`, or
+    /// an opposing Copy that could import one. No round shows a Team reduction refused.
+    OpposingProtectionAgainstTeamLeader,
+    /// Revision 79: `Tune Out` in either hand beside Hugo. It replaces every Attack modifier,
+    /// and no round shows it meet the Team gain.
+    AttackSimplificationBesideTeamLeader,
+    /// Revision 79: an own source whose order against the Team ability shows and is unpinned.
+    /// The Team ability co-fires with every card its owner plays, so any card of the hand can
+    /// meet it, as can what an own Copy imports:
+    /// - beside Hugo and Timber, an own-side change of the same stat under a cap or downwards;
+    /// - beside Vholt, an own opposing Damage change that does not share its `Min 2` (equal
+    ///   floors commute, as 1509037/1 shows with Aneta's `-2 Opp Pow. & Dam., Min 2`);
+    /// - beside Vansaar, an own floor on the opposing Life or an own both-players Life gain.
+    TeamAbilityOrderAgainstOwnSource,
+    /// Revision 79: an opposing write on the Life Vansaar's Team Killshot floors that can land
+    /// in a round the Killshot pays - an own Life gain or an order-sensitive own Life write on
+    /// the opposing loss, or any latched one. It is a newly admitted write, so it carries the
+    /// 1093173/1 order rule as new effects must.
+    TeamKillshotAgainstOpposingLifeWrite,
 }
 
 impl fmt::Display for LeaderHandHazardV1 {
@@ -1304,6 +1349,23 @@ impl fmt::Display for LeaderHandHazardV1 {
             Self::OpposingBrawlAgainstLeader => "an opposing Brawl could face a Leader",
             Self::OpposingStopBonusAgainstCancelLeader => {
                 "an opposing Stop Opp. Bonus could stop Cancel Leader"
+            }
+            Self::OpposingStopAbilityAgainstTeamLeader => {
+                "an opposing Stop Opp. Ability could face a played Team Leader"
+            }
+            Self::OpposingCopyAgainstTeamLeader => "an opposing Copy faces a Team Leader's hand",
+            Self::OpposingCancelAgainstTeamLeader => {
+                "an opposing cancel could meet a Team ability's modifier"
+            }
+            Self::OpposingProtectionAgainstTeamLeader => {
+                "an opposing Protection could refuse a Team reduction"
+            }
+            Self::AttackSimplificationBesideTeamLeader => "Tune Out could meet a Team Attack gain",
+            Self::TeamAbilityOrderAgainstOwnSource => {
+                "an own source meets a Team ability in an unpinned order"
+            }
+            Self::TeamKillshotAgainstOpposingLifeWrite => {
+                "an opposing Life write meets a Team Killshot in an unpinned order"
             }
         })
     }
@@ -1328,7 +1390,9 @@ pub fn leader_hand_hazard(
     let leader_count = leaders.clone().count();
     for slot in leaders {
         let card = own[slot.index()];
-        if card.ability != CombatStatSourcePlanV1::Absent
+        // A lone Leader may carry one reviewed Team ability in its Ability slot (revision 79).
+        let team = leader_count == 1 && is_team_leader_plan(card.ability);
+        if (card.ability != CombatStatSourcePlanV1::Absent && !team)
             || card.bonus != CombatStatSourcePlanV1::Absent
         {
             return Some((slot, LeaderHandHazardV1::LeaderSourcePlan));
@@ -1374,7 +1438,240 @@ pub fn leader_hand_hazard(
             LeaderHandHazardV1::OpposingStopBonusAgainstCancelLeader,
         ));
     }
+    if leader_count == 1 {
+        let team = own[first.index()].ability;
+        if is_team_leader_plan(team) {
+            return team_leader_context_hazard(team, own, opponent).map(|reason| (first, reason));
+        }
+    }
     None
+}
+
+/// Whether `plan` is one of the reviewed Team Leader abilities, exactly as the compiler builds
+/// it: its registry id, no condition, and the one effect that id compiles to.
+pub(crate) fn is_team_leader_plan(plan: CombatStatSourcePlanV1) -> bool {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            source_id,
+            predicate: CombatStatPredicateV1::Always,
+            effect,
+        } if team_leader_source(source_id).is_some_and(|team| team.compact == effect)
+    )
+}
+
+/// The lone Leader's Team plan and its slot, if `hand` holds exactly one Leader and it
+/// carries one. The engine applies it beside every other selected card's own sources; a
+/// selected Leader applies it from its own Ability slot, so it lands once either way.
+fn team_leader_plan(
+    base: &[super::BaseRulesCardSpec; HAND_SIZE],
+    hand: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> Option<(HandSlot, CombatStatSourcePlanV1)> {
+    let mut leaders = HandSlot::ALL
+        .into_iter()
+        .filter(|slot| base[slot.index()].clan_id == super::LEADER_CLAN_ID);
+    let slot = leaders.next()?;
+    if leaders.next().is_some() {
+        return None;
+    }
+    let plan = hand[slot.index()].ability;
+    is_team_leader_plan(plan).then_some((slot, plan))
+}
+
+/// Revision 79: why a lone Team Leader's hand meets something no captured round shows, or
+/// `None`. The Team ability co-fires with every card its owner plays, so what an ordinary
+/// source's checks read from its own card's other slot this reads from the whole hand, and
+/// what an own Copy could import counts too. Tune Out beside Vansaar and a Killshot's zero
+/// Attacks are the generic Killshot refusals, which the Leader's Ability slot carries like any
+/// other plan.
+fn team_leader_context_hazard(
+    team: CombatStatSourcePlanV1,
+    own: &[CombatStatCardPlanV1; HAND_SIZE],
+    opponent: &[CombatStatCardPlanV1; HAND_SIZE],
+) -> Option<LeaderHandHazardV1> {
+    let CombatStatSourcePlanV1::Execute { effect, .. } = team else {
+        return None;
+    };
+    let killshot = matches!(
+        effect,
+        CombatStatEffectV1::ReduceOpponentLifeOnKillshot { .. }
+    );
+    if source_plans(opponent).any(|plan| {
+        matches!(
+            plan,
+            CombatStatSourcePlanV1::Execute {
+                effect: CombatStatEffectV1::StopOpponentAbility,
+                ..
+            }
+        )
+    }) {
+        return Some(LeaderHandHazardV1::OpposingStopAbilityAgainstTeamLeader);
+    }
+    let copies_ability = source_plans(opponent).any(|plan| {
+        matches!(
+            plan,
+            CombatStatSourcePlanV1::CopyOpponentSource {
+                copied: CopiedSourceKindV1::Ability,
+                ..
+            }
+        )
+    });
+    if copies_ability || (killshot && hand_has_copy(opponent)) {
+        return Some(LeaderHandHazardV1::OpposingCopyAgainstTeamLeader);
+    }
+    // The stat a Team modifier changes, or `None` for the Killshot's Life.
+    let team_stat = match effect {
+        CombatStatEffectV1::ModifyCombatStat { stat, .. } => Some(stat),
+        _ => None,
+    };
+    let cancels = |plan: CombatStatSourcePlanV1| match team_stat {
+        Some(stat) => cancels_modifiers_of(plan, stat),
+        None => matches!(
+            plan,
+            CombatStatSourcePlanV1::Execute {
+                effect: CombatStatEffectV1::CancelOpponentResourceModifiers { .. },
+                ..
+            }
+        ),
+    };
+    if source_plans(opponent).any(cancels) || copy_can_import(opponent, own, cancels) {
+        return Some(LeaderHandHazardV1::OpposingCancelAgainstTeamLeader);
+    }
+    if let CombatStatEffectV1::ModifyCombatStat {
+        side: CombatStatAffectedSideV1::Opponent,
+        stat,
+        operation: CombatStatOperationV1::Decrease,
+        ..
+    } = effect
+    {
+        let protects = |plan: CombatStatSourcePlanV1| {
+            matches!(
+                plan,
+                CombatStatSourcePlanV1::Execute {
+                    effect: CombatStatEffectV1::ProtectOwnCombatStat { stat: protected },
+                    ..
+                } if stat_covers(protected, stat)
+            )
+        };
+        if source_plans(opponent).any(protects) || copy_can_import(opponent, own, protects) {
+            return Some(LeaderHandHazardV1::OpposingProtectionAgainstTeamLeader);
+        }
+    }
+    if team_stat == Some(CombatStatAttributeV1::Attack)
+        && source_plans(own)
+            .chain(source_plans(opponent))
+            .any(simplifies_attack)
+    {
+        return Some(LeaderHandHazardV1::AttackSimplificationBesideTeamLeader);
+    }
+    let meets = |plan: CombatStatSourcePlanV1| {
+        if plan == team {
+            return false;
+        }
+        match effect {
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Player,
+                stat: team_stat,
+                ..
+            } => matches!(
+                plan,
+                CombatStatSourcePlanV1::Execute {
+                    effect: CombatStatEffectV1::ModifyCombatStat {
+                        side: CombatStatAffectedSideV1::Player | CombatStatAffectedSideV1::Both,
+                        stat,
+                        operation,
+                        maximum,
+                        ..
+                    },
+                    ..
+                } if stat_covers(stat, team_stat)
+                    && (maximum.is_some() || operation == CombatStatOperationV1::Decrease)
+            ),
+            CombatStatEffectV1::ModifyCombatStat {
+                side: CombatStatAffectedSideV1::Opponent,
+                stat: team_stat,
+                minimum: team_minimum,
+                ..
+            } => matches!(
+                plan,
+                CombatStatSourcePlanV1::Execute {
+                    effect: CombatStatEffectV1::ModifyCombatStat {
+                        side: CombatStatAffectedSideV1::Opponent | CombatStatAffectedSideV1::Both,
+                        stat,
+                        operation,
+                        minimum,
+                        ..
+                    },
+                    ..
+                } if stat_covers(stat, team_stat)
+                    && !(operation == CombatStatOperationV1::Decrease && minimum == team_minimum)
+            ),
+            _ => {
+                life_writes(plan).opposing_floor
+                    || life_beneficiary(plan) == Some(LifeBeneficiaryV1::Both)
+            }
+        }
+    };
+    if source_plans(own).any(meets) || copy_can_import(own, opponent, meets) {
+        return Some(LeaderHandHazardV1::TeamAbilityOrderAgainstOwnSource);
+    }
+    if killshot
+        && source_plans(opponent).any(|opposing| {
+            let life = life_writes(opposing);
+            write_outcomes(opposing).on_loss && (life.own_gain || life.own_order_sensitive)
+        })
+    {
+        return Some(LeaderHandHazardV1::TeamKillshotAgainstOpposingLifeWrite);
+    }
+    None
+}
+
+/// Whether a change of `covering` reaches `stat`: the same stat, or Power And Damage over
+/// either half.
+fn stat_covers(covering: CombatStatAttributeV1, stat: CombatStatAttributeV1) -> bool {
+    covering == stat
+        || (covering == CombatStatAttributeV1::PowerAndDamage
+            && matches!(
+                stat,
+                CombatStatAttributeV1::Power | CombatStatAttributeV1::Damage
+            ))
+}
+
+/// Revision 79: a Team Leader identity belongs to a lone Leader's Ability slot and nowhere
+/// else - not on another card, not in a Bonus slot, not beside a second Leader.
+fn validate_team_leader_plans(
+    spec: &CombatStatDiagnosticMatchSpecV1,
+) -> Result<(), CombatStatPlanErrorV1> {
+    for player in PlayerId::ALL {
+        let base = &spec.base_rules.players[player].hand;
+        let hand = &spec.cards[player];
+        let lone_leader = team_leader_plan(base, hand).map(|(slot, _)| slot);
+        for slot in HandSlot::ALL {
+            for (source, plan) in [
+                (
+                    CombatStatEffectSourceV1::Ability,
+                    hand[slot.index()].ability,
+                ),
+                (CombatStatEffectSourceV1::Bonus, hand[slot.index()].bonus),
+            ] {
+                let CombatStatSourcePlanV1::Execute { source_id, .. } = plan else {
+                    continue;
+                };
+                if team_leader_source(source_id).is_some()
+                    && !(source == CombatStatEffectSourceV1::Ability && lone_leader == Some(slot))
+                {
+                    return Err(invalid_combat_stat_execute(
+                        player,
+                        slot,
+                        source,
+                        source_id,
+                        InvalidCombatStatPlanReasonV1::TeamLeaderIdentity,
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Whether `plan` scales by the anti-Support count, the clan-mates of the opposing selected
@@ -1541,6 +1838,9 @@ pub struct CombatStatDiagnosticUndoV1 {
 pub struct CombatStatDiagnosticV1 {
     spec: CombatStatDiagnosticMatchSpecV1,
     base_rules: BaseRulesGame,
+    /// Each player's lone Team Leader, derived once from `spec`: its slot and the Team plan
+    /// its Ability slot carries (revision 79).
+    team: ByPlayer<Option<(HandSlot, CombatStatSourcePlanV1)>>,
 }
 
 impl CombatStatDiagnosticV1 {
@@ -1599,8 +1899,23 @@ impl CombatStatDiagnosticV1 {
             }
         }
         validate_leader_hands(&spec)?;
+        validate_team_leader_plans(&spec)?;
+        let team = ByPlayer::new(
+            team_leader_plan(
+                &spec.base_rules.players[PlayerId::P1].hand,
+                &spec.cards[PlayerId::P1],
+            ),
+            team_leader_plan(
+                &spec.base_rules.players[PlayerId::P2].hand,
+                &spec.cards[PlayerId::P2],
+            ),
+        );
         let base_rules = BaseRulesGame::new(spec.base_rules.clone());
-        Ok(Self { spec, base_rules })
+        Ok(Self {
+            spec,
+            base_rules,
+            team,
+        })
     }
 
     pub fn match_spec(&self) -> &CombatStatDiagnosticMatchSpecV1 {
@@ -1668,6 +1983,7 @@ impl CombatStatDiagnosticV1 {
         let prepared = prepare_combat_stat_diagnostic(
             validated,
             &self.spec.cards,
+            self.team,
             input.first_mover,
             rounds_played,
             previous_round_winner,
@@ -3568,6 +3884,24 @@ fn validate_combat_stat_source_plan(
     else {
         return Ok(());
     };
+    // Revision 79: a reviewed Team Leader identity is locked to the exact effect it compiles
+    // to, the Ability slot and no condition. Which card may carry one - a lone Leader alone -
+    // needs the whole hand, so `validate_team_leader_plans` checks that. The effect then goes
+    // through the ordinary grammar checks below like any card source of its shape.
+    if let Some(team) = team_leader_source(source_id) {
+        if source != CombatStatEffectSourceV1::Ability
+            || predicate != CombatStatPredicateV1::Always
+            || effect != team.compact
+        {
+            return Err(invalid_combat_stat_execute(
+                player,
+                hand_slot,
+                source,
+                source_id,
+                InvalidCombatStatPlanReasonV1::TeamLeaderIdentity,
+            ));
+        }
+    }
     // Anita's conversion remains a single printed Ability identity.  It cannot be
     // borrowed by another card, source slot, predicate, or dynamic Copy provenance.
     if source_id == 274 {
@@ -5307,6 +5641,7 @@ fn predicate_matches(
 fn prepare_combat_stat_diagnostic(
     validated: ByPlayer<ValidatedSelection>,
     cards: &ByPlayer<[CombatStatCardPlanV1; HAND_SIZE]>,
+    team: ByPlayer<Option<(HandSlot, CombatStatSourcePlanV1)>>,
     first_mover: PlayerId,
     rounds_played: u8,
     previous_round_winner: Option<PlayerId>,
@@ -5322,6 +5657,13 @@ fn prepare_combat_stat_diagnostic(
         cards[PlayerId::P1][validated[PlayerId::P1].slot.index()],
         cards[PlayerId::P2][validated[PlayerId::P2].slot.index()],
     );
+    // A lone Team Leader's ability is a source of whichever card its owner plays (revision
+    // 79). A selected Leader already carries it in its own Ability slot, so it is added as a
+    // third source only beside another card, and lands once either way.
+    let team_source = |player: PlayerId| match team[player] {
+        Some((slot, plan)) if slot != validated[player].slot => plan,
+        _ => CombatStatSourcePlanV1::Absent,
+    };
     // Brawl reads the *opposing* hand at the *opposing* selected slot, so each player's
     // count is taken from the other player's cards. This is the lowest layer that holds
     // both full hands: `prepare_combat_resolution_with_post_round` below receives only the
@@ -5351,6 +5693,7 @@ fn prepare_combat_stat_diagnostic(
     let plans = ByPlayer::new(
         resolution_card_plan(
             selected[PlayerId::P1],
+            team_source(PlayerId::P1),
             selected[PlayerId::P2],
             PlayerId::P1,
             first_mover,
@@ -5368,6 +5711,7 @@ fn prepare_combat_stat_diagnostic(
         ),
         resolution_card_plan(
             selected[PlayerId::P2],
+            team_source(PlayerId::P2),
             selected[PlayerId::P1],
             PlayerId::P2,
             first_mover,
@@ -5434,8 +5778,11 @@ fn resolved_source_plan(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn resolution_card_plan(
     plan: CombatStatCardPlanV1,
+    // The owner's lone Team Leader ability when another card is selected, else `Absent`.
+    team: CombatStatSourcePlanV1,
     opponent_plan: CombatStatCardPlanV1,
     owner: PlayerId,
     first_mover: PlayerId,
@@ -5494,6 +5841,8 @@ fn resolution_card_plan(
     ResolutionCardPlan {
         ability: source(plan.ability, plan.source_ability_support_count),
         bonus: source(plan.bonus, plan.source_bonus_support_count),
+        // The Team plan is a fixed effect with no condition and no Support context.
+        team: source(team, 0),
     }
 }
 

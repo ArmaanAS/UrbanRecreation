@@ -659,6 +659,9 @@ struct PreparedSelection {
 pub(super) struct PostRoundPlan {
     pub ability: Option<PostRoundEffect>,
     pub bonus: Option<PostRoundEffect>,
+    /// A lone Team Leader's end-of-round work beside another selected card (revision 79),
+    /// paid after the card's own and before the owner's latched permanents.
+    pub team: Option<PostRoundEffect>,
 }
 
 /// Source-level post-round work before resolution has bound any selected-card-dependent
@@ -1519,10 +1522,16 @@ impl BaseRulesGame {
         for owner in PlayerId::ALL {
             // Match the TypeScript reference's within-phase ordering: the clan bonus is
             // registered before the ability. The VOD effects commute, but Argos' capped
-            // post-round effect makes this ordering observable.
-            for effect in [post_round[owner].bonus, post_round[owner].ability]
-                .into_iter()
-                .flatten()
+            // post-round effect makes this ordering observable. A Team ability (revision 79)
+            // pays after both and before the latched permanents below: the reference keeps it
+            // first in its `repeat` bucket, which runs after the round's fresh effects.
+            for effect in [
+                post_round[owner].bonus,
+                post_round[owner].ability,
+                post_round[owner].team,
+            ]
+            .into_iter()
+            .flatten()
             {
                 match effect {
                     // The Pillz placed on the card - the bet, the free pill and Fury's three -

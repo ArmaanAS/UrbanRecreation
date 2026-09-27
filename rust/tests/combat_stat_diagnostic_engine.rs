@@ -10,7 +10,8 @@ use urban_recreation_rust::engine::{
     CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1,
     CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatMagnitudeV1, CombatStatOperationV1,
     CombatStatPlanErrorV1, CombatStatPredicateV1, CombatStatSourcePlanV1, CopiedSourceKindV1,
-    InvalidCombatStatPlanReasonV1, MatchStatus, PlayerId, RoundScaleV1,
+    HandSlot, InvalidCombatStatPlanReasonV1, LeaderHandHazardV1, MatchStatus, PlayerId,
+    RoundScaleV1,
 };
 
 fn card(id: u32, power: u16, damage: u16) -> urban_recreation_rust::engine::BaseRulesCardSpec {
@@ -12701,4 +12702,496 @@ fn revision_76_the_capped_brawl_pillz_gain_carries_the_capped_victory_pillz_refu
             "{effect:?} facing {opposing:?}"
         );
     }
+}
+
+// Revision 79: the lone Team Leaders. The compact effects are the ones the compiler builds
+// for each reviewed identity (`TEAM_LEADER_SOURCES`).
+const LEADER_CLAN: u32 = 36;
+const HUGO: (u32, CombatStatEffectV1) = (
+    4237,
+    CombatStatEffectV1::ModifyCombatStat {
+        side: CombatStatAffectedSideV1::Player,
+        stat: CombatStatAttributeV1::Attack,
+        operation: CombatStatOperationV1::Increase,
+        value: 7,
+        minimum: None,
+        maximum: None,
+        multiplier: CombatStatMagnitudeV1::Fixed,
+    },
+);
+const TIMBER: (u32, CombatStatEffectV1) = (
+    121,
+    CombatStatEffectV1::ModifyCombatStat {
+        side: CombatStatAffectedSideV1::Player,
+        stat: CombatStatAttributeV1::Damage,
+        operation: CombatStatOperationV1::Increase,
+        value: 1,
+        minimum: None,
+        maximum: None,
+        multiplier: CombatStatMagnitudeV1::Fixed,
+    },
+);
+const VHOLT: (u32, CombatStatEffectV1) = (
+    5014,
+    CombatStatEffectV1::ModifyCombatStat {
+        side: CombatStatAffectedSideV1::Opponent,
+        stat: CombatStatAttributeV1::Damage,
+        operation: CombatStatOperationV1::Decrease,
+        value: 2,
+        minimum: Some(2),
+        maximum: None,
+        multiplier: CombatStatMagnitudeV1::Fixed,
+    },
+);
+const VANSAAR: (u32, CombatStatEffectV1) = (
+    3480,
+    CombatStatEffectV1::ReduceOpponentLifeOnKillshot {
+        life: 2,
+        minimum: 2,
+    },
+);
+
+/// P1 holds a lone Leader in slot 0 carrying `team` in its Ability slot, beside three plain
+/// 6/3 cards of three other clans; P2 holds four plain 6/3 cards.
+fn team_spec(team: (u32, CombatStatEffectV1)) -> CombatStatDiagnosticMatchSpecV1 {
+    let mut base = base_spec(6, 3);
+    base.players[PlayerId::P1].hand[0].clan_id = LEADER_CLAN;
+    let mut cards = plans(&base);
+    cards[PlayerId::P1][0].ability = execute(team.0, CombatStatPredicateV1::Always, team.1);
+    CombatStatDiagnosticMatchSpecV1 {
+        base_rules: base,
+        cards,
+    }
+}
+
+fn team_verdict(spec: CombatStatDiagnosticMatchSpecV1) -> Result<(), CombatStatPlanErrorV1> {
+    CombatStatDiagnosticV1::new(spec).map(|_| ())
+}
+
+fn leader_refused(reason: LeaderHandHazardV1) -> Result<(), CombatStatPlanErrorV1> {
+    Err(CombatStatPlanErrorV1::UnsupportedLeaderHand {
+        player: PlayerId::P1,
+        hand_slot: HandSlot::ALL[0],
+        reason,
+    })
+}
+
+#[test]
+fn a_lone_team_leader_applies_its_gain_to_every_card_its_owner_plays_once() {
+    let mut spec = team_spec(HUGO);
+    // P2's slot 2 carries Miss Stella's `-8 Opp Attack, Min 11`, as Oblivion's copy of it did
+    // in 901292/1.
+    spec.cards[PlayerId::P2][2].ability = execute(
+        4620,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Attack, 8, 11),
+    );
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let start = diag.position().clone();
+    // Another card: 6 x 2 + 7 = 19 (1509206/1: Wesley 6 x 2 + 9 Support + 7 = 28).
+    let (first, undo_first) = diag
+        .make(input(PlayerId::P1, (1, 1, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(first.cards[PlayerId::P1].attack, 19);
+    assert_eq!(first.cards[PlayerId::P2].attack, 6);
+    // The Leader itself, once: 6 x 1 + 7 = 13, not 20 (1508894/1: Hugo 7 x 1 + 7 = 14).
+    let (second, undo_second) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(second.cards[PlayerId::P1].attack, 13);
+    // Before the opposing reduction: 6 + 7 = 13, cut to its Min 11. After it, 6 would stay
+    // under the Min and end on 13 (901292/1: 7 + 7 = 14, cut to 11).
+    let (third, undo_third) = diag
+        .make(input(PlayerId::P1, (2, 0, false), (2, 0, false)))
+        .unwrap();
+    assert_eq!(third.cards[PlayerId::P1].attack, 11);
+    for undo in [undo_third, undo_second, undo_first] {
+        diag.unmake(undo);
+    }
+    assert_eq!(diag.position(), &start);
+}
+
+#[test]
+fn team_damage_changes_land_with_the_owners_own_before_opposing_reductions_and_fury() {
+    // Timber beside an own `Damage +3` facing a `-3 Opp Damage, Min 1`: 3 + 3 + 1 = 7, cut to
+    // 4, and Fury after, 6 - the order 1509105/2 shows (Doela Noel 2 + 3 + 1 - 3 + 2 = 5).
+    let mut spec = team_spec(TIMBER);
+    spec.cards[PlayerId::P1][1].ability = execute(
+        623,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 3),
+    );
+    spec.cards[PlayerId::P2][1].ability = execute(
+        1376,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::Damage, 3, 1),
+    );
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (first, _) = diag
+        .make(input(PlayerId::P1, (1, 2, true), (1, 0, false)))
+        .unwrap();
+    assert_eq!(first.cards[PlayerId::P1].damage, 6);
+    // The Leader itself: 3 + 1 = 4 (1509105/3: Timber 6 + 1 = 7).
+    let (second, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(second.cards[PlayerId::P1].damage, 4);
+
+    // Vholt's reduction lands on the opposing card whoever its owner plays: 5 - 2 = 3
+    // (1509037/0: El Matador 5 to 3), beside an own reduction of the same floor 4 - 2 - 2 at
+    // the Min 2 (1509037/1: El Común), and against the Leader itself (1509037/3: El Gringo 7
+    // to 5).
+    let mut spec = team_spec(VHOLT);
+    for slot in 0..4 {
+        spec.base_rules.players[PlayerId::P2].hand[slot].damage = [5, 4, 7, 3][slot];
+    }
+    spec.cards[PlayerId::P1][2].ability = execute(
+        1850,
+        CombatStatPredicateV1::Always,
+        reduction(CombatStatAttributeV1::PowerAndDamage, 2, 2),
+    );
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let (first, _) = diag
+        .make(input(PlayerId::P2, (1, 0, false), (0, 3, false)))
+        .unwrap();
+    assert_eq!(first.cards[PlayerId::P2].damage, 3);
+    let (second, _) = diag
+        .make(input(PlayerId::P1, (2, 0, false), (1, 3, false)))
+        .unwrap();
+    assert_eq!(second.cards[PlayerId::P2].damage, 2);
+    let (third, _) = diag
+        .make(input(PlayerId::P2, (0, 0, false), (2, 3, false)))
+        .unwrap();
+    assert_eq!(third.cards[PlayerId::P2].damage, 5);
+}
+
+#[test]
+fn a_team_killshot_pays_on_the_ratio_after_damage_down_to_its_floor() {
+    let mut spec = team_spec(VANSAAR);
+    spec.base_rules.players[PlayerId::P2].initial_life = 11;
+    let mut diag = CombatStatDiagnosticV1::new(spec).unwrap();
+    let start = diag.position().clone();
+    // 6 x 4 = 24 against 6: 11 - 3 = 8, and the Killshot takes 2 (1509142/1: 16 - 6 - 2 = 8;
+    // 1509177/0: 15 - 5 - 2 = 8).
+    let (first, undo_first) = diag
+        .make(input(PlayerId::P1, (1, 3, false), (1, 0, false)))
+        .unwrap();
+    assert_eq!(first.players[PlayerId::P2].life, 6);
+    // A win below the ratio pays only the damage: 18 against 12 (1509142/2: 65 against 56).
+    let (second, undo_second) = diag
+        .make(input(PlayerId::P2, (2, 2, false), (2, 1, false)))
+        .unwrap();
+    assert!(second.cards[PlayerId::P1].won);
+    assert_eq!(second.players[PlayerId::P2].life, 3);
+    // The Leader itself at the ratio: 3 - 3 = 0, and a target at or below the Min 2 is left
+    // where it is.
+    let (third, undo_third) = diag
+        .make(input(PlayerId::P1, (0, 3, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(third.players[PlayerId::P2].life, 0);
+    assert_eq!(third.status, MatchStatus::Won(PlayerId::P1));
+    for undo in [undo_third, undo_second, undo_first] {
+        diag.unmake(undo);
+    }
+    assert_eq!(diag.position(), &start);
+
+    // A loss pays nothing, whatever the Attacks.
+    let mut diag = CombatStatDiagnosticV1::new(team_spec(VANSAAR)).unwrap();
+    let (lost, _) = diag
+        .make(input(PlayerId::P1, (1, 0, false), (1, 3, false)))
+        .unwrap();
+    assert!(!lost.cards[PlayerId::P1].won);
+    assert_eq!(lost.players[PlayerId::P2].life, 20);
+}
+
+#[test]
+fn a_lone_team_leader_is_refused_wherever_its_context_is_unpinned() {
+    let place = |spec: &mut CombatStatDiagnosticMatchSpecV1,
+                 player: PlayerId,
+                 slot: usize,
+                 bonus: bool,
+                 plan: CombatStatSourcePlanV1| {
+        let card = &mut spec.cards[player][slot];
+        if bonus {
+            card.bonus = plan;
+            card.source_bonus_support_count = 1;
+        } else {
+            card.ability = plan;
+            if matches!(plan, CombatStatSourcePlanV1::CopyOpponentSource { .. }) {
+                card.source_ability_support_count = 1;
+            }
+        }
+    };
+    let copy = |copied| CombatStatSourcePlanV1::CopyOpponentSource {
+        source_id: 2918,
+        copied,
+        predicate: CombatStatPredicateV1::Always,
+    };
+    let always = |id, effect| execute(id, CombatStatPredicateV1::Always, effect);
+    for team in [HUGO, TIMBER, VHOLT, VANSAAR] {
+        assert_eq!(team_verdict(team_spec(team)), Ok(()), "{team:?} alone");
+    }
+    let cases: Vec<(
+        (u32, CombatStatEffectV1),
+        PlayerId,
+        bool,
+        CombatStatSourcePlanV1,
+        Result<(), CombatStatPlanErrorV1>,
+    )> = vec![
+        // A played Leader facing a Stop Opp. Ability, under any condition.
+        (
+            TIMBER,
+            PlayerId::P2,
+            false,
+            always(837, CombatStatEffectV1::StopOpponentAbility),
+            leader_refused(LeaderHandHazardV1::OpposingStopAbilityAgainstTeamLeader),
+        ),
+        (
+            HUGO,
+            PlayerId::P2,
+            false,
+            execute(
+                490,
+                CombatStatPredicateV1::OwnerWonPreviousRound,
+                CombatStatEffectV1::StopOpponentAbility,
+            ),
+            leader_refused(LeaderHandHazardV1::OpposingStopAbilityAgainstTeamLeader),
+        ),
+        // An opposing Stop Opp. Bonus is pinned: the Team gain survives it (1508894/1-2).
+        (
+            HUGO,
+            PlayerId::P2,
+            true,
+            always(130, CombatStatEffectV1::StopOpponentBonus),
+            Ok(()),
+        ),
+        // An opposing Ability Copy could adopt the Team ability from a played Leader; beside
+        // Vansaar a Bonus Copy could import a Life write too.
+        (
+            HUGO,
+            PlayerId::P2,
+            false,
+            copy(CopiedSourceKindV1::Ability),
+            leader_refused(LeaderHandHazardV1::OpposingCopyAgainstTeamLeader),
+        ),
+        (
+            HUGO,
+            PlayerId::P2,
+            true,
+            copy(CopiedSourceKindV1::Bonus),
+            Ok(()),
+        ),
+        (
+            VANSAAR,
+            PlayerId::P2,
+            true,
+            copy(CopiedSourceKindV1::Bonus),
+            leader_refused(LeaderHandHazardV1::OpposingCopyAgainstTeamLeader),
+        ),
+        // An opposing cancel of the Team stat; one of another stat is admitted.
+        (
+            HUGO,
+            PlayerId::P2,
+            false,
+            always(
+                3725,
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatAttributeV1::Attack,
+                },
+            ),
+            leader_refused(LeaderHandHazardV1::OpposingCancelAgainstTeamLeader),
+        ),
+        (
+            TIMBER,
+            PlayerId::P2,
+            false,
+            always(
+                3103,
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatAttributeV1::PowerAndDamage,
+                },
+            ),
+            leader_refused(LeaderHandHazardV1::OpposingCancelAgainstTeamLeader),
+        ),
+        (
+            HUGO,
+            PlayerId::P2,
+            false,
+            always(
+                5805,
+                CombatStatEffectV1::CancelOpponentCombatStatModifiers {
+                    stat: CombatStatAttributeV1::Power,
+                },
+            ),
+            Ok(()),
+        ),
+        (
+            VANSAAR,
+            PlayerId::P2,
+            false,
+            always(
+                1497,
+                CombatStatEffectV1::CancelOpponentResourceModifiers {
+                    resources: ResourceCancellationV1::Life,
+                },
+            ),
+            leader_refused(LeaderHandHazardV1::OpposingCancelAgainstTeamLeader),
+        ),
+        // An opposing Protection of Damage against Vholt's reduction.
+        (
+            VHOLT,
+            PlayerId::P2,
+            false,
+            always(
+                2255,
+                CombatStatEffectV1::ProtectOwnCombatStat {
+                    stat: CombatStatAttributeV1::PowerAndDamage,
+                },
+            ),
+            leader_refused(LeaderHandHazardV1::OpposingProtectionAgainstTeamLeader),
+        ),
+        // Tune Out, the Cosmohnuts bonus, beside Hugo in either hand.
+        (
+            HUGO,
+            PlayerId::P2,
+            true,
+            always(3496, CombatStatEffectV1::SimplifyAttackToPillz),
+            leader_refused(LeaderHandHazardV1::AttackSimplificationBesideTeamLeader),
+        ),
+        // Own sources whose order against the Team ability shows: an own Damage cut beside
+        // Timber (Bugamon's `Growth: -1 Power And Damage, Min 4`), an own opposing Damage cut
+        // of another floor beside Vholt, an own floor on the opposing Life beside Vansaar.
+        (
+            TIMBER,
+            PlayerId::P1,
+            false,
+            always(
+                5230,
+                modifier(
+                    CombatStatAffectedSideV1::Player,
+                    CombatStatAttributeV1::PowerAndDamage,
+                    CombatStatOperationV1::Decrease,
+                    1,
+                    Some(4),
+                    None,
+                    CombatStatMagnitudeV1::Growth,
+                ),
+            ),
+            leader_refused(LeaderHandHazardV1::TeamAbilityOrderAgainstOwnSource),
+        ),
+        (
+            VHOLT,
+            PlayerId::P1,
+            false,
+            always(90, reduction(CombatStatAttributeV1::Damage, 5, 1)),
+            leader_refused(LeaderHandHazardV1::TeamAbilityOrderAgainstOwnSource),
+        ),
+        (
+            VHOLT,
+            PlayerId::P1,
+            false,
+            always(1850, reduction(CombatStatAttributeV1::PowerAndDamage, 2, 2)),
+            Ok(()),
+        ),
+        (
+            VANSAAR,
+            PlayerId::P1,
+            false,
+            always(
+                512,
+                CombatStatEffectV1::ReduceOpponentLifeOnVictory {
+                    life: 1,
+                    minimum: 0,
+                },
+            ),
+            leader_refused(LeaderHandHazardV1::TeamAbilityOrderAgainstOwnSource),
+        ),
+        // The 1093173/1 order rule: an opposing own Life gain that pays on the opposing loss
+        // meets the Killshot; one that pays only on the opposing win cannot.
+        (
+            VANSAAR,
+            PlayerId::P2,
+            false,
+            always(1398, CombatStatEffectV1::GainLifeOnDefeat { life: 2 }),
+            leader_refused(LeaderHandHazardV1::TeamKillshotAgainstOpposingLifeWrite),
+        ),
+        (
+            VANSAAR,
+            PlayerId::P2,
+            false,
+            always(377, CombatStatEffectV1::GainLifeOnVictory { life: 3 }),
+            Ok(()),
+        ),
+    ];
+    for (team, player, bonus, plan, expected) in cases {
+        let mut spec = team_spec(team);
+        place(&mut spec, player, 2, bonus, plan);
+        assert_eq!(
+            team_verdict(spec),
+            expected,
+            "{team:?} beside {player:?} {plan:?}"
+        );
+    }
+}
+
+#[test]
+fn a_team_leader_identity_belongs_to_a_lone_leaders_ability_slot_only() {
+    let identity = |slot: u8, source| {
+        Err(CombatStatPlanErrorV1::InvalidExecute {
+            player: PlayerId::P1,
+            hand_slot: HandSlot::ALL[usize::from(slot)],
+            source,
+            source_id: HUGO.0,
+            reason: InvalidCombatStatPlanReasonV1::TeamLeaderIdentity,
+        })
+    };
+    // On a card that is no Leader.
+    let mut spec = team_spec(HUGO);
+    spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    spec.cards[PlayerId::P1][1].ability = execute(HUGO.0, CombatStatPredicateV1::Always, HUGO.1);
+    assert_eq!(
+        team_verdict(spec),
+        identity(1, CombatStatEffectSourceV1::Ability)
+    );
+    // In the Leader's Bonus slot.
+    let mut spec = team_spec(HUGO);
+    spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    spec.cards[PlayerId::P1][0].bonus = execute(HUGO.0, CombatStatPredicateV1::Always, HUGO.1);
+    spec.cards[PlayerId::P1][0].source_bonus_support_count = 1;
+    assert_eq!(
+        team_verdict(spec),
+        identity(0, CombatStatEffectSourceV1::Bonus)
+    );
+    // Under a condition, or with another effect.
+    let mut spec = team_spec(HUGO);
+    spec.cards[PlayerId::P1][0].ability =
+        execute(HUGO.0, CombatStatPredicateV1::OwnerMovesFirst, HUGO.1);
+    assert_eq!(
+        team_verdict(spec),
+        identity(0, CombatStatEffectSourceV1::Ability)
+    );
+    let mut spec = team_spec(HUGO);
+    spec.cards[PlayerId::P1][0].ability = execute(
+        HUGO.0,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Attack, 6),
+    );
+    assert_eq!(
+        team_verdict(spec),
+        identity(0, CombatStatEffectSourceV1::Ability)
+    );
+    // Beside a second Leader every Leader ability is deactivated, so a Team plan there is a
+    // Leader source plan.
+    let mut spec = team_spec(HUGO);
+    spec.base_rules.players[PlayerId::P1].hand[1].clan_id = LEADER_CLAN;
+    spec.cards[PlayerId::P1][1].effective_clan_id = LEADER_CLAN;
+    assert_eq!(
+        team_verdict(spec),
+        leader_refused(LeaderHandHazardV1::LeaderSourcePlan)
+    );
+    // An ordinary `+7 Attack` under another id is any card's source.
+    let mut spec = team_spec(HUGO);
+    spec.cards[PlayerId::P1][0].ability = CombatStatSourcePlanV1::Absent;
+    spec.cards[PlayerId::P1][1].ability = execute(5229, CombatStatPredicateV1::Always, HUGO.1);
+    assert_eq!(team_verdict(spec), Ok(()));
 }

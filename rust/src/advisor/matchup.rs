@@ -439,8 +439,10 @@ pub enum ProbeStatus {
     /// The card's ability (or the card itself) refuses even in the neutral draw.
     Refused,
     /// A Leader the strict catalog refuses on its own: every Leader but Ashigaru L5, whose
-    /// `Counter-attack` only decides round one's order. A hand of two or more Leaders, whose
-    /// abilities are deactivated, is admitted (revision 77), but the probe never builds one.
+    /// `Counter-attack` only decides round one's order, and the four level-5 Team Leaders
+    /// (Hugo, Timber, Vholt and Vansaar, revision 79). A hand of two or more Leaders, whose
+    /// abilities are deactivated, is admitted (revision 77), but the probe's neutral draw never
+    /// holds one.
     Leader,
     /// This `(id, level)` is not in the catalog the engine loads.
     Missing,

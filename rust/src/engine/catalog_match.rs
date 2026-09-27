@@ -35,6 +35,9 @@ use super::combat_stat_compiler::{
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1, COUNTER_ATTACK_DESCRIPTION,
 };
 use super::combat_stat_compiler::{classify_cancel_leader, classify_counter_attack};
+use super::combat_stat_compiler::{
+    classify_team_leader, team_leader_source, TeamLeaderPublicEffectV1,
+};
 use super::effect_reads_support_count;
 use super::leader_hand_hazard;
 use super::CopiedSourceKindV1;
@@ -1046,8 +1049,9 @@ fn validate_solver_hand(
 /// - the derived hand gives each none, as the server's static block does - and make the Leader
 /// clan's own `Cancel Leader` live, which is inert once that is done. A lone Leader's bonus is
 /// inactive like any singleton clan's, and only Ashigaru L5's `Counter-attack`, printed as
-/// registry definition 124, is admitted as its ability. Everything else a Leader could print,
-/// including a lone Leader with no ability, stays refused.
+/// registry definition 124, is admitted as its ability - and, since revision 79, the four
+/// level-5 Team identities (`TEAM_LEADER_SOURCES`), which execute. Everything else a Leader
+/// could print, including a lone Leader with no ability, stays refused.
 fn prepare_leader_source(
     registry: &EffectRegistryV1,
     player: PlayerId,
@@ -1068,6 +1072,57 @@ fn prepare_leader_source(
     let (source, registry_id, reason) = match (source_kind, beside_another_leader, source) {
         (CombatStatEffectSourceV1::Ability, true, None)
         | (CombatStatEffectSourceV1::Bonus, false, None) => return Ok(absent_source()),
+        // Revision 79: a lone Team Leader's ability, by identity. The printed catalog id must be
+        // the reviewed registry definition itself, with its exact text and record. The lower
+        // levels print the same text under ids no registry definition owns, so they fall
+        // through to the refusal below, as Ashigaru L1-L4 do.
+        (CombatStatEffectSourceV1::Ability, false, Some(source))
+            if source
+                .catalog_id
+                .and_then(team_leader_source)
+                .is_some_and(|team| team.description == source.description) =>
+        {
+            let definition = source
+                .catalog_id
+                .and_then(|id| registry.lookup_capture(id, &source.description).ok())
+                .ok_or_else(refuse)?;
+            let (public, compact) = classify_team_leader(definition).ok_or_else(refuse)?;
+            let identity = CatalogCombatStatModifierIdentityV1 {
+                catalog_id: source.catalog_id,
+                description: source.description.clone(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids: registry
+                    .lookup_description(&source.description)
+                    .map_err(|_| refuse())?
+                    .alias_ids()
+                    .to_vec()
+                    .into_boxed_slice(),
+            };
+            let predicate = CombatStatPredicateV1::Always;
+            return Ok(PreparedCatalogSourceV1 {
+                metadata: match public {
+                    TeamLeaderPublicEffectV1::CombatStat(effect) => {
+                        CatalogCombatStatSourceDispositionV1::Execute {
+                            identity,
+                            effect,
+                            predicate,
+                        }
+                    }
+                    TeamLeaderPublicEffectV1::PostRound(effect) => {
+                        CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                            identity,
+                            effect,
+                            predicate,
+                        }
+                    }
+                },
+                compact: CombatStatSourcePlanV1::Execute {
+                    source_id: definition.id(),
+                    predicate,
+                    effect: compact,
+                },
+            });
+        }
         (CombatStatEffectSourceV1::Ability, false, Some(source))
             if source.description == COUNTER_ATTACK_DESCRIPTION =>
         {

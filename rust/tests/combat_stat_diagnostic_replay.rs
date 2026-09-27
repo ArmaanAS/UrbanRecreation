@@ -813,6 +813,35 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1496119, 2),
     (1496142, 1),
     (1495980, 4),
+    // Revision 79 admits the lone Team Leaders, whose ability lands on whichever card their
+    // owner plays, the Leader included, once. Hugo's `Team: +7 Attack`: 8 x 3 + 7 = 31 in
+    // 901292/0 and Miss Stella 7 x 1 + 7 = 14, cut by Oblivion's copied `-8 Opp Attack, Min 11`
+    // to 11, in 901292/1; Hugo himself 7 x 1 + 7 = 14 against Sukareto's Courage cut and live
+    // Nightmare `Stop Opp. Bonus` in 1508894/1, and Callie 6 x 1 + 7 = 13 past Hel's in
+    // 1508894/2; Hugo 9 x 5 + 7 = 52 in 1509206/0 and Wesley 6 x 2 + 9 Support + 7 = 28 in
+    // 1509206/1 (round 2 selects Cacto's closed `3963`). Timber's `Team: +1 Damage`: Anagone 7 +
+    // 3 Asymmetry + 1 = 11 in 1509105/0, Doela Noel 2 + 3 + 1 - 3 Growth + 2 Fury = 5 in
+    // 1509105/2 and Timber himself 6 + 1 = 7 in 1509105/3. Vholt's `Team: -2 Opp. Damage, Min 2`:
+    // El Matador 5 to 3 in 1509037/0, El Común 4 to 2 beside Aneta's equal-floor cut in
+    // 1509037/1, and El Gringo 7 to 5 against Vholt himself in 1509037/3. Vansaar's `Team:
+    // Killshot: -2 Opp. Life Min 2`: Gretchen's 56 against 6 takes Aneta's owner 15 - 5 - 2 = 8
+    // in 1509076/0, and Vansaar himself loses round 2.
+    (901292, 3),
+    (1508894, 4),
+    (1509206, 2),
+    (1509105, 4),
+    (1509037, 4),
+    (1509076, 4),
+    // Beside another Leader a Team ability is deactivated like any other Leader ability, and
+    // the Leaders play printed stats. Hugo beside Vansaar: Hugo 9 x 6 - 15 Hive Equalizer = 39
+    // with no +7 in 1508787/1, and Vansaar's Killshot pays nothing on two wins at the ratio (39
+    // against 18 in 1508787/1, 9 against 4 in 1508787/2: 15 - 6 = 9 and 9 - 3 = 6) nor on
+    // Spidee's 14 against 4 in 1508823/1 (15 - 6 = 9); round 2 of 1508823 selects Ghoonbones'
+    // closed `1590`. Timber beside Vholt in 1508992: Timber deals his printed 6 in round 1, and
+    // Poncho keeps his 6 against Vholt in round 2.
+    (1508787, 4),
+    (1508823, 2),
+    (1508992, 3),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -2043,6 +2072,97 @@ fn admitted_leader_hands_prepare_inert_leaders_and_refuse_every_other_shape() {
     oculus.players[0].hand[3].source_bonus = None;
     oculus.rounds.clear();
     assert_eq!(refused(oculus), LeaderHandHazardV1::OculusBesideLeader);
+}
+
+/// Revision 79: a lone Hugo, Timber, Vholt or Vansaar executes its captured Team ability from
+/// its own Ability slot, by identity, and the server's rounds agree (the gate replays each
+/// prefix). Every other captured shape stays a whole-hand hazard, and so does every context
+/// the captures leave unpinned.
+#[test]
+fn lone_team_leaders_execute_their_captured_team_ability_by_identity() {
+    let catalog = catalog();
+    let registry = registry();
+    // Engine P1 is whoever moved first in round one: Vholt's and Vansaar's owners are engine
+    // P2 in 1509037 and 1509076.
+    for (battle_id, player, id, post_round) in [
+        (1508894, PlayerId::P1, 4237, false),
+        (1509105, PlayerId::P1, 121, false),
+        (1509037, PlayerId::P2, 5014, false),
+        (1509076, PlayerId::P2, 3480, true),
+    ] {
+        let prepared = diagnostic(battle_id, &catalog, &registry);
+        let leader = &prepared.preparation()[player][0];
+        let identity = match &leader.ability {
+            CombatStatProjectionDispositionV1::Execute {
+                identity,
+                predicate: CombatStatPredicateV1::Always,
+                ..
+            } if !post_round => identity,
+            CombatStatProjectionDispositionV1::ExecutePostRound {
+                identity,
+                predicate: CombatStatPredicateV1::Always,
+                ..
+            } if post_round => identity,
+            other => panic!("{battle_id}: {other:?}"),
+        };
+        assert_eq!(identity.id, id, "{battle_id}");
+        assert_eq!(leader.bonus, CombatStatProjectionDispositionV1::Absent);
+        assert_eq!(leader.source_ability_support_count, 0);
+    }
+    // Round 1 of 1508894 plays Hugo himself: 7 x 1 + 7 = 14, once.
+    let hugo = diagnostic(1508894, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(2)
+        .unwrap();
+    assert_eq!(hugo.rounds[1].round.cards[PlayerId::P1].attack, 14);
+    // Round 0 of 1509076: Gretchen's 56 against 6, and Aneta's owner goes 15 - 5 - 2 = 8.
+    let vansaar = diagnostic(1509076, &catalog, &registry)
+        .execute_combat_stat_diagnostic_v1_prefix(1)
+        .unwrap();
+    assert_eq!(vansaar.rounds[0].round.players[PlayerId::P1].life, 8);
+
+    let refused = |replay: ReplayCaseV1| match CombatStatDiagnosticReplayV1::new(
+        replay, &catalog, &registry, PROJECTION,
+    ) {
+        Err(CombatStatDiagnosticPreparationErrorV1::WholeHandExecutionHazard {
+            source: CombatStatWholeHandHazardSourceV1::CanonicalLeaderCard { reason, .. },
+            ..
+        }) => reason,
+        other => panic!("expected a Leader hazard, got {other:?}"),
+    };
+    // A lone Team Leader carries its reviewed ability and no bonus: another level's id, which
+    // no registry definition owns, or any bonus is refused.
+    let mut lower = replay(1508894, &catalog);
+    lower.players[0].hand[0].source_ability = Some(SourceModifier {
+        id: 4236,
+        description: "Team: +7 Attack".to_owned(),
+    });
+    assert_eq!(refused(lower), LeaderHandHazardV1::UnreviewedLeaderSource);
+    let mut bonus = replay(1508894, &catalog);
+    bonus.players[0].hand[0].source_bonus = Some(SourceModifier {
+        id: 117,
+        description: "Cancel Leader".to_owned(),
+    });
+    assert_eq!(refused(bonus), LeaderHandHazardV1::UnreviewedLeaderSource);
+    // The contexts no round pins: Timber and Vansaar facing a `Stop Opp. Ability` they could
+    // be played into (1509014's Tekumman, 1509142's Elvira Cr, 1509177's Oxo), and Timber facing
+    // Fowl's Brawl, which revision 77 refuses against any Leader (1508957).
+    for (battle_id, reason) in [
+        (
+            1509014,
+            LeaderHandHazardV1::OpposingStopAbilityAgainstTeamLeader,
+        ),
+        (
+            1509142,
+            LeaderHandHazardV1::OpposingStopAbilityAgainstTeamLeader,
+        ),
+        (
+            1509177,
+            LeaderHandHazardV1::OpposingStopAbilityAgainstTeamLeader,
+        ),
+        (1508957, LeaderHandHazardV1::OpposingBrawlAgainstLeader),
+    ] {
+        assert_eq!(refused(replay(battle_id, &catalog)), reason, "{battle_id}");
+    }
 }
 
 #[test]

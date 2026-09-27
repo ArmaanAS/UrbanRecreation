@@ -665,6 +665,8 @@ fn resolution_card_plan(plan: DiagnosticCardPlanV1) -> ResolutionCardPlan {
             post_round: None,
             support_count: plan.source_bonus_support_count,
         },
+        // This older projection admits no Leader hand, so it has no Team source.
+        team: ResolutionSourcePlan::default(),
     }
 }
 

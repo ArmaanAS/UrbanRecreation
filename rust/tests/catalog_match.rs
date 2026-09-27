@@ -3158,10 +3158,11 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
         })
     ));
 
-    // A lone Hugo's `Team: +7 Attack` is not modelled (revision 77 admits only two kinds of
-    // Leader hand; see `strict_catalog_match_admits_two_leaders_and_a_lone_ashigaru_only`).
+    // A lone Hugo L4's `Team: +7 Attack` is not modelled: its printed id `4236` has no
+    // registry definition, so only level 5's `4237` is admitted (revision 79; see
+    // `strict_catalog_match_admits_the_four_lone_team_leaders_by_identity`).
     let mut leader = p1;
-    leader[0] = CardKey::new(271, 5);
+    leader[0] = CardKey::new(271, 4);
     assert!(matches!(
         CatalogCombatStatMatchV1::new(input(leader, p2, false), &catalog, &registry, PROJECTION),
         Err(CatalogCombatStatMatchErrorV1::WholeHandLeaderHazard {
@@ -3378,12 +3379,13 @@ fn strict_catalog_match_admits_two_leaders_and_a_lone_ashigaru_only() {
 
     // Every other lone Leader stays refused: Ashigaru's lower levels print `Counter-attack`
     // under ids no registry definition owns, Administrator L1 prints no ability at all, and
-    // Administrator L5's Hazard replaces the other cards' abilities at random.
+    // Administrator L5's Hazard replaces the other cards' abilities at random. Vansaar L4's
+    // Team ability is refused the way Ashigaru's lower levels are (revision 79 admits level 5).
     for key in [
         CardKey::new(275, 4),
         CardKey::new(2095, 1),
         ADMINISTRATOR_L5,
-        CardKey::new(273, 5),
+        CardKey::new(273, 4),
     ] {
         assert_eq!(
             leader_refusal(
@@ -3488,6 +3490,172 @@ fn strict_catalog_match_admits_two_leaders_and_a_lone_ashigaru_only() {
             ..
         })
     ));
+}
+
+/// Revision 79: a lone Hugo, Timber, Vholt or Vansaar at level 5 executes its Team ability from
+/// its own Ability slot, by identity - the printed catalog id is the registry definition, with
+/// its exact text and record. The lower levels print the same text under ids no registry
+/// definition owns and stay refused, and so does every context no captured round shows.
+#[test]
+fn strict_catalog_match_admits_the_four_lone_team_leaders_by_identity() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, fillers) = fully_supported_hands();
+    let plain = [
+        CardKey::new(123, 1),
+        CardKey::new(124, 1),
+        CardKey::new(138, 1),
+        CardKey::new(139, 1),
+    ];
+    for (key, id, description, post_round) in [
+        (CardKey::new(271, 5), 4237, "Team: +7 Attack", false),
+        (CardKey::new(272, 5), 121, "Team: +1 Damage", false),
+        (
+            CardKey::new(490, 5),
+            5014,
+            "Team: -2 Opp. Damage, Min 2",
+            false,
+        ),
+        (
+            CardKey::new(273, 5),
+            3480,
+            "Team: Killshot: -2 Opp. Life Min 2",
+            true,
+        ),
+    ] {
+        let hand = [plain[0], key, plain[1], plain[2]];
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(hand, fillers, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error}"));
+        let leader = &prepared.preparation()[PlayerId::P1][1];
+        let identity = match &leader.ability {
+            CatalogCombatStatSourceDispositionV1::Execute {
+                identity,
+                predicate: CombatStatPredicateV1::Always,
+                ..
+            } if !post_round => identity,
+            CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+                identity,
+                predicate: CombatStatPredicateV1::Always,
+                effect:
+                    CombatStatPostRoundEffectV1::ReduceOpponentLifeOnKillshot {
+                        life: 2,
+                        minimum: 2,
+                    },
+            } if post_round => identity,
+            other => panic!("{key:?}: {other:?}"),
+        };
+        assert_eq!(identity.catalog_id, Some(id));
+        assert_eq!(identity.registry_definition_id, id);
+        assert_eq!(identity.description, description);
+        assert_eq!(leader.bonus, CatalogCombatStatSourceDispositionV1::Absent);
+        assert_eq!(leader.source_bonus_support_count, 0);
+        assert_eq!(leader.source_ability_support_count, 0);
+        let plan = prepared.match_spec().cards[PlayerId::P1][1];
+        assert!(
+            matches!(
+                plan.ability,
+                CombatStatSourcePlanV1::Execute {
+                    source_id,
+                    predicate: CombatStatPredicateV1::Always,
+                    ..
+                } if source_id == id
+            ),
+            "{key:?}: {:?}",
+            plan.ability
+        );
+        assert_eq!(plan.bonus, CombatStatSourcePlanV1::Absent);
+        assert_eq!(prepared.round_one_order(), RoundOneOrderV1::Usual);
+    }
+
+    // Hugo L4 (`4236`), Timber L4 (`2445`), Vholt L4 (`4246`) and Vansaar L1 (`3538`) print the
+    // same texts under ids no registry definition owns; Timber L1 prints no ability at all.
+    for key in [
+        CardKey::new(271, 4),
+        CardKey::new(272, 4),
+        CardKey::new(272, 1),
+        CardKey::new(490, 4),
+        CardKey::new(273, 1),
+    ] {
+        assert_eq!(
+            leader_refusal(
+                [plain[0], key, plain[1], plain[2]],
+                fillers,
+                &catalog,
+                &registry
+            ),
+            Some((PlayerId::P1, 1, LeaderHandHazardV1::UnreviewedLeaderSource)),
+            "{key:?}"
+        );
+    }
+
+    // 1508957's Timber hand against its Jungo hand: Fowl's `Brawl: -1 Opp Damage, Min 1` is the
+    // revision-77 refusal, and without it Jean's `Stop Opp. Ability` could meet Timber played.
+    let timber = [
+        CardKey::new(272, 5),
+        CardKey::new(1983, 5),
+        CardKey::new(2020, 4),
+        CardKey::new(1988, 4),
+    ];
+    let jungo = [
+        CardKey::new(789, 5),
+        CardKey::new(1849, 3),
+        CardKey::new(1011, 2),
+        CardKey::new(1087, 4),
+    ];
+    assert_eq!(
+        leader_refusal(timber, jungo, &catalog, &registry),
+        Some((
+            PlayerId::P1,
+            0,
+            LeaderHandHazardV1::OpposingBrawlAgainstLeader
+        ))
+    );
+    let mut without_fowl = jungo;
+    without_fowl[1] = fillers[0];
+    assert_eq!(
+        leader_refusal(timber, without_fowl, &catalog, &registry),
+        Some((
+            PlayerId::P1,
+            0,
+            LeaderHandHazardV1::OpposingStopAbilityAgainstTeamLeader
+        ))
+    );
+    // An opposing `Copy: Opp. Ability` (McMaster) could adopt the Team ability from a played
+    // Hugo.
+    assert_eq!(
+        leader_refusal(
+            [CardKey::new(271, 5), plain[0], plain[1], plain[2]],
+            [CardKey::new(2287, 4), fillers[0], fillers[1], fillers[2]],
+            &catalog,
+            &registry
+        ),
+        Some((
+            PlayerId::P1,
+            0,
+            LeaderHandHazardV1::OpposingCopyAgainstTeamLeader
+        ))
+    );
+    // Beside another Leader a Team ability is deactivated like any other: Timber and Vholt in
+    // one hand (1508992) play as plain cards.
+    let pair = [
+        CardKey::new(272, 5),
+        CardKey::new(490, 5),
+        plain[0],
+        plain[1],
+    ];
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(pair, fillers, false), &catalog, &registry, PROJECTION)
+            .unwrap();
+    for slot in 0..2 {
+        let plan = prepared.match_spec().cards[PlayerId::P1][slot];
+        assert_eq!(plan.ability, CombatStatSourcePlanV1::Absent);
+        assert_eq!(plan.bonus, CombatStatSourcePlanV1::Absent);
+    }
 }
 
 /// Every captured Leader hand, against the catalog derivation. Beside another Leader the

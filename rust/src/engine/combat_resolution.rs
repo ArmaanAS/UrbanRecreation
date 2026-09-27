@@ -54,6 +54,12 @@ pub(super) struct ResolutionSourcePlan {
 pub(super) struct ResolutionCardPlan {
     pub ability: ResolutionSourcePlan,
     pub bonus: ResolutionSourcePlan,
+    /// A lone Team Leader's ability applied beside another selected card's own sources
+    /// (revision 79), or empty. It is no source of the selected card: no Stop reaches it -
+    /// Timber's `Team: +1 Damage` lands on a Jairin and an Anagone whose ability is stopped
+    /// (1508957/0, 1509014/1) - and it runs after the card's own Bonus and Ability in each
+    /// phase, which is where the reference's `repeat` bucket puts a `GLOBAL` ability.
+    pub team: ResolutionSourcePlan,
 }
 
 #[derive(Clone, Copy)]
@@ -504,6 +510,20 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 &mut damage,
             )?;
         }
+        // A Team gain lands after the card's own (1509105/2: Doela Noel 2 + 3 Asymmetry + 1
+        // Timber, then Kurt's Growth cut to 3 and Fury to 5).
+        apply_power_damage_effect(
+            origin,
+            DiagnosticAffectedSideV1::Player,
+            DiagnosticStatOperationV1::Increase,
+            selected_plans[origin].team,
+            cancellations[origin.other()],
+            StatMask::default(),
+            rounds_played,
+            opponent_stars[origin],
+            &mut power,
+            &mut damage,
+        )?;
     }
 
     // Server-backed TypeScript semantics stable-sort opponent reductions by descending
@@ -521,6 +541,23 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 .ability
                 .then_some(selected_plans[origin].ability)
                 .unwrap_or_default(),
+            cancellations[origin.other()],
+            protections[origin.other()],
+            rounds_played,
+            opponent_stars[origin],
+            &mut power,
+            &mut damage,
+        )?;
+        // A Team reduction lands after the card's own, outside their Min ordering, as the
+        // reference's `repeat` bucket runs after its sorted `events`. Construction admits it
+        // only beside own reductions of the same stat and floor, which commute (1509037/1:
+        // Aneta's `-2 Opp Pow. & Dam., Min 2` and Vholt's `-2 Opp. Damage, Min 2` take El Común
+        // from 4 to 2).
+        apply_power_damage_effect(
+            origin,
+            DiagnosticAffectedSideV1::Opponent,
+            DiagnosticStatOperationV1::Decrease,
+            selected_plans[origin].team,
             cancellations[origin.other()],
             protections[origin.other()],
             rounds_played,
@@ -605,6 +642,25 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 &mut attack,
             )?;
         }
+        // A Team gain lands after the card's own and before the opposing reductions (901292/1:
+        // Miss Stella 7 x 1 + 7 = 14, then Oblivion's copied `-8 Opp Attack, Min 11` makes it
+        // 11). Under `Tune Out` no Attack modifier applies, this one included, as in the
+        // reference; construction refuses the pair anyway.
+        if !attack_simplified {
+            apply_attack_effect(
+                origin,
+                DiagnosticAffectedSideV1::Player,
+                DiagnosticStatOperationV1::Increase,
+                selected_plans[origin].team,
+                cancellations[origin.other()],
+                StatMask::default(),
+                rounds_played,
+                opponent_stars[origin],
+                pre_fury_damage[origin.other()],
+                resolved_power[origin.other()],
+                &mut attack,
+            )?;
+        }
     }
 
     // Opponent Attack reductions use the same stable descending-Min ordering.
@@ -629,6 +685,23 @@ pub(super) fn prepare_combat_resolution_with_post_round(
             resolved_power[origin.other()],
             &mut attack,
         )?;
+        // No reviewed Team ability reduces an Attack; were one admitted it would land after the
+        // card's own reductions, as a Team Damage reduction does.
+        if !attack_simplified {
+            apply_attack_effect(
+                origin,
+                DiagnosticAffectedSideV1::Opponent,
+                DiagnosticStatOperationV1::Decrease,
+                selected_plans[origin].team,
+                cancellations[origin.other()],
+                protections[origin.other()],
+                rounds_played,
+                opponent_stars[origin],
+                pre_fury_damage[origin.other()],
+                resolved_power[origin.other()],
+                &mut attack,
+            )?;
+        }
     }
 
     let selections = ByPlayer::new(
@@ -695,6 +768,13 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 })
                 .transpose()?
                 .filter(|effect| !resource_cancellations[PlayerId::P2].cancels(*effect)),
+            team: bind_team_post_round_effect(
+                PlayerId::P1,
+                selected_plans[PlayerId::P1].team,
+                opponent_stars[PlayerId::P1],
+                rounds_played,
+            )?
+            .filter(|effect| !resource_cancellations[PlayerId::P2].cancels(*effect)),
         },
         PostRoundPlan {
             ability: live[PlayerId::P2]
@@ -729,12 +809,42 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 })
                 .transpose()?
                 .filter(|effect| !resource_cancellations[PlayerId::P1].cancels(*effect)),
+            team: bind_team_post_round_effect(
+                PlayerId::P2,
+                selected_plans[PlayerId::P2].team,
+                opponent_stars[PlayerId::P2],
+                rounds_played,
+            )?
+            .filter(|effect| !resource_cancellations[PlayerId::P1].cancels(*effect)),
         },
     );
     Ok(PreparedCombatResolution {
         selections,
         post_round,
     })
+}
+
+/// The end-of-round work of a Team ability beside another selected card (revision 79). It is
+/// always live - no Stop reaches it - and pays after the card's own Bonus and Ability, as the
+/// reference's `repeat` bucket does.
+fn bind_team_post_round_effect(
+    player: PlayerId,
+    team: ResolutionSourcePlan,
+    opponent_stars: u16,
+    rounds_played: u8,
+) -> Result<Option<PostRoundEffect>, CombatResolutionError> {
+    team.post_round
+        .map(|effect| {
+            bind_post_round_effect(
+                player,
+                effect,
+                opponent_stars,
+                team.anti_support_count,
+                team.support_count,
+                rounds_played,
+            )
+        })
+        .transpose()
 }
 
 fn source_is_live(source: ResolutionSourcePlan) -> bool {

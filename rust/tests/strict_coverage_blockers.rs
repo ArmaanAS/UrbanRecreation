@@ -504,13 +504,18 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
     ("two or more Leaders (Cancel Leader)", &[117]),
     ("lone Ashigaru (Counter-attack)", &[124]),
     ("revision 77 union", &[117, 124]),
-    // Still refused after revision 77, listed so the next capture can be priced.
+    // Revision 79, measured 2026-09-27: the lone Team Leaders the captures deal, each at level
+    // 5. A lone Leader refused for its context is attributed to its printed ability too.
     ("lone Hugo (Team: +7 Attack)", &[4237]),
+    ("lone Timber (Team: +1 Damage)", &[121]),
+    ("lone Vholt (Team: -2 Opp. Damage, Min 2)", &[5014]),
+    ("lone Vansaar (Team: Killshot: -2 Opp. Life Min 2)", &[3480]),
+    ("revision 79 union", &[121, 3480, 4237, 5014]),
+    // Still refused after revision 79, listed so the next capture can be priced.
     (
         "lone John Doom (Team: Reprisal: -2 Opp Power, Min 6)",
         &[5252],
     ),
-    ("lone Vansaar (Team: Killshot: -2 Opp. Life Min 2)", &[3480]),
     ("lone Administrator (Hazard)", &[2238, 4144]),
     ("lone Kate (Illusion)", &[3127, 3128]),
     ("lone Solomon (Tie-break)", &[1135]),
