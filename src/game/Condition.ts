@@ -271,11 +271,27 @@ export default class Condition {
         }
         break;
 
+      // "Stop: X" fires only when the opposing card cancels this one, so the card resists
+      // the cancel it is waiting for and the condition reads the cancel flag. A permanent has
+      // already become GLOBAL_ABILITY by now (compileAbility runs first), and used to match
+      // neither branch: `stop` stayed unset and the condition held unconditionally, so every
+      // won round latched it. The server's text is "If Ardwizz's ability is cancelled out by
+      // the opposing character, If Ardwizz wins the round, at the end of each of the following
+      // rounds ... will earn 2 Life point(s)" (captures/abilities.json 1629), and no Stop
+      // Opp. Ability faced the three that won unstopped: Ardwizz's `Stop: Heal 2 Max. 20` in
+      // 1516740 r2 (no heal in r3: 8 - 2 Poison = 6) and Giacomo's `Stop: Poison 3, Min 2` in
+      // 1517397 r1 and 1517419 r2 (no Poison the round after: 13 and 8 + 3 = 11).
       case ConditionType.STOP:
-        if (ability.type === AbilityType.ABILITY) {
+        if (
+          ability.type === AbilityType.ABILITY ||
+          ability.type === AbilityType.GLOBAL_ABILITY
+        ) {
           this.stop = "Ability";
           data.card.ability.prot = true;
-        } else if (ability.type === AbilityType.BONUS) {
+        } else if (
+          ability.type === AbilityType.BONUS ||
+          ability.type === AbilityType.GLOBAL_BONUS
+        ) {
           this.stop = "Bonus";
           data.card.bonus.prot = true;
         }

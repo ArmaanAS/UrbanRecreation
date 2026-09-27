@@ -59,8 +59,33 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 471 | 8 | Two Oculus in one hand infiltrate nothing (1496283; no replay moves on its own) |
 | 2026-09-27 | 474 | 5 | The end of the round settles every increase before every decrease, the decreases by descending Min (1514836, 1515298, 1515451); supersedes the round-one-seat order |
 | 2026-09-27 | 475 | 4 | A single-stat Protection refuses an opposing reduction of its stat (1515574); 1515692 is a new single point (Per Opp. Damage against an opposing Damage bonus) |
+| 2026-09-27 | 559 | 15 | +95 Training captures (autoplay runs 2-3): eleven fresh mismatches (1516740, 1516811, 1516832, 1516846, 1516906, 1517029, 1517121, 1517236, 1517271, 1517397, 1517419) |
+| 2026-09-27 | 561 | 13 | A `Stop:` permanent latches only when its ability is stopped (1516740, 1517419; 1517397 moves on to round 3) |
 
 ## Fixed
+
+### A `Stop:` permanent latches only when its ability is stopped - 1516740, 1517397, 1517419 (fixed)
+`Stop: X` fires only when the opposing card cancels this card's ability: "If Ardwizz's ability
+is cancelled out by the opposing character, If Ardwizz wins the round, at the end of each of the
+following rounds the player controlling Ardwizz will earn 2 Life point(s) if he/she has fewer
+than 20 Life points" (`abilityData` 1629, `isInverted`). `Condition.compile` sets up the Stop
+condition by the ability's type, and a permanent is `GLOBAL_ABILITY` by then (`compileAbility`
+runs first), which neither branch named: the condition was left without its target and held
+unconditionally, so every won round latched it. Three autoplay rounds have one win unstopped,
+facing no Stop Opp. Ability, and the server latches nothing:
+- 1516740 r2: Ardwizz's `Stop: Heal 2 Max. 20` wins; in r3 its owner goes 8 -> 6 on Dr Swamp's
+  Poison alone (the engine healed 2 first and had 8).
+- 1517397 r1: Giacomo's `Stop: Poison 3, Min 2` wins; r2 leaves the target on 13 (the engine had
+  10).
+- 1517419 r2: Giacomo again; r3 ends on 8 + 3 (Talhia's `Bet > 3 Pillz: +3 Life`) = 11, where the
+  engine took 3 more.
+
+The condition now treats `GLOBAL_ABILITY`/`GLOBAL_BONUS` like the one-round types. The other
+half, a stopped `Stop:` permanent latching, follows the printed text: no capture has one stopped
+yet (the fourth captured round, Ylati's `Stop: Heal 3 Max. 14` in 1516862 r3, is the last round
+and wins unstopped). The three texts the registry prints are Giacomo's `1147`, Ylati's `1312`
+and Ardwizz's `1629`. Fixed 1516740 and 1517419; 1517397 then failed in round 3 on the next
+entry. Tests in `tests/ability/StopPermanent.test.ts`. The Rust engine admits none of the three.
 
 ### A recap snapshot is not the round's resolution - 1514649 (fixed)
 1514649 r0 failed on El Toucan's Attack: the engine had 20, the record 14. El Toucan level 3
