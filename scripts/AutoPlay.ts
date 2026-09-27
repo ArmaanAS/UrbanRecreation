@@ -197,12 +197,14 @@ export function noveltyByMove(rec: Reconstructed, counts: Readonly<Record<string
 }
 
 /**
- * Evidence first, winning second: the move with the most expected new situations, plus
- * `winWeight` times its win chance from the advisor's search (a move the search has not
- * reached yet counts as a coin flip). Winning still matters because a game that ends early
- * shows fewer rounds; `winWeight` 0.5 lets one never-seen situation outweigh any win chance.
+ * Evidence, weighed against winning: the move's expected new situations plus `winWeight`
+ * times its win chance from the advisor's search (a move the search has not reached yet
+ * counts at the median of those it has). Winning matters because a game lost early shows
+ * fewer rounds: with only novelty in charge, a round-one all-in at a 2% win chance won on
+ * 1.7 new situations against 1.2. At 1.5 a large swing in win chance decides, and novelty
+ * decides between moves that are close.
  */
-export const noveltyPolicy = (counts: Record<string, number>, budgetMs: number, winWeight = 0.5): Policy =>
+export const noveltyPolicy = (counts: Record<string, number>, budgetMs: number, winWeight = 1.5): Policy =>
 async ({ rec, game, deadline }) => {
   let scores: Map<string, number> | undefined;
   try {
@@ -211,10 +213,13 @@ async ({ rec, game, deadline }) => {
     scores = undefined;
   }
   const search = await searchFor(game, deadline, budgetMs);
+  const known = search.candidates.filter((c) => !Number.isNaN(c.average)).map((c) => search.percent(c.average) / 100)
+    .sort((a, b) => a - b);
+  const median = known.length ? known[Math.floor(known.length / 2)] : 0.5;
   let best: { move: Move; score: number; novelty: number; win: number } | undefined;
   for (const c of search.candidates) {
     const novelty = scores?.get(moveKey(c)) ?? 0;
-    const win = Number.isNaN(c.average) ? 0.5 : search.percent(c.average) / 100;
+    const win = Number.isNaN(c.average) ? median : search.percent(c.average) / 100;
     const score = novelty + winWeight * win;
     if (!best || score > best.score) best = { move: { index: c.index, pillz: c.pillz, fury: c.fury }, score, novelty, win };
   }
@@ -324,19 +329,23 @@ export interface GameSummary {
   decisions: { round: number; move: Move; how: string }[];
 }
 
-/** Start one Training battle and play it out. */
+/** Start one Training battle, or pick up the one in progress, and play it out. */
 export async function playOne(bridge: Bridge, policy: Policy, myId: number, log = console.log): Promise<GameSummary> {
-  const room = await bridge.call("rooms.join", { id: TRAINING_ROOM });
-  if (room?.room?.id !== TRAINING_ROOM) throw new Error("could not join the Training room");
-  await bridge.call("battles.quickBattle", {});
-  let battleId = 0;
-  for (let i = 0; i < 15 && !battleId; i++) {
-    await sleep(700);
-    battleId = Number((await bridge.call("battles.ongoingBattleID", {}))?.battle?.id ?? 0);
+  let battleId = Number((await bridge.call("battles.ongoingBattleID", {}))?.battle?.id ?? 0);
+  if (battleId) {
+    log(`battle ${battleId} in progress: picking it up`);
+  } else {
+    const room = await bridge.call("rooms.join", { id: TRAINING_ROOM });
+    if (room?.room?.id !== TRAINING_ROOM) throw new Error("could not join the Training room");
+    await bridge.call("battles.quickBattle", {});
+    for (let i = 0; i < 15 && !battleId; i++) {
+      await sleep(700);
+      battleId = Number((await bridge.call("battles.ongoingBattleID", {}))?.battle?.id ?? 0);
+    }
+    if (!battleId) throw new Error("no Training battle started");
+    log(`battle ${battleId} started`);
   }
-  if (!battleId) throw new Error("no Training battle started");
   const summary: GameSummary = { battleId, rounds: 0, decisions: [] };
-  log(`battle ${battleId} started`);
 
   let round = -1; // the round we ask the server about; -1 until the first snapshot
   let played = -1; // the last round we have played in
@@ -360,7 +369,16 @@ export async function playOne(bridge: Bridge, policy: Policy, myId: number, log 
       const { move, how } = await decide(battleId, policy, deadline, mine);
       const card = mine.characters.find((c: Json) => c.index === move.index);
       if (!card) throw new Error(`battle ${battleId}: no card at index ${move.index}`);
-      await bridge.call("battles.play", { id: battleId, characterInBattleID: card.inBattleId, pillz: move.pillz, fury: move.fury });
+      // The server wants the round's animation to finish first: "You cannot play so fast."
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await bridge.call("battles.play", { id: battleId, characterInBattleID: card.inBattleId, pillz: move.pillz, fury: move.fury });
+          break;
+        } catch (e) {
+          if (attempt >= 15 || !/so fast/i.test((e as Error).message)) throw e;
+          await sleep(1500);
+        }
+      }
       played = battle.round;
       summary.decisions.push({ round: battle.round, move, how });
       log(`  round ${battle.round + 1}: card ${move.index} (#${card.id}) pillz ${move.pillz}${move.fury ? " fury" : ""} [${how}]`);
@@ -469,7 +487,19 @@ if (import.meta.main) {
     }
     const before = Object.keys(counts).length;
     for (let g = 0; g < opts.games; g++) {
-      const summary = await playOne(bridge, policy, myId);
+      let summary: GameSummary | undefined;
+      // A lost bridge (the tab reloaded or froze) or a transient site error should not end a
+      // long unattended run: wait for the tab, then pick the battle up where it stands.
+      for (let failures = 0; summary === undefined; failures++) {
+        try {
+          summary = await playOne(bridge, policy, myId);
+        } catch (e) {
+          console.log(`  error: ${(e as Error).message}`);
+          if (failures >= 20) throw e;
+          await sleep(15_000);
+          await waitForBridge(bridge, 30 * 60_000).catch((w) => console.log(`  ${(w as Error).message}`));
+        }
+      }
       const { fresh, mismatch, issues } = await recordGame(summary.battleId, counts);
       console.log(`  ${fresh.length} new situation keys${fresh.length ? ": " + fresh.slice(0, 8).join(", ") + (fresh.length > 8 ? ", ..." : "") : ""}`);
       if (mismatch !== undefined) console.log(`  ENGINE DISAGREES with the server in round ${mismatch + 1} of ${summary.battleId}`);
