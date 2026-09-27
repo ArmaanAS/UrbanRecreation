@@ -4486,9 +4486,25 @@ in them needed an engine change on the Rust side; what they moved:
   bridged; GHEIST, Jungo and Piranas have their own paths; Oblivion's are dynamic Copies).
 
 Eligible draws 334 -> 373 of 774. The 41 added are all new captures; two old ones dropped out,
-877733 and 1078669 (Korakine L2's `Unison : +2 Pillz And Life`, next section). The registry
+877733 and 1078669 (Korakine L2's `Unison : +2 Pillz And Life`, below). The registry
 fingerprint moves; the compiler revision (80), catalog-context revision (10), gate rounds and gate
 ids do not.
+
+**Korakine, fixed in catalog-context revision 11.** Mechanite L3's `4078` prints `Unison : +2
+Pillz And Life` over `valueMin: 0`, where Korakine L2's `3973` has `valueMin: 2`, the value the
+Unison grammar reads (`has_unison_pillz_and_life_shape` requires `valueMin == value`). The text
+is ambiguous now, and revision 10 had taught only the generic combat-stat path to resolve an
+ambiguous text by the printed ability's own record: the post-round block that holds the Unison
+grammar is entered through `lookup_description`, so it was skipped, and Korakine fell through to
+the combat-stat classifier and was refused. That took 877733 and 1078669 out of eligibility.
+`resolve_description` now does revision 10's resolution for both paths - the card's own catalog
+id picks its structural group, whose lowest id is the definition; a bonus or a card without a
+record of its own keeps the ambiguity error - and `prepare_post_round_source` lists the
+definition's structural group as its aliases rather than looking the text up again. For an
+unambiguous text both are what they were. Korakine prepares under `[3973]`; Mechanite's own
+record, which the grammar's shape refuses, stays refused. Eligible draws 373 -> 375 (877733 and
+1078669 back, nothing else moving); `tests/expect/rust-provenance.json` moves to catalog-context
+11. Test: `strict_catalog_match_resolves_an_ambiguous_post_round_text_by_the_cards_own_record`.
 
 #### The clan gate, measured but not taken
 

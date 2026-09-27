@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use urban_recreation_rust::catalog::{CardKey, EffectiveCardCatalog};
 use urban_recreation_rust::effect_registry::{
-    EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
+    EffectLookupError, EffectRegistryV1, MagnitudeMultiplierV1, SupportedEffectV1,
 };
 use urban_recreation_rust::engine::{
     derive_catalog_hand, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
@@ -3092,7 +3092,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 10);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 11);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -5169,6 +5169,69 @@ fn strict_catalog_match_resolves_an_ambiguous_ability_text_by_the_cards_own_reco
         PROJECTION
     )
     .is_err());
+}
+
+/// Catalog-context revision 11: the post-round grammars resolve an ambiguous text by the printed
+/// ability's own record too. Mechanite L3's `4078` (autoplay runs 3-5) prints `Unison : +2 Pillz
+/// And Life` over `valueMin: 0`, where Korakine L2's `3973` has `valueMin: 2`, so the text is
+/// ambiguous and revision 10's combat-stat path alone left Korakine refused: 877733 and 1078669
+/// fell out of eligibility. Korakine's own group is `[3973]` and its Unison grammar executes
+/// again; Mechanite's record, which that grammar's `valueMin == value` shape does not match,
+/// stays refused.
+#[test]
+fn strict_catalog_match_resolves_an_ambiguous_post_round_text_by_the_cards_own_record() {
+    let catalog = catalog();
+    let registry = registry();
+    assert!(matches!(
+        registry.lookup_description("Unison : +2 Pillz And Life"),
+        Err(EffectLookupError::AmbiguousDescription { ref ids, .. }) if ids == &[3973, 4078]
+    ));
+    for capture in [877733, 1078669] {
+        let prepared =
+            CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+                .unwrap_or_else(|error| panic!("{capture}: {error:?}"));
+        let korakine = PlayerId::ALL
+            .into_iter()
+            .flat_map(|player| prepared.preparation()[player].clone())
+            .find(|card| card.key == CardKey::new(2490, 2))
+            .expect("Korakine L2 is in the draw");
+        let CatalogCombatStatSourceDispositionV1::ExecutePostRound {
+            identity,
+            effect,
+            predicate,
+        } = &korakine.ability
+        else {
+            panic!("{capture}: Korakine was not prepared as post-round work")
+        };
+        assert_eq!(identity.catalog_id, Some(3973), "{capture}");
+        assert_eq!(identity.registry_definition_id, 3973, "{capture}");
+        assert_eq!(identity.registry_alias_ids.as_ref(), [3973], "{capture}");
+        assert_eq!(
+            *effect,
+            CombatStatPostRoundEffectV1::GainPillzAndLifeOnVictory { amount: 2 },
+            "{capture}"
+        );
+        assert_eq!(
+            *predicate,
+            CombatStatPredicateV1::OwnerHandUnison,
+            "{capture}"
+        );
+    }
+    let (mut mechanite, rescue) = fully_supported_hands();
+    mechanite[0] = CardKey::new(2511, 3);
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(mechanite, rescue, false),
+            &catalog,
+            &registry,
+            PROJECTION
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            catalog_id: Some(4078),
+            registry_definition_id: 4078,
+            ..
+        })
+    ));
 }
 
 /// Catalog-context revision 9: every clan bonus a strictly prepared captured draw executes

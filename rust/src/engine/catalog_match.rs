@@ -210,7 +210,10 @@ const CLAN_BONUS_REGISTRY_BRIDGES: [(u32, u32, &str, u32); 6] = [
 /// Revision 10 (compiler revision 80) resolves a printed ability whose text a noisy same-text
 /// record has made ambiguous by the card's own record and that record's structural group
 /// (`EffectRegistryV1::structural_alias_ids`), as the Stop Opp. Ability path already did.
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 10;
+/// Revision 11 (compiler revision 80) resolves the post-round grammars' ambiguous texts the same
+/// way (`resolve_description`), since Mechanite's `4078` made Korakine's `Unison : +2 Pillz And
+/// Life` ambiguous.
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 11;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -1797,7 +1800,9 @@ fn prepare_catalog_source(
     }
     // Every other generic Victory Life source must carry an actual registry identity in
     // the catalog. Description equality alone is never authority to execute a Life effect.
-    if let Ok(match_) = registry.lookup_description(description) {
+    // Since catalog-context revision 11 an ambiguous text reaches these grammars too, under
+    // the printed ability's own structural group (`resolve_description`).
+    if let Ok(match_) = resolve_description(registry, source_kind, catalog_id, description) {
         let definition = match_.definition();
         // A conditional Stop is admitted by grammar, so a printed card level must be a
         // structural alias of the definition its text resolves to rather than borrowing it.
@@ -2814,40 +2819,8 @@ fn prepare_catalog_source(
         description: description.to_owned(),
         source,
     };
-    let match_ = match registry.lookup_description(description) {
-        Ok(match_) => match_,
-        // A printed ability's catalog id is a capture-registry identity. Where a noisy
-        // same-text record makes the text ambiguous, the card's own record picks its structural
-        // group - the same-text records of the same record, as the Stop Opp. Ability path lists
-        // them beside Angelo's `877` - and the group's lowest id is the definition, as it is for
-        // any unambiguous text (catalog-context revision 10). Scar's `2470` makes `Copy: Opp.
-        // Power` ambiguous: every other card printing the text resolves to the zero-valued
-        // group as before, and Scar's own record, alone in its group, compiles to nothing, so it
-        // stays refused below. A bonus's catalog id is from another namespace, and a card with
-        // no record of its own has nothing to pick by: both keep the ambiguity error.
-        Err(source @ EffectLookupError::AmbiguousDescription { .. }) => {
-            let group = catalog_id
-                .filter(|_| source_kind == CombatStatEffectSourceV1::Ability)
-                .and_then(|id| registry.lookup_capture(id, description).ok())
-                .and_then(|own| registry.structural_alias_ids(own.id()));
-            let Some(group) = group else {
-                return Err(lookup_error(source));
-            };
-            let definition = registry
-                .get(group[0])
-                .expect("a structural group holds registry definitions");
-            return prepare_generic_combat_stat_source(
-                player,
-                hand_slot,
-                source_kind,
-                catalog_id,
-                description,
-                definition,
-                group.into_boxed_slice(),
-            );
-        }
-        Err(source) => return Err(lookup_error(source)),
-    };
+    let match_ = resolve_description(registry, source_kind, catalog_id, description)
+        .map_err(lookup_error)?;
     let definition =
         match clan_bonus_registry_bridge(source_kind, effective_clan_id, catalog_id, description) {
             Some(bridged) if match_.alias_ids().contains(&bridged) => registry
@@ -2880,6 +2853,68 @@ fn prepare_catalog_source(
         definition,
         match_.alias_ids().to_vec().into_boxed_slice(),
     )
+}
+
+/// A printed description's registry definition and the alias ids it was found with.
+struct ResolvedDescription<'a> {
+    definition: &'a EffectDefinitionV1,
+    alias_ids: Vec<u32>,
+}
+
+impl<'a> ResolvedDescription<'a> {
+    fn definition(&self) -> &'a EffectDefinitionV1 {
+        self.definition
+    }
+
+    fn alias_ids(&self) -> &[u32] {
+        &self.alias_ids
+    }
+}
+
+/// `lookup_description`, except where a noisy same-text record makes the text ambiguous: a
+/// printed ability's catalog id is a capture-registry identity, so the card's own record picks
+/// its structural group - the same-text records of the same record, as the Stop Opp. Ability
+/// path lists them beside Angelo's `877` - and the group's lowest id is the definition, as it
+/// is for any unambiguous text. A bonus's catalog id is from another namespace, and a card with
+/// no record of its own has nothing to pick by: both keep the ambiguity error.
+///
+/// Catalog-context revision 10 did this for the generic combat-stat path: Scar's `2470` makes
+/// `Copy: Opp. Power` ambiguous, every other card printing the text resolves to the zero-valued
+/// group as before, and Scar's own record, alone in its group, compiles to nothing and stays
+/// refused. Revision 11 does it for the post-round grammars as well: Mechanite L3's `4078`
+/// (2026-09-27 autoplay runs 3-5) prints `Unison : +2 Pillz And Life` over `valueMin: 0`, where
+/// Korakine L2's `3973` has `valueMin: 2`, and the text's ambiguity took the Unison grammar
+/// from Korakine and 877733 and 1078669 out of eligibility. Korakine keeps its own group, and
+/// Mechanite's record, which the grammar's `valueMin == value` shape refuses, stays refused.
+fn resolve_description<'a>(
+    registry: &'a EffectRegistryV1,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+) -> Result<ResolvedDescription<'a>, EffectLookupError> {
+    match registry.lookup_description(description) {
+        Ok(match_) => Ok(ResolvedDescription {
+            definition: match_.definition(),
+            alias_ids: match_.alias_ids().to_vec(),
+        }),
+        Err(source @ EffectLookupError::AmbiguousDescription { .. }) => {
+            let group = catalog_id
+                .filter(|_| source_kind == CombatStatEffectSourceV1::Ability)
+                .and_then(|id| registry.lookup_capture(id, description).ok())
+                .and_then(|own| registry.structural_alias_ids(own.id()));
+            let Some(alias_ids) = group else {
+                return Err(source);
+            };
+            let definition = registry
+                .get(alias_ids[0])
+                .expect("a structural group holds registry definitions");
+            Ok(ResolvedDescription {
+                definition,
+                alias_ids,
+            })
+        }
+        Err(source) => Err(source),
+    }
 }
 
 /// The generic combat-stat source: `definition`'s own classification, under the identity it
@@ -3165,11 +3200,12 @@ fn prepare_post_round_source(
                 .into_boxed_slice(),
         });
     };
+    // The definition's own structural group: for an unambiguous text every same-text record,
+    // as `lookup_description` lists them, and for an ambiguous one the group the printed
+    // ability resolved by (`resolve_description`, catalog-context revision 11).
     let registry_alias_ids = registry
-        .lookup_description(description)
-        .map_err(lookup_failed)?
-        .alias_ids()
-        .to_vec()
+        .structural_alias_ids(definition.id())
+        .expect("a looked-up definition has a structural group")
         .into_boxed_slice();
     Ok(PreparedCatalogSourceV1 {
         metadata: CatalogCombatStatSourceDispositionV1::ExecutePostRound {
