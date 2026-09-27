@@ -2294,11 +2294,13 @@ fn every_observed_basic_combat_stat_support_definition_executes_as_an_ability() 
     let catalog = catalog();
     let registry = registry();
     // 271, 697 and 1013 arrived with the 2026-09-27 Training captures, and 324, 329 and 1743
-    // with the later ones; 625, 1121 and 1624 with that day's autoplay run.
+    // with the later ones; 625, 1121 and 1624 with that day's autoplay run, and 450, 840, 893,
+    // 1432, 3908, 4547 and 4745 with autoplay runs 2-3.
     let expected = BTreeSet::from([
-        266, 271, 272, 295, 324, 329, 367, 391, 412, 469, 472, 514, 532, 546, 567, 574, 625, 697,
-        739, 899, 1013, 1121, 1269, 1297, 1325, 1330, 1624, 1735, 1743, 1805, 2535, 2556, 3197,
-        3475, 3719, 4068, 4297, 4593, 4824, 4839, 4857, 5483, 5841,
+        266, 271, 272, 295, 324, 329, 367, 391, 412, 450, 469, 472, 514, 532, 546, 567, 574, 625,
+        697, 739, 840, 893, 899, 1013, 1121, 1269, 1297, 1325, 1330, 1432, 1624, 1735, 1743, 1805,
+        2535, 2556, 3197, 3475, 3719, 3908, 4068, 4297, 4547, 4593, 4745, 4824, 4839, 4857, 5483,
+        5841,
     ]);
     // Pere Fourrure's `Support: -1 Cards Damage, Min 0` (`3278`, autoplay run) lowers both
     // cards' Damage; the Support grammar does not read a `Cards` context, so it stays a

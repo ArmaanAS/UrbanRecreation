@@ -951,9 +951,11 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
     };
     assert_eq!(identity.catalog_id, Some(47));
     assert_eq!(identity.registry_definition_id, 1034);
+    // Atess level 4's `3322`, first captured in autoplay runs 2-3 (1516517), is the same
+    // record; the identity lock below keeps it out of execution all the same.
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [1034, 1375, 4111, 5085, 5520]
+        [1034, 1375, 3322, 4111, 5085, 5520]
     );
     assert_eq!(identity.description, "Victory Or Defeat : +1 Pillz");
     assert!(matches!(
@@ -1097,8 +1099,10 @@ fn strict_catalog_match_bridges_the_active_riots_bonus_and_static_vod_abilities(
         CatalogCombatStatSourceDispositionV1::Absent
     ));
 
-    // Atess has the same printed text but none of her level-specific identities has an
-    // audited registry definition. Description equality must not inherit a known alias.
+    // Atess has the same printed text but none of her level-specific identities is an
+    // audited one. Level 4's `3322` has been a registry record since autoplay runs 2-3, and a
+    // structural alias of `1034`, yet the Victory-or-Defeat Pillz identity lock still refuses
+    // it: description equality, or a shared record, must not inherit a known identity.
     assert!(matches!(
         CatalogCombatStatMatchV1::new(
             input(
@@ -2054,9 +2058,11 @@ fn strict_catalog_match_preserves_dave_catalog_and_registry_life_identity() {
     // definition.  Strict construction keeps both identities rather than collapsing it
     // to description text or pretending the catalog id is the registry definition.
     assert_eq!(identity.registry_definition_id, 401);
+    // Dallas level 5's `673` is the same record, first captured in autoplay runs 2-3
+    // (1516973).
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [401, 405, 609, 888, 1329]
+        [401, 405, 609, 673, 888, 1329]
     );
     assert_eq!(
         *effect,
@@ -2233,9 +2239,10 @@ fn strict_catalog_match_bridges_only_the_active_jungo_victory_life_bonus() {
         };
         assert_eq!(identity.catalog_id, Some(41));
         assert_eq!(identity.registry_definition_id, 401);
+        // Dallas level 5's `673` joined these aliases with autoplay runs 2-3 (1516973).
         assert_eq!(
             identity.registry_alias_ids.as_ref(),
-            [401, 405, 609, 888, 1329]
+            [401, 405, 609, 673, 888, 1329]
         );
         assert_eq!(
             *effect,
@@ -4660,6 +4667,15 @@ fn strict_catalog_match_prepares_post_round_brawl_from_the_printed_ability() {
                 minimum: 1,
             },
         ),
+        // Newell L3's `1504`, first captured in autoplay runs 2-3 (1516570, 1516583).
+        (
+            CardKey::new(1679, 3),
+            1504,
+            CombatStatPostRoundEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport {
+                per_count: 1,
+                minimum: 1,
+            },
+        ),
         (
             CardKey::new(2563, 4),
             4583,
@@ -4700,13 +4716,12 @@ fn strict_catalog_match_prepares_post_round_brawl_from_the_printed_ability() {
 
     // The printed levels whose catalog ids no registry definition owns stay fail-closed:
     // the same text never lends another card's definition. Fomalhaut Ld L2 and L1, Eeok Ld
-    // L1, Newell L3, and Sirrena L3's `Max. 11`. Eeok Ld L1 prints Buga Baga Ld L1's text
-    // under its own `5509`, which is no alias of `5506`; nothing is admitted.
+    // L1 and Sirrena L3's `Max. 11`. Eeok Ld L1 prints Buga Baga Ld L1's text under its own
+    // `5509`, which is no alias of `5506`; nothing is admitted.
     for (key, catalog_id) in [
         (CardKey::new(1582, 2), 5456),
         (CardKey::new(1582, 1), 5529),
         (CardKey::new(2027, 1), 5509),
-        (CardKey::new(1679, 3), 1504),
         (CardKey::new(2563, 3), 5824),
     ] {
         let result = CatalogCombatStatMatchV1::new(
@@ -6063,8 +6078,11 @@ fn strict_catalog_match_admits_revision_75_tail_sources() {
             CombatStatPredicateV1::OwnerAbilityStopped
         )
     );
+    // Clarice's `1627`, first captured in autoplay runs 2-3 (1517378), is the same record as
+    // Cusaghi's `3103`; as the lowest structural alias it became the canonical registry
+    // definition, while Cusaghi is still reached by its own catalog id.
     assert_eq!(
-        combat(926584, 3103, 3103),
+        combat(926584, 1627, 3103),
         (
             SupportedEffectV1::CancelOpponentCombatStatModifiers {
                 stat: CombatStatV1::PowerAndDamage

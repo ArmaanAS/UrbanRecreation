@@ -10132,12 +10132,18 @@ mod tests {
         // brought six more of the same reviewed shapes, each a fixed combat stat under one
         // prefix: `Revenge: Attack +8` (`599`), `Confidence: Power And Damage +2` (`904`),
         // `Revenge: -2 Opp Pow. & Dmg,min 3` (`994`), `Revenge: -6 Opp Attack, Min 5` (`1026`),
-        // `Revenge: -4 Opp. Power, Min 4` (`1314`) and `Revenge: Damage +4` (`3119`).
+        // `Revenge: -4 Opp. Power, Min 4` (`1314`) and `Revenge: Damage +4` (`3119`). Autoplay
+        // runs 2-3 brought nine more: `Confidence: Power +3` (`471`), `Revenge: Attack +12`
+        // (`773`), `Confidence: -3 Opp Damage, Min 2` (`1085`), `Revenge: -3 Opp. Power, Min 5`
+        // (`1099`), `Confidence: -4 Opp Damage, Min 1` (`1370`), `Confidence: Power +5`
+        // (`1410`), `Confidence: Damage +4` (`1672`), `Revenge: -4 Opp. Power, Min 4` (`3035`)
+        // and `Confidence: -2 Opp Pow. & Damage, Min 0` (`4699`).
         let admitted = BTreeSet::from([
-            463, 465, 478, 513, 520, 553, 555, 556, 560, 585, 591, 599, 634, 644, 784, 801, 859,
-            883, 884, 904, 914, 921, 938, 965, 994, 1022, 1026, 1053, 1091, 1107, 1278, 1286, 1303,
-            1314, 1395, 1417, 1780, 1839, 2194, 2206, 2628, 2657, 3119, 3827, 3829, 4316, 4399,
-            4464, 4469, 4623, 4711, 4838, 5146, 5406, 5881,
+            463, 465, 471, 478, 513, 520, 553, 555, 556, 560, 585, 591, 599, 634, 644, 773, 784,
+            801, 859, 883, 884, 904, 914, 921, 938, 965, 994, 1022, 1026, 1053, 1085, 1091, 1099,
+            1107, 1278, 1286, 1303, 1314, 1370, 1395, 1410, 1417, 1672, 1780, 1839, 2194, 2206,
+            2628, 2657, 3035, 3119, 3827, 3829, 4316, 4399, 4464, 4469, 4623, 4699, 4711, 4838,
+            5146, 5406, 5881,
         ]);
         // Since revision 47 the `Confidence:` and `Revenge:` Stops are admitted by the
         // conditional-Stop grammar, card abilities only.
@@ -10146,8 +10152,11 @@ mod tests {
         // Since revision 72 Betul's `Revenge: + 2 Attack Per Opp. Power` too, by its own
         // grammar and from card abilities only. The autoplay run added `Revenge: Power
         // Exchange` (`1685`), `Revenge: Stop Opp. Bonus` (`2095`) and `Confidence: Stop Opp.
-        // Ability` (`5183`) to those grammars, card abilities only as well.
-        let ability_only = BTreeSet::from([490, 589, 1409, 1680, 1685, 1713, 1719, 2095, 5183]);
+        // Ability` (`5183`) to those grammars, card abilities only as well, and runs 2-3 two more
+        // `Confidence: Stop Opp. Ability` records (`1597`, `2398`).
+        let ability_only = BTreeSet::from([
+            490, 589, 1409, 1597, 1680, 1685, 1713, 1719, 2095, 2398, 5183,
+        ]);
         // Fjell's `Revenge : +4 Life` (`5666`), Zhiara's `Revenge: Poison 2, Min 1` (`4903`),
         // `Day: Confidence: +1 Life Per Damage` (`1471`), `Confidence: +1 Life Per Dmg.` (`787`)
         // and `Confidence : +5 Life` (`1756`), all from the 2026-09-27 captures, are post-round
@@ -10156,10 +10165,20 @@ mod tests {
         // The autoplay run's `Revenge : +3 Life` (`655`), `Revenge: -4 Opp. Life, Min 2`
         // (`951`), `Revenge: Poison 3, Min 4` (`1097`), `Confidence: +4 Pillz` (`1113`),
         // `Conf.: Vict. Or Def.: -2 Opp. Life, Min 0` (`1693`) and `Confidence: +3 Pillz`
-        // (`4106`) are post-round Life and Pillz effects, not combat stats.
+        // (`4106`) are post-round Life and Pillz effects, not combat stats. So are runs 2-3's
+        // `Revenge: -2 Opp. Life, Min 1` (`486`), `Confidence: -3 Opp. Life, Min 3` (`507`),
+        // `Revenge: -4 Opp. Life, Min 3` (`676`), `Revenge : +4 Life` (`1040`), `Confidence: -1
+        // Opp. Life, Min 1` (`1079`), `Day: Confidence: -2 Opp. Pillz & Life, Min 3` (`1642`),
+        // `Revenge: +2 Pillz And Life` (`2267`) and `Revenge : +2 Life` (`2495`). Of the combat
+        // stats among them, `Confidence: +1 Atk Per Life Left` (`1230`) is `1070`'s multiplier
+        // again, and `Confidence: -4 Cards Damage, Min 0` (`5099`) lowers both cards, a `Cards`
+        // context no conditional grammar reads. Farman's `Confidence: Stop Opp. Bonus` (`1050`)
+        // prints the `2095` text shape with `sideAffected: opponent` where every admitted
+        // conditional Stop has `player`, so the conditional-Stop shape refuses it.
         let deferred = BTreeSet::from([
-            655, 787, 814, 951, 1070, 1097, 1113, 1471, 1643, 1652, 1661, 1693, 1702, 1751, 1756,
-            1810, 2113, 2582, 3016, 3301, 3546, 4106, 4301, 4449, 4903, 4972, 5666,
+            486, 507, 655, 676, 787, 814, 951, 1040, 1050, 1070, 1079, 1097, 1113, 1230, 1471,
+            1642, 1643, 1652, 1661, 1693, 1702, 1751, 1756, 1810, 2113, 2267, 2495, 2582, 3016,
+            3301, 3546, 4106, 4301, 4449, 4903, 4972, 5099, 5666,
         ]);
         let observed: BTreeSet<_> = registry
             .iter()
