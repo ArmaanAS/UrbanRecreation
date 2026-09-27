@@ -214,7 +214,17 @@ export function reconstruct(id: number, entries: CaptureEntry[]) {
   statuses.sort((a, b) => a.t - b.t);
 
   const first = statuses[0].battle;
-  const last = statuses[statuses.length - 1].battle;
+  // The finished snapshot of the furthest round when there is one, not simply the newest:
+  // while the autoplay bridge drives a battle, the game client in a hidden tab keeps asking
+  // for rounds it has not caught up with, and the server answers those with the round asked
+  // for under the battle's current status, so a stale round can arrive after the finished
+  // one, even marked `done`. In a capture the client made alone the finished snapshot is the
+  // newest one.
+  let done: (typeof statuses)[number] | undefined;
+  for (const s of statuses) {
+    if (s.battle.status !== "playing" && (!done || s.battle.round >= done.battle.round)) done = s;
+  }
+  const last = (done ?? statuses[statuses.length - 1]).battle;
   const sides = ["player0", "player1"] as const;
   const players = sides.map((k, i) => describePlayer(last[k], i as Side, issues));
   const myId = meta.myId;

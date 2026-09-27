@@ -9,6 +9,7 @@
 // scripts/ExtractBattle.ts.
 import { type BattleStatic, type CaptureEntry, expandStatus, extractFromRecord, loadAbilities, newCaptureState, type RawRecord, saveAbilities } from "./scripts/BattleCapture.ts";
 import { absorbRecord, collectionAction, loadDeckStore, rawLogStandIn, saveDeckStore } from "./scripts/DeckCapture.ts";
+import { AutoplayBroker } from "./scripts/AutoplayBroker.ts";
 
 const RAW_LOG = "ur_log.jsonl";
 const CAPTURE_DIR = "captures/battles";
@@ -218,6 +219,47 @@ async function proxyDecks(r: Request, path: string): Promise<Response> {
   }
 }
 
+// Automated Training play (scripts/AutoplayBroker.ts decides what may be sent). A local
+// driver, which sends no Origin, asks for a call and waits for the answer; the userscript in
+// the game tab, which sends the site's Origin, long-polls for work and reports back.
+const broker = new AutoplayBroker();
+async function autoplay(r: Request, path: string, origin: string | null): Promise<Response> {
+  const local = origin === null;
+  const json = (body: unknown, status = 200) =>
+    Response.json(body, { status, headers: { ...cors, "cache-control": "no-store" } });
+  if (r.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  if (path === "/autoplay/state" && r.method === "GET") return json(broker.state());
+  if (path === "/autoplay/call" && r.method === "POST") {
+    if (!local) return json({ ok: false, error: "only a local driver may ask for a call" }, 403);
+    let body: unknown;
+    try {
+      body = await r.json();
+    } catch {
+      return json({ ok: false, error: "expected a JSON body" }, 400);
+    }
+    const outcome = await broker.request(body);
+    const what = (body as { call?: string; deck?: string })?.call ?? (body as { deck?: string })?.deck;
+    if (!outcome.ok) print("auto", Date.now(), `${what}: ${outcome.error}`);
+    return json(outcome);
+  }
+  if (path === "/autoplay/next" && r.method === "GET") {
+    if (local) return json({ error: "only the game tab polls for work" }, 403);
+    const command = await broker.next();
+    return command ? json(command) : new Response(null, { status: 204, headers: cors });
+  }
+  if (path === "/autoplay/result" && r.method === "POST") {
+    if (local) return json({ error: "only the game tab reports results" }, 403);
+    let body: unknown;
+    try {
+      body = await r.json();
+    } catch {
+      return json({ error: "expected a JSON body" }, 400);
+    }
+    return json({ accepted: broker.result(body) });
+  }
+  return json({ error: "unknown autoplay route" }, 404);
+}
+
 // Requests arrive concurrently (the game client fires several polls at once); process them
 // strictly in arrival order so appended lines and capture state stay consistent.
 let queue: Promise<unknown> = Promise.resolve();
@@ -258,6 +300,7 @@ Deno.serve({ port: 8787, onListen: ({ port }) => console.log(`UR log server on :
     }
     return new Response(null, { status: 405, headers: cors });
   }
+  if (path.startsWith("/autoplay/")) return autoplay(r, path, origin);
   if (r.method !== "POST") return new Response(null, { status: 204, headers: cors });
   const body = await r.text();
   const run = queue.then(() => handle(body));

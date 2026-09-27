@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UR logger
 // @namespace    urban-recreation
-// @version      0.9.2
+// @version      0.10.0
 // @description  Mirror Urban Rivals network traffic to a local log server (see log_server.ts)
 // @match        https://www.urban-rivals.com/*
 // @run-at       document-start
@@ -23,7 +23,7 @@
 (() => {
   // Keep equal to @version above; log_server.ts compares it with the repository copy and
   // says when this one is out of date.
-  const VERSION = '0.9.2';
+  const VERSION = '0.10.0';
   const SERVER_ROOT = 'http://localhost:8787';
   const SERVER = SERVER_ROOT + '/log';
   const CONTROL = SERVER_ROOT + '/control';
@@ -37,6 +37,10 @@
     wsInLog = wsInLog.then(() => ready.then((value) => log('ws_in', value)));
   };
   let apiCall;
+  // While the autoplay bridge is driving a battle (see autoplayLoop), the driver's own status
+  // polls are the capture; the game client's polls of the same battle lag behind in a hidden
+  // tab and would interleave stale rounds with it, so they are not logged until this passes.
+  let autoplayUntil = 0;
   let autoQueue = false;
   let lastBattleId = 0;
   let lastQueuedBattleId = 0;
@@ -217,10 +221,19 @@
     (url.startsWith(API) ? res.clone().text() : respText(res))
       .then((txt) => {
         if (url.startsWith(API)) inspectApiResponse(txt);
+        if (url.startsWith(API) && Date.now() < autoplayUntil && isStatusCall(reqBody)) return;
         return log('fetch', { m: method, u: url, body: reqBody, status: res.status, resp: txt });
       })
       .catch(() => {});
     return res;
+  };
+
+  const isStatusCall = (reqBody) => {
+    try {
+      return typeof reqBody === 'string' && decodeURIComponent(reqBody.replace(/\+/g, ' ')).includes('"call":"battles.status"');
+    } catch {
+      return false;
+    }
   };
 
   // ---- manual helpers (run from the devtools console) ------------------------------------
@@ -372,6 +385,57 @@
     }
   };
   // ---- end of deck apply ----
+
+  // ---- autoplay bridge (game tab only) ---------------------------------------------------
+  // Automated Training play, which the owner asked for on 2026-09-27. A local driver
+  // (scripts/AutoPlay.ts) asks the log server for one call at a time; this tab long-polls for
+  // it, runs it with the game client's own session and answers. The log server's broker
+  // (scripts/AutoplayBroker.ts) decides what may be sent: Training battles and the two deck
+  // actions only. Every call is logged like the client's own traffic, so the capture pipeline
+  // records the driver's battles exactly as it records the owner's.
+  const AUTOPLAY = SERVER_ROOT + '/autoplay';
+  const runAutoplayCommand = async (cmd) => {
+    if (typeof cmd.call === 'string') {
+      if (!lastApiInit) throw new Error('No private API call seen yet - wait until the game has loaded.');
+      const body = 'requests=' + encodeURIComponent(JSON.stringify([{ call: cmd.call, params: cmd.params || {} }]));
+      const res = await nativeFetch(API, { ...lastApiInit, method: 'POST', body });
+      const txt = await res.text();
+      inspectApiResponse(txt);
+      await log('fetch', { m: 'POST', u: API, body, status: res.status, resp: txt });
+      return JSON.parse(txt)[cmd.call];
+    }
+    const fields = cmd.fields || [];
+    const out = await siteDeckPost(nativeFetch, location.origin)(cmd.deck, fields);
+    await log('xhr', { m: 'POST', u: '/ajax/collection/', body: new URLSearchParams([['action', cmd.deck], ...fields]).toString(), status: 200, resp: JSON.stringify(out) });
+    return out;
+  };
+  const autoplayLoop = async () => {
+    for (;;) {
+      const asked = Date.now();
+      let cmd = null;
+      try {
+        const res = await nativeFetch(AUTOPLAY + '/next', { cache: 'no-store' });
+        if (res.status === 200) cmd = await res.json();
+      } catch {
+        cmd = null;
+      }
+      if (!cmd) {
+        // A log server without the bridge (or none at all) answers at once; do not spin.
+        if (Date.now() - asked < 1000) await new Promise((r) => setTimeout(r, 5000));
+        continue;
+      }
+      autoplayUntil = Date.now() + 30000;
+      let out;
+      try {
+        out = { id: cmd.id, ok: true, result: await runAutoplayCommand(cmd) };
+      } catch (e) {
+        out = { id: cmd.id, ok: false, error: String((e && e.message) || e) };
+      }
+      try {
+        await nativeFetch(AUTOPLAY + '/result', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(out) });
+      } catch { /* the driver times out and says so */ }
+    }
+  };
 
   // ---- deck panel (Collection Pro only) --------------------------------------------------
   // A side panel beside the site's own deck editor. It reads the deck being edited from the
@@ -699,6 +763,7 @@
   if (location.pathname.startsWith('/game/play')) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', theaterMode);
     else theaterMode();
+    autoplayLoop();
   }
 
   if (location.pathname.startsWith('/collection/pro')) {

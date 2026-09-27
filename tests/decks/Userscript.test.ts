@@ -87,7 +87,7 @@ const request = (over: Json = {}) => ({
 Deno.test("the userscript's version is the same in its header and its code", () => {
   const header = /\/\/ @version\s+(\S+)/.exec(SOURCE)?.[1];
   const code = /const VERSION = '([^']+)'/.exec(SOURCE)?.[1];
-  assertEquals(header, "0.9.2");
+  assertEquals(header, "0.10.0");
   assertEquals(code, header);
 });
 
