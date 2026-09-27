@@ -495,8 +495,10 @@ if (import.meta.main) {
           summary = await playOne(bridge, policy, myId);
         } catch (e) {
           console.log(`  error: ${(e as Error).message}`);
-          if (failures >= 20) throw e;
-          await sleep(15_000);
+          // An expired game-tab login fails every call until the tab is reloaded, so keep
+          // trying for about an hour rather than ending the run.
+          if (failures >= 120) throw e;
+          await sleep(30_000);
           await waitForBridge(bridge, 30 * 60_000).catch((w) => console.log(`  ${(w as Error).message}`));
         }
       }
