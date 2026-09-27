@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 394 captured battles
-(388 replay-ready; 6 ignored because they stopped mid-match): 382 replay exactly and 6
+Status from `deno test -A --no-check tests/replay/` against 400 captured battles
+(394 replay-ready; 6 ignored because they stopped mid-match): 387 replay exactly and 7
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -49,6 +49,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-26 | 369 | 8 | Card refresh (2498 cards): 1414087 replays exactly; rebalanced abilities replay with the battle's own text |
 | 2026-09-26 | 376 | 8 | +7 Training captures (Leader test deck); Counter-attack only decides round one (1495980) |
 | 2026-09-26 | 382 | 6 | +4 Training captures (GhosTown/Oculus test deck); the round-one second mover's END effects run first (1093173, 1496283); Perfect pays only on the exact bet (947670, 1496258) |
+| 2026-09-27 | 387 | 7 | +6 Training captures (Lab 1 by day, Lab 3); Solomon's Tie-break wins tied rounds (1506259); 1506438 settles same-family Poison as replace, not stack (open) |
 
 ## Fixed
 
@@ -487,6 +488,16 @@ latest disagreement on screen, and returns "cannot replay" instead of throwing
 (`tests/solver/Advisor.test.ts`).
 
 ### Same-family permanents: the server text says replace, both engines stack
+**Settled for two identical Poisons by 1506438 (2026-09-27, Lab 3 test deck); not fixed yet.**
+The opposing Freaks hand (three Freaks cards, bonus `Poison 2, Min 3`) won rounds 0 and 1, so
+two Poison 2 latches sat on the owner, who went into round 2's end on 7 Life. Stacking takes 4
+(7 to 3, still above Min 3); the server took 2 (7 to 5), and round 3 posts a single permanent
+entry of 2 (5 to 3). So the second Poison replaced the first, as printed. Both engines still
+stack, so 1506438 r2 is an open TypeScript mismatch until the latch replaces. Still unobserved:
+different magnitudes (which one's value pays), cross-kind replacement (Toxin over Poison), the
+immediate-newcomer case (a Toxin, Regen, Dope or Consume over an older latch) and two latches
+from different owners.
+
 The server prints "If two poisons or toxins are applied, the second will replace the first as
 soon as the latter takes effect" on every Toxin, and the same note for two Heal or Regen, two
 Dope and two Consume (Combust, Mindwipe and Repair print none; Consume 5275 carries the
@@ -609,12 +620,26 @@ bonus is live whenever two Leaders share a hand (1495879, 1496119, 1496142 show 
 the Rust catalog, which never derives a Leader bonus, now counts those slots in its corpus test
 instead of expecting none.
 
+### Solomon's Tie-break wins a tied round - 1506259 (fixed)
+1506259 r3 (Training, Lab 3 test deck): the owner's Hammer Cr level 5, Fury on no pillz, meets
+the opposing Solomon level 5 on no pillz; both Attacks are 6. The engine gave the tie to Hammer
+Cr (equal stars, and Hammer Cr moved first), the server to Solomon, whose "Tie-break" reads
+"During the entire fight, if your attack is equal to your opponent's, you will always win the
+round. If your and your opponent's Life points are equal at the end of the fight, you will win
+the fight. (These effects are cancelled out if your opponent also has Solomon)"
+(`captures/abilities.json` 1135). The engine never read the ability; the live advisor showed
+100% for that round. `createBaseGameCache` now records a lone Solomon's side as the match's
+`tieBreaker` (none when both sides have one, or when Cancel Leader deactivates it), and
+`CardBattle` gives that side every tied round. The second clause, a level match at the end
+going to Solomon's owner, is coded from the text alone: no capture has ended level with a
+Solomon in play. The Rust catalog still refuses every Leader.
+
 ## Fresh capture backlog
 
-Nothing is untriaged. The six remaining mismatches each have an entry above and wait on
-a second capture or an open question: 874712 (Revenge / Damage Impose), 1059149 (Exchange,
-TypeScript only), 1414749 (an increase to the opposing card), and the single points 1079078,
-1089974 and 1025413. 1093173 (end-of-round order) and 947670 (Perfect) were settled by the
+Nothing is untriaged. Of the seven remaining mismatches, 1506438 (same-family Poison replaces)
+is settled and waits on the fix; the other six wait on a second capture or an open question:
+874712 (Revenge / Damage Impose), 1059149 (Exchange, TypeScript only), 1414749 (an increase to
+the opposing card), and the single points 1079078, 1089974 and 1025413. 1093173 (end-of-round order) and 947670 (Perfect) were settled by the
 2026-09-26 Training captures. The backlog of 39 that the expanded
 corpus brought on 2026-09-14 and 2026-09-17, and the three from the 2026-09-23 session, are
 fixed above or among those eight. A fourth 2026-09-23 capture, 1414087, deals card 2714

@@ -3087,17 +3087,24 @@ fn strict_constructor_derives_oculus_and_night_and_rejects_dynamic_sources() {
     assert_eq!(identity.registry_definition_id, 1442);
     assert_eq!(identity.description, "Night: -1 Opp Pow. And Damage, Min 1");
     assert_eq!(*predicate, CombatStatPredicateV1::MatchIsNight);
-    // By day the same hand shows its day bonus, whose text the registry has never captured,
-    // so the draw stays fail-closed rather than borrowing the night definition.
-    assert!(matches!(
-        CatalogCombatStatMatchV1::new(input(night, p2, false), &catalog, &registry, PROJECTION),
-        Err(CatalogCombatStatMatchErrorV1::Lookup {
-            player: PlayerId::P1,
-            source_kind: CombatStatEffectSourceV1::Bonus,
-            ref description,
-            ..
-        }) if description == "Day: Power And Damage + 1"
-    ));
+    // By day the same hand shows its day bonus. It stayed fail-closed until the owner's
+    // Training games of 2026-09-27 captured it (definition 1441); it is found by its own text,
+    // never by borrowing the night definition.
+    let by_day =
+        CatalogCombatStatMatchV1::new(input(night, p2, false), &catalog, &registry, PROJECTION)
+            .unwrap();
+    let CatalogCombatStatSourceDispositionV1::Execute {
+        identity,
+        predicate,
+        ..
+    } = &by_day.preparation()[PlayerId::P1][0].bonus
+    else {
+        panic!("the GhosTown day bonus was not executable")
+    };
+    assert_eq!(identity.catalog_id, Some(50));
+    assert_eq!(identity.registry_definition_id, 1441);
+    assert_eq!(identity.description, "Day: Power And Damage + 1");
+    assert_eq!(*predicate, CombatStatPredicateV1::MatchIsDay);
 
     // The Oblivion bonus copies the opposing selected card's ability. Since revision 68 its
     // catalog id is bridged to the captured definition, so it is prepared like any other

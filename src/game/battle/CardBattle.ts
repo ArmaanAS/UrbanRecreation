@@ -121,11 +121,17 @@ export default class CardBattle {
 
     const attack1 = card1.attack.final;
     const attack2 = card2.attack.final;
+    // A tie goes to a lone Solomon's owner (Tie-break): 1506259 r3 has Solomon at 6 x 1 beat
+    // a Fury Hammer Cr at 6 x 1 of the same level, though Hammer Cr moved first. Otherwise the
+    // fewer stars win, then the round's first mover.
+    const tieBreaker = game.tieBreaker;
     if (
       attack1 > attack2 ||
-      (attack1 === attack2 && (card1.stars < card2.stars ||
-        (card1.stars === card2.stars &&
-          game.playingFirst === Turn.PLAYER_1)))
+      (attack1 === attack2 && (tieBreaker !== undefined
+        ? tieBreaker === Turn.PLAYER_1
+        : card1.stars < card2.stars ||
+          (card1.stars === card2.stars &&
+            game.playingFirst === Turn.PLAYER_1)))
     ) {
       // console.log(`Life -${card1.damage.final}`);
       p1.won = card1.won = true;

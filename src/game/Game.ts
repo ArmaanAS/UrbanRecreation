@@ -376,6 +376,11 @@ export default class Game {
     return this.base.playingFirst;
   }
 
+  /** Who wins a tied round or a tied match outright (Solomon's Tie-break), if anyone. */
+  get tieBreaker() {
+    return this.base.tieBreaker;
+  }
+
   get round() {
     return this.base.round;
   }
@@ -543,6 +548,9 @@ export default class Game {
           this.winner = Winner.PLAYER_1;
         } else if (this.p1.life < this.p2.life) {
           this.winner = Winner.PLAYER_2;
+        } else if (this.tieBreaker !== undefined) {
+          // Tie-break's second clause, from its text alone: no capture has ended level yet.
+          this.winner = this.tieBreaker === Turn.PLAYER_1 ? Winner.PLAYER_1 : Winner.PLAYER_2;
         } else {
           this.winner = Winner.TIE;
         }
@@ -697,6 +705,15 @@ export default class Game {
       counterAttack2 = true;
     }
 
+    // Solomon's "Tie-break": "During the entire fight, if your attack is equal to your
+    // opponent's, you will always win the round. If your and your opponent's Life points are
+    // equal at the end of the fight, you will win the fight. (These effects are cancelled out
+    // if your opponent also has Solomon)" (captures/abilities.json 1135). getLeader already
+    // leaves out a Leader whose hand holds another one (Cancel Leader, 117).
+    const tie1 = l1?.abilityString == "Tie-break";
+    const tie2 = l2?.abilityString == "Tie-break";
+    const tieBreaker = tie1 === tie2 ? undefined : tie1 ? Turn.PLAYER_1 : Turn.PLAYER_2;
+
     let start = 0;
     for (const f of [Turn.PLAYER_1, Turn.PLAYER_2]) {
       let playingFirst = f;
@@ -712,6 +729,7 @@ export default class Game {
           round: Math.floor(i / 2) + 1,
           counterAttack1,
           counterAttack2,
+          tieBreaker,
           playingFirst,
           firstHasSelected,
           turn,
@@ -736,6 +754,8 @@ interface BaseGame {
   turn: Turn;
   counterAttack1: boolean;
   counterAttack2: boolean;
+  /** The player whose lone Solomon wins every tie, if exactly one side has one. */
+  tieBreaker: Turn | undefined;
   day: boolean;
   round: number;
 }
