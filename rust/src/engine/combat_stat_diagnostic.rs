@@ -1244,6 +1244,167 @@ pub enum CombatStatPlanErrorV1 {
         source_id: u32,
         reason: InvalidCombatStatPlanReasonV1,
     },
+    /// A hand holding a Leader in a context the projection does not model; see
+    /// [`leader_hand_hazard`].
+    UnsupportedLeaderHand {
+        player: PlayerId,
+        hand_slot: HandSlot,
+        reason: LeaderHandHazardV1,
+    },
+}
+
+/// Why a hand holding a Leader (canonical clan 36) is outside the projection.
+///
+/// Since revision 77 two kinds of Leader hand are admitted, both as hands whose Leaders act
+/// as plain cards with their printed Power and Damage and no source of their own:
+/// - two or more Leaders, whose abilities the server deactivates ("Your Leader Abilities are
+///   deactivated if you have more than one Leader in your team", the Leaders' shared
+///   `Cancel Leader` bonus, `117`) and records as absent in the battle's static block;
+/// - a lone Ashigaru L5, whose `Counter-attack` (`124`) only decides who moves first in round
+///   one - which every replay and search position is already given.
+///
+/// Each Leader then carries two absent plans, and the whole hand is still refused wherever a
+/// Leader could change something no captured round shows.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum LeaderHandHazardV1 {
+    /// A Leader source outside the two reviewed ones: a lone Leader other than the
+    /// identity-locked `Counter-attack` (a Team, Hazard, Illusion or Tie-break ability, or no
+    /// ability at all), or a Leader beside another Leader whose sources are not the deactivated
+    /// ability and the live `Cancel Leader`. Only the catalog and replay boundaries, which see
+    /// the printed or captured sources, can raise it.
+    UnreviewedLeaderSource,
+    /// A Leader's ability or bonus reached the engine as a plan. Every admitted Leader source is
+    /// realized at construction, so a Leader card always carries two absent plans.
+    LeaderSourcePlan,
+    /// An Oculus in the Leader's own hand. Infiltration counts clans, and no round shows
+    /// whether a Leader counts as one.
+    OculusBesideLeader,
+    /// A `Unison` condition the Leader's hand would evaluate - on one of its own sources, or on
+    /// an opposing source an own Copy could adopt. The projection's Unison reads every card in
+    /// the hand, the Leader's own clan included, and no round shows whether the server counts
+    /// a Leader there.
+    UnisonInLeaderHand,
+    /// An opposing Brawl (anti-Support magnitude), which counts the clan-mates of the selected
+    /// card it faces. No round shows it facing a selected Leader.
+    OpposingBrawlAgainstLeader,
+    /// An opposing `Stop Opp. Bonus` against a hand of two or more Leaders. Their `Cancel
+    /// Leader` is what deactivates their abilities, and no round shows it stopped.
+    OpposingStopBonusAgainstCancelLeader,
+}
+
+impl fmt::Display for LeaderHandHazardV1 {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::UnreviewedLeaderSource => "its Leader source is not modelled",
+            Self::LeaderSourcePlan => "a Leader carries an executable source plan",
+            Self::OculusBesideLeader => "an Oculus shares the hand with a Leader",
+            Self::UnisonInLeaderHand => "a Unison condition would read a hand holding a Leader",
+            Self::OpposingBrawlAgainstLeader => "an opposing Brawl could face a Leader",
+            Self::OpposingStopBonusAgainstCancelLeader => {
+                "an opposing Stop Opp. Bonus could stop Cancel Leader"
+            }
+        })
+    }
+}
+
+/// The first reason `player`'s hand is a Leader hand outside the projection, with the slot of
+/// its first Leader, or `None` when it holds no Leader or is an admitted one. The Leader's own
+/// identity - which lone Leader, and whether a hand of two Leaders really has its abilities
+/// deactivated - is checked by the catalog and replay boundaries, which see the printed or
+/// captured source; this checks what every admitted Leader hand has in common.
+pub fn leader_hand_hazard(
+    player: PlayerId,
+    spec: &CombatStatDiagnosticMatchSpecV1,
+) -> Option<(HandSlot, LeaderHandHazardV1)> {
+    let base = &spec.base_rules.players[player].hand;
+    let own = &spec.cards[player];
+    let opponent = &spec.cards[player.other()];
+    let leaders = HandSlot::ALL
+        .into_iter()
+        .filter(|slot| base[slot.index()].clan_id == super::LEADER_CLAN_ID);
+    let first = leaders.clone().next()?;
+    let leader_count = leaders.clone().count();
+    for slot in leaders {
+        let card = own[slot.index()];
+        if card.ability != CombatStatSourcePlanV1::Absent
+            || card.bonus != CombatStatSourcePlanV1::Absent
+        {
+            return Some((slot, LeaderHandHazardV1::LeaderSourcePlan));
+        }
+    }
+    if base
+        .iter()
+        .any(|card| card.clan_id == super::OCULUS_CLAN_ID)
+    {
+        return Some((first, LeaderHandHazardV1::OculusBesideLeader));
+    }
+    let reads_unison = |plan: CombatStatSourcePlanV1| match plan {
+        CombatStatSourcePlanV1::Execute { predicate, .. }
+        | CombatStatSourcePlanV1::CopyOpponentSource { predicate, .. } => {
+            predicate == CombatStatPredicateV1::OwnerHandUnison
+        }
+        CombatStatSourcePlanV1::Absent
+        | CombatStatSourcePlanV1::Disabled { .. }
+        | CombatStatSourcePlanV1::RejectIfSelected { .. } => false,
+    };
+    if source_plans(own).any(reads_unison) || copy_can_import(own, opponent, reads_unison) {
+        return Some((first, LeaderHandHazardV1::UnisonInLeaderHand));
+    }
+    // A Copy in the opposing hand can only adopt from the card it faces, which is never a
+    // Leader (a Leader has nothing to adopt), so only the opponent's own Brawl can count a
+    // selected Leader's clan-mates.
+    if source_plans(opponent).any(plan_reads_anti_support) {
+        return Some((first, LeaderHandHazardV1::OpposingBrawlAgainstLeader));
+    }
+    if leader_count >= 2
+        && source_plans(opponent).any(|plan| {
+            matches!(
+                plan,
+                CombatStatSourcePlanV1::Execute {
+                    effect: CombatStatEffectV1::StopOpponentBonus,
+                    ..
+                }
+            )
+        })
+    {
+        return Some((
+            first,
+            LeaderHandHazardV1::OpposingStopBonusAgainstCancelLeader,
+        ));
+    }
+    None
+}
+
+/// Whether `plan` scales by the anti-Support count, the clan-mates of the opposing selected
+/// card in the opposing hand (Brawl).
+fn plan_reads_anti_support(plan: CombatStatSourcePlanV1) -> bool {
+    matches!(
+        plan,
+        CombatStatSourcePlanV1::Execute {
+            effect: CombatStatEffectV1::ModifyCombatStat {
+                multiplier: CombatStatMagnitudeV1::AntiSupport,
+                ..
+            } | CombatStatEffectV1::ReduceOpponentLifeOnVictoryPerAntiSupport { .. }
+                | CombatStatEffectV1::ReduceOpponentPillzOnVictoryPerAntiSupport { .. }
+                | CombatStatEffectV1::GainPillzOnVictoryPerAntiSupport { .. },
+            ..
+        }
+    )
+}
+
+fn validate_leader_hands(
+    spec: &CombatStatDiagnosticMatchSpecV1,
+) -> Result<(), CombatStatPlanErrorV1> {
+    for player in PlayerId::ALL {
+        if let Some((hand_slot, reason)) = leader_hand_hazard(player, spec) {
+            return Err(CombatStatPlanErrorV1::UnsupportedLeaderHand {
+                player,
+                hand_slot,
+                reason,
+            });
+        }
+    }
+    Ok(())
 }
 
 impl fmt::Display for CombatStatPlanErrorV1 {
@@ -1283,6 +1444,15 @@ impl fmt::Display for CombatStatPlanErrorV1 {
                 "invalid combat-stat diagnostic Execute plan for {player:?} slot {} {source:?} {source_id}: {reason:?}",
                 hand_slot.get()
             ),
+            Self::UnsupportedLeaderHand {
+                player,
+                hand_slot,
+                reason,
+            } => write!(
+                formatter,
+                "combat-stat diagnostic refuses {player:?}'s Leader hand at slot {}: {reason}",
+                hand_slot.get()
+            ),
         }
     }
 }
@@ -1293,7 +1463,8 @@ impl Error for CombatStatPlanErrorV1 {
             Self::CardMismatch(source) => Some(source),
             Self::InvalidSourceBonusContext { .. }
             | Self::InvalidAbilitySupportContext { .. }
-            | Self::InvalidExecute { .. } => None,
+            | Self::InvalidExecute { .. }
+            | Self::UnsupportedLeaderHand { .. } => None,
         }
     }
 }
@@ -1425,6 +1596,7 @@ impl CombatStatDiagnosticV1 {
                 validate_clan_gate_context(player, slot, &spec)?;
             }
         }
+        validate_leader_hands(&spec)?;
         let base_rules = BaseRulesGame::new(spec.base_rules.clone());
         Ok(Self { spec, base_rules })
     }

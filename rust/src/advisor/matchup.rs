@@ -47,7 +47,8 @@ use crate::engine::{
     derive_catalog_hand, ByPlayer, CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1,
     CatalogCombatStatMatchV1, CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
     CombatStatEffectSourceV1, CombatStatPlanErrorV1, EffectiveCatalogHandErrorV1, PlayerId,
-    CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1, HAND_SIZE, LEADER_CLAN_ID, OCULUS_CLAN_ID,
+    RoundOneOrderV1, CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1, HAND_SIZE, LEADER_CLAN_ID,
+    OCULUS_CLAN_ID,
 };
 
 /// Wire and semantics of this module. Bump it when a response field or the meaning of a
@@ -289,6 +290,9 @@ fn error_location(
                 source,
                 ..
             } => Some((*player, hand_slot.index(), Some(*source))),
+            CombatStatPlanErrorV1::UnsupportedLeaderHand {
+                player, hand_slot, ..
+            } => Some((*player, hand_slot.index(), None)),
         },
     }
 }
@@ -374,6 +378,23 @@ pub fn solve(sources: &MatchupSources, request: &SolveRequest) -> SolveOutcome {
         }
         Err(error) => return SolveOutcome::Refused(error.to_string()),
     };
+    // A lone Ashigaru's `Counter-attack` decides round one's order, and a solve names its
+    // own first mover, so an order the draw rules out, or one it leaves unpinned, is refused
+    // rather than scored.
+    match prepared.combat_match.round_one_order() {
+        RoundOneOrderV1::Usual => {}
+        RoundOneOrderV1::SecondMover(player) if player != request.first_mover => {}
+        RoundOneOrderV1::SecondMover(player) => {
+            return SolveOutcome::Refused(format!(
+                "{player:?} holds a lone Ashigaru, whose Counter-attack always plays the first round second"
+            ))
+        }
+        RoundOneOrderV1::Unpinned => {
+            return SolveOutcome::Refused(
+                "a lone Ashigaru's Counter-attack meets an Ashigaru deactivated beside another Leader; no round shows who moves first".to_owned(),
+            )
+        }
+    }
     let mut game = prepared.new_game();
     let config = SearchConfig {
         us: request.first_mover,
@@ -417,7 +438,9 @@ pub enum ProbeStatus {
     BonusUntested,
     /// The card's ability (or the card itself) refuses even in the neutral draw.
     Refused,
-    /// A Leader: the strict catalog refuses every hand holding one.
+    /// A Leader the strict catalog refuses on its own: every Leader but Ashigaru L5, whose
+    /// `Counter-attack` only decides round one's order. A hand of two or more Leaders, whose
+    /// abilities are deactivated, is admitted (revision 77), but the probe never builds one.
     Leader,
     /// This `(id, level)` is not in the catalog the engine loads.
     Missing,
@@ -938,7 +961,7 @@ mod tests {
     fn a_refused_draw_is_reported_as_refused_with_the_catalogs_reason() {
         let sources = sources();
         let demo = AdvisorOptions::default();
-        // Ambre (269) is a Leader: the strict catalog refuses every hand holding one.
+        // Ambre (269) is a lone Leader with a Team ability, which the strict catalog refuses.
         let mut with_leader = demo.p1;
         with_leader[0] = CardKey::new(269, 5);
         let outcome = solve(
@@ -970,6 +993,30 @@ mod tests {
             solve(&sources, &SolveRequest::new(unknown, demo.p2, PlayerId::P1)),
             SolveOutcome::Refused(_)
         ));
+    }
+
+    #[test]
+    fn a_lone_ashigaru_refuses_the_round_one_order_its_counter_attack_rules_out() {
+        let sources = sources();
+        let demo = AdvisorOptions::default();
+        let mut ashigaru = demo.p1;
+        ashigaru[0] = CardKey::new(275, 5);
+        let outcome = solve(
+            &sources,
+            &SolveRequest::new(ashigaru, demo.p2, PlayerId::P1),
+        );
+        let SolveOutcome::Refused(reason) = outcome else {
+            panic!("Ashigaru's owner cannot move first in round one, got {outcome:?}");
+        };
+        assert!(reason.contains("Counter-attack"), "{reason}");
+        let outcome = solve(
+            &sources,
+            &SolveRequest::new(demo.p2, ashigaru, PlayerId::P2),
+        );
+        assert!(
+            matches!(&outcome, SolveOutcome::Refused(reason) if reason.contains("Counter-attack")),
+            "{outcome:?}"
+        );
     }
 
     #[test]

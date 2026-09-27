@@ -498,7 +498,28 @@ const CANDIDATE_FAMILIES: &[(&str, &[u32])] = &[
         "revision 75 union",
         &[646, 877, 1714, 2434, 2968, 2969, 3103, 5575, 5776, 5805],
     ),
+    // Revision 77, measured 2026-09-27: Leader hands. The scan attributes a refused Leader
+    // hand to `CANCEL_LEADER_REGISTRY_ID` when it holds two or more Leaders (whose abilities
+    // the server then deactivates), and otherwise to the lone Leader's printed ability.
+    ("two or more Leaders (Cancel Leader)", &[117]),
+    ("lone Ashigaru (Counter-attack)", &[124]),
+    ("revision 77 union", &[117, 124]),
+    // Still refused after revision 77, listed so the next capture can be priced.
+    ("lone Hugo (Team: +7 Attack)", &[4237]),
+    (
+        "lone John Doom (Team: Reprisal: -2 Opp Power, Min 6)",
+        &[5252],
+    ),
+    ("lone Vansaar (Team: Killshot: -2 Opp. Life Min 2)", &[3480]),
+    ("lone Administrator (Hazard)", &[2238, 4144]),
+    ("lone Kate (Illusion)", &[3127, 3128]),
+    ("lone Solomon (Tie-break)", &[1135]),
 ];
+
+/// Registry definition of the Leaders' shared clan bonus, `Cancel Leader`: "Your Leader
+/// Abilities are deactivated if you have more than one Leader in your team."
+const CANCEL_LEADER_REGISTRY_ID: u32 = 117;
+const LEADER_CLAN_ID: u32 = 36;
 
 fn root_path(path: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -553,7 +574,8 @@ fn blockers_for(
         })
     });
     let mut blockers: Vec<Blocker> = Vec::new();
-    while blockers.len() <= FILLER.len() {
+    let mut fillers_used = 0_usize;
+    loop {
         let input = CatalogCombatStatMatchInputV1 {
             battle_rule_id: capture.battle_rule_id,
             night: capture.night,
@@ -580,18 +602,60 @@ fn blockers_for(
                 ..
             }) => {
                 let side = if player == PlayerId::P1 { 0 } else { 1 };
-                hands[side][usize::from(hand_slot.get())] = FILLER[blockers.len()];
+                if fillers_used == FILLER.len() {
+                    return None;
+                }
+                hands[side][usize::from(hand_slot.get())] = FILLER[fillers_used];
+                fillers_used += 1;
                 blockers.push(Blocker {
                     registry_definition_id,
                     description,
                 });
             }
-            // A Leader, duplicate character, or lookup failure is not a missing effect
-            // slice, so it ends the walk rather than being attributed to some family.
+            // A Leader hand is attributed to a pseudo-family so that the report can price it:
+            // the two-Leader rule when the hand holds two or more, which retires every Leader
+            // in it at once, and otherwise the lone Leader's printed ability.
+            Err(CatalogCombatStatMatchErrorV1::WholeHandLeaderHazard {
+                player, hand_slot, ..
+            }) => {
+                let side = if player == PlayerId::P1 { 0 } else { 1 };
+                let leaders: Vec<usize> = (0..4)
+                    .filter(|slot| {
+                        catalog
+                            .get(hands[side][*slot])
+                            .is_some_and(|card| card.clan_id == LEADER_CLAN_ID)
+                    })
+                    .collect();
+                let (registry_definition_id, description, retired) = if leaders.len() >= 2 {
+                    (
+                        CANCEL_LEADER_REGISTRY_ID,
+                        "two or more Leaders (Cancel Leader)".to_owned(),
+                        leaders,
+                    )
+                } else {
+                    let slot = usize::from(hand_slot.get());
+                    let card = catalog
+                        .get(hands[side][slot])
+                        .expect("a refused Leader is a catalog card");
+                    (card.ability_id, card.ability.clone(), vec![slot])
+                };
+                for slot in retired {
+                    if fillers_used == FILLER.len() {
+                        return None;
+                    }
+                    hands[side][slot] = FILLER[fillers_used];
+                    fillers_used += 1;
+                }
+                blockers.push(Blocker {
+                    registry_definition_id,
+                    description,
+                });
+            }
+            // A duplicate character or lookup failure is not a missing effect slice, so it
+            // ends the walk rather than being attributed to some family.
             Err(_) => return None,
         }
     }
-    None
 }
 
 #[test]

@@ -671,7 +671,8 @@ fn validate_replay_source(
             ));
         }
         CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
-        | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => identity,
+        | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. }
+        | CatalogCombatStatSourceDispositionV1::Inert { identity, .. } => identity,
     };
     let Some(captured) = captured else {
         return Err(replay_source_mismatch(

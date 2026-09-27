@@ -11,9 +11,11 @@ use urban_recreation_rust::engine::{
     derive_catalog_hand, BaseRulesRoundInput, BaseRulesSelection, ByPlayer,
     CatalogCombatStatMatchErrorV1, CatalogCombatStatMatchInputV1, CatalogCombatStatMatchV1,
     CatalogCombatStatPlayerInputV1, CatalogCombatStatProjectionV1,
-    CatalogCombatStatSourceDispositionV1, ClanConjunctV1, ClanSetV1, CombatStatEffectSourceV1,
-    CombatStatEffectV1, CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1,
-    CopiedSourceKindV1, EffectiveCatalogHandErrorV1, MatchStatus, PlayerId,
+    CatalogCombatStatSourceDispositionV1, ClanConjunctV1, ClanSetV1,
+    CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
+    CombatStatEffectV1, CombatStatPlanErrorV1, CombatStatPostRoundEffectV1, CombatStatPredicateV1,
+    CombatStatSourcePlanV1, CopiedSourceKindV1, EffectiveCatalogHandErrorV1, InertSourceV1,
+    LeaderHandHazardV1, MatchStatus, PlayerId, RoundOneOrderV1,
     CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1,
 };
 use urban_recreation_rust::replay::{
@@ -3018,7 +3020,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 7);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 8);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -3156,12 +3158,15 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
         })
     ));
 
+    // A lone Hugo's `Team: +7 Attack` is not modelled (revision 77 admits only two kinds of
+    // Leader hand; see `strict_catalog_match_admits_two_leaders_and_a_lone_ashigaru_only`).
     let mut leader = p1;
     leader[0] = CardKey::new(271, 5);
     assert!(matches!(
         CatalogCombatStatMatchV1::new(input(leader, p2, false), &catalog, &registry, PROJECTION),
         Err(CatalogCombatStatMatchErrorV1::WholeHandLeaderHazard {
             player: PlayerId::P1,
+            reason: LeaderHandHazardV1::UnreviewedLeaderSource,
             ..
         })
     ));
@@ -3232,6 +3237,326 @@ fn strict_catalog_match_rejects_duplicate_leader_and_any_unsupported_source() {
     ));
 }
 
+const ADMINISTRATOR_L5: CardKey = CardKey { id: 2095, level: 5 };
+const ASHIGARU_L5: CardKey = CardKey { id: 275, level: 5 };
+
+fn leader_refusal(
+    p1: [CardKey; 4],
+    p2: [CardKey; 4],
+    catalog: &EffectiveCardCatalog,
+    registry: &EffectRegistryV1,
+) -> Option<(PlayerId, u8, LeaderHandHazardV1)> {
+    match CatalogCombatStatMatchV1::new(input(p1, p2, false), catalog, registry, PROJECTION) {
+        Err(CatalogCombatStatMatchErrorV1::WholeHandLeaderHazard {
+            player,
+            hand_slot,
+            reason,
+            ..
+        }) => Some((player, hand_slot.get(), reason)),
+        Err(error) => panic!("expected a Leader refusal or success, got {error}"),
+        Ok(_) => None,
+    }
+}
+
+/// Revision 77 (catalog-context revision 8): two or more Leaders deactivate every Leader
+/// ability, so they play as plain printed cards beside an inert `Cancel Leader`; a lone
+/// Ashigaru L5's `Counter-attack` only decides the round-one order. Every other Leader, and
+/// those two in a context no capture shows, stays refused.
+#[test]
+fn strict_catalog_match_admits_two_leaders_and_a_lone_ashigaru_only() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, fillers) = fully_supported_hands();
+    let plain = [
+        CardKey::new(123, 1),
+        CardKey::new(124, 1),
+        CardKey::new(138, 1),
+        CardKey::new(139, 1),
+    ];
+
+    // Two Leaders: printed Power and Damage, no ability, and the live Leader bonus, bridged
+    // from catalog bonus 35 to registry definition 117 and inert.
+    let pair = [ADMINISTRATOR_L5, ASHIGARU_L5, plain[0], plain[1]];
+    let derived = derive_catalog_hand(pair, false, &catalog).unwrap();
+    for slot in 0..2 {
+        assert_eq!(derived[slot].ability, None);
+        assert_eq!(
+            derived[slot]
+                .bonus
+                .as_ref()
+                .map(|bonus| (bonus.catalog_id, bonus.description.as_str())),
+            Some((Some(35), "Cancel Leader"))
+        );
+        assert_eq!(derived[slot].effective.active_bonus_clan_id, Some(36));
+        assert_eq!(derived[slot].effective.effective_clan_character_count, 2);
+    }
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(pair, fillers, false), &catalog, &registry, PROJECTION)
+            .unwrap();
+    for slot in 0..2 {
+        let card = &prepared.preparation()[PlayerId::P1][slot];
+        assert_eq!(card.ability, CatalogCombatStatSourceDispositionV1::Absent);
+        assert!(matches!(
+            &card.bonus,
+            CatalogCombatStatSourceDispositionV1::Inert {
+                identity,
+                reason: InertSourceV1::CancelLeader,
+            } if identity.catalog_id == Some(35)
+                && identity.registry_definition_id == 117
+                && identity.description == "Cancel Leader"
+        ));
+        assert_eq!(card.source_bonus_support_count, 0);
+        let plan = prepared.match_spec().cards[PlayerId::P1][slot];
+        assert_eq!(plan.ability, CombatStatSourcePlanV1::Absent);
+        assert_eq!(plan.bonus, CombatStatSourcePlanV1::Absent);
+        assert_eq!(plan.source_bonus_support_count, 0);
+    }
+    let base = &prepared.match_spec().base_rules.players[PlayerId::P1].hand;
+    assert_eq!((base[0].power, base[0].damage), (9, 8));
+    assert_eq!((base[1].power, base[1].damage), (9, 6));
+    assert_eq!(prepared.round_one_order(), RoundOneOrderV1::Usual);
+    // The rule is the hand's, not the pair's: Hugo and Vansaar are deactivated the same way.
+    let team_pair = [
+        CardKey::new(271, 5),
+        CardKey::new(273, 5),
+        plain[0],
+        plain[1],
+    ];
+    assert_eq!(
+        leader_refusal(team_pair, fillers, &catalog, &registry),
+        None
+    );
+
+    // A lone Ashigaru L5: its `Counter-attack` is inert and puts its owner second in round
+    // one, unless the other player also has a live one.
+    let lone = [ASHIGARU_L5, plain[0], plain[1], plain[2]];
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(lone, fillers, false), &catalog, &registry, PROJECTION)
+            .unwrap();
+    let ashigaru = &prepared.preparation()[PlayerId::P1][0];
+    assert!(matches!(
+        &ashigaru.ability,
+        CatalogCombatStatSourceDispositionV1::Inert {
+            identity,
+            reason: InertSourceV1::CounterAttack,
+        } if identity.catalog_id == Some(124)
+            && identity.registry_definition_id == 124
+            && identity.description == "Counter-attack"
+    ));
+    assert_eq!(ashigaru.bonus, CatalogCombatStatSourceDispositionV1::Absent);
+    assert_eq!(
+        prepared.round_one_order(),
+        RoundOneOrderV1::SecondMover(PlayerId::P1)
+    );
+    let swapped =
+        CatalogCombatStatMatchV1::new(input(fillers, lone, false), &catalog, &registry, PROJECTION)
+            .unwrap();
+    assert_eq!(
+        swapped.round_one_order(),
+        RoundOneOrderV1::SecondMover(PlayerId::P2)
+    );
+    let opposing_lone = [ASHIGARU_L5, fillers[0], fillers[1], fillers[2]];
+    let both = CatalogCombatStatMatchV1::new(
+        input(lone, opposing_lone, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert_eq!(both.round_one_order(), RoundOneOrderV1::Usual);
+    // An Ashigaru deactivated beside another Leader: whether it still counts as "having
+    // Ashigaru" for the other player's live one is not something any round shows.
+    let opposing_pair = [ASHIGARU_L5, ADMINISTRATOR_L5, fillers[0], fillers[1]];
+    let unpinned = CatalogCombatStatMatchV1::new(
+        input(lone, opposing_pair, false),
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap();
+    assert_eq!(unpinned.round_one_order(), RoundOneOrderV1::Unpinned);
+
+    // Every other lone Leader stays refused: Ashigaru's lower levels print `Counter-attack`
+    // under ids no registry definition owns, Administrator L1 prints no ability at all, and
+    // Administrator L5's Hazard replaces the other cards' abilities at random.
+    for key in [
+        CardKey::new(275, 4),
+        CardKey::new(2095, 1),
+        ADMINISTRATOR_L5,
+        CardKey::new(273, 5),
+    ] {
+        assert_eq!(
+            leader_refusal(
+                [plain[0], plain[1], key, plain[2]],
+                fillers,
+                &catalog,
+                &registry
+            ),
+            Some((PlayerId::P1, 2, LeaderHandHazardV1::UnreviewedLeaderSource)),
+            "{key:?}"
+        );
+    }
+
+    // The contexts no captured round shows. An Oculus beside a Leader (here Phalloide Ld,
+    // with no ability of its own).
+    assert_eq!(
+        leader_refusal(
+            [
+                ADMINISTRATOR_L5,
+                ASHIGARU_L5,
+                CardKey::new(2094, 1),
+                plain[0]
+            ],
+            fillers,
+            &catalog,
+            &registry
+        ),
+        Some((PlayerId::P1, 0, LeaderHandHazardV1::OculusBesideLeader))
+    );
+    // A Unison the Leader's hand would evaluate: Aquiline's own, or one an own Copy could
+    // adopt from the other hand (McMaster's `Copy: Opp. Ability` meeting Aquiline).
+    let aquiline = CardKey::new(2471, 3);
+    assert_eq!(
+        leader_refusal(
+            [ASHIGARU_L5, aquiline, plain[0], plain[1]],
+            fillers,
+            &catalog,
+            &registry
+        ),
+        Some((PlayerId::P1, 0, LeaderHandHazardV1::UnisonInLeaderHand))
+    );
+    let mcmaster = CardKey::new(2287, 4);
+    assert_eq!(
+        leader_refusal(
+            [ASHIGARU_L5, mcmaster, plain[0], plain[1]],
+            [aquiline, fillers[0], fillers[1], fillers[2]],
+            &catalog,
+            &registry
+        ),
+        Some((PlayerId::P1, 0, LeaderHandHazardV1::UnisonInLeaderHand))
+    );
+    // An opposing Brawl, which would count a selected Leader's clan-mates (Schatzi's `Brawl:
+    // Power And Damage + 1`).
+    let brawl = [CardKey::new(1663, 3), fillers[0], fillers[1], fillers[2]];
+    assert_eq!(
+        leader_refusal(lone, brawl, &catalog, &registry),
+        Some((
+            PlayerId::P1,
+            0,
+            LeaderHandHazardV1::OpposingBrawlAgainstLeader
+        ))
+    );
+    // An opposing Stop Opp. Bonus (the live Piranas bonus) against a pair's `Cancel Leader`.
+    // A lone Ashigaru has no bonus to stop, so it stays admitted there.
+    let piranas = [
+        CardKey::new(528, 3),
+        CardKey::new(708, 3),
+        fillers[0],
+        fillers[1],
+    ];
+    assert_eq!(
+        leader_refusal(pair, piranas, &catalog, &registry),
+        Some((
+            PlayerId::P1,
+            0,
+            LeaderHandHazardV1::OpposingStopBonusAgainstCancelLeader
+        ))
+    );
+    assert_eq!(leader_refusal(lone, piranas, &catalog, &registry), None);
+    // An opposing Copy of either kind is admitted: a Leader has nothing to adopt.
+    assert_eq!(
+        leader_refusal(
+            pair,
+            [mcmaster, fillers[0], fillers[1], fillers[2]],
+            &catalog,
+            &registry
+        ),
+        None
+    );
+
+    // The engine refuses a Leader that reaches it with a plan, whatever built the match.
+    let prepared =
+        CatalogCombatStatMatchV1::new(input(pair, fillers, false), &catalog, &registry, PROJECTION)
+            .unwrap();
+    let mut spec: CombatStatDiagnosticMatchSpecV1 = prepared.match_spec().clone();
+    spec.cards[PlayerId::P1][1].ability = CombatStatSourcePlanV1::Disabled { source_id: 124 };
+    assert!(matches!(
+        CombatStatDiagnosticV1::new(spec),
+        Err(CombatStatPlanErrorV1::UnsupportedLeaderHand {
+            player: PlayerId::P1,
+            reason: LeaderHandHazardV1::LeaderSourcePlan,
+            ..
+        })
+    ));
+}
+
+/// Every captured Leader hand, against the catalog derivation. Beside another Leader the
+/// server records each Leader with no ability and the live `Cancel Leader`, and the other
+/// cards keep their printed abilities (Hazard is deactivated too); a lone Leader carries its
+/// printed ability and no bonus.
+#[test]
+fn catalog_leader_derivation_matches_every_captured_leader_hand() {
+    let catalog = catalog();
+    let corpus = load_corpus(root_path("captures/games"), root_path("data/data.json")).unwrap();
+    let mut pair_hands = 0_usize;
+    let mut lone_leaders = 0_usize;
+    for replay in &corpus.ready {
+        for player in 0..2 {
+            let hand = &replay.players[player].hand;
+            let keys: [CardKey; 4] = std::array::from_fn(|slot| hand[slot].key);
+            let is_leader = |key: CardKey| catalog.get(key).is_some_and(|card| card.clan_id == 36);
+            let leaders = keys.iter().filter(|key| is_leader(**key)).count();
+            if leaders == 0 {
+                continue;
+            }
+            let derived = derive_catalog_hand(keys, replay.metadata.night, &catalog).unwrap();
+            let context = format!("battle {} player {player}", replay.metadata.battle_id);
+            for slot in 0..4 {
+                let captured_ability = hand[slot]
+                    .source_ability
+                    .as_ref()
+                    .map(|ability| ability.description.as_str());
+                let captured_bonus = hand[slot]
+                    .source_bonus
+                    .as_ref()
+                    .map(|bonus| bonus.description.as_str());
+                let derived_ability = derived[slot]
+                    .ability
+                    .as_ref()
+                    .map(|ability| ability.description.as_str());
+                let derived_bonus = derived[slot]
+                    .bonus
+                    .as_ref()
+                    .map(|bonus| bonus.description.as_str());
+                if leaders >= 2 {
+                    assert_eq!(derived_ability, captured_ability, "{context} slot {slot}");
+                    assert_eq!(derived_bonus, captured_bonus, "{context} slot {slot}");
+                    if is_leader(keys[slot]) {
+                        assert_eq!(captured_ability, None, "{context} slot {slot}");
+                        assert_eq!(
+                            captured_bonus,
+                            Some("Cancel Leader"),
+                            "{context} slot {slot}"
+                        );
+                    }
+                } else if is_leader(keys[slot]) {
+                    // A lone Administrator's Hazard replaces the other cards' abilities, so
+                    // only the Leader itself is compared.
+                    assert_eq!(derived_ability, captured_ability, "{context} slot {slot}");
+                    assert_eq!(captured_bonus, None, "{context} slot {slot}");
+                    assert_eq!(derived_bonus, None, "{context} slot {slot}");
+                    lone_leaders += 1;
+                }
+            }
+            if leaders >= 2 {
+                pair_hands += 1;
+            }
+        }
+    }
+    assert!(pair_hands >= 3);
+    assert!(lone_leaders >= 15);
+}
+
 #[test]
 fn catalog_bonus_derivation_matches_the_complete_capture_corpus_except_dynamic_copy() {
     let catalog = catalog();
@@ -3255,21 +3580,11 @@ fn catalog_bonus_derivation_matches_the_complete_capture_corpus_except_dynamic_c
                 observations += 1;
                 // Two Leaders in one hand make the Leaders' shared bonus live: `Cancel Leader`,
                 // "Your Leader Abilities are deactivated if you have more than one Leader in
-                // your team" (first captured 2026-09-26, 1495879, 1496119 and 1496142). The
-                // catalog never derives a Leader bonus, and every hand holding a Leader is
-                // refused before its bonuses are read, so these slots are counted, not checked.
+                // your team" (first captured 2026-09-26, 1495879, 1496119 and 1496142). Since
+                // catalog-context revision 8 the catalog derives it, so these slots are checked
+                // like any other.
                 if leaders >= 2 && is_leader(keys[slot]) {
-                    assert_eq!(
-                        replay.players[player].hand[slot]
-                            .source_bonus
-                            .as_ref()
-                            .map(|bonus| bonus.description.as_str()),
-                        Some("Cancel Leader"),
-                        "battle {} player {player} slot {slot}",
-                        replay.metadata.battle_id
-                    );
                     leader_pair_slots += 1;
-                    continue;
                 }
                 let expected = derived[slot]
                     .bonus

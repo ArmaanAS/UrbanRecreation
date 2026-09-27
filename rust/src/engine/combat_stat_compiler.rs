@@ -235,7 +235,73 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 76;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 77;
+
+/// The registry definition of Ashigaru L5's `Counter-attack`. Its printed levels 1-4
+/// (`3178`-`3181`) have no registry definition, so they stay fail-closed.
+pub(crate) const COUNTER_ATTACK_REGISTRY_ID: u32 = 124;
+pub(crate) const COUNTER_ATTACK_DESCRIPTION: &str = "Counter-attack";
+/// The registry definition of the Leaders' shared clan bonus, catalog bonus `35`.
+pub(crate) const CANCEL_LEADER_REGISTRY_ID: u32 = 117;
+pub(crate) const CANCEL_LEADER_DESCRIPTION: &str = "Cancel Leader";
+
+/// Revision 77: Ashigaru's `Counter-attack` ("The player who has Ashigaru on his team always
+/// plays the first round in second"), by identity - the exact text, registry definition
+/// `124` and its record, which names only the `strike_back` special action. It decides the
+/// round-one first mover and nothing else, and every replay and search position is given
+/// that mover, so inside the projection it is a source with no effect.
+pub(crate) fn classify_counter_attack(definition: &EffectDefinitionV1) -> bool {
+    definition.id() == COUNTER_ATTACK_REGISTRY_ID
+        && definition.description() == COUNTER_ATTACK_DESCRIPTION
+        && is_inert_leader_record(definition.structured_input(), SpecialActionV1::StrikeBack)
+}
+
+/// Revision 77: the Leaders' `Cancel Leader` ("Your Leader Abilities are deactivated if you
+/// have more than one Leader in your team"), by identity - the exact text, registry
+/// definition `117` and its record, which names no attribute and no special action. Its
+/// only effect is the deactivation, which the boundaries realize at construction.
+pub(crate) fn classify_cancel_leader(definition: &EffectDefinitionV1) -> bool {
+    definition.id() == CANCEL_LEADER_REGISTRY_ID
+        && definition.description() == CANCEL_LEADER_DESCRIPTION
+        && is_inert_leader_record(definition.structured_input(), SpecialActionV1::None)
+}
+
+/// A record that changes no attribute under no condition, apart from `special_action`.
+fn is_inert_leader_record(input: &StructuredEffectV1, special_action: SpecialActionV1) -> bool {
+    *input
+        == StructuredEffectV1 {
+            value: 0,
+            value_min: 0,
+            value_max: 0,
+            value_condition: 0,
+            position_requirement: PositionRequirementV1::Both,
+            previous_round_requirement: PreviousRoundRequirementV1::Any,
+            current_round_requirement: CurrentRoundRequirementV1::Any,
+            index_requirement: IndexRequirementV1::Any,
+            clan_requirement: ClanIdsV1::default(),
+            opponent_clan_requirement: ClanIdsV1::default(),
+            previous_clan_requirement: ClanIdsV1::default(),
+            bet_pillz_link: BetPillzLinkV1::No,
+            side_affected: AffectedSideV1::Player,
+            attribute_affected: AttributeAffectedV1::None,
+            attribute_action: AttributeActionV1::None,
+            special_action,
+            is_inverted: false,
+            is_support: false,
+            is_anti_support: false,
+            is_overdrive: false,
+            is_divide: false,
+            is_life_linked: false,
+            is_pillz_linked: false,
+            is_lost_life_linked: false,
+            is_lost_pillz_linked: false,
+            is_opponent_stars_linked: false,
+            is_clanmates_count_linked: false,
+            is_anti_clanmates_count_linked: false,
+            is_permanent: false,
+            is_immediate_permanent: false,
+        }
+}
 
 /// Recognize the admitted Copy grammars. Like generic Victory Life these are admitted by
 /// exact description and structured shape rather than a fixed id list, because the registry

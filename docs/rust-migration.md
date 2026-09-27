@@ -693,7 +693,8 @@ sequential gate unchanged, because replay preparation continues to consume each 
 recorded resolved source and never emits a Copy plan.
 
 Replay preparation scans all eight cards. Canonical Leader clan id 36 and Team/global or
-Mock/Illusion sources are fatal even when unplayed, because they may execute off-card.
+Mock/Illusion sources are fatal even when unplayed, because they may execute off-card (since
+revision 77, except the two kinds of Leader hand written up with it).
 Unsupported card-local controls and every unadmitted current-round combat-stat modifier are
 retained as visible Disabled metadata but reject atomically if selected. The 33 observed
 ordinary Support combat-stat definitions are admitted only for an otherwise-neutral,
@@ -735,7 +736,8 @@ rows. With exactly one Oculus, `O+A+A+A` infiltrates A, `O+A+A+B` infiltrates si
 and `O+A+B+C` does not infiltrate; multiple Oculus cards disable infiltration. An infiltrated
 card receives the target clan's selected day/night printed bonus before activation and
 Support counting. Duplicate character ids and any Leader are rejected by strict solver
-construction. Catalog source ids remain distinct from registry definition ids, so source
+construction (since revision 77, every Leader hand but two kinds: two or more Leaders, and a
+lone Ashigaru L5). Catalog source ids remain distinct from registry definition ids, so source
 structure is resolved by conflict-checking exact description lookup. The reviewed recovery
 bridge is intentionally narrower still: active effective Vortex clan `45` with catalog bonus
 id `43` and the exact recovery description resolves to registry definition `577`; catalog
@@ -3871,6 +3873,178 @@ Two audit findings are left for the owner, because closing them costs eligible d
   Reprisal Stop is already inert, and Spidee's Bonus is untouched. Refusing it would cost
   1069721, 1087884, 1088480 and 1130425 for no semantic gain. It is recorded here as inert by
   construction rather than closed.
+
+Semantic revision 77 (catalog-context revision 8) is the first slice about Leaders. Until now
+every hand holding a Leader (canonical clan 36) was refused whole, in strict catalog
+construction (`WholeHandLeaderHazard`) and in replay preparation (`CanonicalLeaderCard`).
+Revision 77 admits two kinds of Leader hand. In both, the Leaders play as plain cards with
+their printed Power and Damage and no source of their own:
+- **Two or more Leaders.** The Leaders' shared clan bonus is `Cancel Leader` (`117`): "Your
+  Leader Abilities are deactivated if you have more than one Leader in your team". In all
+  three captures of such a hand (1495879, 1496119 and 1496142, Administrator L5 beside
+  Ashigaru L5), the server's static block records each Leader with no ability and with
+  `Cancel Leader` as its bonus. The catalog now derives exactly that.
+  `derive_effective_catalog_hand` no longer keeps the Leader clan out of bonus activation, so
+  two Leaders make catalog bonus 35 live. `derive_catalog_hand` gives a Leader beside another
+  Leader no ability. `prepare_leader_source` bridges catalog bonus 35 to registry definition
+  117 by identity. `classify_cancel_leader` checks the exact text, id 117, and a record that
+  names no attribute, no condition and no special action. The bonus is then recorded as
+  `Inert`, with an absent compact plan and no Support context.
+- **A lone Ashigaru L5.** `Counter-attack` (`124`) reads "The player who has Ashigaru on his
+  team always plays the first round in second. If both players have Ashigaru in their team,
+  the order of play is decided in the usual way." It decides who moves first in round one and
+  nothing else. Every replay and search position is given that mover, so inside the projection
+  it changes nothing, which is how the TypeScript engine reads it since `3faad8f`.
+  `classify_counter_attack` admits it by identity: the exact text, registry definition 124
+  (Ashigaru L5's printed id), and a record that names only `strike_back`. It is `Inert` too.
+  Ashigaru L1-L4 print the same text under `3178`-`3181`, which no registry definition owns, so
+  they stay refused, as Doela Noel L1 does.
+
+The catalog and replay dispositions both gained an `Inert { identity, reason }` variant
+(`InertSourceV1::{CounterAttack, CancelLeader}`), and only these two sources use it. Captured
+replay grading and the V3 worker check an inert source's identity like an executed one's: the
+printed id for an ability, the registry definition for a bonus. So `--replay` and a live
+observation of a Leader hand agree with the catalog, instead of refusing it as a
+capture/catalog mismatch. `deno task rust:advise --replay 1496119` grades both decisions of the
+two-Leader capture and verifies both server rounds. The other three new draws stop at
+identities unrelated to Leaders: Nox Ld's night variant has no catalog id in 1495879, Alba's
+Bangers bonus is captured as alias `43` in 1495980, and McMaster's Copy blocks 1496142. The catalog bonus corpus test used to count the two-Leader slots
+without checking them. It now checks them like any other bonus. A new test,
+`catalog_leader_derivation_matches_every_captured_leader_hand`, compares every captured Leader
+hand with the derivation: in a pair, all four cards' abilities and bonuses (Hazard is
+deactivated too, so the other cards keep their printed abilities); for a lone Leader, the
+Leader's own ability and bonus.
+
+**Measured before admitting.** The ignored coverage report now attributes a refused Leader
+hand instead of counting it as structural. A hand of two or more Leaders is attributed to
+`117`, and every Leader in it is retired at once. A lone Leader is attributed to its printed
+ability. The structural count fell from 20 to 3. The two-Leader line read 3 (1495879, 1496119,
+1496142), the lone-Ashigaru line read 1 (1495980), and the union read 4. After admission,
+eligibility went from 300 to 304 of 394, and the eligible-set diff adds exactly those four and
+removes none. The report also prices what is still refused. Lone Administrator (Hazard) reads
+2, lone Kate (Illusion) 2, and the three Team Leaders 0 each, because every draw that holds one
+also needs another source.
+
+**Evidence, from selected rounds.** Each piece is pinned by arithmetic:
+- Leaders beside another Leader play printed stats with no ability. Administrator L5 (9/8)
+  bets 3 in 1495879/2: 9 x 4 = 36, less Sabrina's Uppers bonus of 10, is 26. It wins, and
+  Sabrina's owner goes 18 to 10. With Fury in 1496119/1 it attacks 9 x 10 = 90 and deals
+  8 + 2 = 10, knocking Thorpah Cr's owner out from 9. In 1496142/3 it attacks
+  (9 - 2 All Stars) x 6 = 42 and deals 8: Lewis's owner goes 10 - 8 = 2, then Saguaro's latched
+  Regen 1 takes them to 3. Ashigaru L5 (9/6) attacks 9 x 4 = 36 in 1495879/0 and 9 x 2 = 18 in
+  1496142/0.
+- A pair's Ashigaru is deactivated too. The owner moves first in round one of 1495879 and of
+  1496142.
+- Leaders are nobody's Support. Wesley's Rescue `Support: Attack +3` is 3 x 2 beside two
+  Leaders in 1495879/3 (6 x 4 + 6 = 30), and 3 x 3 beside a lone Ashigaru in 1495980/1
+  (6 x 2 + 9 = 21).
+- A lone Ashigaru changes only the round-one order. In 1495980 its owner moves second in round
+  one, and the order alternates after that. Ashigaru attacks (9 - 3 Estalt) x 6 = 36 and wins,
+  and Estalt's owner goes 15 to 9.
+
+**The contexts no captured round shows stay refused.** They are refused as `LeaderHandHazardV1`
+reasons, in catalog construction (`WholeHandLeaderHazard { reason }`), in replay preparation
+(`CanonicalLeaderCard { reason }`), and in the engine itself
+(`CombatStatPlanErrorV1::UnsupportedLeaderHand`), through the one shared `leader_hand_hazard`.
+None of them costs an eligible draw today:
+- `UnreviewedLeaderSource`: every other lone Leader. That covers Hazard, Illusion, Tie-break,
+  every Team ability, Ashigaru L1-L4, and Administrator L1, which prints no ability at all. It
+  also covers a Leader beside another Leader whose sources are not the deactivated ability and
+  the live `Cancel Leader`.
+- `LeaderSourcePlan`: a Leader that reaches the engine with any plan. This is the engine's
+  backstop, since every admitted Leader carries two absent plans.
+- `OculusBesideLeader`: infiltration counts clans, and no round shows whether a Leader counts
+  as one.
+- `UnisonInLeaderHand`: a `Unison` condition the Leader's hand would evaluate, on its own
+  source or on an opposing source an own Copy could adopt. The projection's Unison reads the
+  Leader's clan too.
+- `OpposingBrawlAgainstLeader`: an opposing anti-Support magnitude, which would count a
+  selected Leader's clan-mates.
+- `OpposingStopBonusAgainstCancelLeader`: an opposing `Stop Opp. Bonus` against a pair. Their
+  `Cancel Leader` is what deactivates them, and no round shows it stopped. A lone Ashigaru has
+  no bonus to stop, so 1495980's Nightmare `Stop Opp. Bonus` stays admitted against it.
+
+**Admitted by composition, and labelled so.** An opposing Copy of either kind facing a Leader
+adopts nothing:
+- A `Copy: Opp. Ability` of a deactivated Leader meets the absent ability the server records.
+  That is the rule every Copy already follows against a card with no ability, but no captured
+  round shows a Copy facing a card with no ability at all, Leader or not.
+- A `Copy: Opp. Bonus` of `Cancel Leader` gives the copier a bonus that, by its own text, does
+  nothing to a team with fewer than two Leaders, and is already in effect in a team with more.
+- Against a lone Ashigaru, a copied `Counter-attack` comes after round one's order is settled.
+
+Refusing the Ability-Copy case would cost 1496142, whose McMaster faces the pair. The general
+two-Leader rule is also admitted by composition beyond the one pair the corpus shows: Hugo
+beside Vansaar is prepared exactly like Administrator beside Ashigaru, because the static block
+nulls every Leader's ability the same way.
+
+**Round-one order.** `CatalogCombatStatMatchV1::round_one_order()` (`RoundOneOrderV1`) reports
+what the draw decides about the first mover:
+- `SecondMover(p)` when `p` holds a lone Ashigaru and the other player holds none;
+- `Usual` when neither or both hold a live one;
+- `Unpinned` when a live Ashigaru meets one that is deactivated beside another Leader. Whether
+  the deactivated one still counts as "having Ashigaru" is not something any round shows.
+
+The advisor and the V3 worker are always given the server's mover. The matchup batch picks the
+mover itself, so it refuses a solve whose first mover the draw rules out, and refuses both movers
+when the order is unpinned. `Matchup.ts` refuses a pair when either of its two solves is refused.
+So a lone-Ashigaru deck is still unscored in Deck Lab: nothing scores an ordering the server never
+plays, and scoring the forced ordering alone is TypeScript work for later. Two-Leader decks score
+normally. The per-card probe still reports every Leader but Ashigaru L5 as `leader`, because it
+never builds a hand of two Leaders.
+
+**Gate.** The combat-stat gate grows from 905 to 916 rounds. Each new fixture is the complete
+replayable prefix of one of the four newly reachable draws:
+- 1495879, 4 rounds;
+- 1495980, 4 rounds;
+- 1496119, 2 rounds;
+- 1496142, 1 round. Its round 1 selects McMaster's Copy, which replay closes.
+
+`deno task pins:update` moves these files:
+- the eligible draws (four added);
+- the gate rounds (905 to 916);
+- the gate's absent dispositions (69 to 75);
+- the executed ids, which gain eight the gate never selected before, all from the four draws:
+  `131`, `173`, `1252`, `3051`, `4111`, `5110`, `5146` and `5640`;
+- a new `combat_stat_gate_inert_ids` (`117`, `124`);
+- the compiler revision (76 to 77);
+- `tests/expect/rust-provenance.json` (compiler 77, catalog-context 8).
+
+The disabled ids, the scanned draws and both data fingerprints are unchanged.
+
+**Not taken: Team Leaders.** The corpus pins parts of three Team abilities, but not enough for
+a search that must also play the Leader itself:
+- **Hugo's `Team: +7 Attack` (`4237`).** 901292 pins it on three non-Leader Sakrohm cards: 8 x
+  3 + 7 = 31 in round 0, and 5 x 11 + 7 = 62 in round 2. In round 1 it is 7 x 1 + 7 = 14, then
+  Oblivion's copied `-8 Opp Attack, Min 11` makes it 11, so the Team gain lands before an
+  opposing Min-clamped reduction. Hugo himself is never played, and nothing opposite could
+  stop or cancel the Team gain. The opposing Oblivion Copy took the played card's own ability
+  each time, never the Team gain. Even admitted, 901292 still needs Azhdar's `5702`.
+- **John Doom's `Team: Reprisal: -2 Opp Power, Min 6` (`5252`).** 901186 pins it once. In
+  round 1 its owner moves second, and Zlatar Cr's printed 7 falls to 6, clamped by Min 6. In
+  round 0 the owner moves first, and Jackie Cr keeps 8. John Doom is never played, and Merrie's
+  `Stop:` source still blocks the draw.
+- **Vansaar's `Team: Killshot: -2 Opp. Life Min 2` (`3480`).** 1207123 has no firing round:
+  Vansaar's side never wins.
+
+What would settle them:
+- a round where Hugo himself is played;
+- a Hugo-hand card facing an opposing `Stop Opp. Ability`, and one facing an opposing `Copy:
+  Opp. Ability` with Hugo selected;
+- a Hugo-hand card beside its own Attack modifier (a Support Attack bonus), to fix the order;
+- Vansaar-hand Killshot wins, by a plain card and by Vansaar, with one where Min 2 clamps and
+  one win below the Killshot ratio;
+- a Hugo + Vansaar pair, winning with plain cards, which would pin the two-Leader rule for Team
+  Leaders directly.
+
+Hazard and Illusion stay refused by nature. Tie-break has no round, because Solomon's only
+capture faces a Hazard.
+
+**What this does not move.** The clan matrix's largest refused group was Leaders, at 124 hand
+pairs. But every captured Tourney Leader hand is a lone Administrator L2 (Hazard) or a lone
+Kate (Illusion): 874590, 1023946, 1024821, 1069938, 1078820, 1089830 and 1130527, and so is
+1414699, whose room was not recorded. The slice keeps all of those refused, so the matrix's
+Leader pairs stay where they were. The four draws it unlocks are Training games.
 
 #### The clan gate, measured but not taken
 

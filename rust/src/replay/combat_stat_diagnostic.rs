@@ -57,13 +57,17 @@ use crate::engine::combat_stat_compiler::{
     split_clan_tags, BothPlayersGainV1, VictoryOrDefeatLifeEffectV1,
     COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
 };
+use crate::engine::combat_stat_compiler::{
+    classify_cancel_leader, classify_counter_attack, CANCEL_LEADER_DESCRIPTION,
+    COUNTER_ATTACK_DESCRIPTION,
+};
 use crate::engine::{
-    derive_effective_catalog_hand, effect_reads_support_count, unmodelled_source_context,
-    BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport, ByPlayer, CombatStatCardPlanV1,
-    CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1,
-    CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatPlanErrorV1,
-    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, PlayerId,
-    HAND_SIZE,
+    derive_effective_catalog_hand, effect_reads_support_count, leader_hand_hazard,
+    unmodelled_source_context, BaseRulesPosition, BaseRulesRoundInput, BaseRulesRoundReport,
+    ByPlayer, CombatStatCardPlanV1, CombatStatDiagnosticErrorV1, CombatStatDiagnosticMatchSpecV1,
+    CombatStatDiagnosticV1, CombatStatEffectSourceV1, CombatStatEffectV1, CombatStatPlanErrorV1,
+    CombatStatPostRoundEffectV1, CombatStatPredicateV1, CombatStatSourcePlanV1, InertSourceV1,
+    LeaderHandHazardV1, PlayerId, HAND_SIZE, LEADER_CLAN_ID,
 };
 use std::error::Error;
 use std::fmt;
@@ -110,9 +114,12 @@ pub struct CombatStatModifierIdentityV1 {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CombatStatWholeHandHazardSourceV1 {
+    /// A Leader hand outside revision 77's two admitted kinds, or one of them in a context
+    /// no captured round shows.
     CanonicalLeaderCard {
         key: CardKey,
         name: String,
+        reason: LeaderHandHazardV1,
     },
     Modifier {
         source_kind: CombatStatEffectSourceV1,
@@ -169,6 +176,12 @@ pub enum CombatStatProjectionDispositionV1 {
     Disabled {
         identity: CombatStatModifierIdentityV1,
         reason: CombatStatDisabledReasonV1,
+    },
+    /// A captured source that changes nothing the projection executes; its compact plan is
+    /// `Absent`. Only the two reviewed Leader sources are inert (revision 77).
+    Inert {
+        identity: CombatStatModifierIdentityV1,
+        reason: InertSourceV1,
     },
 }
 
@@ -507,6 +520,28 @@ impl CombatStatDiagnosticReplayV1 {
             base_rules: base.match_spec().clone(),
             cards: prepared.compact_plans,
         };
+        // An admitted Leader hand is still fatal wherever a Leader could change something no
+        // captured round shows, exactly as strict catalog construction refuses it.
+        for player in PlayerId::ALL {
+            if let Some((hand_slot, reason)) = leader_hand_hazard(player, &match_spec) {
+                let key = match_spec.cards[player][hand_slot.index()].key;
+                return Err(
+                    CombatStatDiagnosticPreparationErrorV1::WholeHandExecutionHazard {
+                        battle_id,
+                        player,
+                        hand_slot: hand_slot.get(),
+                        source: CombatStatWholeHandHazardSourceV1::CanonicalLeaderCard {
+                            key,
+                            name: catalog
+                                .get(key)
+                                .map(|card| card.name.clone())
+                                .unwrap_or_default(),
+                            reason,
+                        },
+                    },
+                );
+            }
+        }
         CombatStatDiagnosticV1::new(match_spec.clone())
             .map_err(CombatStatDiagnosticPreparationErrorV1::EnginePlan)?;
         let provenance = CombatStatDiagnosticProvenanceV1 {
@@ -628,23 +663,52 @@ fn prepare_combat_stat_cards(
             catalog,
         )
         .expect("BaseRulesReplay validated every card and catalog clan definition");
+        let leader_count = effective
+            .iter()
+            .filter(|card| card.canonical_clan_id == LEADER_CLAN_ID)
+            .count();
         for slot in 0..HAND_SIZE {
             let card = &replay.players[player.index()].hand[slot];
             let canonical = catalog
                 .get(card.key)
                 .expect("BaseRulesReplay validated every canonical card key");
-            if canonical.clan_id == 36 {
-                return Err(
-                    CombatStatDiagnosticPreparationErrorV1::WholeHandExecutionHazard {
-                        battle_id,
-                        player,
-                        hand_slot: slot as u8,
-                        source: CombatStatWholeHandHazardSourceV1::CanonicalLeaderCard {
-                            key: card.key,
-                            name: canonical.name.clone(),
+            if canonical.clan_id == LEADER_CLAN_ID {
+                let Some((ability, bonus)) = prepare_leader_sources(registry, card, leader_count)
+                else {
+                    return Err(
+                        CombatStatDiagnosticPreparationErrorV1::WholeHandExecutionHazard {
+                            battle_id,
+                            player,
+                            hand_slot: slot as u8,
+                            source: CombatStatWholeHandHazardSourceV1::CanonicalLeaderCard {
+                                key: card.key,
+                                name: canonical.name.clone(),
+                                reason: LeaderHandHazardV1::UnreviewedLeaderSource,
+                            },
                         },
+                    );
+                };
+                prepared[player][slot] = Some(PreparedCombatStatCardV1 {
+                    metadata: CombatStatCardPreparationV1 {
+                        key: card.key,
+                        effective_clan_id: effective[slot].effective_clan_id,
+                        effective_clan_character_count: effective[slot]
+                            .effective_clan_character_count,
+                        source_bonus_support_count: 0,
+                        source_ability_support_count: 0,
+                        ability,
+                        bonus,
                     },
-                );
+                    compact_plan: CombatStatCardPlanV1 {
+                        key: card.key,
+                        effective_clan_id: effective[slot].effective_clan_id,
+                        source_bonus_support_count: 0,
+                        source_ability_support_count: 0,
+                        ability: CombatStatSourcePlanV1::Absent,
+                        bonus: CombatStatSourcePlanV1::Absent,
+                    },
+                });
+                continue;
             }
             let source_bonus_support_count = if card.source_bonus.is_some() {
                 effective[slot].source_bonus_support_count
@@ -709,6 +773,61 @@ fn prepare_combat_stat_cards(
             std::array::from_fn(|slot| prepared[PlayerId::P2][slot].compact_plan),
         ),
     })
+}
+
+/// A Leader's captured sources (revision 77), or `None` when they are not the reviewed ones.
+/// Beside another Leader the server deactivates the Leader's ability and records it as absent,
+/// and records the Leader clan's live `Cancel Leader`; a lone Ashigaru records its
+/// `Counter-attack` and no bonus. Every other captured Leader stays a whole-hand hazard.
+fn prepare_leader_sources(
+    registry: &EffectRegistryV1,
+    card: &super::model::ReplayCard,
+    leader_count: usize,
+) -> Option<(
+    CombatStatProjectionDispositionV1,
+    CombatStatProjectionDispositionV1,
+)> {
+    let inert = |source: &super::model::SourceModifier,
+                 description: &str,
+                 reason: InertSourceV1|
+     -> Option<CombatStatProjectionDispositionV1> {
+        let definition = registry
+            .lookup_capture(source.id, &source.description)
+            .ok()?;
+        let reviewed = source.description == description
+            && match reason {
+                InertSourceV1::CounterAttack => classify_counter_attack(definition),
+                InertSourceV1::CancelLeader => classify_cancel_leader(definition),
+            };
+        reviewed.then(|| CombatStatProjectionDispositionV1::Inert {
+            identity: CombatStatModifierIdentityV1 {
+                id: source.id,
+                description: source.description.clone(),
+            },
+            reason,
+        })
+    };
+    if leader_count >= 2 {
+        if card.source_ability.is_some() {
+            return None;
+        }
+        let bonus = inert(
+            card.source_bonus.as_ref()?,
+            CANCEL_LEADER_DESCRIPTION,
+            InertSourceV1::CancelLeader,
+        )?;
+        Some((CombatStatProjectionDispositionV1::Absent, bonus))
+    } else {
+        if card.source_bonus.is_some() {
+            return None;
+        }
+        let ability = inert(
+            card.source_ability.as_ref()?,
+            COUNTER_ATTACK_DESCRIPTION,
+            InertSourceV1::CounterAttack,
+        )?;
+        Some((ability, CombatStatProjectionDispositionV1::Absent))
+    }
 }
 
 /// Pair a post-round grammar's provenance disposition with the compact plan the hot path

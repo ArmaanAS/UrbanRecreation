@@ -143,8 +143,9 @@ string_enum! {
         StopAbility => "stop_ability",
         StopBonus => "stop_bonus",
         // Ashigaru's `Counter-attack` (124) and Solomon's `Tie-break` (1135), first captured
-        // 2026-09-26. Both are Leader abilities, and every hand holding a Leader is refused
-        // before any of its effects is read, so they need no classification of their own.
+        // 2026-09-26. Both are Leader abilities, which the Leader boundaries read by identity
+        // rather than through the compiler: since revision 77 a lone Ashigaru's `124` is an
+        // inert source (`classify_counter_attack`), and a lone Solomon is still refused.
         StrikeBack => "strike_back",
         TieBreak => "tie_break",
     }

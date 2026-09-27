@@ -8,7 +8,8 @@ use urban_recreation_rust::effect_registry::{
 };
 use urban_recreation_rust::engine::{
     BaseRulesRoundInput, BaseRulesSelection, ByPlayer, CombatStatDiagnosticErrorV1,
-    CombatStatEffectSourceV1, CombatStatPredicateV1, CombatStatSourcePlanV1, PlayerId,
+    CombatStatEffectSourceV1, CombatStatPredicateV1, CombatStatSourcePlanV1, InertSourceV1,
+    LeaderHandHazardV1, PlayerId,
 };
 use urban_recreation_rust::replay::{
     adapt_capture, CapturedGame, CombatStatDiagnosticPreparationErrorV1,
@@ -793,6 +794,20 @@ const COMBAT_STAT_PREFIX_FIXTURES: &[(u64, usize)] = &[
     (1011102, 2),
     (1058005, 4),
     (876574, 2),
+    // Revision 77 admits two kinds of Leader hand. Beside another Leader every Leader ability
+    // is deactivated, and the Leader plays its printed Power and Damage: Administrator (9/8)
+    // bets 3 in 1495879/2, 9 x 4 - 10 (Sabrina's Uppers bonus) = 26, and wins 18 to 10; with
+    // Fury in 1496119/1 it attacks 9 x 10 = 90 and deals 8 + 2 = 10, knocking Thorpah Cr's
+    // owner out from 9. Ashigaru (9/6) attacks 9 x 4 = 36 in 1495879/0 and 9 x 2 = 18 in
+    // 1496142/0. The Leaders are nobody's Support: Wesley's Rescue Support is 3 x 2 in
+    // 1495879/3 (6 x 4 + 6 = 30). 1496142/1 selects McMaster's Copy, closed in replay. A lone
+    // Ashigaru's owner moves second in round one of 1495980 and the order alternates after
+    // it: Ashigaru attacks (9 - 3 Estalt) x 6 = 36 and wins 15 to 9, and Wesley's Support
+    // beside it is 3 x 3 (6 x 2 + 9 = 21 in round 1). Each is the complete prefix.
+    (1495879, 4),
+    (1496119, 2),
+    (1496142, 1),
+    (1495980, 4),
 ];
 
 const PROJECTION: CombatStatDiagnosticProjectionV1 =
@@ -1161,6 +1176,7 @@ fn fixed_server_backed_gate_replays_every_unique_sequential_prefix_round() {
     let mut rounds = 0;
     let mut execute_ids = BTreeSet::new();
     let mut disabled_ids = BTreeSet::new();
+    let mut inert_ids = BTreeSet::new();
     let mut absent = 0;
     for &(battle_id, prefix) in COMBAT_STAT_PREFIX_FIXTURES {
         let report = diagnostic(battle_id, &catalog, &registry)
@@ -1186,6 +1202,9 @@ fn fixed_server_backed_gate_replays_every_unique_sequential_prefix_round() {
                         CombatStatProjectionDispositionV1::Disabled { identity, .. } => {
                             disabled_ids.insert(identity.id);
                         }
+                        CombatStatProjectionDispositionV1::Inert { identity, .. } => {
+                            inert_ids.insert(identity.id);
+                        }
                     }
                 }
             }
@@ -1205,6 +1224,11 @@ fn fixed_server_backed_gate_replays_every_unique_sequential_prefix_round() {
         "combat_stat_gate_disabled_ids",
         "Registry definition ids the gate selected but left visible-but-disabled.",
         &disabled_ids,
+    );
+    support::expect_ids(
+        "combat_stat_gate_inert_ids",
+        "Registry definition ids the gate selected as inert Leader sources.",
+        &inert_ids,
     );
     support::expect_count(
         "combat_stat_gate_absent_dispositions",
@@ -1930,6 +1954,92 @@ fn komboka_bonus_server_evidence_pins_win_loss_stop_bonus_and_soa_liveness() {
     assert_eq!(round.expected_player_states[owner.index()].pillz, 9);
 }
 
+/// Revision 77: the two admitted kinds of Leader hand prepare their Leaders as inert sources
+/// with absent plans, exactly as the server's static block records them, and every other
+/// captured Leader shape stays a whole-hand hazard.
+#[test]
+fn admitted_leader_hands_prepare_inert_leaders_and_refuse_every_other_shape() {
+    let catalog = catalog();
+    let registry = registry();
+
+    let pair = diagnostic(1495879, &catalog, &registry);
+    for slot in 0..2 {
+        let card = &pair.preparation()[PlayerId::P1][slot];
+        assert_eq!(card.ability, CombatStatProjectionDispositionV1::Absent);
+        assert!(matches!(
+            &card.bonus,
+            CombatStatProjectionDispositionV1::Inert {
+                identity,
+                reason: InertSourceV1::CancelLeader,
+            } if identity.id == 117 && identity.description == "Cancel Leader"
+        ));
+        assert_eq!(card.source_bonus_support_count, 0);
+    }
+    // Engine P1 is whoever moved first in round one, so the lone Ashigaru's owner, who moved
+    // second (Counter-attack), is engine P2 in 1495980; the capture is the authority.
+    let lone = diagnostic(1495980, &catalog, &registry);
+    assert_eq!(lone.replay().players[1].hand[0].key, CardKey::new(275, 5));
+    let ashigaru = &lone.preparation()[PlayerId::P2][0];
+    assert!(matches!(
+        &ashigaru.ability,
+        CombatStatProjectionDispositionV1::Inert {
+            identity,
+            reason: InertSourceV1::CounterAttack,
+        } if identity.id == 124 && identity.description == "Counter-attack"
+    ));
+    assert_eq!(ashigaru.bonus, CombatStatProjectionDispositionV1::Absent);
+
+    let refused = |replay: ReplayCaseV1| match CombatStatDiagnosticReplayV1::new(
+        replay, &catalog, &registry, PROJECTION,
+    ) {
+        Err(CombatStatDiagnosticPreparationErrorV1::WholeHandExecutionHazard {
+            source: CombatStatWholeHandHazardSourceV1::CanonicalLeaderCard { reason, .. },
+            ..
+        }) => reason,
+        other => panic!("expected a Leader hazard, got {other:?}"),
+    };
+    // A Leader beside another Leader must carry no ability and the Leader bonus.
+    let mut live_ability = replay(1495879, &catalog);
+    live_ability.players[0].hand[0].source_ability = Some(SourceModifier {
+        id: 2238,
+        description: "Hazard".to_owned(),
+    });
+    assert_eq!(
+        refused(live_ability),
+        LeaderHandHazardV1::UnreviewedLeaderSource
+    );
+    let mut no_bonus = replay(1495879, &catalog);
+    no_bonus.players[0].hand[1].source_bonus = None;
+    assert_eq!(
+        refused(no_bonus),
+        LeaderHandHazardV1::UnreviewedLeaderSource
+    );
+    // A lone Ashigaru must carry exactly `124` and no bonus.
+    let mut bonus = replay(1495980, &catalog);
+    bonus.players[1].hand[0].source_bonus = Some(SourceModifier {
+        id: 117,
+        description: "Cancel Leader".to_owned(),
+    });
+    assert_eq!(refused(bonus), LeaderHandHazardV1::UnreviewedLeaderSource);
+    let mut alias = replay(1495980, &catalog);
+    alias.players[1].hand[0].source_ability = Some(SourceModifier {
+        id: 3181,
+        description: "Counter-attack".to_owned(),
+    });
+    assert!(matches!(
+        CombatStatDiagnosticReplayV1::new(alias, &catalog, &registry, PROJECTION),
+        Err(CombatStatDiagnosticPreparationErrorV1::Lookup { .. })
+            | Err(CombatStatDiagnosticPreparationErrorV1::WholeHandExecutionHazard { .. })
+    ));
+    // The shared context rule holds in replay too: an Oculus beside the pair is fatal.
+    let mut oculus = replay(1495879, &catalog);
+    oculus.players[0].hand[3].key = CardKey::new(2094, 1);
+    oculus.players[0].hand[3].source_ability = None;
+    oculus.players[0].hand[3].source_bonus = None;
+    oculus.rounds.clear();
+    assert_eq!(refused(oculus), LeaderHandHazardV1::OculusBesideLeader);
+}
+
 #[test]
 fn canonical_leader_and_team_modifier_are_fatal_even_when_unplayed() {
     let catalog = catalog();
@@ -2537,7 +2647,8 @@ fn previous_round_grammar_is_exact_for_fixed_numeric_abilities_and_bonuses() {
                 } => Some(*actual),
                 CombatStatProjectionDispositionV1::Absent
                 | CombatStatProjectionDispositionV1::ExecutePostRound { .. }
-                | CombatStatProjectionDispositionV1::Disabled { .. } => None,
+                | CombatStatProjectionDispositionV1::Disabled { .. }
+                | CombatStatProjectionDispositionV1::Inert { .. } => None,
             },
             predicate,
             "{description} / {previous_round}"
@@ -5074,7 +5185,8 @@ fn round_scaled_grammar_is_exact_and_nested_contexts_fail_closed() {
                     CombatStatProjectionDispositionV1::Absent
                     | CombatStatProjectionDispositionV1::Execute { .. }
                     | CombatStatProjectionDispositionV1::ExecutePostRound { .. }
-                    | CombatStatProjectionDispositionV1::Disabled { .. } => None,
+                    | CombatStatProjectionDispositionV1::Disabled { .. }
+                    | CombatStatProjectionDispositionV1::Inert { .. } => None,
                 },
                 admitted,
                 "source={} {description}",
@@ -5212,7 +5324,8 @@ fn equalizer_grammar_is_exact_and_nested_contexts_fail_closed() {
                     CombatStatProjectionDispositionV1::Absent
                     | CombatStatProjectionDispositionV1::Execute { .. }
                     | CombatStatProjectionDispositionV1::ExecutePostRound { .. }
-                    | CombatStatProjectionDispositionV1::Disabled { .. } => None,
+                    | CombatStatProjectionDispositionV1::Disabled { .. }
+                    | CombatStatProjectionDispositionV1::Inert { .. } => None,
                 },
                 admitted,
                 "source={} {description}",

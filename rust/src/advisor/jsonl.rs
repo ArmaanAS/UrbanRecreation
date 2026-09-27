@@ -703,7 +703,8 @@ fn validate_observed_source(
             return Err(mismatch());
         }
         CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
-        | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. } => identity,
+        | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. }
+        | CatalogCombatStatSourceDispositionV1::Inert { identity, .. } => identity,
     };
     if observed_description != identity.description {
         return Err(mismatch());
@@ -879,7 +880,8 @@ mod tests {
             }
             CatalogCombatStatSourceDispositionV1::Execute { identity, .. }
             | CatalogCombatStatSourceDispositionV1::ExecutePostRound { identity, .. }
-            | CatalogCombatStatSourceDispositionV1::CopyOpponentSource { identity, .. } => identity,
+            | CatalogCombatStatSourceDispositionV1::CopyOpponentSource { identity, .. }
+            | CatalogCombatStatSourceDispositionV1::Inert { identity, .. } => identity,
         };
         let id = if require_catalog_identity {
             identity

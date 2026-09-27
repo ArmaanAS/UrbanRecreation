@@ -31,10 +31,14 @@ use super::combat_stat_compiler::{
     classify_victory_or_defeat_pillz, classify_victory_or_defeat_pillz_amount,
     classify_victory_pillz, classify_victory_pillz_max, classify_victory_pillz_per_damage,
     compact_effect, is_copy_opponent_source_description, BothPlayersGainV1,
-    VictoryOrDefeatLifeEffectV1, COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1,
+    VictoryOrDefeatLifeEffectV1, CANCEL_LEADER_DESCRIPTION, CANCEL_LEADER_REGISTRY_ID,
+    COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1, COUNTER_ATTACK_DESCRIPTION,
 };
+use super::combat_stat_compiler::{classify_cancel_leader, classify_counter_attack};
 use super::effect_reads_support_count;
+use super::leader_hand_hazard;
 use super::CopiedSourceKindV1;
+use super::LeaderHandHazardV1;
 use super::{
     BaseRulesCardSpec, BaseRulesMatchSpec, BaseRulesPlayerSpec, ByPlayer, CombatStatCardPlanV1,
     CombatStatDiagnosticMatchSpecV1, CombatStatDiagnosticV1, CombatStatEffectSourceV1,
@@ -53,6 +57,9 @@ use std::error::Error;
 use std::fmt;
 
 pub const LEADER_CLAN_ID: u32 = 36;
+/// The Leaders' clan bonus `Cancel Leader` is catalog bonus 35 and capture-registry
+/// definition 117; it is bridged only for Leaders, and only in a hand of two or more.
+const LEADER_CATALOG_BONUS_ID: u32 = 35;
 pub const OCULUS_CLAN_ID: u32 = 56;
 const VORTEX_CLAN_ID: u32 = 45;
 const VORTEX_CATALOG_BONUS_ID: u32 = 43;
@@ -167,7 +174,13 @@ const COPY_OPPONENT_ABILITY_DESCRIPTION: &str = "Copy: Opp. Ability";
 /// Revision 7 (compiler revision 76) sends a conditional Stop or conditional stat Copy with
 /// no catalog id through the night-variant bridge's full conjunction instead of admitting it
 /// on the missing id alone.
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 7;
+/// Revision 8 (compiler revision 77) admits Leader hands of two kinds: two or more Leaders,
+/// whose abilities `Cancel Leader` deactivates (the derived hand gives each Leader no ability
+/// and the live Leader bonus, bridged from catalog bonus 35 to registry definition 117), and
+/// a lone Ashigaru L5, whose `Counter-attack` (printed id 124) decides only the round-one
+/// first mover. Both kinds of Leader source are `Inert`, and `leader_hand_hazard` still
+/// refuses the contexts no captured round shows.
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 8;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -210,7 +223,9 @@ pub struct EffectiveCatalogCardV1 {
     pub canonical_clan_id: u32,
     pub effective_clan_id: u32,
     /// The clan whose printed bonus is active for this card. `None` covers singleton
-    /// bonuses, Leader, and Oculus draws where infiltration does not apply.
+    /// bonuses (a lone Leader's included) and Oculus draws where infiltration does not apply.
+    /// Since catalog-context revision 8 two or more Leaders make the Leader clan's own bonus,
+    /// `Cancel Leader`, active, as every captured two-Leader hand shows.
     pub active_bonus_clan_id: Option<u32>,
     /// Distinct canonical character ids sharing this card's effective clan across the
     /// immutable whole draw, including this card even when no bonus is active.
@@ -270,6 +285,40 @@ pub enum CatalogCombatStatSourceDispositionV1 {
         /// names, which gates the adoption itself rather than the adopted effect.
         predicate: CombatStatPredicateV1,
     },
+    /// The card prints this source, and in this match it changes nothing the projection
+    /// executes: its compact plan is `Absent`. Only the two reviewed Leader sources are
+    /// inert (catalog-context revision 8).
+    Inert {
+        identity: CatalogCombatStatModifierIdentityV1,
+        reason: InertSourceV1,
+    },
+}
+
+/// Why an `Inert` source changes nothing in the projection.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum InertSourceV1 {
+    /// A lone Ashigaru's `Counter-attack`, which only decides the round-one first mover; see
+    /// [`CatalogCombatStatMatchV1::round_one_order`].
+    CounterAttack,
+    /// `Cancel Leader` beside another Leader, whose deactivation of every Leader ability is
+    /// realized when the match is constructed.
+    CancelLeader,
+}
+
+/// Who moves first in round one, as far as the draw decides it. Only `Counter-attack` does,
+/// so a search consumer that picks the round-one first mover itself must honour this.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum RoundOneOrderV1 {
+    /// The draw does not decide it: the usual random order.
+    Usual,
+    /// This player holds a lone Ashigaru and the other holds none, so it always plays the
+    /// first round second.
+    SecondMover(PlayerId),
+    /// One player's lone Ashigaru meets an Ashigaru the other player's second Leader has
+    /// deactivated. The server text ("If both players have Ashigaru in their team, the order
+    /// of play is decided in the usual way") does not say which rule wins, and no round
+    /// shows it.
+    Unpinned,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -290,6 +339,7 @@ pub struct CatalogCombatStatMatchV1 {
     match_spec: CombatStatDiagnosticMatchSpecV1,
     cards: ByPlayer<[CatalogCombatStatCardPreparationV1; HAND_SIZE]>,
     provenance: CatalogCombatStatProvenanceV1,
+    round_one_order: RoundOneOrderV1,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -349,6 +399,7 @@ pub enum CatalogCombatStatMatchErrorV1 {
         hand_slot: HandSlot,
         key: CardKey,
         name: String,
+        reason: LeaderHandHazardV1,
     },
     Lookup {
         player: PlayerId,
@@ -397,9 +448,10 @@ impl fmt::Display for CatalogCombatStatMatchErrorV1 {
                 hand_slot,
                 key,
                 name,
+                reason,
             } => write!(
                 formatter,
-                "{player:?} slot {} contains unsupported Leader {name} (id {} level {})",
+                "{player:?} slot {} contains unsupported Leader {name} (id {} level {}): {reason}",
                 hand_slot.get(),
                 key.id,
                 key.level
@@ -481,6 +533,10 @@ impl CatalogCombatStatMatchV1 {
             validate_solver_hand(player, input.players[player].hand, catalog)?;
             let derived = derive_catalog_hand(input.players[player].hand, input.night, catalog)
                 .map_err(|source| CatalogCombatStatMatchErrorV1::Hand { player, source })?;
+            let leader_count = derived
+                .iter()
+                .filter(|card| card.effective.canonical_clan_id == LEADER_CLAN_ID)
+                .count();
             let mut base_hand: [Option<BaseRulesCardSpec>; HAND_SIZE] = [const { None }; HAND_SIZE];
             for slot in HandSlot::ALL {
                 let index = slot.index();
@@ -495,7 +551,18 @@ impl CatalogCombatStatMatchV1 {
                     power: u16::from(card.power),
                     damage: u16::from(card.damage),
                 });
-                let ability = if let Some(source) = &derived.ability {
+                let is_leader = card.clan_id == LEADER_CLAN_ID;
+                let ability = if is_leader {
+                    prepare_leader_source(
+                        registry,
+                        player,
+                        slot,
+                        card,
+                        CombatStatEffectSourceV1::Ability,
+                        leader_count,
+                        derived.ability.as_ref(),
+                    )?
+                } else if let Some(source) = &derived.ability {
                     prepare_catalog_source(
                         registry,
                         player,
@@ -510,7 +577,17 @@ impl CatalogCombatStatMatchV1 {
                 } else {
                     absent_source()
                 };
-                let bonus = if let Some(source) = &derived.bonus {
+                let bonus = if is_leader {
+                    prepare_leader_source(
+                        registry,
+                        player,
+                        slot,
+                        card,
+                        CombatStatEffectSourceV1::Bonus,
+                        leader_count,
+                        derived.bonus.as_ref(),
+                    )?
+                } else if let Some(source) = &derived.bonus {
                     prepare_catalog_source(
                         registry,
                         player,
@@ -525,12 +602,18 @@ impl CatalogCombatStatMatchV1 {
                 } else {
                     absent_source()
                 };
+                // A Leader's live `Cancel Leader` is inert, so it carries no Support context.
+                let source_bonus_support_count = if is_leader {
+                    0
+                } else {
+                    effective.source_bonus_support_count
+                };
                 compact_cards[player][index] = Some(CombatStatCardPlanV1 {
                     key: card.key(),
                     effective_clan_id: effective.effective_clan_id,
                     ability: ability.compact,
                     bonus: bonus.compact,
-                    source_bonus_support_count: effective.source_bonus_support_count,
+                    source_bonus_support_count,
                     source_ability_support_count: executable_ability_support_count(
                         ability.compact,
                         effective.effective_clan_character_count,
@@ -541,7 +624,7 @@ impl CatalogCombatStatMatchV1 {
                     canonical_clan_id: effective.canonical_clan_id,
                     effective_clan_id: effective.effective_clan_id,
                     effective_clan_character_count: effective.effective_clan_character_count,
-                    source_bonus_support_count: effective.source_bonus_support_count,
+                    source_bonus_support_count,
                     source_ability_support_count: executable_ability_support_count(
                         ability.compact,
                         effective.effective_clan_character_count,
@@ -623,6 +706,23 @@ impl CatalogCombatStatMatchV1 {
             cards: compact_cards
                 .map(|hand| hand.map(|card| card.expect("all eight compact cards were prepared"))),
         };
+        // A Leader hand the projection admits is still refused wherever a Leader could change
+        // something no captured round shows (revision 77). The engine refuses it too.
+        for player in PlayerId::ALL {
+            if let Some((hand_slot, reason)) = leader_hand_hazard(player, &match_spec) {
+                let key = match_spec.cards[player][hand_slot.index()].key;
+                return Err(CatalogCombatStatMatchErrorV1::WholeHandLeaderHazard {
+                    player,
+                    hand_slot,
+                    key,
+                    name: catalog
+                        .get(key)
+                        .map(|card| card.name.clone())
+                        .unwrap_or_default(),
+                    reason,
+                });
+            }
+        }
         // `After` and `Versus` read canonical clans; where an infiltrating Oculus in the hand
         // the gate reads would make the canonical and effective readings disagree the gate is
         // unpinned, and it is refused as the unsupported source it is so the coverage report
@@ -677,11 +777,14 @@ impl CatalogCombatStatMatchV1 {
         }
         CombatStatDiagnosticV1::new(match_spec.clone())
             .map_err(CatalogCombatStatMatchErrorV1::EnginePlan)?;
+        let cards = metadata
+            .map(|hand| hand.map(|card| card.expect("all eight metadata cards were prepared")));
+        let round_one_order = round_one_order(&input, &cards, catalog);
         Ok(Self {
             input,
             match_spec,
-            cards: metadata
-                .map(|hand| hand.map(|card| card.expect("all eight metadata cards were prepared"))),
+            cards,
+            round_one_order,
             provenance: CatalogCombatStatProvenanceV1 {
                 model: CatalogCombatStatModelV1::CombatStatDiagnosticV1,
                 projection,
@@ -711,6 +814,13 @@ impl CatalogCombatStatMatchV1 {
         self.provenance
     }
 
+    /// Who moves first in round one, as far as the draw decides it. The engine is always
+    /// given that mover, so a consumer that chooses it - the matchup batch - must refuse an
+    /// order this rules out.
+    pub const fn round_one_order(&self) -> RoundOneOrderV1 {
+        self.round_one_order
+    }
+
     pub fn new_game(&self) -> CombatStatDiagnosticV1 {
         CombatStatDiagnosticV1::new(self.match_spec.clone())
             .expect("catalog match plan was validated at construction")
@@ -726,21 +836,33 @@ pub fn derive_catalog_hand(
     catalog: &EffectiveCardCatalog,
 ) -> Result<[DerivedCatalogCardV1; HAND_SIZE], EffectiveCatalogHandErrorV1> {
     let effective = derive_effective_catalog_hand(keys, catalog.as_catalog())?;
+    // Two or more Leaders deactivate every Leader ability ("Your Leader Abilities are
+    // deactivated if you have more than one Leader in your team"), and the server's static
+    // block records each of them as absent (1495879, 1496119, 1496142).
+    let leaders_deactivated = effective
+        .iter()
+        .filter(|card| card.canonical_clan_id == LEADER_CLAN_ID)
+        .count()
+        >= 2;
     let mut derived: [Option<DerivedCatalogCardV1>; HAND_SIZE] = [const { None }; HAND_SIZE];
     for slot in HandSlot::ALL {
         let index = slot.index();
         let card = catalog
             .get(keys[index])
             .expect("effective-hand derivation validated every card key");
+        let deactivated = leaders_deactivated && card.clan_id == LEADER_CLAN_ID;
         let uses_night_ability = night && card.night_ability.is_some();
         let ability_description = if uses_night_ability {
             card.night_ability.as_deref().unwrap_or(&card.ability)
         } else {
             &card.ability
         };
-        let ability = (ability_description != "No Ability").then(|| CatalogPrintedModifierV1 {
-            catalog_id: (!uses_night_ability && card.ability_id != 0).then_some(card.ability_id),
-            description: ability_description.to_owned(),
+        let ability = (!deactivated && ability_description != "No Ability").then(|| {
+            CatalogPrintedModifierV1 {
+                catalog_id: (!uses_night_ability && card.ability_id != 0)
+                    .then_some(card.ability_id),
+                description: ability_description.to_owned(),
+            }
         });
         let bonus = if let Some(clan_id) = effective[index].active_bonus_clan_id {
             let clan =
@@ -775,8 +897,8 @@ pub fn derive_catalog_hand(
 
 /// Derives immutable effective-clan and bonus-activation context without consulting a
 /// capture. This function intentionally classifies Leader rather than rejecting it; the
-/// strict solver constructor rejects Leader separately, while corpus diagnostics can still
-/// inspect the remaining cards in such hands.
+/// strict solver constructor decides which Leader hands it admits (revision 77), while corpus
+/// diagnostics can still inspect every card in any of them.
 pub fn derive_effective_catalog_hand(
     keys: [CardKey; HAND_SIZE],
     catalog: &CardCatalog,
@@ -857,8 +979,8 @@ pub fn derive_effective_catalog_hand(
                 },
             )
             .1 as u16;
-        let has_bonus_source = effective_clan_id != LEADER_CLAN_ID
-            && !(cards[index].clan_id == OCULUS_CLAN_ID && infiltrated_clan.is_none());
+        let has_bonus_source =
+            !(cards[index].clan_id == OCULUS_CLAN_ID && infiltrated_clan.is_none());
         let active = has_bonus_source && effective_clan_character_count >= 2;
         EffectiveCatalogCardV1 {
             key: cards[index].key(),
@@ -897,7 +1019,7 @@ fn validate_solver_hand(
 ) -> Result<(), CatalogCombatStatMatchErrorV1> {
     for slot in HandSlot::ALL {
         let key = keys[slot.index()];
-        let card = catalog
+        catalog
             .get(key)
             .ok_or(CatalogCombatStatMatchErrorV1::Hand {
                 player,
@@ -916,16 +1038,115 @@ fn validate_solver_hand(
                 });
             }
         }
-        if card.clan_id == LEADER_CLAN_ID {
-            return Err(CatalogCombatStatMatchErrorV1::WholeHandLeaderHazard {
-                player,
-                hand_slot: slot,
-                key,
-                name: card.name.clone(),
-            });
-        }
     }
     Ok(())
+}
+
+/// A Leader's two sources (revision 77). Two or more Leaders deactivate every Leader ability
+/// - the derived hand gives each none, as the server's static block does - and make the Leader
+/// clan's own `Cancel Leader` live, which is inert once that is done. A lone Leader's bonus is
+/// inactive like any singleton clan's, and only Ashigaru L5's `Counter-attack`, printed as
+/// registry definition 124, is admitted as its ability. Everything else a Leader could print,
+/// including a lone Leader with no ability, stays refused.
+fn prepare_leader_source(
+    registry: &EffectRegistryV1,
+    player: PlayerId,
+    hand_slot: HandSlot,
+    card: &CanonicalCard,
+    source_kind: CombatStatEffectSourceV1,
+    leader_count: usize,
+    source: Option<&CatalogPrintedModifierV1>,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
+    let refuse = || CatalogCombatStatMatchErrorV1::WholeHandLeaderHazard {
+        player,
+        hand_slot,
+        key: card.key(),
+        name: card.name.clone(),
+        reason: LeaderHandHazardV1::UnreviewedLeaderSource,
+    };
+    let beside_another_leader = leader_count >= 2;
+    let (source, registry_id, reason) = match (source_kind, beside_another_leader, source) {
+        (CombatStatEffectSourceV1::Ability, true, None)
+        | (CombatStatEffectSourceV1::Bonus, false, None) => return Ok(absent_source()),
+        (CombatStatEffectSourceV1::Ability, false, Some(source))
+            if source.description == COUNTER_ATTACK_DESCRIPTION =>
+        {
+            (source, source.catalog_id, InertSourceV1::CounterAttack)
+        }
+        (CombatStatEffectSourceV1::Bonus, true, Some(source))
+            if source.description == CANCEL_LEADER_DESCRIPTION
+                && source.catalog_id == Some(LEADER_CATALOG_BONUS_ID) =>
+        {
+            (
+                source,
+                Some(CANCEL_LEADER_REGISTRY_ID),
+                InertSourceV1::CancelLeader,
+            )
+        }
+        _ => return Err(refuse()),
+    };
+    let definition = registry_id
+        .and_then(|id| registry.lookup_capture(id, &source.description).ok())
+        .filter(|definition| match reason {
+            InertSourceV1::CounterAttack => classify_counter_attack(definition),
+            InertSourceV1::CancelLeader => classify_cancel_leader(definition),
+        })
+        .ok_or_else(refuse)?;
+    let registry_alias_ids = registry
+        .lookup_description(&source.description)
+        .map_err(|_| refuse())?
+        .alias_ids()
+        .to_vec()
+        .into_boxed_slice();
+    Ok(PreparedCatalogSourceV1 {
+        metadata: CatalogCombatStatSourceDispositionV1::Inert {
+            identity: CatalogCombatStatModifierIdentityV1 {
+                catalog_id: source.catalog_id,
+                description: source.description.clone(),
+                registry_definition_id: definition.id(),
+                registry_alias_ids,
+            },
+            reason,
+        },
+        compact: CombatStatSourcePlanV1::Absent,
+    })
+}
+
+/// Round-one order from the prepared hands: a lone Ashigaru's `Counter-attack` is the only
+/// source that decides it.
+fn round_one_order(
+    input: &CatalogCombatStatMatchInputV1,
+    cards: &ByPlayer<[CatalogCombatStatCardPreparationV1; HAND_SIZE]>,
+    catalog: &EffectiveCardCatalog,
+) -> RoundOneOrderV1 {
+    let active = |player: PlayerId| {
+        cards[player].iter().any(|card| {
+            matches!(
+                card.ability,
+                CatalogCombatStatSourceDispositionV1::Inert {
+                    reason: InertSourceV1::CounterAttack,
+                    ..
+                }
+            )
+        })
+    };
+    let holds_ashigaru = |player: PlayerId| {
+        input.players[player].hand.iter().any(|key| {
+            catalog.get(*key).is_some_and(|card| {
+                card.clan_id == LEADER_CLAN_ID && card.ability == COUNTER_ATTACK_DESCRIPTION
+            })
+        })
+    };
+    match (active(PlayerId::P1), active(PlayerId::P2)) {
+        (true, true) | (false, false) => RoundOneOrderV1::Usual,
+        (true, false) if !holds_ashigaru(PlayerId::P2) => {
+            RoundOneOrderV1::SecondMover(PlayerId::P1)
+        }
+        (false, true) if !holds_ashigaru(PlayerId::P1) => {
+            RoundOneOrderV1::SecondMover(PlayerId::P2)
+        }
+        _ => RoundOneOrderV1::Unpinned,
+    }
 }
 
 fn absent_source() -> PreparedCatalogSourceV1 {
