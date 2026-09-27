@@ -409,7 +409,16 @@ export default class Ability {
           this.mods.push(mod);
         }
       } else {
-        this.mods.push(new ProtectionModifier(tokens[i], both));
+        // The single-stat forms print the same refusal: "The Damage of El Kaktus cannot be
+        // reduced by an opposing character while the Protection ability is activated"
+        // (captures/abilities.json 930; Power 940/4660 and Attack 1136/1142/1340 alike).
+        // 1515574 r3 shows it: El Kaktus's `Protection : Damage` keeps 5 Damage against
+        // Noemi's Pussycats bonus `-2 Opp Damage, Min 1`, while her `-3 Opp Power, Min 3`
+        // still takes the Power from 6 to 3 (3 x 1 + 9 Life Left = 12 Attack).
+        const mod = new ProtectionModifier(tokens[i], both);
+        mod.guard = tokens[i] === "Power" || tokens[i] === "Damage" ||
+          tokens[i] === "Attack";
+        this.mods.push(mod);
       }
     } else if (tokens[0] == "Copy") {
       failed = false;

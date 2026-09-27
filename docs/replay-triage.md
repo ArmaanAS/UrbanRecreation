@@ -58,6 +58,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 471 | 8 | A recap snapshot no longer overwrites a round's resolution (1514649) |
 | 2026-09-27 | 471 | 8 | Two Oculus in one hand infiltrate nothing (1496283; no replay moves on its own) |
 | 2026-09-27 | 474 | 5 | The end of the round settles every increase before every decrease, the decreases by descending Min (1514836, 1515298, 1515451); supersedes the round-one-seat order |
+| 2026-09-27 | 475 | 4 | A single-stat Protection refuses an opposing reduction of its stat (1515574); 1515692 is a new single point (Per Opp. Damage against an opposing Damage bonus) |
 
 ## Fixed
 
@@ -392,10 +393,8 @@ plain form's refusal. No captured round shows one live against a reduction - For
 Reprisal form lets Callie's cut land when its condition is off (1089830 r1). The replays are
 unchanged, 368 exact and 8 mismatches before and after; the Rust engine admits the Reprisal
 form under the same rule since semantic revision 75. The Cards (both sides) form was
-Cancel-only until 2026-09-27 (next entry). `Protection: Power`, `Protection : Damage`, `Protection: Attack` and the
-clan-gated ones have no round showing them meet a reduction of the stat they name, so they
-stay Cancel-only; the first two print "cannot be reduced by an opposing character" and are
-the likely next candidates once a capture shows one. Fixed 924320, 949439, 1069506, 1078555, 1078820, 1091235 and 1093569; 942983 and 943111
+Cancel-only until 2026-09-27 (next entry), and so were the single-stat forms until 1515574
+(the entry after it). Fixed 924320, 949439, 1069506, 1078555, 1078820, 1091235 and 1093569; 942983 and 943111
 now fail only on their stale last round (above). Tests in `tests/ability/Protection.test.ts`,
 including a constructed Forjoten Ld that keeps 8/5 against Sue's cut when it moves second and
 falls to 7/4 when it moves first. The Rust engine has refused these reductions since semantic
@@ -417,6 +416,21 @@ increase to a guarded stat, which the text does not name, so increases still lan
 the only captured rounds with the ability, and Khrull Cr (levels 3 and 4) is the only card
 that prints it. Fixed 1507819; 1507713 also needed the Pepo Brahms fix below. Tests in
 `tests/ability/Protection.test.ts`. The Rust engine does not admit 2255.
+
+### A single-stat Protection refuses an opposing reduction of its stat - 1515574 (fixed)
+Every stat Protection prints the same refusal: "The Damage of El Kaktus cannot be reduced by
+an opposing character while the Protection ability is activated" (930; Power 940/4660, Attack
+1136/1142/1340, the clan-gated `After [clan:25]: Protection : Damage` 5708/5757). Only the
+Power And Damage forms had the guard; the rest resisted a Cancel only. 1515574 r3 is the first
+capture of one meeting a reduction of its stat: El Kaktus (6/5) against Noemi, whose `-3 Opp
+Power, Min 3` takes the Power to 3 while the Pussycats bonus `-2 Opp Damage, Min 1` leaves the
+Damage on 5 (the engine had 3). 3 x 1 + 9 Life Left = 12, and Noemi's owner goes 15 -> 10. The
+single-stat forms now set the guard on the stat they name, so an opposing reduction of it is
+refused and an increase still lands; the Attack guard is a new bit in the card's packed state
+and is checked beside the other two. The Power and Attack forms follow the printed text alone:
+no captured round shows one against a reduction of its stat, and none shows the clan-gated
+Damage one live against a reduction. Fixed 1515574. Test in `tests/ability/Protection.test.ts`.
+The Rust engine still refuses every single-stat Protection.
 
 ### Corrupt lowers its owner's own Life
 The TypeScript engine did not implement `Corrupt N Min. M` at all, so Nega D Ld's `Corrupt 2
@@ -726,6 +740,17 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   (Wachtmann, Veles Cr, Sir Taco, Noeptus, KinGreow twice, Jochar), each on an untouched
   printed value, so this is the only round that can tell. A second needs a capped increase
   that binds beside another change to the same stat.
+- 1515692 r3: Shawnia's `+3 Attack Per Opp. Damage` against Helsa level 2 (8/2), whose La
+  Junta bonus `Damage +2` takes her Damage to 4. The server has 7 x 1 + 3 x 2 = 13, the
+  printed Damage; the engine reads the modified 4 and has 19. The only other round that
+  separates the two readings of an opposing stat is 1130726 r3, where Goran's `+2 Attack Per
+  Opp. Damage` reads Uuber's 2 before Fury, which the engine already models by settling Fury
+  late. Of the other 47 captured rounds that play a `Per Opp. Damage` or `Per Opp. Power`
+  card, 46 face an unmodified opposing stat, and in 1515465 r2 Kenny West's `+1 Life Per Opp.
+  Damage` loses and pays nothing. So the rule - the printed stat, before the opponent's own
+  modifiers - rests on one round. A second needs a `Per Opp.` card against a card whose own
+  ability or clan bonus changes the named stat, such as a La Junta `Damage +2`, or against an
+  opposing reduction of it, which would say whether the reading is before every modifier.
 
 ### An increase to the opposing card - 1414749, 1507713 (fixed)
 Pepo Brahms' `Growth: Opp. Attack +1` (level 4, `abilityData` 5210) and `Growth: Opp. Attack

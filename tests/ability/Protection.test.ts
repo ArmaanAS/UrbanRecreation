@@ -205,3 +205,27 @@ Deno.test("Protection: Cards Power And Damage protects the opposing card on eith
   assertEquals(stats(khrull), [8, 5, 40]);
   assertEquals(khrull.won, true);
 });
+
+Deno.test("Protection : Damage refuses an opposing Damage reduction, not a Power one", () => {
+  // Captured battle 1515574 r3, by day. El Kaktus prints "The Damage of El Kaktus cannot be
+  // reduced by an opposing character while the Protection ability is activated" (930): the
+  // Pussycats bonus `-2 Opp Damage, Min 1` would take its 5 Damage to 3, and the server keeps
+  // 5. Noemi's own `-3 Opp Power, Min 3` still lands: 3 x 1 + 9 Life Left = 12 Attack.
+  const g = new Game(
+    new Player(9, 0, 0),
+    new Player(15, 0, 1),
+    hand(["El Cascabel", "El Jaguar", "El Kaktus", "El Mercurio"], [5, 5, 3, 4]),
+    hand(["Dakota Cr", "Guy", "Noemi", "Schatzi"], [2, 5, 3, 3]),
+    Turn.PLAYER_1,
+    false,
+  );
+
+  g.select(2, 0, false, false); // P1 El Kaktus lv3, 6/5
+  g.select(2, 0, false, false); // P2 Noemi lv3, 5/5
+
+  const [kaktus, noemi] = [g.h1[2], g.h2[2]];
+  assertEquals(stats(kaktus), [3, 5, 12]);
+  assertEquals(stats(noemi), [5, 5, 5]);
+  assertEquals([kaktus.won, noemi.won], [true, false]);
+  assertEquals([g.p1.life, g.p2.life], [9, 10]);
+});

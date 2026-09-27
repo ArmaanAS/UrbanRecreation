@@ -210,8 +210,9 @@ export default class BasicModifier extends Modifier {
       // shows a canceller's own reduction of those. Tune Out cancels both cards' Attack, so
       // it still turns every Attack modifier off.
       switch (this.type) {
-        // `Protection: Power And Damage` refuses an opposing reduction outright (guard,
-        // set at PRE3, before these run at PRE1); an opposing increase still lands.
+        // A Protection of the stat (`Protection: Power And Damage`, `Protection : Damage`, ...)
+        // refuses an opposing reduction outright (guard, set at PRE3, before these run at
+        // PRE1 and POST2); an opposing increase still lands.
         case Type.POWER:
           return !data.card.power.blocked &&
             !(this.change < 0 && data.oppCard.power.guard);
@@ -219,7 +220,8 @@ export default class BasicModifier extends Modifier {
           return !data.card.damage.blocked &&
             !(this.change < 0 && data.oppCard.damage.guard);
         case Type.ATTACK:
-          return !data.card.attack.blocked;
+          return !data.card.attack.blocked &&
+            !(this.change < 0 && data.oppCard.attack.guard);
         case Type.LIFE:
           return !data.card.life.blocked && data.opp.life > 0;
         case Type.PILLZ:

@@ -146,7 +146,7 @@ export interface BaseCard {
 
 // a = power.base,.final, damage.base,.final,
 //     ability.string,.cancel,.prot  bonus.string,.cancel,.prot
-//     power.guard  damage.guard
+//     power.guard  damage.guard  attack.guard
 // b = attack.base,.final, power.cancel,.prot  damage.cancel,.prot,
 //     attack.cancel,.prot  pillz.cancel,.prot  life.cancel,.prot
 //     index  won  played
@@ -295,9 +295,9 @@ export class PowerStat implements Stat {
     return (this.d.b >> 16 & 0b11) === 0b01;
   }
   /**
-   * Refuses the opposing card's reductions of this stat (`Protection: Power And Damage`).
-   * Separate from `prot`, which only resists a Cancel: the single-stat Protections set
-   * `prot` too, but no capture shows one refusing a reduction of the stat it names.
+   * Refuses the opposing card's reductions of this stat (`Protection: Power And Damage`,
+   * `Protection: Power`). Separate from `prot`, which only resists a Cancel: a Cancel of
+   * the stat is resisted by every Protection, a reduction only by one that sets this.
    */
   get guard(): boolean {
     return !!(this.d.a >> 26 & 1);
@@ -371,6 +371,13 @@ export class AttackStat implements Stat {
   }
   get blocked() {
     return (this.d.b >> 20 & 0b11) === 0b01;
+  }
+  /** See `PowerStat.guard` (`Protection: Attack`). `b` is full, so it lives in `a`. */
+  get guard(): boolean {
+    return !!(this.d.a >> 28 & 1);
+  }
+  set guard(n: boolean) {
+    this.d.a = (this.d.a & ~0x10000000) | (+n << 28);
   }
 }
 export class PillzStat implements Attr {

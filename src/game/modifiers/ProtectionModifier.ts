@@ -23,9 +23,13 @@ export default class ProtectionModifier extends Modifier {
    * (949439 r0, 7 x 5 = 35) and 4 Damage against Henry's "Support: -1 Opp Damage, Min 2"
    * (942983 r2). Only reductions: an opposing Attack reduction still lands (956805 r2), as
    * do an Exchange (948108 r3), an Impose (1091314 r3) and Tune Out (925868 r3), none of
-   * which is a BasicModifier reduction. No capture shows the single-stat Protections or the
-   * clan-gated `Protection : Damage` refusing a reduction of the stat they name, so they keep
-   * the Cancel-only behaviour. A conditional Power And Damage form sets it whenever its
+   * which is a BasicModifier reduction. The single-stat Protections print the same refusal
+   * ("The Damage of El Kaktus cannot be reduced by an opposing character", 930) and set it
+   * for the stat they name: 1515574 r3 has El Kaktus's `Protection : Damage` keep 5 Damage
+   * against a Pussycats `-2 Opp Damage, Min 1` while the Power reduction beside it lands.
+   * The Power and Attack forms and the clan-gated `After [clan:25]: Protection : Damage`
+   * follow the same text; no capture has shown them meeting a reduction of their stat yet.
+   * A conditional Power And Damage form sets it whenever its
    * condition holds, by composition: `Reprisal: Protect. Power And Damage` (tested; the Rust
    * engine admits it since semantic revision 75) and, unobserved in any capture, the Revenge
    * and Courage forms, which the Rust engine still refuses.
@@ -84,6 +88,10 @@ export default class ProtectionModifier extends Modifier {
         case Prot.ATTACK:
           data.oppCard.attack.prot = true;
           data.card.attack.prot = true;
+          if (this.guard) {
+            data.oppCard.attack.guard = true;
+            data.card.attack.guard = true;
+          }
           break;
         case Prot.ABILITY:
           data.oppCard.ability.prot = true;
@@ -106,6 +114,7 @@ export default class ProtectionModifier extends Modifier {
           break;
         case Prot.ATTACK:
           data.card.attack.prot = true;
+          if (this.guard) data.card.attack.guard = true;
           break;
         case Prot.ABILITY:
           data.card.ability.prot = true;
