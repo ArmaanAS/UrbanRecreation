@@ -1,0 +1,500 @@
+{
+  "id": 1518413,
+  "capturedAt": "2026-09-27T17:48:31.082Z",
+  "creationTime": 1790531310,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1953,
+          "name": "Akrakk Cr",
+          "clan": "Raptors",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 1815,
+            "description": "Equalizer: -1 Opp Power, Min 0"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        },
+        {
+          "id": 1721,
+          "name": "Bartholomew",
+          "clan": "Raptors",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1555,
+            "description": "Revenge: Power And Damage +2"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        },
+        {
+          "id": 1791,
+          "name": "Clarice",
+          "clan": "Raptors",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1627,
+            "description": "Reprisal: Cancel Opp Pow & Dam Mod"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        },
+        {
+          "id": 1454,
+          "name": "Ratchek",
+          "clan": "Raptors",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1270,
+            "description": "Poison 2, Min 3"
+          },
+          "bonus": {
+            "id": 1163,
+            "description": "Cancel Opp. Attack Modif."
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1660,
+          "name": "Hans Spinner",
+          "clan": "All Stars",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1480,
+            "description": "-1 Opp Att. Per Life Left, Min 2"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        },
+        {
+          "id": 2431,
+          "name": "Leonite",
+          "clan": "All Stars",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 3743,
+            "description": "Unison : -2 Opp Power, Min 1"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        },
+        {
+          "id": 2690,
+          "name": "Molch",
+          "clan": "Tolvack",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 5776,
+            "description": "Killshot: -2 Opp. Pillz And Life, Min 0"
+          },
+          "bonus": {
+            "id": 5585,
+            "description": "After [clan:56][clan:60] : Power +3"
+          }
+        },
+        {
+          "id": 2674,
+          "name": "Vargo",
+          "clan": "Tolvack",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 5642,
+            "description": "-2 Opp Power And Damage, Min 0"
+          },
+          "bonus": {
+            "id": 5585,
+            "description": "After [clan:56][clan:60] : Power +3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1953,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790531316657
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 2431,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1790531317776
+        }
+      ],
+      "resolution": [
+        {
+          "power": 3,
+          "damage": 9,
+          "damageAfter": 9,
+          "attack": 3,
+          "won": false
+        },
+        {
+          "power": 3,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 15,
+          "won": true
+        }
+      ],
+      "life": [
+        10,
+        15
+      ],
+      "pillz": [
+        12,
+        8
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 6783
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1660,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1790531317865
+        },
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1791,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1790531327977
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 16,
+          "won": false
+        },
+        {
+          "power": 5,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 20,
+          "won": true
+        }
+      ],
+      "life": [
+        5,
+        15
+      ],
+      "pillz": [
+        11,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 10204
+    },
+    {
+      "round": 2,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1721,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790531337928
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 2690,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1790531339028
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 8,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 32,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        15
+      ],
+      "pillz": [
+        6,
+        2
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": false,
+          "quantity": 2
+        },
+        {
+          "playerId": 19309601,
+          "attributeAffected": "pillz",
+          "attributeAction": "decrease",
+          "isPermanent": false,
+          "quantity": 2
+        }
+      ],
+      "durationMs": 10959
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 0,
+      "pillz": 6,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 15,
+      "pillz": 2
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 9
+      },
+      {
+        "type": "characterXP",
+        "value": 600
+      }
+    ],
+    "t": 1790531339111
+  },
+  "finalStatus": "done",
+  "snapshots": 8,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Akrakk Cr",
+      "Bartholomew",
+      "Clarice",
+      "Ratchek",
+      "Hans Spinner",
+      "Leonite",
+      "Molch",
+      "Vargo"
+    ],
+    "levels": [
+      5,
+      2,
+      4,
+      3,
+      3,
+      3,
+      3,
+      2
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          0,
+          false
+        ],
+        "s2": [
+          1,
+          4,
+          false
+        ],
+        "p1life": 10,
+        "p2life": 15,
+        "p1pillz": 12,
+        "p2pillz": 8,
+        "r1": {
+          "power": 3,
+          "damage": 9,
+          "attack": 3,
+          "won": false
+        },
+        "r2": {
+          "power": 3,
+          "damage": 5,
+          "attack": 15,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          0,
+          3,
+          false
+        ],
+        "s2": [
+          2,
+          1,
+          false
+        ],
+        "p1life": 5,
+        "p2life": 15,
+        "p1pillz": 11,
+        "p2pillz": 5,
+        "r1": {
+          "power": 8,
+          "damage": 5,
+          "attack": 16,
+          "won": false
+        },
+        "r2": {
+          "power": 5,
+          "damage": 5,
+          "attack": 20,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          1,
+          0,
+          true
+        ],
+        "s2": [
+          2,
+          3,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 15,
+        "p1pillz": 6,
+        "p2pillz": 2,
+        "r1": {
+          "power": 8,
+          "damage": 7,
+          "attack": 8,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 3,
+          "attack": 32,
+          "won": true
+        }
+      }
+    ]
+  }
+}

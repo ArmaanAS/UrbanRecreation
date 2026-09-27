@@ -1,0 +1,485 @@
+{
+  "id": 1518648,
+  "capturedAt": "2026-09-27T17:58:47.413Z",
+  "creationTime": 1790531926,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1124,
+          "name": "Belly Buster",
+          "clan": "Huracan",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 950,
+            "description": "Protection: Bonus"
+          },
+          "bonus": {
+            "id": 923,
+            "description": "+1 Attack Per Life Left"
+          }
+        },
+        {
+          "id": 1103,
+          "name": "El Gascaro",
+          "clan": "Huracan",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 931,
+            "description": "Defeat: +3 Life"
+          },
+          "bonus": {
+            "id": 923,
+            "description": "+1 Attack Per Life Left"
+          }
+        },
+        {
+          "id": 1652,
+          "name": "El Parasito",
+          "clan": "Huracan",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1470,
+            "description": "Courage: Prot.: Power & Damage"
+          },
+          "bonus": {
+            "id": 923,
+            "description": "+1 Attack Per Life Left"
+          }
+        },
+        {
+          "id": 1106,
+          "name": "El Zombino",
+          "clan": "Huracan",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 933,
+            "description": "Reprisal: Copy: Opp. Power"
+          },
+          "bonus": {
+            "id": 923,
+            "description": "+1 Attack Per Life Left"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2314,
+          "name": "AbsorptionBoy",
+          "clan": "Skeelz",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3234,
+            "description": "+1 Life Per Opp. Damage"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        },
+        {
+          "id": 901,
+          "name": "Carter",
+          "clan": "Skeelz",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 723,
+            "description": "Protection : Damage"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        },
+        {
+          "id": 644,
+          "name": "Jay",
+          "clan": "Skeelz",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 463,
+            "description": "Revenge: Damage +4"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        },
+        {
+          "id": 1795,
+          "name": "Schredder",
+          "clan": "Skeelz",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1635,
+            "description": "-5 Opp. Life Min 0"
+          },
+          "bonus": {
+            "id": 461,
+            "description": "Protection: Ability"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1795,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1790531928516
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1106,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1790531933318
+        }
+      ],
+      "resolution": [
+        {
+          "power": 9,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 60,
+          "won": true
+        },
+        {
+          "power": 9,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 54,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        9
+      ],
+      "pillz": [
+        8,
+        7
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 5998
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1103,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790531943492
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 644,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1790531944590
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 21,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 9,
+          "damageAfter": 5,
+          "attack": 21,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        3
+      ],
+      "pillz": [
+        8,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 11299
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 2314,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790531944710
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1124,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790532014691
+        }
+      ],
+      "resolution": [
+        {
+          "power": 4,
+          "damage": 9,
+          "damageAfter": 9,
+          "attack": 19,
+          "won": true
+        },
+        {
+          "power": 8,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 8,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        0
+      ],
+      "pillz": [
+        5,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 69981
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 15,
+      "pillz": 5,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 5
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 4000
+      },
+      {
+        "type": "playerXP",
+        "value": 36
+      },
+      {
+        "type": "characterXP",
+        "value": 1020
+      }
+    ],
+    "t": 1790532014775
+  },
+  "finalStatus": "done",
+  "snapshots": 9,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "AbsorptionBoy",
+      "Carter",
+      "Jay",
+      "Schredder",
+      "Belly Buster",
+      "El Gascaro",
+      "El Parasito",
+      "El Zombino"
+    ],
+    "levels": [
+      4,
+      4,
+      4,
+      4,
+      3,
+      4,
+      4,
+      3
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          3,
+          5,
+          false
+        ],
+        "s2": [
+          3,
+          4,
+          false
+        ],
+        "p1life": 9,
+        "p2life": 15,
+        "p1pillz": 7,
+        "p2pillz": 8,
+        "r1": {
+          "power": 9,
+          "damage": 1,
+          "attack": 54,
+          "won": false
+        },
+        "r2": {
+          "power": 9,
+          "damage": 6,
+          "attack": 60,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          1,
+          0,
+          false
+        ],
+        "s2": [
+          2,
+          2,
+          false
+        ],
+        "p1life": 3,
+        "p2life": 15,
+        "p1pillz": 5,
+        "p2pillz": 8,
+        "r1": {
+          "power": 7,
+          "damage": 9,
+          "attack": 21,
+          "won": false
+        },
+        "r2": {
+          "power": 6,
+          "damage": 6,
+          "attack": 21,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          0,
+          0,
+          false
+        ],
+        "s2": [
+          0,
+          0,
+          true
+        ],
+        "p1life": 0,
+        "p2life": 15,
+        "p1pillz": 5,
+        "p2pillz": 5,
+        "r1": {
+          "power": 8,
+          "damage": 3,
+          "attack": 8,
+          "won": false
+        },
+        "r2": {
+          "power": 4,
+          "damage": 9,
+          "attack": 19,
+          "won": true
+        }
+      }
+    ]
+  }
+}

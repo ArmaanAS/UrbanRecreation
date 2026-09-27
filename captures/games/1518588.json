@@ -1,0 +1,560 @@
+{
+  "id": 1518588,
+  "capturedAt": "2026-09-27T17:55:59.839Z",
+  "creationTime": 1790531758,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2009,
+          "name": "Codak",
+          "clan": "GhosTown",
+          "level": 1,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 4367,
+            "description": "Asymmetry: Power And Damage + 3"
+          },
+          "bonus": {
+            "id": 1441,
+            "description": "Day: Power And Damage + 1"
+          }
+        },
+        {
+          "id": 1638,
+          "name": "Guillotinette",
+          "clan": "GhosTown",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 1452,
+            "description": "Stop: +3 Pillz"
+          },
+          "bonus": {
+            "id": 1441,
+            "description": "Day: Power And Damage + 1"
+          }
+        },
+        {
+          "id": 1669,
+          "name": "Judge Lynch",
+          "clan": "GhosTown",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1495,
+            "description": "Day: -2 Opp Att. Per Pillz Left, Min 1"
+          },
+          "bonus": {
+            "id": 1441,
+            "description": "Day: Power And Damage + 1"
+          }
+        },
+        {
+          "id": 1642,
+          "name": "Powaqa",
+          "clan": "GhosTown",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1457,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          },
+          "bonus": {
+            "id": 1441,
+            "description": "Day: Power And Damage + 1"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1242,
+          "name": "B16 Sestra",
+          "clan": "GHEIST",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "s",
+          "ability": {
+            "id": 1068,
+            "description": "Courage: Power And Damage + 2"
+          },
+          "bonus": null
+        },
+        {
+          "id": 2200,
+          "name": "Cerny",
+          "clan": "Uppers",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 2607,
+            "description": "Copy: Opp. Power"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 1996,
+          "name": "Golden B",
+          "clan": "Uppers",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1912,
+            "description": "Symmetry: -2 Opp Pow. And Dam., Min 1"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        },
+        {
+          "id": 725,
+          "name": "Wayne Stark",
+          "clan": "Uppers",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "s",
+          "ability": {
+            "id": 544,
+            "description": "Protection: Bonus"
+          },
+          "bonus": {
+            "id": 40,
+            "description": "-10 Opp Attack, Min 3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 2200,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": false,
+          "t": 1790531760933
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 2009,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1790531765837
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 5,
+          "damageAfter": 1,
+          "attack": 6,
+          "won": false
+        },
+        {
+          "power": 4,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 28,
+          "won": true
+        }
+      ],
+      "life": [
+        8,
+        15
+      ],
+      "pillz": [
+        11,
+        6
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 6096
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1669,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1790531776011
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1242,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1790531777125
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 4,
+          "attack": 14,
+          "won": true
+        },
+        {
+          "power": 6,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 1,
+          "won": false
+        }
+      ],
+      "life": [
+        8,
+        10
+      ],
+      "pillz": [
+        10,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 11273
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1996,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1790531777208
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1642,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790531788563
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 7,
+          "damageAfter": 6,
+          "attack": 3,
+          "won": false
+        },
+        {
+          "power": 7,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 14,
+          "won": true
+        }
+      ],
+      "life": [
+        2,
+        10
+      ],
+      "pillz": [
+        9,
+        4
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 11438
+    },
+    {
+      "round": 3,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 1638,
+          "pillz": 6,
+          "pillzUsed": 7,
+          "fury": true,
+          "t": 1790531798415
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 725,
+          "pillz": 4,
+          "pillzUsed": 5,
+          "fury": false,
+          "t": 1790531799497
+        }
+      ],
+      "resolution": [
+        {
+          "power": 9,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 53,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 35,
+          "won": false
+        }
+      ],
+      "life": [
+        2,
+        2
+      ],
+      "pillz": [
+        0,
+        0
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 10851
+    }
+  ],
+  "result": {
+    "result": "draw",
+    "byKo": false,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 2,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 2,
+      "pillz": 0
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 600
+      },
+      {
+        "type": "playerXP",
+        "value": 18
+      },
+      {
+        "type": "characterXP",
+        "value": 870
+      }
+    ],
+    "t": 1790531799579
+  },
+  "finalStatus": "done",
+  "snapshots": 11,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "B16 Sestra",
+      "Cerny",
+      "Golden B",
+      "Wayne Stark",
+      "Codak",
+      "Guillotinette",
+      "Judge Lynch",
+      "Powaqa"
+    ],
+    "levels": [
+      4,
+      4,
+      4,
+      4,
+      1,
+      4,
+      3,
+      3
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          6,
+          false
+        ],
+        "s2": [
+          0,
+          1,
+          false
+        ],
+        "p1life": 15,
+        "p2life": 8,
+        "p1pillz": 6,
+        "p2pillz": 11,
+        "r1": {
+          "power": 4,
+          "damage": 7,
+          "attack": 28,
+          "won": true
+        },
+        "r2": {
+          "power": 8,
+          "damage": 5,
+          "attack": 6,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          1,
+          false
+        ],
+        "s2": [
+          0,
+          1,
+          false
+        ],
+        "p1life": 10,
+        "p2life": 8,
+        "p1pillz": 5,
+        "p2pillz": 10,
+        "r1": {
+          "power": 6,
+          "damage": 4,
+          "attack": 1,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 5,
+          "attack": 14,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          2,
+          1,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          true
+        ],
+        "p1life": 10,
+        "p2life": 2,
+        "p1pillz": 4,
+        "p2pillz": 9,
+        "r1": {
+          "power": 7,
+          "damage": 6,
+          "attack": 14,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 7,
+          "attack": 3,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          1,
+          6,
+          true
+        ],
+        "s2": [
+          3,
+          4,
+          false
+        ],
+        "p1life": 2,
+        "p2life": 2,
+        "p1pillz": 0,
+        "p2pillz": 0,
+        "r1": {
+          "power": 7,
+          "damage": 5,
+          "attack": 35,
+          "won": false
+        },
+        "r2": {
+          "power": 9,
+          "damage": 8,
+          "attack": 53,
+          "won": true
+        }
+      }
+    ]
+  }
+}

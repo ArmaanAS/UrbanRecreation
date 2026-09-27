@@ -1,0 +1,412 @@
+{
+  "id": 1517752,
+  "capturedAt": "2026-09-27T17:25:10.902Z",
+  "creationTime": 1790529911,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 669,
+          "name": "Anibal",
+          "clan": "GHEIST",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 488,
+            "description": "Revenge: Power +2"
+          },
+          "bonus": {
+            "id": 94,
+            "description": "Stop Opp. Ability"
+          }
+        },
+        {
+          "id": 634,
+          "name": "Dolly Cr",
+          "clan": "GHEIST",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 452,
+            "description": "Poison 2, Min 1"
+          },
+          "bonus": {
+            "id": 94,
+            "description": "Stop Opp. Ability"
+          }
+        },
+        {
+          "id": 941,
+          "name": "Jaxx Ld",
+          "clan": "GHEIST",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 4965,
+            "description": "Equalizer: -4 Opp Attack, Min 12"
+          },
+          "bonus": {
+            "id": 94,
+            "description": "Stop Opp. Ability"
+          }
+        },
+        {
+          "id": 1928,
+          "name": "Tunders",
+          "clan": "GHEIST",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1780,
+            "description": "Confidence : -3 Opp. Power, Min 2"
+          },
+          "bonus": {
+            "id": 94,
+            "description": "Stop Opp. Ability"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2270,
+          "name": "Diabolus",
+          "clan": "Nightmare",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3016,
+            "description": "Confidence: -3 Opp. Life, Min 0"
+          },
+          "bonus": {
+            "id": 130,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 2665,
+          "name": "Skeletrezar",
+          "clan": "Nightmare",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 5565,
+            "description": "Day: Growth: Poison 1, Min 4"
+          },
+          "bonus": {
+            "id": 130,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 752,
+          "name": "Vince",
+          "clan": "Nightmare",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 571,
+            "description": "-4 Opp. Life Min 3"
+          },
+          "bonus": {
+            "id": 130,
+            "description": "Stop Opp. Bonus"
+          }
+        },
+        {
+          "id": 2455,
+          "name": "Felinite",
+          "clan": "Pussycats",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 3836,
+            "description": "Unison : +1 Life Per Damage"
+          },
+          "bonus": null
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 941,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790529916538
+        },
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 752,
+          "pillz": 7,
+          "pillzUsed": 8,
+          "fury": false,
+          "t": 1790529917670
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 6,
+          "won": false
+        },
+        {
+          "power": 6,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 28,
+          "won": true
+        }
+      ],
+      "life": [
+        4,
+        15
+      ],
+      "pillz": [
+        9,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 6862
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 2270,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1790529917764
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 669,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": true,
+          "t": 1790529927796
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 32,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 2,
+          "damageAfter": 2,
+          "attack": 32,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        15
+      ],
+      "pillz": [
+        3,
+        2
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": false,
+          "quantity": 2
+        }
+      ],
+      "durationMs": 10032
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 0,
+      "pillz": 3,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 15,
+      "pillz": 2
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 7
+      },
+      {
+        "type": "characterXP",
+        "value": 500
+      }
+    ],
+    "t": 1790529927909
+  },
+  "finalStatus": "done",
+  "snapshots": 5,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Anibal",
+      "Dolly Cr",
+      "Jaxx Ld",
+      "Tunders",
+      "Diabolus",
+      "Skeletrezar",
+      "Vince",
+      "Felinite"
+    ],
+    "levels": [
+      4,
+      3,
+      4,
+      5,
+      2,
+      2,
+      5,
+      3
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          2,
+          0,
+          true
+        ],
+        "s2": [
+          2,
+          7,
+          false
+        ],
+        "p1life": 4,
+        "p2life": 15,
+        "p1pillz": 9,
+        "p2pillz": 5,
+        "r1": {
+          "power": 6,
+          "damage": 8,
+          "attack": 6,
+          "won": false
+        },
+        "r2": {
+          "power": 6,
+          "damage": 7,
+          "attack": 28,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          0,
+          3,
+          false
+        ],
+        "s2": [
+          0,
+          3,
+          true
+        ],
+        "p1life": 0,
+        "p2life": 15,
+        "p1pillz": 3,
+        "p2pillz": 2,
+        "r1": {
+          "power": 8,
+          "damage": 8,
+          "attack": 32,
+          "won": false
+        },
+        "r2": {
+          "power": 8,
+          "damage": 2,
+          "attack": 32,
+          "won": true
+        }
+      }
+    ]
+  }
+}

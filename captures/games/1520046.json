@@ -1,0 +1,493 @@
+{
+  "id": 1520046,
+  "capturedAt": "2026-09-27T18:55:08.146Z",
+  "creationTime": 1790535307,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 0,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1446,
+          "name": "Khann",
+          "clan": "Fang Pi Clang",
+          "level": 5,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 2115,
+            "description": "Defeat: +3 Life"
+          },
+          "bonus": {
+            "id": 36,
+            "description": "Damage +2"
+          }
+        },
+        {
+          "id": 1022,
+          "name": "Muntendon",
+          "clan": "Fang Pi Clang",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 848,
+            "description": "Stop: Atk. +12"
+          },
+          "bonus": {
+            "id": 36,
+            "description": "Damage +2"
+          }
+        },
+        {
+          "id": 1048,
+          "name": "Nekurenbo",
+          "clan": "Fang Pi Clang",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 874,
+            "description": "+2 Life"
+          },
+          "bonus": {
+            "id": 36,
+            "description": "Damage +2"
+          }
+        },
+        {
+          "id": 1712,
+          "name": "Pa Mei",
+          "clan": "Fang Pi Clang",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 1542,
+            "description": "Revenge: Power And Damage +2"
+          },
+          "bonus": {
+            "id": 36,
+            "description": "Damage +2"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1592,
+          "name": "Hercule",
+          "clan": "Berzerk",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1401,
+            "description": "Backlash: - 1 Pillz Min 4"
+          },
+          "bonus": {
+            "id": 680,
+            "description": "-2 Opp. Life Min 2"
+          }
+        },
+        {
+          "id": 2182,
+          "name": "Tonthorn",
+          "clan": "Berzerk",
+          "level": 2,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 2542,
+            "description": "Brawl: Power +1"
+          },
+          "bonus": {
+            "id": 680,
+            "description": "-2 Opp. Life Min 2"
+          }
+        },
+        {
+          "id": 2553,
+          "name": "El-Khazari",
+          "clan": "Oblivion",
+          "level": 4,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 4513,
+            "description": "Equalizer: Damage +1"
+          },
+          "bonus": {
+            "id": 2918,
+            "description": "Copy: Opp. Ability"
+          }
+        },
+        {
+          "id": 2263,
+          "name": "Olek",
+          "clan": "Oblivion",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 3003,
+            "description": "Cancel Opp. Power Modif."
+          },
+          "bonus": {
+            "id": 2918,
+            "description": "Copy: Opp. Ability"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 1446,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790535313662
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 2182,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1790535314783
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 8,
+          "damageAfter": 6,
+          "attack": 8,
+          "won": false
+        },
+        {
+          "power": 10,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 30,
+          "won": true
+        }
+      ],
+      "life": [
+        13,
+        15
+      ],
+      "pillz": [
+        12,
+        10
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 6720
+    },
+    {
+      "round": 1,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 2263,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790535314866
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 1712,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1790535324795
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 8,
+          "damageAfter": 4,
+          "attack": 28,
+          "won": true
+        },
+        {
+          "power": 9,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 9,
+          "won": false
+        }
+      ],
+      "life": [
+        13,
+        7
+      ],
+      "pillz": [
+        9,
+        10
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 10009
+    },
+    {
+      "round": 2,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1048,
+          "pillz": 9,
+          "pillzUsed": 10,
+          "fury": false,
+          "t": 1790535334799
+        },
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1592,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1790535335901
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 80,
+          "won": true
+        },
+        {
+          "power": 9,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 54,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        0
+      ],
+      "pillz": [
+        0,
+        5
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "increase",
+          "isPermanent": false,
+          "quantity": 2
+        }
+      ],
+      "durationMs": 11026
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 15,
+      "pillz": 0,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 5
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 3000
+      },
+      {
+        "type": "playerXP",
+        "value": 27
+      },
+      {
+        "type": "characterXP",
+        "value": 950
+      }
+    ],
+    "t": 1790535335983
+  },
+  "finalStatus": "done",
+  "snapshots": 8,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Khann",
+      "Muntendon",
+      "Nekurenbo",
+      "Pa Mei",
+      "Hercule",
+      "Tonthorn",
+      "El-Khazari",
+      "Olek"
+    ],
+    "levels": [
+      5,
+      2,
+      5,
+      3,
+      4,
+      2,
+      4,
+      4
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          0,
+          false
+        ],
+        "s2": [
+          1,
+          2,
+          false
+        ],
+        "p1life": 13,
+        "p2life": 15,
+        "p1pillz": 12,
+        "p2pillz": 10,
+        "r1": {
+          "power": 8,
+          "damage": 8,
+          "attack": 8,
+          "won": false
+        },
+        "r2": {
+          "power": 10,
+          "damage": 3,
+          "attack": 30,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          0,
+          false
+        ],
+        "s2": [
+          3,
+          3,
+          false
+        ],
+        "p1life": 13,
+        "p2life": 7,
+        "p1pillz": 9,
+        "p2pillz": 10,
+        "r1": {
+          "power": 7,
+          "damage": 8,
+          "attack": 28,
+          "won": true
+        },
+        "r2": {
+          "power": 9,
+          "damage": 4,
+          "attack": 9,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          9,
+          false
+        ],
+        "s2": [
+          0,
+          5,
+          false
+        ],
+        "p1life": 15,
+        "p2life": 0,
+        "p1pillz": 0,
+        "p2pillz": 5,
+        "r1": {
+          "power": 8,
+          "damage": 7,
+          "attack": 80,
+          "won": true
+        },
+        "r2": {
+          "power": 9,
+          "damage": 5,
+          "attack": 54,
+          "won": false
+        }
+      }
+    ]
+  }
+}
