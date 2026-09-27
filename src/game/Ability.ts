@@ -59,6 +59,13 @@ export default class Ability {
   /** Which replace-not-stack family this permanent belongs to; fixed by its text. */
   family = LatchFamily.NONE;
   /**
+   * The round a permanent latched in, -1 until it does. It orders two latches of one family
+   * that sit in different `Events` - a player's own `Backlash: Poison` and an opposing Poison
+   * both land on that player - which array order cannot (`Events.executeRepeat`). Set once,
+   * in the battle that merged the entry, so unmake's truncation takes it back with the entry.
+   */
+  since = -1;
+  /**
    * Whether the printed text names the opponent. Normalising drops the "Opp" after a
    * negative number, so it has to be read from the raw text: only compile() uses it.
    */
@@ -103,6 +110,7 @@ export default class Ability {
       delayed: this.delayed,
       won: this.won,
       family: this.family,
+      since: this.since,
     }, Ability.prototype);
   }
 
@@ -180,6 +188,7 @@ export default class Ability {
         }
 
         this.won = true;
+        this.since = data.round.round;
 
         // A Growth permanent's amount is fixed by the round it latches in, not rescaled by
         // every later round: Abby Salia's "Growth: Heal 1 Max. 12" wins round 2 of captured

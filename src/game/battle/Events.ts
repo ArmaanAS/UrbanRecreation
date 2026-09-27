@@ -57,6 +57,33 @@ function replacedLater(repeat: Ability[], i: number, data: BattleData) {
   return false;
 }
 
+/**
+ * Whether a latch in the other side's `Events`, of `a`'s family, aimed at the same player and
+ * latched in a later round, pays this round, which replaces `a` as a newer entry on its own
+ * side would (`replacedLater`). The two sides aim at one player when exactly one of them names
+ * the opponent. An entry merged this round counts as latching in it. Two latches from one
+ * round on different sides replace neither (unobserved).
+ */
+function replacedAcross(
+  a: Ability,
+  data: BattleData,
+  other: Events | undefined,
+  otherData: BattleData | undefined,
+  event: EventTime,
+) {
+  if (other === undefined || otherData === undefined) return false;
+  const opp = (a.mods[0] as BasicModifier).opp;
+  const since = a.won === true ? a.since : data.round.round;
+  const repeat = other.repeat[event];
+  for (let j = 0; j < repeat.length; j++) {
+    const b = repeat[j];
+    if (b.family !== a.family || (b.mods[0] as BasicModifier).opp === opp) continue;
+    const bSince = b.won === true ? b.since : otherData.round.round;
+    if (bSince > since && b.paysNow(otherData)) return true;
+  }
+  return false;
+}
+
 function minClamp(a: Ability) {
   const m = a.mods[0] as { min?: number } | undefined;
   return m?.min === undefined || !Number.isFinite(m.min) ? -Infinity : m.min;
@@ -164,10 +191,20 @@ export default class Events {
    * immediate newcomer (Toxin, Regen, Dope, Consume) pays in its own round, so the old one
    * stops that very round, as printed; no capture shows that case yet.
    *
-   * Only one side's latches are compared: a player's own `Backlash: Poison` and an opposing
-   * Poison land on the same player from two `Events`, and still both pay (unobserved).
+   * A latch on the same player from the other side replaces it too, ordered by the round each
+   * latched (`replacedAcross`, given `other` at the end of the round). 1519318 shows it: the
+   * owner's own Gork `Backlash: Poison 2, Min 4` latches in round one beside the opposing
+   * Obyl Ld's `Poison 1, Min 0` from round zero, and from round two the player loses 2 a round,
+   * not 3 (10 - 1 - 2 = 7, then 7 - 1 - 2 = 4). The resolution snapshot posts one permanent
+   * entry of 2 on the player in rounds two and three, after the [1, 0] of the latching round.
    */
-  private executeRepeat(event: EventTime, data: BattleData, pass = -1) {
+  private executeRepeat(
+    event: EventTime,
+    data: BattleData,
+    pass = -1,
+    other?: Events,
+    otherData?: BattleData,
+  ) {
     const repeat = this.repeat[event];
     let i = 0;
     while (i < repeat.length) {
@@ -178,7 +215,8 @@ export default class Events {
       }
       if (
         ability.family !== LatchFamily.NONE && ability.won !== false &&
-        replacedLater(repeat, i, data)
+        (replacedLater(repeat, i, data) ||
+          replacedAcross(ability, data, other, otherData, event))
       ) {
         ability.won = false;
         i++;
@@ -381,10 +419,10 @@ export default class Events {
     clear(secondEvents);
     clear(firstEvents);
 
-    second.executeRepeat(event, secondData, 0);
-    first.executeRepeat(event, firstData, 0);
-    second.executeRepeat(event, secondData, 1);
-    first.executeRepeat(event, firstData, 1);
+    second.executeRepeat(event, secondData, 0, first, firstData);
+    first.executeRepeat(event, firstData, 0, second, secondData);
+    second.executeRepeat(event, secondData, 1, first, firstData);
+    first.executeRepeat(event, firstData, 1, second, secondData);
     if (second.repeat[event].length === 0) second.mask &= ~(1 << event);
     if (first.repeat[event].length === 0) first.mask &= ~(1 << event);
   }

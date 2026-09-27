@@ -60,7 +60,8 @@ export const CACHE_CAPACITY = 1 << 19;
  *     original: every battle compiles its own cards, and a hand is only asked for clans,
  *     names and its Leader, which the copy shares;
  *   - each side's `Events.repeat`, entry by entry and in order, which is where a latched
- *     permanent (with its won/delayed flags and a Growth permanent's frozen amount) and a
+ *     permanent (with its won/delayed flags, the round it latched in, which orders it against
+ *     the other side's latches of its family, and a Growth permanent's frozen amount) and a
  *     Leader's global ability live between rounds. `Events.events` is always empty then,
  *     and `Events.mask` only decides which times are visited: a stale bit is a no-op.
  *
@@ -140,7 +141,7 @@ export class ContinuationCache {
       key += `${t}:`;
       for (let k = 0; k < bucket.length; k++) {
         const a = bucket[k];
-        key += `${this.entryId(a)}${flag(a.won)}${flag(a.delayed)},`;
+        key += `${this.entryId(a)}${flag(a.won)}${flag(a.delayed)}${a.since},`;
       }
     }
     return key;

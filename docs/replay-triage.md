@@ -69,8 +69,33 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 752 | 9 | `+N Attack Per Opp. Damage` counts the printed opposing Damage (1515692, 1518052, 1518765, 1519829; Rust semantic revision 81) |
 | 2026-09-27 | 755 | 6 | An opposing `Cancel Opp. <stat> Modif.` beats a stat Protection (1519871, 1520579, 1521010) |
 | 2026-09-27 | 756 | 5 | `Disunion:` is Unison's complement (1519333) |
+| 2026-09-27 | 757 | 4 | A latch from the other side replaces one of its family on the same player (1519318) |
 
 ## Fixed
+
+### A latch from the other side replaces one of its family on the same player - 1519318 (fixed)
+1519318 is the cross-owner case "Same-family permanents replace" left following the printed
+text. The opposing Obyl Ld's `Poison 1, Min 0` latches on P1 in round zero; in round one P1's own
+Gork wins with `Backlash: Poison 2, Min 4`, a Poison on its owner. The Cosmohnuts `Tune Out`
+decides every round by the bet.
+- r1: P1 goes 11 -> 10, Obyl's 1 alone: the Backlash is in its delayed round. The resolution
+  snapshot posts the permanent entries [1, 0] on P1, as a delayed newcomer does beside the latch
+  it will replace (1131208 r2, 1092369 r2, 926420 r3).
+- r2: Maraval's 1 Damage, then 2: 10 - 1 - 2 = 7. Both paying gives 6, which the engine had. The
+  snapshot posts one permanent entry, 2.
+- r3: Colton's 1 Damage, then 2, held at the Backlash's Min 4: 7 - 1 - 2 = 4, and again one entry.
+
+So "If two poisons or toxins are applied, the second will replace the first as soon as the
+latter takes effect" holds whichever side latched them. The engine compared one side's latches
+only, and a player's own `Backlash:` permanent sits in its owner's `Events` while an opposing one
+sits in the other. Each `Ability` now records the round it latched in (`since`, set with `won`),
+and `Events.executeRepeat`, given the other side at the end of the round, also treats a latch as
+replaced when the other side holds a newer one of its family aimed at the same player that pays
+this round (`replacedAcross`). Two such latches from one round replace neither: unobserved. The
+continuation cache keys `since` with each entry's flags. Across the replays the cross-side
+replacement fires in this one round only. Fixed 1519318. Test in
+`tests/ability/LatchReplace.test.ts`. The Rust engine refuses every `Backlash:` permanent, and no
+pairing it admits puts two owners' latches of one family on one player, so it needs no change.
 
 ### Disunion is Unison's complement - 1519333 (fixed)
 1519333 r0: Bernardite level 3's `Disunion: +1 Life` wins on 5 pillz under the opposing
@@ -911,9 +936,9 @@ Still unobserved, and following the printed text:
 - cross-kind replacement (Toxin over Poison, Regen over Heal);
 - the immediate-newcomer case, where the old latch stops in the newcomer's own round;
 - a weaker newcomer replacing a stronger latch;
-- two latches from different owners on one player, such as a `Backlash: Poison` on its owner
-  beside an opposing Poison. The engines still pay both, since each compares one side's latches
-  only.
+- two latches from different owners on one player from the same round (1519318 settled the
+  newer-round case: see "A latch from the other side replaces one of its family on the same
+  player").
 
 To see the first three, win with a Toxin card over a latched Freaks Poison while the target
 stays above both Mins.

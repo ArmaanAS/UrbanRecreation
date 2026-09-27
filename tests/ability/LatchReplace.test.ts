@@ -140,3 +140,41 @@ Deno.test("make/unmake walks a replacement back exactly, cache key included", ()
   assertEquals(state(), before);
   assertEquals(cache.key(g, Turn.PLAYER_1), key);
 });
+
+Deno.test("A latch from the other side replaces one on the same player (1519318)", () => {
+  // The owner's own Gork `Backlash: Poison 2, Min 4` and the opposing Obyl Ld's `Poison 1, Min
+  // 0` both land on P1, from two `Events`. The newer, latched in round one, replaces the older
+  // from round two, when it starts paying: P1 loses 2 a round there, not 3. Both hands are the
+  // capture's; the Cosmohnuts `Tune Out` decides every round by the bet.
+  const g = new Game(
+    new Player(15, 12, 0),
+    new Player(15, 12, 1),
+    HandGenerator.handOf(
+      ["Gork", "Mudster", "Akirale", "Pantherine"] as HandOf<string>,
+      [5, 2, 3, 3] as HandOf<number | undefined>,
+    ),
+    HandGenerator.handOf(
+      ["Colton", "Maraval", "Obyl Ld", "Sam & Remi Ld"] as HandOf<string>,
+      [1, 1, 3, 1] as HandOf<number | undefined>,
+    ),
+    Turn.PLAYER_1,
+    false,
+  );
+  const lives: number[][] = [];
+  g.select(3, 3, false, false); // P1 Pantherine
+  g.select(2, 12, false, false); // P2 Obyl Ld wins; its Poison latches on P1
+  lives.push([g.p1.life, g.p2.life]);
+  g.select(3, 0, false, false); // P2 Sam & Remi Ld
+  g.select(0, 5, false, false); // P1 Gork wins; its Backlash Poison latches on P1 too
+  lives.push([g.p1.life, g.p2.life]);
+  g.select(1, 0, false, false); // P1 Mudster
+  g.select(1, 0, false, false); // P2 Maraval wins the tied bet
+  lives.push([g.p1.life, g.p2.life]);
+  g.select(0, 0, false, false); // P2 Colton wins
+  g.select(2, 0, false, false); // P1 Akirale
+  lives.push([g.p1.life, g.p2.life]);
+
+  // 15 - 4; 11 - Obyl's 1 (the Backlash is in its delayed round); 10 - 1 - 2, Mudster's
+  // `Victory Or Defeat: - 1 Opp. Life` on P2; 7 - 1 - 2, held at the Backlash's Min 4.
+  assertEquals(lives, [[11, 15], [10, 7], [7, 6], [4, 6]]);
+});
