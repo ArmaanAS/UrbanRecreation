@@ -67,6 +67,17 @@ function byMinDescending(a: Ability, b: Ability) {
 }
 
 /**
+ * Which pass of the end of the round an END entry runs in: 0 for an increase (a Life or
+ * Pillz gain, Recover, Heal, Regen, Dope, Repair), 1 for a decrease (every opposing or own
+ * reduction, Poison, Toxin, Consume, Combust, Mindwipe). One text compiles to modifiers of
+ * one sign, so the first modifier decides; a RecoverModifier has no `change`.
+ */
+function endPass(a: Ability) {
+  const change = (a.mods[0] as { change?: number } | undefined)?.change;
+  return change !== undefined && change < 0 ? 1 : 0;
+}
+
+/**
  * Empty a bucket without assigning `length`. `length` is an accessor with a C++ setter, so
  * `arr.length = 0` leaves optimised code through the StoreIC on every call - even on an
  * already empty array - and shrinks the backing store that the next push must regrow.
@@ -150,11 +161,15 @@ export default class Events {
    * Only one side's latches are compared: a player's own `Backlash: Poison` and an opposing
    * Poison land on the same player from two `Events`, and still both pay (unobserved).
    */
-  private executeRepeat(event: EventTime, data: BattleData) {
+  private executeRepeat(event: EventTime, data: BattleData, pass = -1) {
     const repeat = this.repeat[event];
     let i = 0;
     while (i < repeat.length) {
       const ability = repeat[i];
+      if (pass >= 0 && endPass(ability) !== pass) {
+        i++;
+        continue;
+      }
       if (
         ability.family !== LatchFamily.NONE && ability.won !== false &&
         replacedLater(repeat, i, data)
@@ -271,6 +286,93 @@ export default class Events {
     second.executeRepeat(event, secondData);
     if (first.repeat[event].length === 0) first.mask &= ~(1 << event);
     if (second.repeat[event].length === 0) second.mask &= ~(1 << event);
+  }
+
+  /**
+   * Settle the end of the round: every increase of both players first, then every decrease,
+   * the decreases in descending order of their Min clamp - the order the server already uses
+   * for the opposing combat-stat reductions (`execute`). Within a pass the order is the old
+   * one: internal P2 before P1, bonus before ability, a side's current-round effects before
+   * the permanents it has latched, and all current-round decreases before the latched ones.
+   *
+   * Four captured rounds put an increase before a decrease that would have clamped it, on
+   * either seat and whoever won: 1093173 r1 (P2's Riots `+1 Pillz` before P1's Goose `-2 Opp.
+   * Pillz And Life, Min 5`: 5 + 1 - 2 = 4, clamped to 5), 1514836 r0 (P1's DJ LBerto `Defeat:
+   * +2 Pillz Max. 10` before P2's Yomi Ld `-2 Opp. Pillz And Life, Min 1`: 9 + 2 = 11, capped
+   * at 10, - 2 = 8), 1515298 r1 (P1's Tortuga `Defeat: Recover 2 Pillz Out Of 3` before P2's
+   * Brampah Noel `-2 Opp Pillz. Min 3`: 4 + 2 - 2 = 4, not 4 -> 3 + 2 = 5) and 1515451 r2
+   * (P1's Ennio `+4 Life` and its latched Regen before P2's latched Poison: 13 + 4 = 17, Regen
+   * capped at 17, Poison 1 -> 16). Two same-target reductions resolve by descending Min, as
+   * the bonus happens to be the higher one in 876752 r1 (Berzerk `-2 Opp. Life Min 2` before
+   * Macey Rook's Brawl `-1 Opp. Life Min 0`: 5 -> 3 -> 0) and 1514883 r2, and the ability in
+   * 1515853 r0 and 1515873 r0 (Hilly Billy's `-5 Opp. Life Min 4` before the Berzerk bonus:
+   * 10 -> 5 -> 3). The rule it replaces, internal P2's END effects before P1's, fitted
+   * 1093173 r1 and 1496283 r2 only; 1496283 r2 does not constrain the order at all once its
+   * two Oculus are left uninfiltrated (`Hand.from`).
+   *
+   * Allocation-free, like `executeCancels`: bitmasks mark the decreases already applied.
+   * Applying an entry never adds to or removes from `events`; a permanent that fails to latch
+   * removes itself from `repeat`, which `executeRepeat` already walks safely.
+   */
+  static executeEnd(
+    first: Events,
+    firstData: BattleData,
+    second: Events,
+    secondData: BattleData,
+  ) {
+    const event = EventTime.END;
+    const secondEvents = second.events[event];
+    const firstEvents = first.events[event];
+
+    for (let i = 0; i < secondEvents.length; i++) {
+      if (endPass(secondEvents[i]) === 0) secondEvents[i].apply(secondData);
+    }
+    second.executeRepeat(event, secondData, 0);
+    for (let i = 0; i < firstEvents.length; i++) {
+      if (endPass(firstEvents[i]) === 0) firstEvents[i].apply(firstData);
+    }
+    first.executeRepeat(event, firstData, 0);
+
+    let secondDone = 0;
+    let firstDone = 0;
+    for (;;) {
+      let side = 0;
+      let index = -1;
+      let best = -Infinity;
+      for (let i = 0; i < secondEvents.length; i++) {
+        if ((secondDone & (1 << i)) !== 0 || endPass(secondEvents[i]) !== 1) continue;
+        const min = minClamp(secondEvents[i]);
+        if (index < 0 || min > best) {
+          side = 2;
+          index = i;
+          best = min;
+        }
+      }
+      for (let i = 0; i < firstEvents.length; i++) {
+        if ((firstDone & (1 << i)) !== 0 || endPass(firstEvents[i]) !== 1) continue;
+        const min = minClamp(firstEvents[i]);
+        if (index < 0 || min > best) {
+          side = 1;
+          index = i;
+          best = min;
+        }
+      }
+      if (index < 0) break;
+      if (side === 2) {
+        secondDone |= 1 << index;
+        secondEvents[index].apply(secondData);
+      } else {
+        firstDone |= 1 << index;
+        firstEvents[index].apply(firstData);
+      }
+    }
+    clear(secondEvents);
+    clear(firstEvents);
+
+    second.executeRepeat(event, secondData, 1);
+    first.executeRepeat(event, firstData, 1);
+    if (second.repeat[event].length === 0) second.mask &= ~(1 << event);
+    if (first.repeat[event].length === 0) first.mask &= ~(1 << event);
   }
 
   execute(event: EventTime, data: BattleData) {

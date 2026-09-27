@@ -57,6 +57,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 470 | 9 | +53 Training captures (autoplay run 1): six fresh mismatches (1514649, 1514836, 1515298, 1515451, 1515574, 1515692) |
 | 2026-09-27 | 471 | 8 | A recap snapshot no longer overwrites a round's resolution (1514649) |
 | 2026-09-27 | 471 | 8 | Two Oculus in one hand infiltrate nothing (1496283; no replay moves on its own) |
+| 2026-09-27 | 474 | 5 | The end of the round settles every increase before every decrease, the decreases by descending Min (1514836, 1515298, 1515451); supersedes the round-one-seat order |
 
 ## Fixed
 
@@ -571,29 +572,60 @@ Fixed 1508676. Test in `tests/ability/CancelPermanent.test.ts`.
 
 ## Previously triaged open rules
 
-### End-of-round order: the round-one second mover goes first — 1093173, 1496283 (fixed)
-Two rounds with an opposing Pillz reduction and a Pillz gain at the end of the same round,
-and both need the effects of the player who moved *second in round one* (the engine's
-internal P2) before those of the player who moved first:
-- 1093173 r1: Goose's `-2 Opp. Pillz And Life, Min 5` beats Dr Web Ld, whose Riots bonus is
-  `Victory Or Defeat: +1 Pillz`. DashSmashing (internal P2) starts on 7, bets 2 and finishes
-  on 5: `7 - 2 + 1 - 2`, clamped to 5. Goose first would clamp at 5 and then add 1, giving 6.
-- 1496283 r2: DashSmashing's (internal P2) Dark Kaizerin `-2 Opp Pillz. Min 2` beats Naele,
-  whose Vortex bonus `Defeat: Recover 2 Pillz Out Of 3` gives back 1 on a bet of 0. The
-  opponent is on 2 and finishes on 3: the reduction first, clamped to 2, then the recovery.
-  The recovery first would give 3 and the reduction take it back to 2.
-The two rounds disagree on everything else - the effect applied first is the loser's gain in
-one and the winner's reduction in the other, it belongs to the round's first mover in one and
-its second mover in the other, and the owner sits on different capture sides - so the order
-is by round-one seat. `CardBattle` now executes internal P2's END events before P1's,
-which fixes both and changes no other replay. The Rust post-round order was not changed:
-neither round is Rust-eligible, and a Rust round would have to show it first.
+### End-of-round order: increases, then decreases by descending Min — 1514836, 1515298, 1515451 (fixed)
+Until 2026-09-27 the engine ran the round-one second mover's (internal P2's) END effects before
+P1's. That rule rested on two rounds, 1093173 r1 and 1496283 r2, and the second of them turned
+out not to constrain the order at all: its Dark Kaizerin reduction never fires, because a hand
+with two Oculus infiltrates nothing ("Two Oculus in one hand" below). Three autoplay rounds then contradicted the
+rule outright, and every round in the corpus where the order changes a number fits one rule:
+**every increase of both players first, then every decrease, the decreases by descending Min**
+- the order the server already uses for the opposing combat-stat reductions (PRE1/POST2).
 
-In 1496283 the old order also crashed the live advisor: the engine left the opponent 2 pillz
-instead of 3, and replaying their 3-pill bet in round four threw. `buildPosition` now checks
-each resolved round against the server and carries on from the server's totals, keeps the
-latest disagreement on screen, and returns "cannot replay" instead of throwing
-(`tests/solver/Advisor.test.ts`).
+Replaying every round of the corpus on its own, with the server's totals restored before it,
+under 24 candidate orders (by seat, by winner, by round mover, bonus or ability first, by Min,
+increases or decreases first, latched effects first or last), plus two rounds from the running
+autoplay batch, finds nine rounds where the order changes a number. This rule fits all nine,
+under any of its tie-breaks, and no other candidate does:
+- 1093173 r1: P2's Riots `+1 Pillz` before P1's Goose `-2 Opp. Pillz And Life, Min 5`:
+  7 - 2 = 5, + 1 = 6, - 2 = 4, held at 5. The reduction first ends on 6.
+- 1514836 r0: P1's DJ LBerto `Defeat: +2 Pillz Max. 10` before P2's Yomi Ld `-2 Opp. Pillz And
+  Life, Min 1`: 12 - 3 (Fury) = 9, + 2 = 11, capped at 10, - 2 = 8. The old order gave 9.
+- 1515298 r1: P1's Tortuga `Defeat: Recover 2 Pillz Out Of 3` before P2's Brampah Noel `-2 Opp
+  Pillz. Min 3`: 7 - 3 = 4, + floor(4 x 2 / 3) = 6, - 2 = 4. The old order gave 4 -> 3, + 2 = 5.
+  The Recover text says the Pillz come back "at the start of the next round", yet it goes before
+  the reduction; it is an increase like any other here.
+- 1515451 r2: P1's Ennio `Victory Or Defeat : +4 Life` and P1's latched `Growth: Regen 1, Max.
+  17` (2 a round) before P2's latched Esther `Poison 1, Min 2`: 13 + 4 = 17, the Regen capped
+  there, - 1 = 16. The old order (P2's Poison, then P1's) gave 12 + 4 + 1 = 17. A side's
+  current-round effects still come before the permanents it has latched: the Regen first would
+  give 15 + 4 - 1 = 18.
+- 876752 r1 and 1514883 r2: two reductions of one Life from one side, the Berzerk bonus `-2 Opp.
+  Life Min 2` before a `Min 0` ability (876752 r1: 5 -> 3, then Macey Rook's Brawl -4 -> 0; the
+  ability first would give 1).
+- 1515853 r0 and 1515873 r0 (autoplay run, in the main checkout at the time of writing): Hilly
+  Billy's ability `-5 Opp. Life Min 4` before the same Berzerk bonus: 15 - 5 = 10, -> 5, -> 3.
+  The bonus first gives 10 -> 8 -> 4, which the engine had. These two are what separates
+  descending Min from the old bonus-before-ability order, which fits the other two.
+- 1496283 r2 is the ninth only under the old infiltration, and fits once it is gone.
+
+`Events.executeEnd` runs P2's increases, P2's latched increases, P1's increases and P1's latched
+increases; then every current-round decrease of both sides by descending Min (ties: P2 first,
+bonus before ability), then P2's and P1's latched decreases. The replay-per-round check does
+not separate the remaining ties (which seat first within a pass, a latched decrease against a
+current-round one), so they keep the old order. It is allocation-free, like `executeCancels`.
+Fixed 1514836, 1515298 and 1515451; no other replay moves. Tests in
+`tests/ability/EndOrder.test.ts`.
+
+In 1496283 the old infiltration also crashed the live advisor once: the engine left the
+opponent 2 pillz instead of 3, and replaying their 3-pill bet in round four threw.
+`buildPosition` now checks each resolved round against the server and carries on from the
+server's totals, keeps the latest disagreement on screen, and returns "cannot replay" instead
+of throwing (`tests/solver/Advisor.test.ts`).
+
+The Rust engine is unchanged. It refuses every match where a cross-owner order could meet a
+binding floor or cap on one resource (the "1093173/1 order rule" in `docs/rust-migration.md`),
+because the server's order was unknown; the rounds above now pin it, which a Rust slice could
+use to lift those refusals.
 
 ### Same-family permanents replace, as the server text says — 1506438 (fixed)
 The server prints "If two poisons or toxins are applied, the second will replace the first as

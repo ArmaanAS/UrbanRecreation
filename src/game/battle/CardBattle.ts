@@ -144,12 +144,11 @@ export default class CardBattle {
       p1.life -= card2.damage.final;
     }
 
-    // The player who moved second in round one (internal P2) settles the end of the round
-    // first. Two captures pin it, each with an opposing Pillz reduction clamped at its Min
-    // beside a Pillz gain: 1093173 r1 needs P2's gain before P1's reduction, 1496283 r2
-    // P2's reduction before P1's recovery (docs/replay-triage.md).
-    if (events2.mask & (1 << EventTime.END)) events2.execute(EventTime.END, b2);
-    if (events1.mask & (1 << EventTime.END)) events1.execute(EventTime.END, b1);
+    // The end of the round settles every increase before every decrease, the decreases by
+    // descending Min (Events.executeEnd, docs/replay-triage.md).
+    if ((events1.mask | events2.mask) & (1 << EventTime.END)) {
+      Events.executeEnd(events1, b1, events2, b2);
+    }
 
     card1.played = true;
     card2.played = true;
