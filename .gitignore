@@ -25,3 +25,5 @@ cache/
 data/card_coverage.json
 # clan matrices from `deno task clan-matrix`, which Deck Lab reads
 data/analysis/
+# situation coverage of the capture corpus; `deno task situations` regenerates it in seconds
+data/situations.json
