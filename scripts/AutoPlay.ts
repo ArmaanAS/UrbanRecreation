@@ -477,9 +477,15 @@ if (import.meta.main) {
   const used = new Set<string>();
   for (let b = 0; b < opts.batches; b++) {
     if (opts.deck || opts.plan) {
-      const spec = opts.deck
+      let spec = opts.deck
         ? JSON.parse(await Deno.readTextFile(opts.deck)) as DeckSpec
         : planDeck(collection, counts, PLAN_SLOTS[b % PLAN_SLOTS.length], used);
+      if (!spec && !opts.deck && used.size > 0) {
+        // Every clan has had its turn this run: start another round of them, ranked on what
+        // is still unfired now.
+        used.clear();
+        spec = planDeck(collection, counts, PLAN_SLOTS[b % PLAN_SLOTS.length], used);
+      }
       if (!spec) throw new Error("the planner found no clan left to test");
       const id = await saveDeck(bridge, spec);
       used.add(spec.name.replace(/^Auto /, ""));
