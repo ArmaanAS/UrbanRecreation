@@ -3078,7 +3078,7 @@ fn strict_constructor_preserves_context_provenance_and_the_live_override() {
         provenance.catalog_context_policy_semantic_revision,
         CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1
     );
-    assert_eq!(provenance.catalog_context_policy_semantic_revision, 9);
+    assert_eq!(provenance.catalog_context_policy_semantic_revision, 10);
 
     let game = prepared.new_game();
     assert_eq!(game.position().players[PlayerId::P1].life, 14);
@@ -5076,6 +5076,84 @@ fn captured_input(id: u64) -> CatalogCombatStatMatchInputV1 {
         night: capture["night"].as_bool().unwrap(),
         players: ByPlayer::new(side(0), side(1)),
     }
+}
+
+/// Catalog-context revision 10: Scar L4's `2470` (2026-09-27 autoplay runs 2-3) prints `Copy:
+/// Opp. Power` over a stray `value: 5, valueMin: 8`, which makes the text ambiguous. A printed
+/// ability now resolves by its own record's structural group, so the seventeen zero-valued
+/// records keep executing as the stat Copy under their lowest id, `173`, and the twelve captured
+/// draws that deal one prepare again; Scar's own record compiles to nothing and stays refused.
+#[test]
+fn strict_catalog_match_resolves_an_ambiguous_ability_text_by_the_cards_own_record() {
+    let catalog = catalog();
+    let registry = registry();
+    let (_, opponent) = fully_supported_hands();
+    let hand = |key| {
+        [
+            key,
+            CardKey::new(123, 1),
+            CardKey::new(124, 1),
+            CardKey::new(138, 1),
+        ]
+    };
+    for (key, catalog_id) in [(CardKey::new(2543, 2), 4461), (CardKey::new(337, 4), 173)] {
+        let prepared = CatalogCombatStatMatchV1::new(
+            input(hand(key), opponent, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        )
+        .unwrap_or_else(|error| panic!("{key:?}: {error:?}"));
+        let CatalogCombatStatSourceDispositionV1::Execute {
+            identity,
+            effect,
+            predicate,
+        } = &prepared.preparation()[PlayerId::P1][0].ability
+        else {
+            panic!("{key:?} was not prepared as a stat Copy")
+        };
+        assert_eq!(identity.catalog_id, Some(catalog_id), "{key:?}");
+        assert_eq!(identity.registry_definition_id, 173, "{key:?}");
+        assert_eq!(identity.registry_alias_ids.len(), 17, "{key:?}");
+        assert!(!identity.registry_alias_ids.contains(&2470), "{key:?}");
+        assert!(matches!(
+            effect,
+            SupportedEffectV1::CopyOpponentPrintedCombatStat { .. }
+        ));
+        assert_eq!(*predicate, CombatStatPredicateV1::Always);
+    }
+    assert!(matches!(
+        CatalogCombatStatMatchV1::new(
+            input(hand(CardKey::new(1686, 4)), opponent, false),
+            &catalog,
+            &registry,
+            PROJECTION,
+        ),
+        Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
+            player: PlayerId::P1,
+            source_kind: CombatStatEffectSourceV1::Ability,
+            catalog_id: Some(2470),
+            registry_definition_id: 2470,
+            ref description,
+            ..
+        }) if description == "Copy: Opp. Power"
+    ));
+    for capture in [
+        876635, 943111, 946112, 1011643, 1065812, 1069608, 1337230, 1337321, 1495980, 1506852,
+        1507792, 1508992,
+    ] {
+        CatalogCombatStatMatchV1::new(captured_input(capture), &catalog, &registry, PROJECTION)
+            .unwrap_or_else(|error| panic!("{capture}: {error:?}"));
+    }
+    // Scar's own draw (1516552) stays refused; it also deals De Couture's deferred `Revenge :
+    // +4 Life`, which is the first refusal construction meets there.
+    assert!(CatalogCombatStatMatchV1::new(
+        captured_input(1516552),
+        &catalog,
+        &registry,
+        PROJECTION
+    )
+    .is_err());
 }
 
 /// Catalog-context revision 9: every clan bonus a strictly prepared captured draw executes

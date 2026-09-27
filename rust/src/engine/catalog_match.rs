@@ -205,7 +205,10 @@ const CLAN_BONUS_REGISTRY_BRIDGES: [(u32, u32, &str, u32); 5] = [
 /// Revision 9 (compiler revision 80) gives five clan bonuses the registry identity their
 /// captures carry rather than the lowest structural alias of their text
 /// (`CLAN_BONUS_REGISTRY_BRIDGES`). The effects are unchanged; only the identity is.
-pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 9;
+/// Revision 10 (compiler revision 80) resolves a printed ability whose text a noisy same-text
+/// record has made ambiguous by the card's own record and that record's structural group
+/// (`EffectRegistryV1::structural_alias_ids`), as the Stop Opp. Ability path already did.
+pub const CATALOG_CONTEXT_POLICY_SEMANTIC_REVISION_V1: u16 = 10;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct CatalogCombatStatPlayerInputV1 {
@@ -2801,16 +2804,48 @@ fn prepare_catalog_source(
             );
         }
     }
-    let match_ = registry.lookup_description(description).map_err(|source| {
-        CatalogCombatStatMatchErrorV1::Lookup {
-            player,
-            hand_slot,
-            source_kind,
-            catalog_id,
-            description: description.to_owned(),
-            source,
+    let lookup_error = |source| CatalogCombatStatMatchErrorV1::Lookup {
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description: description.to_owned(),
+        source,
+    };
+    let match_ = match registry.lookup_description(description) {
+        Ok(match_) => match_,
+        // A printed ability's catalog id is a capture-registry identity. Where a noisy
+        // same-text record makes the text ambiguous, the card's own record picks its structural
+        // group - the same-text records of the same record, as the Stop Opp. Ability path lists
+        // them beside Angelo's `877` - and the group's lowest id is the definition, as it is for
+        // any unambiguous text (catalog-context revision 10). Scar's `2470` makes `Copy: Opp.
+        // Power` ambiguous: every other card printing the text resolves to the zero-valued
+        // group as before, and Scar's own record, alone in its group, compiles to nothing, so it
+        // stays refused below. A bonus's catalog id is from another namespace, and a card with
+        // no record of its own has nothing to pick by: both keep the ambiguity error.
+        Err(source @ EffectLookupError::AmbiguousDescription { .. }) => {
+            let group = catalog_id
+                .filter(|_| source_kind == CombatStatEffectSourceV1::Ability)
+                .and_then(|id| registry.lookup_capture(id, description).ok())
+                .and_then(|own| registry.structural_alias_ids(own.id()));
+            let Some(group) = group else {
+                return Err(lookup_error(source));
+            };
+            let definition = registry
+                .get(group[0])
+                .expect("a structural group holds registry definitions");
+            return prepare_generic_combat_stat_source(
+                player,
+                hand_slot,
+                source_kind,
+                catalog_id,
+                description,
+                definition,
+                group.into_boxed_slice(),
+            );
         }
-    })?;
+        Err(source) => return Err(lookup_error(source)),
+    };
     let definition =
         match clan_bonus_registry_bridge(source_kind, effective_clan_id, catalog_id, description) {
             Some(bridged) if match_.alias_ids().contains(&bridged) => registry
@@ -2834,6 +2869,28 @@ fn prepare_catalog_source(
             }
             None => match_.definition(),
         };
+    prepare_generic_combat_stat_source(
+        player,
+        hand_slot,
+        source_kind,
+        catalog_id,
+        description,
+        definition,
+        match_.alias_ids().to_vec().into_boxed_slice(),
+    )
+}
+
+/// The generic combat-stat source: `definition`'s own classification, under the identity it
+/// resolves to and the alias ids it was found with.
+fn prepare_generic_combat_stat_source(
+    player: PlayerId,
+    hand_slot: HandSlot,
+    source_kind: CombatStatEffectSourceV1,
+    catalog_id: Option<u32>,
+    description: &str,
+    definition: &EffectDefinitionV1,
+    registry_alias_ids: Box<[u32]>,
+) -> Result<PreparedCatalogSourceV1, CatalogCombatStatMatchErrorV1> {
     let Some((effect, predicate)) = classify_combat_stat_effect(definition, source_kind) else {
         return Err(CatalogCombatStatMatchErrorV1::UnsupportedSource {
             player,
@@ -2863,7 +2920,7 @@ fn prepare_catalog_source(
                 catalog_id,
                 description: description.to_owned(),
                 registry_definition_id: definition.id(),
-                registry_alias_ids: match_.alias_ids().to_vec().into_boxed_slice(),
+                registry_alias_ids,
             },
             effect,
             predicate,

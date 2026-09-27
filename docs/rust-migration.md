@@ -4402,8 +4402,22 @@ strict projection in two places. The notes below say what each was and how it wa
   Power` is refused: 876635, 943111, 946112, 1011643, 1065812, 1069608, 1337230, 1337321,
   1495980, 1506852, 1507792 and 1508992 (329 -> 322 eligible with the five new draws). The Stop
   Opp. Ability path already had this problem (Angelo's `877`) and lists as provenance only the
-  same-text records whose record compiles to the same effect (`prepare_control_source`); doing
-  the same for the Copy path would bring the twelve back and leave Scar refused.
+  same-text records whose record compiles to the same effect (`prepare_control_source`).
+
+  **Fixed in catalog-context revision 10.** The stat Copies reach the generic combat-stat path,
+  which resolves a text with `lookup_description`. Where that fails as ambiguous for a printed
+  ability, the card's own catalog id - a capture-registry identity for a printed ability - now
+  picks its record's structural group (`EffectRegistryV1::structural_alias_ids`: the same-text
+  records with the same structured data), and the group's lowest id is the definition, as it is
+  for any unambiguous text. So the seventeen zero-valued `Copy: Opp. Power` records execute as
+  before, under `173`, and Scar's `2470`, alone in its group, compiles to nothing and stays
+  refused. A bonus (whose catalog id is another namespace) and a card with no record of its own
+  keep the ambiguity error. The only ambiguous texts the registry holds are `Copy: Opp. Power`
+  and `Stop Opp. Ability`, which its own path resolves. Eligible draws 322 -> 334, the twelve
+  above coming back and nothing else moving; Scar's draw 1516552 stays refused (it also deals De
+  Couture's deferred `Revenge : +4 Life`). Tests:
+  `strict_catalog_match_resolves_an_ambiguous_ability_text_by_the_cards_own_record` and the
+  registry's `structural_alias_ids` cases.
 - **The worker rejects an All Stars hand.** The runs captured a card ability `140` that prints
   `-2 Opp Power, Min 1`, the All Stars bonus's text over the same record. As the lowest
   structural alias it is now the registry definition catalog preparation names for that bonus,

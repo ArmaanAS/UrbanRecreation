@@ -636,6 +636,22 @@ impl EffectRegistryV1 {
             alias_ids: ids,
         })
     }
+
+    /// The structural alias group of one record: every capture-registry id with its exact
+    /// description and typed structure, itself included, in ascending order. Unlike
+    /// `lookup_description` it does not need every same-text record to agree, so one noisy
+    /// record of a text - Scar's `2470` prints `Copy: Opp. Power` over a stray `value` and
+    /// `valueMin` - leaves the other records' group intact. `None` for an unknown id.
+    pub fn structural_alias_ids(&self, id: u32) -> Option<Vec<u32>> {
+        let definition = self.by_id.get(&id)?;
+        Some(
+            self.ids_by_description[&definition.description]
+                .iter()
+                .copied()
+                .filter(|other| self.by_id[other].structured_input == definition.structured_input)
+                .collect(),
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -2303,6 +2319,25 @@ mod tests {
             registry.lookup_description("Stop Opp. Ability"),
             Err(EffectLookupError::AmbiguousDescription { ref ids, .. }) if ids.contains(&877)
         ));
+        // Scar's `2470` (2026-09-27 autoplay runs 2-3) prints `Copy: Opp. Power` over a stray
+        // `value: 5, valueMin: 8`; the seventeen other records of the text print zeros. The text
+        // is ambiguous, while each record's own structural group is not.
+        assert!(matches!(
+            registry.lookup_description("Copy: Opp. Power"),
+            Err(EffectLookupError::AmbiguousDescription { ref ids, .. }) if ids.contains(&2470)
+        ));
+        let copy_power = registry.structural_alias_ids(173).unwrap();
+        assert_eq!(copy_power.len(), 17);
+        assert!(copy_power.contains(&4461) && !copy_power.contains(&2470));
+        assert_eq!(registry.structural_alias_ids(2470).unwrap(), [2470]);
+        assert_eq!(
+            registry.structural_alias_ids(266).unwrap(),
+            registry
+                .lookup_description("Support: Attack +3")
+                .unwrap()
+                .alias_ids()
+        );
+        assert_eq!(registry.structural_alias_ids(900_000), None);
 
         let one = serde_json::to_string(&base_entry(1)).unwrap();
         let two = serde_json::to_string(&base_entry(2)).unwrap();
