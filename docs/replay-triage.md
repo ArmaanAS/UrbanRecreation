@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 586 captured battles
-(574 replay-ready; 12 ignored because they stopped mid-match): 570 replay exactly and 4
+Status from `deno test -A --no-check tests/replay/` against 774 captured battles
+(761 replay-ready; 13 ignored because they stopped mid-match): 757 replay exactly and 4
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -69,7 +69,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 752 | 9 | `+N Attack Per Opp. Damage` counts the printed opposing Damage (1515692, 1518052, 1518765, 1519829; Rust semantic revision 81) |
 | 2026-09-27 | 755 | 6 | An opposing `Cancel Opp. <stat> Modif.` beats a stat Protection (1519871, 1520579, 1521010) |
 | 2026-09-27 | 756 | 5 | `Disunion:` is Unison's complement (1519333) |
-| 2026-09-27 | 757 | 4 | A latch from the other side replaces one of its family on the same player (1519318) |
+| 2026-09-27 | 757 | 4 | A latch from the other side replaces one of its family on the same player (1519318); 1520327 is a new single point (a two-way Copy loop whose displayed Attack contradicts the round's winner) |
 
 ## Fixed
 
@@ -1002,7 +1002,23 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   knockout" - but Kubra, Argos and El Gascaro show ordinary gains stopping at a knockout, and the
   Naja exception was only coded after its second round. A second needs a Players Life card
   (Slobodan Cr, El Toucan, Ambazaak, El Cascabel) in a round where either player ends on 0, or
-  where its owner is knocked out while losing. The Rust engine refuses `2433`.
+  where its owner is knocked out while losing. The Rust engine refuses `2433`. 1519178 r3
+  (autoplay runs 3-5) looked like it: Slobodan Cr wins for 5 Damage with Fury against a player
+  on 3. But Beltran Cr's Roots bonus `Stop Opp. Ability` stops the gain, so neither player
+  moves and the round says nothing.
+- 1520327 r0: El Mariachi level 1's `Copy: Opp. Bonus` meets Anoda level 3, whose Oblivion bonus
+  is `Copy: Opp. Ability`, so each card copies the other's copy. The resolution snapshot's static
+  block rewrites both to `+1 Attack Per Life Left` (923, El Mariachi's own Huracan bonus) and
+  reports El Mariachi at 42 (6 x 2 + 15 + 15) and Anoda at 33 (9 x 2 + 15). Yet Anoda wins the
+  round: its 1 Damage and its `Toxin 1, Min 0` take El Mariachi's owner from 15 to 13, and the
+  snapshot marks Anoda the winner. 42 cannot lose to 33, so the Attack the server shows for El
+  Mariachi is not the one it fought with. The engine has El Mariachi at 27 (12 + its own +15;
+  its copy finds Anoda's copy and adds nothing to its Attack) and Anoda at 33, and with the
+  record's 42 read as 27 the whole game replays exactly. It is not an extractor artifact: 42 is
+  what the live snapshot sends. The only other round where two copiers meet, 1519271 r2 (Jiya's
+  Oblivion Copy against Cravy's `Revenge: Copy Opp. Bonus`), replays either way. A second needs
+  a `Copy: Opp. Bonus` card (El Mariachi or any of the other cards printing it) played into an
+  Oblivion card, to see whether the displayed Attack and the winner disagree again.
 
 ### An increase to the opposing card - 1414749, 1507713 (fixed)
 Pepo Brahms' `Growth: Opp. Attack +1` (level 4, `abilityData` 5210) and `Growth: Opp. Attack
@@ -1087,7 +1103,19 @@ Power And Damage guards both cards**, and 1507713 r3 turned out to be the second
 ## Fresh capture backlog
 
 Nothing is untriaged. The four remaining mismatches are single points waiting on a second
-capture: 1079078, 1025413, 1515692 and 1517236. Autoplay runs 2-3 (95 Training battles,
+capture: 1079078, 1025413, 1517236 and 1520327. Autoplay runs 3-5 (188 Training battles,
+2026-09-27; 1518086 stopped in its fourth round when the game tab reloaded) brought nine
+mismatches, and they came down to four rules and a single point: `+N Attack Per Opp. Damage`
+reading the modified opposing Damage (1518052, 1518765, 1519829, which also settled the single
+point 1515692), a stat Protection shielding its own modifiers from an opposing Cancel (1519871,
+1520579, 1521010), `Disunion:` met unconditionally (1519333) and a latch from the other side not
+replacing one of its family on the same player (1519318), all fixed above, and El Mariachi's
+two-way Copy loop (1520327), filed with the single points. None was a capture artifact: each
+diff is in the live resolution snapshot, and 1520327's is the server's displayed Attack
+disagreeing with its own winner. None of the new captures is a second point for the other
+three: no other Oculus joins GhosTown at night (1025413), the new `Cards` reductions never meet
+an opposing reduction of the same stat under a binding Min (1079078), and 1519178 r3's
+`Players Life` is stopped (1517236). Autoplay runs 2-3 (95 Training battles,
 2026-09-27, none stopped before its first round resolved) brought eleven mismatches, and they
 came down to six rules: `Stop:` permanents latching unstopped (1516740, 1517397, 1517419), a
 prefixed Impose that compiled to nothing (1517397 again), a capped increase measured after its
