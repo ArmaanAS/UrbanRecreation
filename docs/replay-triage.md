@@ -64,8 +64,35 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 562 | 12 | A condition prefix no longer swallows an Impose (1517397) |
 | 2026-09-27 | 568 | 6 | A capped increase is measured before its card's same-stat bonus (1516811, 1516832, 1516846, 1516906, 1517271, and the single point 1508932) |
 | 2026-09-27 | 569 | 5 | Latched permanents pay after the round's own effects (1517029; Rust semantic revision 80) |
+| 2026-09-27 | 570 | 4 | Versus and After read an Oculus by its printed clan (1517121) |
 
 ## Fixed
+
+### Versus and After read an Oculus by its printed clan - 1517121 (fixed)
+1517121 r1: Predtr Ld lv3 (Vortex, 9/4) meets Nobutomo lv2, whose `Equalizer: -1 Opp Damage,
+Min 3` would take Predtr Ld to 3 Damage (the engine's number). The server leaves it on 4: Predtr
+Ld's `Versus [clan:51][clan:56] : Stop Opp. Ability` ("The opponent's Ability is cancelled if
+they have one. This ability only activates if there's a Hive or Oculus in your opponent's hand",
+`abilityData` 3684) stopped the Equalizer. The opposing hand holds Dark Sentogan, an Oculus that
+fights as a Montana there (the server sends it Montana's `-12 Opp Attack, Min 8`), and the engine
+read the infiltrated clan and found no Oculus. The Versus condition now reads each opposing card's
+printed clan.
+
+The same question for `After [clan:...]`, which reads the owner's previous card, is settled by the
+printed text alone: every After text that names a clan other than the Oculus says "The Oculus,
+even when infiltrated into the Frozn clan, do not activate this condition" (5602, 5670, 5681,
+5700-5702, 5708, 5723, 5732, 5738, 5757, 5779, 5780, 5820, 5847, 5853-5855), and the two that name
+the Oculus (`[clan:56][clan:60]`, 5585 and 5750) say "played an Oculus or Tolvack character". The
+engine recorded the previous card's infiltrated clan, so an Oculus that joined Frozn would have
+fired Noma's `After [clan:47]` and missed the Tolvack bonus. It now records the printed clan. No
+captured round tells the two apart for After: in the five After rounds that follow an Oculus
+(1022847 r3, 1066481 r3, 1073107 r1, 1090096 r1), the Oculus had joined Tolvack and the text names
+both. A Versus that names the clan an Oculus joined (a Versus [Montana] against Dark Sentogan
+here) is unobserved; the rule reads it as printed, so it does not count. Fixed 1517121. Tests in
+`tests/ability/VersusClan.test.ts` and `tests/ability/After.test.ts`. The Rust engine already reads
+canonical clans for both and refuses a draw where an infiltrating Oculus would make the canonical
+and effective readings disagree; these rounds pin the canonical reading for a slice that wants to
+lift that.
 
 ### Latched permanents pay after the round's own effects - 1517029 (fixed)
 1517029 r2: Lakit Cr's owner (internal P2) has a `Heal 4 Max. 7` latched from round one and is

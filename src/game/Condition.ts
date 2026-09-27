@@ -164,10 +164,19 @@ export default class Condition {
           (data.card.stars === data.oppCard.stars && data.round.first);
         return fewer < opp || (fewer === opp && !winsTie);
       }
-      case ConditionType.VERSUS:
-        return this.clans.find((c) =>
-          data.round.oppHand.map((c) => c.clan).includes(c)
-        ) !== undefined;
+      // Versus reads the opposing hand's printed clans: an Oculus is an Oculus wherever it has
+      // infiltrated. Predtr Ld's `Versus [clan:51][clan:56] : Stop Opp. Ability` ("only
+      // activates if there's a Hive or Oculus in your opponent's hand", captures/abilities.json
+      // 3684) stops Nobutomo's `Equalizer: -1 Opp Damage, Min 3` in 1517121 r1 because the
+      // opposing hand holds Dark Sentogan, an Oculus fighting as a Montana (Predtr stays on 4
+      // Damage); the infiltrated clan used to hide it.
+      case ConditionType.VERSUS: {
+        const hand = data.round.oppHand;
+        for (let i = 0; i < hand.length; i++) {
+          if (this.clans.includes(hand[i].baseClan)) return true;
+        }
+        return false;
+      }
     }
 
     return true;

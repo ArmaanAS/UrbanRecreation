@@ -155,7 +155,10 @@ export default class CardBattle {
 
     // "After [clan:...]" looks at what its owner played in the *previous* round, so record
     // that only now, with the round resolved. b1 and b2 are the two players' views of it.
-    b1.round.lastClan = card1.clan;
-    b2.round.lastClan = card2.clan;
+    // It is the printed clan: "The Oculus, even when infiltrated into the Frozn clan, do not
+    // activate this condition", as every After text that names another clan says
+    // (captures/abilities.json 5602, 5670, 5681, ...), while [clan:56] ones name the Oculus.
+    b1.round.lastClan = card1.baseClan;
+    b2.round.lastClan = card2.baseClan;
   }
 }

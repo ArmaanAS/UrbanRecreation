@@ -81,3 +81,43 @@ Deno.test("an unstopped bonus suppresses a dependent conditional stop", () => {
   assertEquals(g.h2[2].attack.final, 42);
   assertEquals(g.h2[2].won, true);
 });
+
+// After reads the printed clan of the card its owner played the round before: "The Oculus,
+// even when infiltrated into the Frozn clan, do not activate this condition" (Noma's `After
+// [clan:47]: +2 Life`, captures/abilities.json 5670; every After text naming another clan
+// says the same). Phalloide Ld joins Frozn here (Mikaal is the hand's sole Frozn beside two
+// Tolvack), which is the clan the engine used to record for it.
+Deno.test("After does not count an Oculus by the clan it infiltrated", () => {
+  const play = (opener: number) => {
+    const g = new Game(
+      new Player(12, 12, 0),
+      new Player(12, 12, 1),
+      HandGenerator.handOf(
+        ["Noma", "Skarn", "Mikaal", "Phalloide Ld"] as HandOf<string>,
+        [3, 1, 1, 1] as HandOf<number | undefined>,
+      ),
+      HandGenerator.handOf(
+        ["Natrang", "Sai San", "Gertrud", "Mitch"] as HandOf<string>,
+        [1, 1, 1, 1] as HandOf<number | undefined>,
+      ),
+      Turn.PLAYER_1,
+    );
+    g.select(opener, 3, false, false); // P1 opens and wins round 0
+    g.select(0, 0, false, false); // P2 Natrang, 3 x 1
+    assertEquals(g.h1[opener].won, true);
+    g.select(1, 0, false, false); // P2 Sai San, 1 x 1
+    g.select(0, 0, false, false); // P1 Noma lv3 (Tolvack, 9/4) wins round 1
+    assertEquals(g.h1[0].won, true);
+    return g;
+  };
+  const oculus = play(3);
+  assertEquals(oculus.h1[3].clan, "Frozn");
+  // Tolvack's `After [clan:56][clan:60] : Power +3` names the Oculus and does count it...
+  assertEquals(oculus.h1[0].power.final, 12);
+  // ...but Noma's Frozn look-back does not: no +2 Life.
+  assertEquals(oculus.p1.life, 12);
+  // After the real Frozn card: +2 Life, and no +3 Power.
+  const frozn = play(2);
+  assertEquals(frozn.h1[0].power.final, 9);
+  assertEquals(frozn.p1.life, 14);
+});
