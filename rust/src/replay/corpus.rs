@@ -342,7 +342,7 @@ mod tests {
             "capture errors: {:#?}",
             corpus.errors
         );
-        assert_eq!(corpus.skipped.len(), 12);
+        assert_eq!(corpus.skipped.len(), 13);
         assert!(corpus.ready.len() >= 354);
 
         let skipped: Vec<_> = corpus
@@ -355,7 +355,8 @@ mod tests {
         // extractor had written null for its name and clan). Every skip left is a capture
         // that stopped mid-match; 1508706 and 1508710 are 2026-09-27 Training games left
         // before their first round resolved, and so are 1514405, 1514665, 1514925 and 1515114
-        // from the autoplay run of the same day.
+        // from the autoplay run of the same day. 1518086 (autoplay runs 3-5) stopped in its
+        // fourth round when the game tab reloaded.
         use ReplaySkipReason::InProgress;
         assert_eq!(
             skipped,
@@ -372,6 +373,7 @@ mod tests {
                 (1514665, InProgress),
                 (1514925, InProgress),
                 (1515114, InProgress),
+                (1518086, InProgress),
             ]
         );
 

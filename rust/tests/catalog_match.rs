@@ -459,7 +459,11 @@ fn strict_catalog_match_separates_same_text_clans_and_executes_support() {
     };
     assert_eq!(rescue.catalog_id, Some(39));
     assert_eq!(rescue.registry_definition_id, 266);
-    assert_eq!(rescue.registry_alias_ids.as_ref(), [266, 546, 1013, 5841]);
+    // Martha's `667`, the same record, joined with the autoplay runs 3-5.
+    assert_eq!(
+        rescue.registry_alias_ids.as_ref(),
+        [266, 546, 667, 1013, 5841]
+    );
     assert!(!rescue.registry_alias_ids.contains(&39));
 
     let mut game = prepared.new_game();
@@ -753,10 +757,11 @@ fn strict_catalog_match_executes_audited_ability_recovery_and_restores_undo() {
     assert_eq!(identity.registry_definition_id, 1418);
     // `2996` is the same record, first captured 2026-09-26 on Anita level 3 (1496094), whose
     // ability Administrator's `Hazard` had replaced with it, and so are Sasl Lovelace level
-    // 5's `1005` and Tortuga level 4's `1674`, first captured in the 2026-09-27 autoplay run.
+    // 5's `1005` and Tortuga level 4's `1674`, first captured in the 2026-09-27 autoplay run,
+    // and L Lace01's `1151`, Maana Cercei Cr's `1402` and Powaqa's `1457`, in runs 3-5.
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [577, 729, 1005, 1316, 1418, 1674, 2475, 2996]
+        [577, 729, 1005, 1151, 1316, 1402, 1418, 1457, 1674, 2475, 2996]
     );
     assert_eq!(identity.description, "Defeat: Recover 2 Pillz Out Of 3");
     assert!(matches!(
@@ -865,10 +870,11 @@ fn strict_catalog_match_bridges_only_active_vortex_bonus_and_stop_bonus_disables
     assert_eq!(identity.registry_definition_id, 577);
     // `2996` is the same record, first captured 2026-09-26 on Anita level 3 (1496094), whose
     // ability Administrator's `Hazard` had replaced with it, and so are Sasl Lovelace level
-    // 5's `1005` and Tortuga level 4's `1674`, first captured in the 2026-09-27 autoplay run.
+    // 5's `1005` and Tortuga level 4's `1674`, first captured in the 2026-09-27 autoplay run,
+    // and L Lace01's `1151`, Maana Cercei Cr's `1402` and Powaqa's `1457`, in runs 3-5.
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [577, 729, 1005, 1316, 1418, 1674, 2475, 2996]
+        [577, 729, 1005, 1151, 1316, 1402, 1418, 1457, 1674, 2475, 2996]
     );
     assert!(matches!(
         prepared.match_spec().cards[PlayerId::P1][0].bonus,
@@ -2064,12 +2070,13 @@ fn strict_catalog_match_preserves_dave_catalog_and_registry_life_identity() {
     // The catalog's stable source id is an alias, not the registry's canonical first
     // definition.  Strict construction keeps both identities rather than collapsing it
     // to description text or pretending the catalog id is the registry definition.
-    assert_eq!(identity.registry_definition_id, 401);
+    // Wakai's `353`, first captured in the autoplay runs 3-5, is the group's lowest id now.
+    assert_eq!(identity.registry_definition_id, 353);
     // Dallas level 5's `673` is the same record, first captured in autoplay runs 2-3
-    // (1516973).
+    // (1516973), and so are `353`, `374`, `491`, `761`, `810`, `874` and `3583`, from runs 3-5.
     assert_eq!(
         identity.registry_alias_ids.as_ref(),
-        [401, 405, 609, 673, 888, 1329]
+        [353, 374, 401, 405, 491, 609, 673, 761, 810, 874, 888, 1329, 3583]
     );
     assert_eq!(
         *effect,
@@ -2078,7 +2085,7 @@ fn strict_catalog_match_preserves_dave_catalog_and_registry_life_identity() {
     assert!(matches!(
         prepared.match_spec().cards[PlayerId::P1][1].ability,
         CombatStatSourcePlanV1::Execute {
-            source_id: 401,
+            source_id: 353,
             predicate: CombatStatPredicateV1::Always,
             effect: urban_recreation_rust::engine::CombatStatEffectV1::GainLifeOnVictory {
                 life: 2
@@ -2246,10 +2253,12 @@ fn strict_catalog_match_bridges_only_the_active_jungo_victory_life_bonus() {
         };
         assert_eq!(identity.catalog_id, Some(41));
         assert_eq!(identity.registry_definition_id, 401);
-        // Dallas level 5's `673` joined these aliases with autoplay runs 2-3 (1516973).
+        // Dallas level 5's `673` joined these aliases with autoplay runs 2-3 (1516973), and
+        // `353`, `374`, `491`, `761`, `810`, `874` and `3583` with runs 3-5; the bonus keeps
+        // the id its captures send through its own bridge.
         assert_eq!(
             identity.registry_alias_ids.as_ref(),
-            [401, 405, 609, 673, 888, 1329]
+            [353, 374, 401, 405, 491, 609, 673, 761, 810, 874, 888, 1329, 3583]
         );
         assert_eq!(
             *effect,
@@ -2784,6 +2793,14 @@ fn strict_catalog_match_admits_unconditional_copy_and_rejects_conditional_varian
             CopiedSourceKindV1::Bonus,
             CombatStatPredicateV1::OwnerLostPreviousRound,
         ),
+        // XU91 level four's own record, first captured in the autoplay runs 3-5.
+        (
+            CardKey::new(1965, 4),
+            1828,
+            "Revenge: Copy Opp. Bonus",
+            CopiedSourceKindV1::Bonus,
+            CombatStatPredicateV1::OwnerLostPreviousRound,
+        ),
         (
             CardKey::new(2605, 5),
             4972,
@@ -2854,14 +2871,11 @@ fn strict_catalog_match_admits_unconditional_copy_and_rejects_conditional_varian
         );
     }
 
-    // Every other Copy grammar outside the reviewed set stays fail-closed. Nexus and XU91
-    // print an admitted text but under a catalog id that is not a registry definition of it,
-    // so they stay closed for the same reason Lorna's `752` does: description alone never
-    // admits.
-    for (key, description) in [
-        (CardKey::new(1531, 3), "Revenge: Copy Opp. Bonus"),
-        (CardKey::new(1965, 4), "Revenge: Copy Opp. Bonus"),
-    ] {
+    // Every other Copy grammar outside the reviewed set stays fail-closed. Nexus prints an
+    // admitted text but under a catalog id that is not a registry definition of it, so it stays
+    // closed for the same reason Lorna's `752` does: description alone never admits. XU91 L4
+    // left this list when the autoplay runs 3-5 captured its own `1828` (above).
+    for (key, description) in [(CardKey::new(1531, 3), "Revenge: Copy Opp. Bonus")] {
         assert!(
             matches!(
                 CatalogCombatStatMatchV1::new(
@@ -5080,9 +5094,10 @@ fn captured_input(id: u64) -> CatalogCombatStatMatchInputV1 {
 
 /// Catalog-context revision 10: Scar L4's `2470` (2026-09-27 autoplay runs 2-3) prints `Copy:
 /// Opp. Power` over a stray `value: 5, valueMin: 8`, which makes the text ambiguous. A printed
-/// ability now resolves by its own record's structural group, so the seventeen zero-valued
-/// records keep executing as the stat Copy under their lowest id, `173`, and the twelve captured
-/// draws that deal one prepare again; Scar's own record compiles to nothing and stays refused.
+/// ability now resolves by its own record's structural group, so the zero-valued records keep
+/// executing as the stat Copy under their lowest id - seventeen under `173` then, twenty-three
+/// under `114` since the autoplay runs 3-5 - and the twelve captured draws that deal one prepare
+/// again; Scar's own record compiles to nothing and stays refused.
 #[test]
 fn strict_catalog_match_resolves_an_ambiguous_ability_text_by_the_cards_own_record() {
     let catalog = catalog();
@@ -5113,8 +5128,8 @@ fn strict_catalog_match_resolves_an_ambiguous_ability_text_by_the_cards_own_reco
             panic!("{key:?} was not prepared as a stat Copy")
         };
         assert_eq!(identity.catalog_id, Some(catalog_id), "{key:?}");
-        assert_eq!(identity.registry_definition_id, 173, "{key:?}");
-        assert_eq!(identity.registry_alias_ids.len(), 17, "{key:?}");
+        assert_eq!(identity.registry_definition_id, 114, "{key:?}");
+        assert_eq!(identity.registry_alias_ids.len(), 23, "{key:?}");
         assert!(!identity.registry_alias_ids.contains(&2470), "{key:?}");
         assert!(matches!(
             effect,
@@ -5158,11 +5173,13 @@ fn strict_catalog_match_resolves_an_ambiguous_ability_text_by_the_cards_own_reco
 
 /// Catalog-context revision 9: every clan bonus a strictly prepared captured draw executes
 /// carries the registry identity its capture sent, which is what the JSONL worker's clan-bonus
-/// identity check compares. Five clan bonuses share their text with a lower registry record
+/// identity check compares. Six clan bonuses share their text with a lower registry record
 /// and are bridged to their captured id (`CLAN_BONUS_REGISTRY_BRIDGES`); before revision 9
 /// they resolved to that lower record, and since the 2026-09-27 autoplay runs 2-3 captured MC
 /// Decay L2's ability `140` the All Stars bonus did too, which failed the worker gate at
-/// 1069813. An Oculus infiltrated into one of the five clans carries that clan's bonus and id.
+/// 1069813. The sixth, Nightmare's `Stop Opp. Bonus`, joined when runs 3-5 captured Windy Mor's
+/// ability `46`. An Oculus infiltrated into one of the six clans carries that clan's bonus and
+/// id.
 #[test]
 fn strict_catalog_clan_bonus_identity_is_the_captured_one_in_every_prepared_draw() {
     let catalog = catalog();
@@ -5222,15 +5239,18 @@ fn strict_catalog_clan_bonus_identity_is_the_captured_one_in_every_prepared_draw
     }
     assert!(checked >= 900, "{checked}");
     assert_eq!(mismatches, Vec::new());
-    // The bridged identities the eligible draws reach; the Piranas and GHEIST Stops and the
-    // Vortex recovery are bridged by their own paths.
+    // The bridged identities the eligible draws reach; the Piranas and GHEIST Stops, the Jungo
+    // Life and the Vortex recovery are bridged by their own paths. Jungo's `401` shows here
+    // since the autoplay runs 3-5 captured Wakai's `353`, a lower record of its text.
     let expected: BTreeSet<(String, u32)> = [
+        ("+2 Life", 401),
         ("-2 Opp Power, Min 1", 156),
         ("Attack +8", 93),
         ("Damage +2", 38),
         ("Growth: -1 Opp Power, Min 4", 1578),
         ("Power +2", 43),
         ("Stop Opp. Ability", 94),
+        ("Stop Opp. Bonus", 130),
         ("Stop Opp. Bonus", 333),
     ]
     .into_iter()
@@ -6267,9 +6287,11 @@ fn strict_catalog_match_admits_revision_75_tail_sources() {
             CombatStatPredicateV1::SelectedHandSlotsDiffer
         )
     );
+    // Magnar L5's `1018`, the same record, joined the group with the autoplay runs 3-5 and is
+    // its lowest id now; Forjoten Ld keeps its own catalog id `5082`.
     for capture in [1059269, 1131114] {
         assert_eq!(
-            combat(capture, 2434, 5082),
+            combat(capture, 1018, 5082),
             (
                 SupportedEffectV1::ProtectOwnCombatStat {
                     stat: CombatStatV1::PowerAndDamage
@@ -6298,8 +6320,9 @@ fn strict_catalog_match_admits_revision_75_tail_sources() {
 /// - Izsobahd's `Stop:` Pillz cut facing Angelo L2's Stop Opp. Ability, which could fire it;
 /// - Molch's Killshot compound facing Eugene's `Defeat: +2 Life`, which writes the target's
 ///   own Life on the round the compound floors it (the 1093173/1 order question);
-/// - Magnar L5's `Reprisal: Protect. Power And Damage` under catalog id `1018`, which is not a
-///   structural alias of `2434`.
+/// - and, until the 2026-09-27 autoplay runs 3-5 captured its record, Magnar L5's `Reprisal:
+///   Protect. Power And Damage` under catalog id `1018`. The record is the same as `2434`'s, so
+///   Magnar L5 now prepares by its own id like every other printed alias.
 #[test]
 fn strict_catalog_match_refuses_revision_75_sources_in_unpinned_contexts() {
     let catalog = catalog();
@@ -6345,11 +6368,27 @@ fn strict_catalog_match_refuses_revision_75_sources_in_unpinned_contexts() {
 
     let (mut magnar, rescue) = fully_supported_hands();
     magnar[0] = CardKey::new(1194, 5);
-    refused(
+    let prepared = CatalogCombatStatMatchV1::new(
         input(magnar, rescue, false),
-        "Reprisal: Protect. Power And Damage",
-        "Magnar L5",
+        &catalog,
+        &registry,
+        PROJECTION,
+    )
+    .unwrap_or_else(|error| panic!("Magnar L5: {error:?}"));
+    let CatalogCombatStatSourceDispositionV1::Execute {
+        identity,
+        predicate,
+        ..
+    } = &prepared.preparation()[PlayerId::P1][0].ability
+    else {
+        panic!("Magnar L5 was not prepared as a combat source")
+    };
+    assert_eq!(identity.catalog_id, Some(1018));
+    assert_eq!(
+        identity.registry_alias_ids.as_ref(),
+        [1018, 2434, 5082, 5419]
     );
+    assert_eq!(*predicate, CombatStatPredicateV1::OwnerMovesSecond);
 }
 
 /// Revision 76 (catalog-context revision 7) sends a conditional Stop or conditional stat Copy

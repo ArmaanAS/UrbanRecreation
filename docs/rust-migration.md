@@ -4451,6 +4451,45 @@ strict projection in two places. The notes below say what each was and how it wa
   again. The eligible and scanned draws, the gate and the compiler revision do not change;
   `tests/expect/rust-provenance.json` moves to catalog-context 9.
 
+#### The autoplay runs 3-5 data
+
+The 188 Training battles of the 2026-09-27 autoplay runs 3-5 added 364 records to
+`captures/abilities.json` (1629 -> 1993) and 188 draws to the catalog scan (586 -> 774). Nothing
+in them needed an engine change on the Rust side; what they moved:
+- **A new `specialAction`.** Memento's `Remove Ability Conditions` (`1733`, a lone Leader) prints
+  `remove_conditions`, which the strict registry refused as an unknown enum value, so every test
+  that loads the dictionary failed. `SpecialActionV1::RemoveConditions` now parses it; a lone
+  Memento is not among the Leader hands the catalog admits, so it is refused before it is read.
+- **The hand-kept inventories.** Twenty-one new previous-round records (twelve admitted as fixed
+  combat stats under `Confidence:`/`Revenge:`, six card-ability-only - two `Revenge: Stop Opp.
+  Ability`, one `Confidence: Stop Opp. Ability`, `Revenge: Copy: Opp. Damage`, `Confidence: Copy:
+  Opp. Power` and Musafar's `Revenge: + 2 Attack Per Opp. Power` - and three deferred: Yodd's
+  `Revenge: Protec. Power And Dmg`, XU91's source Copy and a compound post-round gain) and seven
+  new Support records, all executing as the ordinary Support grammar. 1518086 stopped in its
+  fourth round when the game tab reloaded and joins the corpus skip list.
+- **Aliases.** New same-text, same-record ids joined existing groups: Martha's `667` (`Support:
+  Attack +3`), Noon Steevens' Tune Out ability `3531` (compiled alike by the registry, refused
+  from the Ability slot by the compiler), three more `Defeat: Recover 2 Pillz Out Of 3` (`1151`,
+  `1402`, `1457`), seven more `+2 Life` (`353` now the group's lowest, so Dave's ability resolves
+  to it; the Jungo bonus keeps `401` through its own bridge) and six more zero-valued `Copy: Opp.
+  Power` (`114` now the lowest). Two printed levels the catalog had refused for want of their own
+  record are admitted by it now: Magnar L5's `Reprisal: Protect. Power And Damage` (`1018`, which
+  also became that group's lowest id) and XU91 L4's `Revenge: Copy Opp. Bonus` (`1828`).
+- **A sixth clan-bonus bridge.** Windy Mor's ability `46` prints `Stop Opp. Bonus` over the
+  Nightmare bonus's record and is lower than the `130` every Nightmare capture sends, so the
+  generic path named `46` for the bonus - the All Stars regression of runs 2-3 again, and the
+  worker's clan-bonus identity check would have refused every such hand.
+  `CLAN_BONUS_REGISTRY_BRIDGES` gains (Nightmare, catalog bonus 36, `Stop Opp. Bonus`, `130`).
+  The table is data for the revision-9 rule, so the catalog-context revision does not move; a
+  scan of every captured clan bonus finds no other clan whose captured id stopped being its
+  text's lowest alias without a bridge (All Stars, Bangers, Dominion, La Junta and Sentinel are
+  bridged; GHEIST, Jungo and Piranas have their own paths; Oblivion's are dynamic Copies).
+
+Eligible draws 334 -> 373 of 774. The 41 added are all new captures; two old ones dropped out,
+877733 and 1078669 (Korakine L2's `Unison : +2 Pillz And Life`, next section). The registry
+fingerprint moves; the compiler revision (80), catalog-context revision (10), gate rounds and gate
+ids do not.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

@@ -148,6 +148,11 @@ string_enum! {
         // inert source (`classify_counter_attack`), and a lone Solomon is still refused.
         StrikeBack => "strike_back",
         TieBreak => "tie_break",
+        // Memento's `Remove Ability Conditions` (1733), first captured 2026-09-27: "For every
+        // card in hand, abilities requiring a condition, such as: Courage, Reprisal, Confidence
+        // or Revenge, are activated for all rounds". A Leader ability too; a lone Memento is
+        // not among the Leader hands the catalog admits, so it is refused before it is read.
+        RemoveConditions => "remove_conditions",
     }
 }
 
@@ -1718,7 +1723,7 @@ mod tests {
                 "stop_modif"
             ]
         );
-        assert_eq!(SpecialActionV1::DOMAIN.len(), 18);
+        assert_eq!(SpecialActionV1::DOMAIN.len(), 19);
     }
 
     #[test]
@@ -2162,7 +2167,11 @@ mod tests {
             })
             .map(|(id, _)| id)
             .collect::<Vec<_>>();
-        assert_eq!(compiled, [3496]);
+        // `3531` is Noon Steevens' ability record of the same text and shape, first captured in
+        // the 2026-09-27 autoplay runs 3-5 (1518286). The registry compiles the record alike;
+        // the combat-stat compiler admits the grammar from the clan bonus slot only
+        // (`tune_out_is_admitted_from_the_clan_bonus_slot_only`).
+        assert_eq!(compiled, [3496, 3531]);
 
         // The same record under another side, with a magnitude, or under other text is
         // another shape and stays unsupported.
@@ -2308,8 +2317,9 @@ mod tests {
 
         let rescue = registry.lookup_description("Support: Attack +3").unwrap();
         assert_eq!(rescue.definition().id(), 266);
-        // 1013 joined the aliases with the 2026-09-27 Training captures.
-        assert_eq!(rescue.alias_ids(), [266, 546, 1013, 5841]);
+        // 1013 joined the aliases with the 2026-09-27 Training captures, and Martha's 667, the
+        // same text and record, with the autoplay runs 3-5.
+        assert_eq!(rescue.alias_ids(), [266, 546, 667, 1013, 5841]);
 
         let catalog = CardCatalog::load(root_path("data/data.json")).unwrap();
         assert!(catalog
@@ -2320,14 +2330,15 @@ mod tests {
             Err(EffectLookupError::AmbiguousDescription { ref ids, .. }) if ids.contains(&877)
         ));
         // Scar's `2470` (2026-09-27 autoplay runs 2-3) prints `Copy: Opp. Power` over a stray
-        // `value: 5, valueMin: 8`; the seventeen other records of the text print zeros. The text
-        // is ambiguous, while each record's own structural group is not.
+        // `value: 5, valueMin: 8`; the seventeen other records of the text print zeros, and so
+        // do the six more the autoplay runs 3-5 brought. The text is ambiguous, while each
+        // record's own structural group is not.
         assert!(matches!(
             registry.lookup_description("Copy: Opp. Power"),
             Err(EffectLookupError::AmbiguousDescription { ref ids, .. }) if ids.contains(&2470)
         ));
         let copy_power = registry.structural_alias_ids(173).unwrap();
-        assert_eq!(copy_power.len(), 17);
+        assert_eq!(copy_power.len(), 23);
         assert!(copy_power.contains(&4461) && !copy_power.contains(&2470));
         assert_eq!(registry.structural_alias_ids(2470).unwrap(), [2470]);
         assert_eq!(

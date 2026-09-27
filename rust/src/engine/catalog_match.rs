@@ -174,18 +174,20 @@ const COPY_OPPONENT_ABILITY_DESCRIPTION: &str = "Copy: Opp. Ability";
 /// id), and every capture of that clan's bonus (or of an Oculus infiltrated into it) sends
 /// that id. Two of them are taken over by a printed card ability of the same text and record:
 /// MC Decay L2's `140` since the 2026-09-27 autoplay runs 2-3 (All Stars sends `156`), and
-/// Aamir L3's `1159` (Dominion sends `1578`). The other three share their text with another
-/// clan's bonus: Bangers' `43` with Ulu Watu's `39`, La Junta's `38` with Fang Pi Clang's
-/// `36` and Sentinel's `93` with Junkz's `37`. Resolving them to the lowest alias gave the
+/// Aamir L3's `1159` (Dominion sends `1578`), and since the autoplay runs 3-5 a third, Windy
+/// Mor's ability `46`, has taken over Nightmare's `Stop Opp. Bonus` (Nightmare sends `130`). The
+/// other three share their text with another clan's bonus: Bangers' `43` with Ulu Watu's `39`,
+/// La Junta's `38` with Fang Pi Clang's `36` and Sentinel's `93` with Junkz's `37`. Resolving them to the lowest alias gave the
 /// right effect under the wrong identity, which the JSONL worker's clan-bonus identity check
 /// refuses. A bridged id must still be a structural alias of the printed text
 /// (`lookup_description`), so a changed record fails closed.
-const CLAN_BONUS_REGISTRY_BRIDGES: [(u32, u32, &str, u32); 5] = [
+const CLAN_BONUS_REGISTRY_BRIDGES: [(u32, u32, &str, u32); 6] = [
     (38, 37, "-2 Opp Power, Min 1", 156),
     (53, 52, "Growth: -1 Opp Power, Min 4", 1578),
     (31, 30, "Power +2", 43),
     (27, 25, "Damage +2", 38),
     (33, 31, "Attack +8", 93),
+    (37, 36, "Stop Opp. Bonus", 130),
 ];
 /// Revision 5 (compiler revision 69) lets a selected night variant, which the catalog gives
 /// no numeric identity, reach the post-round grammars that print a `Night:` form - by its
@@ -202,9 +204,9 @@ const CLAN_BONUS_REGISTRY_BRIDGES: [(u32, u32, &str, u32); 5] = [
 /// a lone Ashigaru L5, whose `Counter-attack` (printed id 124) decides only the round-one
 /// first mover. Both kinds of Leader source are `Inert`, and `leader_hand_hazard` still
 /// refuses the contexts no captured round shows.
-/// Revision 9 (compiler revision 80) gives five clan bonuses the registry identity their
-/// captures carry rather than the lowest structural alias of their text
-/// (`CLAN_BONUS_REGISTRY_BRIDGES`). The effects are unchanged; only the identity is.
+/// Revision 9 (compiler revision 80) gives five clan bonuses (six since the autoplay runs 3-5)
+/// the registry identity their captures carry rather than the lowest structural alias of their
+/// text (`CLAN_BONUS_REGISTRY_BRIDGES`). The effects are unchanged; only the identity is.
 /// Revision 10 (compiler revision 80) resolves a printed ability whose text a noisy same-text
 /// record has made ambiguous by the card's own record and that record's structural group
 /// (`EffectRegistryV1::structural_alias_ids`), as the Stop Opp. Ability path already did.

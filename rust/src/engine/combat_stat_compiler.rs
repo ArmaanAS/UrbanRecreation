@@ -10137,13 +10137,18 @@ mod tests {
         // (`773`), `Confidence: -3 Opp Damage, Min 2` (`1085`), `Revenge: -3 Opp. Power, Min 5`
         // (`1099`), `Confidence: -4 Opp Damage, Min 1` (`1370`), `Confidence: Power +5`
         // (`1410`), `Confidence: Damage +4` (`1672`), `Revenge: -4 Opp. Power, Min 4` (`3035`)
-        // and `Confidence: -2 Opp Pow. & Damage, Min 0` (`4699`).
+        // and `Confidence: -2 Opp Pow. & Damage, Min 0` (`4699`). Autoplay runs 3-5 brought
+        // twelve more: `Confidence: -3 Opp Damage, Min 3` (`485`), `Revenge: Power +2` (`488`),
+        // `Confidence: Attack +12` (`573`), `Confidence: Power +2` (`647`), `Confidence: Power
+        // And Damage +2` (`808`, `2621`), `Confidence: Power +4` (`1104`), `Revenge: Power And
+        // Damage +2` (`1234`, `1542`, `1555`), `Revenge: Damage +3` (`1708`) and `Confidence :
+        // -4 Opp. Power, Min 2` (`4732`).
         let admitted = BTreeSet::from([
-            463, 465, 471, 478, 513, 520, 553, 555, 556, 560, 585, 591, 599, 634, 644, 773, 784,
-            801, 859, 883, 884, 904, 914, 921, 938, 965, 994, 1022, 1026, 1053, 1085, 1091, 1099,
-            1107, 1278, 1286, 1303, 1314, 1370, 1395, 1410, 1417, 1672, 1780, 1839, 2194, 2206,
-            2628, 2657, 3035, 3119, 3827, 3829, 4316, 4399, 4464, 4469, 4623, 4699, 4711, 4838,
-            5146, 5406, 5881,
+            463, 465, 471, 478, 485, 488, 513, 520, 553, 555, 556, 560, 573, 585, 591, 599, 634,
+            644, 647, 773, 784, 801, 808, 859, 883, 884, 904, 914, 921, 938, 965, 994, 1022, 1026,
+            1053, 1085, 1091, 1099, 1104, 1107, 1234, 1278, 1286, 1303, 1314, 1370, 1395, 1410,
+            1417, 1542, 1555, 1672, 1708, 1780, 1839, 2194, 2206, 2621, 2628, 2657, 3035, 3119,
+            3827, 3829, 4316, 4399, 4464, 4469, 4623, 4699, 4711, 4732, 4838, 5146, 5406, 5881,
         ]);
         // Since revision 47 the `Confidence:` and `Revenge:` Stops are admitted by the
         // conditional-Stop grammar, card abilities only.
@@ -10153,9 +10158,14 @@ mod tests {
         // grammar and from card abilities only. The autoplay run added `Revenge: Power
         // Exchange` (`1685`), `Revenge: Stop Opp. Bonus` (`2095`) and `Confidence: Stop Opp.
         // Ability` (`5183`) to those grammars, card abilities only as well, and runs 2-3 two more
-        // `Confidence: Stop Opp. Ability` records (`1597`, `2398`).
+        // `Confidence: Stop Opp. Ability` records (`1597`, `2398`). Runs 3-5 brought two more
+        // `Revenge: Stop Opp. Ability` (`979`, `2010`), another `Confidence: Stop Opp. Ability`
+        // (`1632`), `Revenge: Copy: Opp. Damage` (`1803`) and `Confidence: Copy: Opp. Power`
+        // (`4364`) to the conditional-Stop and stat-Copy grammars, and Musafar's `Revenge: + 2
+        // Attack Per Opp. Power` (`1832`) to Betul's.
         let ability_only = BTreeSet::from([
-            490, 589, 1409, 1597, 1680, 1685, 1713, 1719, 2095, 2398, 5183,
+            490, 589, 979, 1409, 1597, 1632, 1680, 1685, 1713, 1719, 1803, 1832, 2010, 2095, 2398,
+            4364, 5183,
         ]);
         // Fjell's `Revenge : +4 Life` (`5666`), Zhiara's `Revenge: Poison 2, Min 1` (`4903`),
         // `Day: Confidence: +1 Life Per Damage` (`1471`), `Confidence: +1 Life Per Dmg.` (`787`)
@@ -10174,11 +10184,15 @@ mod tests {
         // again, and `Confidence: -4 Cards Damage, Min 0` (`5099`) lowers both cards, a `Cards`
         // context no conditional grammar reads. Farman's `Confidence: Stop Opp. Bonus` (`1050`)
         // prints the `2095` text shape with `sideAffected: opponent` where every admitted
-        // conditional Stop has `player`, so the conditional-Stop shape refuses it.
+        // conditional Stop has `player`, so the conditional-Stop shape refuses it. Of runs 3-5's,
+        // Yodd's `Revenge: Protec. Power And Dmg` (`984`) is the Revenge Protection no round has
+        // shown, XU91's `Revenge: Copy Opp. Bonus` (`1828`) is `1751`'s source Copy, which the
+        // source-Copy table adopts rather than this classifier, and Shevorgitz's `Revenge: +1
+        // Pillz And Life` (`3406`) is a compound post-round gain.
         let deferred = BTreeSet::from([
-            486, 507, 655, 676, 787, 814, 951, 1040, 1050, 1070, 1079, 1097, 1113, 1230, 1471,
-            1642, 1643, 1652, 1661, 1693, 1702, 1751, 1756, 1810, 2113, 2267, 2495, 2582, 3016,
-            3301, 3546, 4106, 4301, 4449, 4903, 4972, 5099, 5666,
+            486, 507, 655, 676, 787, 814, 951, 984, 1040, 1050, 1070, 1079, 1097, 1113, 1230, 1471,
+            1642, 1643, 1652, 1661, 1693, 1702, 1751, 1756, 1810, 1828, 2113, 2267, 2495, 2582,
+            3016, 3301, 3406, 3546, 4106, 4301, 4449, 4903, 4972, 5099, 5666,
         ]);
         let observed: BTreeSet<_> = registry
             .iter()
