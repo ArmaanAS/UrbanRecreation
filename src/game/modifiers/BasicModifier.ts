@@ -185,34 +185,36 @@ export default class BasicModifier extends Modifier {
     if (this.win && !data.card.won) return false;
 
     if (this.opp) {
-      // console.log('this.opp === true')
-      // console.log(data.opp.won, data.oppCard.won)
-      // if (this.win && !data.oppCard.won) return false;
-      // console.log(data.oppCard.life.prot, data.oppCard.life.cancel);
+      // A `Cancel Opp. <stat> Modif.` deactivates the modifiers whose *source* is the
+      // cancelled card - "any modifier of the opposing character" - and never the
+      // canceller's own reductions aimed at it. `data.card` is this modifier's source, so
+      // only its flag decides; the target's flag says the target's own modifiers are off.
+      // Dookor's own Dominion "Growth: -1 Opp Power, Min 4" still takes Sue from 6 to 4 in
+      // 1089974 r2 and Angie from 6 to 4 in 1507792 r3 under Dookor's "Cancel Opp. Power And
+      // Damage Modif.", and Eyrton Cr's own All Stars "-2 Opp Power, Min 1" takes Hammer Cr
+      // from 6 to 4 (4 x 7 = 28) in 1506931 r3, while in each round the cancelled card's own
+      // reduction of the canceller is refused. The same printed rule covers the Attack, Life
+      // and Pillz cancels ("any of your opponent's abilities or bonuses"); no captured round
+      // shows a canceller's own reduction of those. Tune Out cancels both cards' Attack, so
+      // it still turns every Attack modifier off.
       switch (this.type) {
-        // case Type.POWER: return !data.oppCard.power.prot;
-        // case Type.DAMAGE: return !data.oppCard.damage.prot;
-        // case Type.ATTACK: return !data.oppCard.attack.prot;
-        // case Type.LIFE: return !data.oppCard.life.prot;
-        // case Type.PILLZ: return !data.oppCard.pillz.prot;
         // `Protection: Power And Damage` refuses an opposing reduction outright (guard,
         // set at PRE3, before these run at PRE1); an opposing increase still lands.
         case Type.POWER:
-          return !data.oppCard.power.blocked && !data.card.power.blocked &&
+          return !data.card.power.blocked &&
             !(this.change < 0 && data.oppCard.power.guard);
         case Type.DAMAGE:
-          return !data.oppCard.damage.blocked && !data.card.damage.blocked &&
+          return !data.card.damage.blocked &&
             !(this.change < 0 && data.oppCard.damage.guard);
         case Type.ATTACK:
-          return !data.oppCard.attack.blocked && !data.card.attack.blocked;
+          return !data.card.attack.blocked;
         case Type.LIFE:
-          return !data.oppCard.life.blocked && !data.card.life.blocked &&
-            data.opp.life > 0;
+          return !data.card.life.blocked && data.opp.life > 0;
         case Type.PILLZ:
           // The pool only has to hold something when Pillz are being taken out of it -
           // the guard is there so a removal cannot drive the setter negative. Pr SenQ's
           // "Defeat: +1 Opp. Pillz" paid an opponent sitting on exactly 0 in 1130425 r2.
-          return !data.oppCard.pillz.blocked &&
+          return !data.card.pillz.blocked &&
             (this.change > 0 || data.opp.pillz > 0);
         case Type.TUNEOUT:
           return true;

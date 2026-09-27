@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
 Status from `deno test -A --no-check tests/replay/` against 420 captured battles
-(414 replay-ready; 6 ignored because they stopped mid-match): 402 replay exactly and 12
+(414 replay-ready; 6 ignored because they stopped mid-match): 408 replay exactly and 6
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -51,6 +51,7 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-26 | 382 | 6 | +4 Training captures (GhosTown/Oculus test deck); the round-one second mover's END effects run first (1093173, 1496283); Perfect pays only on the exact bet (947670, 1496258) |
 | 2026-09-27 | 387 | 7 | +6 Training captures (Lab 1 by day, Lab 3); Solomon's Tie-break wins tied rounds (1506259); 1506438 settles same-family Poison as replace, not stack (open) |
 | 2026-09-27 | 402 | 12 | +20 Training captures (Labs 3-6): second rounds for Exchange (1507008), Cancel (1506931, 1507792) and Protection: Cards (1507713, 1507819), all open |
+| 2026-09-27 | 408 | 6 | A Cancel Opp. Modif. spares the canceller's own reductions (1089974, 1506931, 1507792); Exchange and Impose run before every increase (1059149, 1507008, 874712) |
 
 ## Fixed
 
@@ -462,6 +463,57 @@ Players Pillz Out Of 2` (Radden Cr) gets the same win gate by analogy, not evide
 946810 and 947010. Tests in `tests/ability/Recover.test.ts`. The Rust engine has used both
 rules since semantic revision 63.
 
+### Cancel Opp. Modif. cancels only the cancelled card's own modifiers
+`BasicModifier.canApply` refused an opposing Power, Damage, Attack or Life modifier whenever
+the *target's* stat was cancelled, so a canceller's own reduction of the card it cancels never
+landed. The server's text is "Any modifier of the opposing character affecting power will be
+deactivated" (`captures/abilities.json` 1164; 1350, 4414, 1163 and 1172 say the same of
+their stats, 1497 "any of your opponent's abilities or bonuses"), and three rounds agree:
+- 1089974 r2: Dookor's `Cancel Opp. Power And Damage Modif.` with his own Dominion `Growth: -1
+  Opp Power, Min 4` live in round three. Sue goes 6 - 3 to the Min, 4, and 4 x 1 + Support 12 =
+  16; Sue's own `-1 Opp Power And Damage, Min 3` stays refused and Dookor fights 6/4, 6 x 3.
+- 1506931 r3: Eyrton Cr's cancel and his own All Stars `-2 Opp Power, Min 1`. Hammer Cr goes
+  6 - 2 = 4, 4 x 7 = 28, where the engine gave 6 and 42; Hammer Cr's identical bonus stays
+  refused and Eyrton Cr keeps 8, 8 x 6 = 48.
+- 1507792 r3: Dookor again, in round four. Angie copies his 6 and his Growth -4 stops at the
+  Min: 4 x 4 = 16, where the engine gave 6.
+
+Only the source's own flag decides now (`data.card`, whose stat an opposing Cancel switched
+off), for every stat. The Power half is what the three rounds pin; Damage, Attack and Life
+follow the same printed rule, and no captured round shows a canceller's own reduction of
+those (the one Attack canceller with its own `-12 Opp Attack, Min 8`, Mimmo in 1506971 r0, has
+its cancel stopped and faces an Attack already under the Min). Pillz read only the target's
+flag, so it let a cancelled card's own opposing Pillz modifier through as well; it follows
+the rule too, and no round shows either direction. Tune Out cancels both cards' Attack, so it
+still turns every Attack modifier off. The Rust engine has cancelled by source since the
+clan-bonus diagnostic (1089974 r2 is its own gate round for it). Fixed 1089974, 1506931 and
+1507792. Tests in `tests/ability/CancelModif.test.ts`.
+
+### Exchange and Impose write printed values before every increase
+`ExchangeModifier` ran in PRE2 among the own increases and *set* `final` to the opposing
+printed value, so it wiped every PRE2 increase registered before it: the owner's own bonus
+always (bonus compiles before ability) and the opponent's own increase whenever the opponent
+was internal P1. `Damage Impose` shares the modifier. Three rounds:
+- 1059149 r1 (night): Calamity's `Power Exchange` against Tina, both printing 5. The server
+  gives Tina 6 Power and 36 Attack - the swapped 5, her own Revenge +2, then Calamity's
+  `Night: -1 Opp Pow. And Damage, Min 1`: 6 x 4 + 12. The engine gave 4 and 28.
+- 1507008 r0 (day): Calamity's `Power Exchange` with her own GhosTown `Day: Power And Damage +
+  1` live, against Tatane. The server gives Calamity 7 Power and 9 Attack - Tatane's 6 plus 1,
+  then 7 x 3 - 12 under Tatane's `-12 Opp Attack, Min 5`. The engine gave 6 and 6.
+- 874712 r1, filed until now as "Revenge / Damage Impose": Kochar imposes his printed 2 Damage
+  on Tina and her own Revenge +2 lands on it, 4; the engine imposed after the +2 and gave 2.
+
+The modifier now runs at PRE3 beside Copy, which writes printed values too, so before every
+increase and reduction. All 39 captured Exchange and Impose rounds fit that order - the swap,
+then own increases, then opposing reductions by descending Min - among them 1087884 r1 (Sue's
+cut on Lagertha Cr's swapped 6), 1080007 r2 and 1091770 r0 (an opposing increase on a swapped
+value), 1089262 r3 (an own increase and an opposing reduction on one swapped card) and 901292
+r0 (an own reduction on an imposed 2). The Rust engine swaps in its Copy phase since semantic
+revision 43 and imposes there since 66, so the two engines agree again. An opposing Cancel of
+the stat (PRE4) still skips the swap, and every such write reads printed values, so two
+Exchanges, or an Exchange against a Copy, cannot depend on their order. Fixed 1059149, 1507008
+and 874712. Tests in `tests/ability/Exchange.test.ts`.
+
 ## Previously triaged open rules
 
 ### End-of-round order: the round-one second mover goes first — 1093173, 1496283 (fixed)
@@ -548,30 +600,12 @@ them fighting at 8 and 1 - the two *base* values swapped, as `abilityData` 1588 
 "Bet > 11 Pillz: -5 Opp. Life Min 0", firing on a one-Pillz bet; see the fixed entry above.
 Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss.
 
-### Revenge / Damage Impose
-- 874712 r1 Tina "Revenge: Power And Damage +2" (lost previous round) vs Kochar "Damage
-  Impose" + "Copy: Opp. Ability": engine damage 2, server 4.
-
-### Exchange overwrites the increases before it — 1059149 (TypeScript only)
-- 1059149 r1: Calamity's `Power Exchange` against Tina, both printing 5 Power. The server
-  gives Tina 6 Power and 36 Attack: the swapped 5, her own +2, then Calamity's -1. The
-  TypeScript engine gives 4 and 28, because `ExchangeModifier` runs in PRE2 and *sets*
-  `final` to the printed values, wiping any PRE2 increase registered before it - the
-  owner's own bonus always (bonus compiles before ability), and the opponent's own increase
-  whenever the opponent is internal P1. The Rust engine swaps printed values in the Copy
-  phase, before every increase, and reproduces every one of the 12 selected Exchange rounds
-  (semantic revision 43); the likely TypeScript fix is to run the swap before PRE2, beside
-  `Copy` at PRE3. One round, so recorded rather than coded. A second round where an
-  Exchange meets an own increase registered before it would settle it.
-
 ### Single points waiting for a second capture
 - 1079078 r3: Rajesh's `-2 Cards Damage, Min 4` puts its own half in the opposing-reduction
   phase, because an ability is queued as a whole at its first modifier's phase; the server
   resolves the owner's half with the owner's own modifiers, before the opposing reductions.
-- 1089974 r2: Dookor's own `Cancel Opp. Power And Damage Modif.` suppresses Dookor's own
-  active Dominion `Growth: -1 Opp Power, Min 4`, because an opposing reduction is refused when
-  the target's stat is cancelled; the server only cancels modifiers whose source is the
-  cancelled card.
+- 1089974 r2, fixed with 1506931 r3 and 1507792 r3: a canceller's own reduction of the card it
+  cancels lands; see "Cancel Opp. Modif. cancels only the cancelled card's own modifiers" above.
 - 947670 r3, fixed with 1496258 r0: `Perfect` was an unknown condition, met unconditionally,
   but the server's text is "If Akirale wins his round with the exact number of pillz needed
   (Perfect Pillz)" (3674, 4030, 4382, 5594; `currentRoundRequirement: "perfect"`). Akirale won
@@ -636,18 +670,8 @@ going to Solomon's owner, is coded from the text alone: no capture has ended lev
 Solomon in play. The Rust catalog still refuses every Leader.
 
 ### Second rounds from the 2026-09-27 test decks (open)
-- 1507008 r0 is the second round for **Exchange overwrites the increases before it** (1059149):
-  Calamity's `Power Exchange` meets Tatane with Calamity's own GhosTown day bonus `Day: Power
-  And Damage + 1` live. The server gives Calamity 7 Power and 9 Attack (7 x 3 - 12, Tatane's
-  `-12 Opp Attack, Min 5`), the engine 6 and 6: the swap wipes the owner's +1 registered
-  before it, as in 1059149.
-- 1506931 r3 is the second round for **Cancel Opp. Modif. only cancels the cancelled card's own
-  modifiers** (1089974): Eyrton Cr's `Cancel Opp. Power And Damage Modif.` faces Hammer Cr while
-  Eyrton's own All Stars bonus `-2 Opp Power, Min 1` is live. The server gives Hammer Cr 4
-  Power (6 - 2) and 28 Attack; the engine refuses Eyrton's own reduction and gives 6 and 42.
-  1507792 r3 is a third: the owner's Dookor cancels against Angie (`Copy: Opp. Power`, Bangers
-  `Power +2`) with Dookor's own Dominion `Growth: -1 Opp Power, Min 4` live in round four; the
-  server leaves Angie at 4 Power (the Min), the engine refuses the reduction and gives 6.
+The Exchange round (1507008 r0) and the two Cancel rounds (1506931 r3, 1507792 r3) settled
+their rules and are fixed above. The Protection: Cards pair is still open:
 - 1507713 r1 is new: Khrull Cr's `Protection: Cards Power And Damage` faces Twyh while Khrull's
   own Dominion bonus `Growth: -1 Opp Power, Min 4` is live. The server leaves Twyh at 5 Power
   (Attack 20), the engine takes it to 4 (16). "Cards" means both cards, as in `Cards Damage +2`.
@@ -656,13 +680,14 @@ Solomon in play. The Rust catalog still refuses every Leader.
 
 ## Fresh capture backlog
 
-Nothing is untriaged. Of the seven remaining mismatches, 1506438 (same-family Poison replaces)
-is settled and waits on the fix; the other six wait on a second capture or an open question:
-874712 (Revenge / Damage Impose), 1059149 (Exchange, TypeScript only), 1414749 (an increase to
-the opposing card), and the single points 1079078, 1089974 and 1025413. 1093173 (end-of-round order) and 947670 (Perfect) were settled by the
-2026-09-26 Training captures. The backlog of 39 that the expanded
+Nothing is untriaged. Of the six remaining mismatches, 1506438 (same-family Poison replaces)
+and the Protection: Cards pair 1507713 and 1507819 are settled and wait on their fixes; the
+other three wait on a second capture: 1414749 (an increase to the opposing card) and the
+single points 1079078 and 1025413. The 2026-09-27 test-deck captures settled 1059149
+(Exchange, with 874712's Damage Impose beside it) and 1089974 (Cancel), all fixed above; the
+2026-09-26 Training captures settled 1093173 (end-of-round order) and 947670 (Perfect). The backlog of 39 that the expanded
 corpus brought on 2026-09-14 and 2026-09-17, and the three from the 2026-09-23 session, are
-fixed above or among those eight. A fourth 2026-09-23 capture, 1414087, deals card 2714
+fixed above or among those six. A fourth 2026-09-23 capture, 1414087, deals card 2714
 (Gloria, level 2, `Brawl: Damage + 1`), which the 2026-09-10 character dump predated; since
 the 2026-09-26 card refresh it has a testcase and replays exactly.
 

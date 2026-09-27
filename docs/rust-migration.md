@@ -1747,12 +1747,13 @@ Exchange`, whose swap the life ledger shows although the capture's `damageAfter`
 The gate grows from 349 to 371 rounds. The owner's own increase on top, an opposing Cancel,
 and two Exchanges at once have no round and are pinned by engine tests.
 
-The Rust engine now disagrees with the TypeScript one on purpose, and is right by the
-server. TypeScript runs the swap in PRE2 as an overwrite, so it wipes any PRE2 increase
+The Rust engine disagreed with the TypeScript one on purpose here, and was right by the
+server. TypeScript ran the swap in PRE2 as an overwrite, so it wiped any PRE2 increase
 registered before it; 1059149/1 shows the server keeping it. That round was outside the Rust
-gate until revision 44 admitted Calamity's Night bonus, and `--rust=compare` will report a
-difference in those positions. It is written up in `docs/replay-triage.md` as a one-round TypeScript
-bug rather than fixed there.
+gate until revision 44 admitted Calamity's Night bonus. It stayed a one-round TypeScript bug
+in `docs/replay-triage.md` until 1507008/0 gave it a second round (2026-09-27); TypeScript now
+runs Exchange and Impose at PRE3 beside Copy, before every increase, as this engine does, and
+the two agree again.
 
 Semantic revision 44 admits the `Night:` and `Day:` forms of the plain fixed numeric grammar
 - the GhosTown bonus `Night: -1 Opp Pow. And Damage, Min 1` (`1442`), `Night: Power And
@@ -3589,8 +3590,9 @@ catalog-context policy revision moves to 6, because catalog behaviour changed.
 - 876574/0: Caballine L3's Unison Copy pays 12 + 1 = 13 Life and 12 - 7 + 1 = 6 Pillz.
 
 Replay captures a Copy's result in the copier's own slot. So 876574/0 now executes Caballine's
-captured `(Ability, 1714)` and matches the server, and it joins the gate. 1089974/2 is a
-TypeScript single-point mismatch (Dookor's Cancel against his own Growth, docs/replay-triage.md).
+captured `(Ability, 1714)` and matches the server, and it joins the gate. 1089974/2 was then a
+TypeScript single-point mismatch (Dookor's Cancel against his own Growth, docs/replay-triage.md),
+fixed in TypeScript on 2026-09-27 once 1506931/3 and 1507792/3 gave it more rounds.
 The Rust gate replays it exactly, executing Dookor's `Cancel Opp. Power And Damage Modif.`
 (`1589`) for the first time.
 

@@ -16,9 +16,24 @@ export const ExchangeObject: { [index: string]: Exchange } = {
   "IMPOSE DAMAGE": Exchange.IMPOSE_DAMAGE,
 };
 
+/**
+ * `Power Exchange`, `Damage Exchange`, `Power And Damage Exchange` and `Damage Impose` write
+ * printed values ("the starting Power (written on the card)") onto the cards, so the server
+ * resolves them before every increase and reduction: at PRE3 beside Copy, which does the
+ * same for one card. They used to run in PRE2 among the own increases and overwrote whatever
+ * PRE2 had already applied - the owner's own bonus always (bonus compiles before ability)
+ * and the opponent's own increase whenever the opponent was internal P1. Three rounds pin
+ * the order: Calamity's Power Exchange leaves Tina on 6 Power in 1059149 r1 (the swapped 5,
+ * her own Revenge +2, then Calamity's Night -1) and Calamity herself on 7 in 1507008 r0
+ * (Tatane's 6, then her own Day +1; 7 x 3 - 12 = 9 Attack), and Kochar's Damage Impose leaves
+ * Tina on 4 Damage in 874712 r1 (Kochar's printed 2, then her Revenge +2). All 39 captured
+ * Exchange and Impose rounds fit this order. Every write reads printed values, so two of
+ * them, or one against a Copy, do not depend on which runs first. An opposing Cancel of the
+ * stat (PRE4) still skips the swap.
+ */
 export default class ExchangeModifier extends Modifier {
   ex = Exchange.POWER;
-  constructor(ex: Exchange | string, et = EventTime.PRE2) {
+  constructor(ex: Exchange | string, et = EventTime.PRE3) {
     super();
 
     if (typeof ex == "string") {
