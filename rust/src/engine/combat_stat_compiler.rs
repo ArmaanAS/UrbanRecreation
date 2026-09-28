@@ -235,7 +235,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 82;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 83;
 
 /// Revision 79: the lone Team Leaders the corpus pins, each by identity - the registry
 /// definition the captures deal, its exact printed text, and the effect it compiles to. Only
@@ -3954,8 +3954,9 @@ pub(crate) fn has_growth_permanent_shape(definition: &EffectDefinitionV1) -> boo
 /// Revision 74: Bugamon's `Growth: -1 Power And Damage, Min 4` (`1676`), the one printed
 /// combat-stat reduction that names no opponent (`sideAffected: player`). It lowers its own
 /// card's Power and Damage by the printed amount times the one-based round, never below the
-/// floor, with the owner's own modifiers - before the opposing reductions, the order `Cards`
-/// pins for its own half (1079078/3). 1088641/0 (8/7 to 7/6) and 1414749/1 (8/7 to 6/5, the
+/// floor, with the owner's own modifiers - before the opposing reductions, as the TypeScript
+/// reference runs it (revision 74 cited the own half of `Cards` for that order, which revision
+/// 83 moved into the reductions phase). 1088641/0 (8/7 to 7/6) and 1414749/1 (8/7 to 6/5, the
 /// opposing Sandro Cr untouched) pin the target and the factor; neither reaches the floor.
 /// Exact text over the complete round-scaled shape, card abilities only.
 fn classify_own_growth_decrease(

@@ -4631,6 +4631,49 @@ an opposing `Damage +2` bonus (both +3, where revision 81 paid 5).
 dispositions and both data fingerprints are unchanged: no gate round meets a modified opposing stat
 under either conversion.
 
+Semantic revision 83 changes where a `Cards` modifier resolves. Revisions 44-82 applied its own
+half - the change to its owner's card - with the owner's own modifiers, before every opposing
+reduction, on the strength of 1079078/3 (Rajesh's own `-2 Cards Damage, Min 4` at 4 before Sue's
+`-1 Opp Power And Damage, Min 3` takes it to 3). The autoplay runs 5-10 show that round fitted by
+accident: the own half sorts by its Min with the opposing reductions of its card, both sides
+merged, as the TypeScript reference now runs its PRE1 and POST2 buckets (`Events.executeCuts`,
+docs/replay-triage.md, "Both sides' reductions of one card resolve by descending Min"). It admits
+nothing.
+
+**Evidence.**
+- 1526067/1: Niva's `Courage: -4 Opp. Dmg, Min 2` before Pere Fourrure's own `Support: -1 Cards
+  Damage, Min 0` x 2: 6 -> 2 -> 0 (own first gives 2).
+- 1525903/1: Magenta's `-6 Opp Attack, Min 6` before Miss Denna's own `-7 Cards Attack, Min 0`:
+  10 -> 6 -> 0 (own first gives 3). A strictly eligible draw, where revision 82 disagreed with the
+  server.
+- 1525934/2: C0re Cr's Hive `Equalizer: -3 Opp Attack, Min 5` before the same own half: 10 -> 7
+  -> 0.
+- 1079078/3 fits it too: the own Min 4 is the higher.
+
+**The change.** `prepare_combat_resolution_with_post_round` no longer hands a `Cards` source to the
+own-modifier passes (`outside_cuts`). The reductions phase of each stat now runs per target card
+(`apply_ordered_power_damage_cuts`, `apply_ordered_attack_cuts`): `ordered_cuts` collects, without
+allocating, the opposing bonus's and ability's reductions of that card and either half of a `Cards`
+modifier that lands on it - the opposing half from the other origin, the owner's own half from the
+card's own - and orders them by descending Min, internal P1 before P2 and bonus before ability on a
+tie, with a `Cards` increase's unbounded halves after every bounded entry. The per-origin helpers it
+replaces (`apply_ordered_power_damage_reductions`, `apply_ordered_attack_reductions`) sorted only
+within an origin. A Team reduction still lands after them. The two targets' phases are independent -
+nothing in the phase reads the other card - so running them one target at a time is the reference's
+merged bucket restricted to each card. `cards_own_half_resolves_by_min_with_the_opposing_cut`
+(`combat_stat_diagnostic_engine.rs`) plays both captured shapes on both seats.
+
+A `Cards Damage +2` own half now lands after the opposing reductions of its card instead of before
+them, as the reference's unbounded entries do; no round has that meeting with a clamp that binds
+(1525934/1 and 1528541/1 have it without), and eight eligible draws hold one of the six levels that
+print it. Bugamon's own `Growth:` decrease stays with the owner's own modifiers, as the reference
+runs it; revision 74 had cited the Cards half for that order, which no longer holds, and no round
+has it meet an opposing reduction under a binding floor.
+
+`deno task pins:update` moves the compiler revision (82 to 83) and `tests/expect/rust-provenance.json`
+(compiler 83). The gate rounds (950), the eligible (803) and scanned (1857) draws, the gate ids and
+dispositions and both data fingerprints are unchanged.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

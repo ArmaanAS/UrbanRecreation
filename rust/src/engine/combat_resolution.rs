@@ -480,14 +480,16 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         }
     }
 
-    // Source compilation is Bonus then Ability. Own increases retain that stable order.
+    // Source compilation is Bonus then Ability. Own increases retain that stable order. A
+    // `Cards` modifier is not among them: since semantic revision 83 both its halves resolve
+    // with the reductions (`apply_ordered_power_damage_cuts`).
     for origin in PlayerId::ALL {
         if live[origin].bonus {
             apply_power_damage_effect(
                 origin,
                 DiagnosticAffectedSideV1::Player,
                 DiagnosticStatOperationV1::Increase,
-                selected_plans[origin].bonus,
+                outside_cuts(selected_plans[origin].bonus),
                 cancellations[origin.other()],
                 StatMask::default(),
                 rounds_played,
@@ -501,7 +503,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 origin,
                 DiagnosticAffectedSideV1::Player,
                 DiagnosticStatOperationV1::Increase,
-                selected_plans[origin].ability,
+                outside_cuts(selected_plans[origin].ability),
                 cancellations[origin.other()],
                 StatMask::default(),
                 rounds_played,
@@ -526,28 +528,24 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         )?;
     }
 
-    // Server-backed TypeScript semantics stable-sort opponent reductions by descending
-    // Min. Equal-Min effects retain source compilation order (Bonus then Ability).
-    for origin in PlayerId::ALL {
-        let bonus = if live[origin].bonus {
-            selected_plans[origin].bonus
-        } else {
-            ResolutionSourcePlan::default()
-        };
-        apply_ordered_power_damage_reductions(
-            origin,
-            bonus,
-            live[origin]
-                .ability
-                .then_some(selected_plans[origin].ability)
-                .unwrap_or_default(),
-            cancellations[origin.other()],
-            protections[origin.other()],
+    // The reductions phase, per target card: every modifier that lands on it there - the
+    // opposing card's reductions and either half of a `Cards` modifier, the owner's own half
+    // included - by descending Min across both origins, as the reference's merged PRE1 bucket
+    // orders them (semantic revision 83; `apply_ordered_power_damage_cuts`).
+    for target in PlayerId::ALL {
+        apply_ordered_power_damage_cuts(
+            target,
+            live,
+            selected_plans,
+            cancellations,
+            protections,
             rounds_played,
-            opponent_stars[origin],
+            opponent_stars,
             &mut power,
             &mut damage,
         )?;
+    }
+    for origin in PlayerId::ALL {
         // A Team reduction lands after the card's own, outside their Min ordering, as the
         // reference's `repeat` bucket runs after its sorted `events`. Construction admits it
         // only beside own reductions of the same stat and floor, which commute (1509037/1:
@@ -626,7 +624,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 origin,
                 DiagnosticAffectedSideV1::Player,
                 DiagnosticStatOperationV1::Increase,
-                selected_plans[origin].bonus,
+                outside_cuts(selected_plans[origin].bonus),
                 cancellations[origin.other()],
                 StatMask::default(),
                 rounds_played,
@@ -641,7 +639,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 origin,
                 DiagnosticAffectedSideV1::Player,
                 DiagnosticStatOperationV1::Increase,
-                selected_plans[origin].ability,
+                outside_cuts(selected_plans[origin].ability),
                 cancellations[origin.other()],
                 StatMask::default(),
                 rounds_played,
@@ -672,28 +670,25 @@ pub(super) fn prepare_combat_resolution_with_post_round(
         }
     }
 
-    // Opponent Attack reductions use the same stable descending-Min ordering.
-    for origin in PlayerId::ALL {
-        let bonus = if attack_live[origin].bonus {
-            selected_plans[origin].bonus
-        } else {
-            ResolutionSourcePlan::default()
-        };
-        apply_ordered_attack_reductions(
-            origin,
-            bonus,
-            attack_live[origin]
-                .ability
-                .then_some(selected_plans[origin].ability)
-                .unwrap_or_default(),
-            cancellations[origin.other()],
-            protections[origin.other()],
+    // Attack reductions resolve the same way, per target card by descending Min across both
+    // origins (revision 83): 1525903/1 has Magenta's `-6 Opp Attack, Min 6` hold Miss Denna's
+    // 10 at 6 before her own `-7 Cards Attack, Min 0` takes it to 0, and 1525934/2 has C0re Cr's
+    // Hive Equalizer take it to 7 first.
+    for target in PlayerId::ALL {
+        apply_ordered_attack_cuts(
+            target,
+            attack_live,
+            selected_plans,
+            cancellations,
+            protections,
             rounds_played,
-            opponent_stars[origin],
-            printed_damage[origin.other()],
-            printed_power[origin.other()],
+            opponent_stars,
+            printed_damage,
+            printed_power,
             &mut attack,
         )?;
+    }
+    for origin in PlayerId::ALL {
         // No reviewed Team ability reduces an Attack; were one admitted it would land after the
         // card's own reductions, as a Team Damage reduction does.
         if !attack_simplified {
@@ -1028,182 +1023,206 @@ fn finish_selection(
     }
 }
 
-fn apply_ordered_power_damage_reductions(
+/// One modifier of a target card's reductions phase: an opposing reduction of the stat, or
+/// either half of a `Cards` modifier (the opposing half from the other origin, the owner's own
+/// half from the target's). `min` orders it: `Some` for a reduction, by descending Min, and
+/// `None` for an unbounded `Cards` increase, after every bounded entry. `rank` breaks ties as
+/// the reference's merge does: internal P1's entries before P2's, bonus before ability.
+#[derive(Clone, Copy)]
+struct CutEntry {
     origin: PlayerId,
-    bonus: ResolutionSourcePlan,
-    ability: ResolutionSourcePlan,
-    opponent_cancellation: StatMask,
-    target_protection: StatMask,
+    source: ResolutionSourcePlan,
+    lands_as: DiagnosticAffectedSideV1,
+    min: Option<u16>,
+    rank: u8,
+}
+
+/// A source plan outside the reductions phase: the same plan without a `Cards` modifier, whose
+/// halves both resolve there since semantic revision 83.
+fn outside_cuts(plan: ResolutionSourcePlan) -> ResolutionSourcePlan {
+    match plan.effect {
+        Some(DiagnosticCombatEffectV1::ModifyCombatStat {
+            side: DiagnosticAffectedSideV1::Both,
+            ..
+        }) => ResolutionSourcePlan {
+            effect: None,
+            ..plan
+        },
+        _ => plan,
+    }
+}
+
+/// How `effect`, landing on its target as `lands_as` from its origin, enters that target's
+/// reductions phase - the Attack one when `attack`, the Power/Damage one otherwise: `Some(min)`
+/// when it does, `min` as in `CutEntry`.
+fn cut_key(
+    effect: Option<DiagnosticCombatEffectV1>,
+    lands_as: DiagnosticAffectedSideV1,
+    attack: bool,
+) -> Option<Option<u16>> {
+    let Some(DiagnosticCombatEffectV1::ModifyCombatStat {
+        side,
+        stat,
+        operation,
+        minimum,
+        ..
+    }) = effect
+    else {
+        return None;
+    };
+    let stat_matches = if attack {
+        stat == DiagnosticCombatStatV1::Attack
+    } else {
+        matches!(
+            stat,
+            DiagnosticCombatStatV1::Power
+                | DiagnosticCombatStatV1::Damage
+                | DiagnosticCombatStatV1::PowerAndDamage
+        )
+    };
+    let enters = stat_matches
+        && match (side, lands_as) {
+            (DiagnosticAffectedSideV1::Both, _) => true,
+            (DiagnosticAffectedSideV1::Opponent, DiagnosticAffectedSideV1::Opponent) => {
+                operation == DiagnosticStatOperationV1::Decrease
+            }
+            _ => false,
+        };
+    enters.then_some(match operation {
+        DiagnosticStatOperationV1::Decrease => Some(minimum.unwrap_or(0)),
+        DiagnosticStatOperationV1::Increase => None,
+    })
+}
+
+/// The entries of `target`'s reductions phase in the order they apply, allocation-free: at most
+/// the opposing bonus and ability and the target's own bonus and ability.
+fn ordered_cuts(
+    target: PlayerId,
+    live: ByPlayer<SourceLiveness>,
+    selected_plans: ByPlayer<ResolutionCardPlan>,
+    attack: bool,
+) -> ([Option<CutEntry>; 4], usize) {
+    let mut entries: [Option<CutEntry>; 4] = [None; 4];
+    let mut count = 0;
+    for origin in PlayerId::ALL {
+        let lands_as = if origin == target {
+            DiagnosticAffectedSideV1::Player
+        } else {
+            DiagnosticAffectedSideV1::Opponent
+        };
+        for (slot, is_live, source) in [
+            (0, live[origin].bonus, selected_plans[origin].bonus),
+            (1, live[origin].ability, selected_plans[origin].ability),
+        ] {
+            if !is_live {
+                continue;
+            }
+            if let Some(min) = cut_key(source.effect, lands_as, attack) {
+                entries[count] = Some(CutEntry {
+                    origin,
+                    source,
+                    lands_as,
+                    min,
+                    rank: (origin.index() * 2 + slot) as u8,
+                });
+                count += 1;
+            }
+        }
+    }
+    // Insertion sort: bounded before unbounded, bounded by descending Min, then by rank.
+    let before = |a: &CutEntry, b: &CutEntry| match (a.min, b.min) {
+        (Some(x), Some(y)) if x != y => x > y,
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+        _ => a.rank < b.rank,
+    };
+    for i in 1..count {
+        let mut j = i;
+        while j > 0 {
+            let (Some(later), Some(earlier)) = (entries[j], entries[j - 1]) else {
+                break;
+            };
+            if !before(&later, &earlier) {
+                break;
+            }
+            entries.swap(j, j - 1);
+            j -= 1;
+        }
+    }
+    (entries, count)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_ordered_power_damage_cuts(
+    target: PlayerId,
+    live: ByPlayer<SourceLiveness>,
+    selected_plans: ByPlayer<ResolutionCardPlan>,
+    cancellations: ByPlayer<StatMask>,
+    protections: ByPlayer<StatMask>,
     rounds_played: u8,
-    opponent_stars: u16,
+    opponent_stars: ByPlayer<u16>,
     power: &mut ByPlayer<u16>,
     damage: &mut ByPlayer<u16>,
 ) -> Result<(), CombatResolutionError> {
-    let bonus_min = power_damage_reduction_min(bonus.effect);
-    let ability_min = power_damage_reduction_min(ability.effect);
-    if ability_min > bonus_min {
+    let (entries, count) = ordered_cuts(target, live, selected_plans, false);
+    for entry in entries[..count].iter().flatten() {
         apply_power_damage_effect(
-            origin,
-            DiagnosticAffectedSideV1::Opponent,
+            entry.origin,
+            entry.lands_as,
             DiagnosticStatOperationV1::Decrease,
-            ability,
-            opponent_cancellation,
-            target_protection,
+            entry.source,
+            cancellations[entry.origin.other()],
+            protections[target],
             rounds_played,
-            opponent_stars,
+            opponent_stars[entry.origin],
             power,
             damage,
         )?;
-        apply_power_damage_effect(
-            origin,
-            DiagnosticAffectedSideV1::Opponent,
-            DiagnosticStatOperationV1::Decrease,
-            bonus,
-            opponent_cancellation,
-            target_protection,
-            rounds_played,
-            opponent_stars,
-            power,
-            damage,
-        )
-    } else {
-        apply_power_damage_effect(
-            origin,
-            DiagnosticAffectedSideV1::Opponent,
-            DiagnosticStatOperationV1::Decrease,
-            bonus,
-            opponent_cancellation,
-            target_protection,
-            rounds_played,
-            opponent_stars,
-            power,
-            damage,
-        )?;
-        apply_power_damage_effect(
-            origin,
-            DiagnosticAffectedSideV1::Opponent,
-            DiagnosticStatOperationV1::Decrease,
-            ability,
-            opponent_cancellation,
-            target_protection,
-            rounds_played,
-            opponent_stars,
-            power,
-            damage,
-        )
     }
+    Ok(())
 }
 
-fn apply_ordered_attack_reductions(
-    origin: PlayerId,
-    bonus: ResolutionSourcePlan,
-    ability: ResolutionSourcePlan,
-    opponent_cancellation: StatMask,
-    target_protection: StatMask,
+#[allow(clippy::too_many_arguments)]
+fn apply_ordered_attack_cuts(
+    target: PlayerId,
+    live: ByPlayer<SourceLiveness>,
+    selected_plans: ByPlayer<ResolutionCardPlan>,
+    cancellations: ByPlayer<StatMask>,
+    protections: ByPlayer<StatMask>,
     rounds_played: u8,
-    opponent_stars: u16,
-    opponent_damage: u16,
-    opponent_power: u16,
+    opponent_stars: ByPlayer<u16>,
+    printed_damage: ByPlayer<u16>,
+    printed_power: ByPlayer<u16>,
     attack: &mut ByPlayer<u32>,
 ) -> Result<(), CombatResolutionError> {
-    let bonus_min = attack_reduction_min(bonus.effect);
-    let ability_min = attack_reduction_min(ability.effect);
-    if ability_min > bonus_min {
+    let (entries, count) = ordered_cuts(target, live, selected_plans, true);
+    for entry in entries[..count].iter().flatten() {
         apply_attack_effect(
-            origin,
-            DiagnosticAffectedSideV1::Opponent,
+            entry.origin,
+            entry.lands_as,
             DiagnosticStatOperationV1::Decrease,
-            ability,
-            opponent_cancellation,
-            target_protection,
+            entry.source,
+            cancellations[entry.origin.other()],
+            protections[target],
             rounds_played,
-            opponent_stars,
-            opponent_damage,
-            opponent_power,
+            opponent_stars[entry.origin],
+            printed_damage[entry.origin.other()],
+            printed_power[entry.origin.other()],
             attack,
         )?;
-        apply_attack_effect(
-            origin,
-            DiagnosticAffectedSideV1::Opponent,
-            DiagnosticStatOperationV1::Decrease,
-            bonus,
-            opponent_cancellation,
-            target_protection,
-            rounds_played,
-            opponent_stars,
-            opponent_damage,
-            opponent_power,
-            attack,
-        )
-    } else {
-        apply_attack_effect(
-            origin,
-            DiagnosticAffectedSideV1::Opponent,
-            DiagnosticStatOperationV1::Decrease,
-            bonus,
-            opponent_cancellation,
-            target_protection,
-            rounds_played,
-            opponent_stars,
-            opponent_damage,
-            opponent_power,
-            attack,
-        )?;
-        apply_attack_effect(
-            origin,
-            DiagnosticAffectedSideV1::Opponent,
-            DiagnosticStatOperationV1::Decrease,
-            ability,
-            opponent_cancellation,
-            target_protection,
-            rounds_played,
-            opponent_stars,
-            opponent_damage,
-            opponent_power,
-            attack,
-        )
     }
-}
-
-/// The Min an owner's opposing Power/Damage reduction sorts by. The opposing half of a
-/// `Cards` decrease is one such reduction; the opposing half of a `Cards` increase has no
-/// Min and sorts after them, as an unbounded modifier does in the reference.
-fn power_damage_reduction_min(effect: Option<DiagnosticCombatEffectV1>) -> Option<u16> {
-    match effect {
-        Some(DiagnosticCombatEffectV1::ModifyCombatStat {
-            side: DiagnosticAffectedSideV1::Opponent | DiagnosticAffectedSideV1::Both,
-            stat:
-                DiagnosticCombatStatV1::Power
-                | DiagnosticCombatStatV1::Damage
-                | DiagnosticCombatStatV1::PowerAndDamage,
-            operation: DiagnosticStatOperationV1::Decrease,
-            minimum,
-            ..
-        }) => Some(minimum.unwrap_or(0)),
-        _ => None,
-    }
-}
-
-fn attack_reduction_min(effect: Option<DiagnosticCombatEffectV1>) -> Option<u16> {
-    match effect {
-        Some(DiagnosticCombatEffectV1::ModifyCombatStat {
-            side: DiagnosticAffectedSideV1::Opponent | DiagnosticAffectedSideV1::Both,
-            stat: DiagnosticCombatStatV1::Attack,
-            operation: DiagnosticStatOperationV1::Decrease,
-            minimum,
-            ..
-        }) => Some(minimum.unwrap_or(0)),
-        _ => None,
-    }
+    Ok(())
 }
 
 /// The card a modifier lands on in the phase that asked for `(expected_side,
 /// expected_operation)`, or `None` when it belongs to another phase. A one-sided modifier
-/// runs only in its own phase. A `Cards` modifier runs in both: its owner's card takes it with
-/// the owner's own modifiers whatever its sign, and the opposing card with the owner's
-/// opposing ones. That is the reference's PRE2/PRE1 split and what 1079078/3 pins: Rajesh's
-/// own printed 6 Damage is at 4 under his `-2 Cards Damage, Min 4` before Sue's `-1 Opp Power
-/// And Damage, Min 3` takes it to the reported 3, where the other order leaves 4.
+/// runs only in its own phase. A `Cards` modifier lands on its owner's card when asked as
+/// `Player` and on the opposing card when asked as `Opponent`, whatever its sign; since
+/// semantic revision 83 both halves are asked for only in the reductions phase, where the own
+/// half sorts by its Min with the opposing reductions of its card (`ordered_cuts`). 1079078/3
+/// (Rajesh's own Min 4 before Sue's Min 3: 6 -> 4 -> 3) fits both that and the old own-first
+/// placement; 1526067/1 (Niva's Min 2 before Pere Fourrure's own Min 0: 6 -> 2 -> 0) and
+/// 1525903/1 fit only the Min order.
 fn modifier_target(
     origin: PlayerId,
     side: DiagnosticAffectedSideV1,
@@ -1219,8 +1238,10 @@ fn modifier_target(
         (DiagnosticAffectedSideV1::Both, DiagnosticAffectedSideV1::Both) => None,
         // An own decrease - Bugamon's `Growth: -1 Power And Damage, Min 4`, the one printed
         // combat-stat reduction that names no opponent - lands on its owner's card with the
-        // owner's own modifiers, before the opposing reductions, as the own half of `Cards`
-        // does (1079078/3). 1088641/0 and 1414749/1 show it on Bugamon alone.
+        // owner's own modifiers, before the opposing reductions, as the TypeScript reference
+        // runs it (PRE2). 1088641/0 and 1414749/1 show it on Bugamon alone; no round has it meet
+        // an opposing reduction under a binding floor. (Revision 74 cited the own half of
+        // `Cards` for this order, which revision 83 moved into the reductions phase.)
         (DiagnosticAffectedSideV1::Player, DiagnosticAffectedSideV1::Player)
             if operation == DiagnosticStatOperationV1::Decrease
                 && expected_operation == DiagnosticStatOperationV1::Increase =>

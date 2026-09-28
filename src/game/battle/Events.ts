@@ -427,18 +427,58 @@ export default class Events {
     if (first.repeat[event].length === 0) first.mask &= ~(1 << event);
   }
 
-  execute(event: EventTime, data: BattleData) {
-    // Opponent-targeting reductions (PRE1 = power/damage, POST2 = attack) are applied by
-    // the server in descending order of their Min clamp: Miss Stella (ability -8 Min 11,
-    // bonus -8 Min 3) on 18 → 11 → 3; Don Cr (bonus -12 Min 8, ability -4 Min 2) on 18
-    // → 8 → 4. Captured battles 875272, 901613, 901292.
-    const events = this.events[event];
-    if (
-      events.length > 1 &&
-      (event === EventTime.PRE1 || event === EventTime.POST2)
-    ) {
-      events.sort(byMinDescending);
+  /**
+   * The reductions phase of a stat (PRE1 for Power and Damage, POST2 for Attack), both sides at
+   * once, in descending order of the Min clamp. Within one side that is the order the server
+   * has always shown for two reductions on one card - Miss Stella (ability -8 Min 11, bonus -8
+   * Min 3) on 18 -> 11 -> 3, Don Cr (bonus -12 Min 8, ability -4 Min 2) on 18 -> 8 -> 4
+   * (875272, 901613, 901292). Across the sides it decides the one case where both sides reduce
+   * one card, the owner's own half of a `Cards` reduction against the opposing card's cut, and
+   * four captured rounds fit it on either seat where running one side and then the other
+   * fits two:
+   * - 1526067 r1: Niva's `Courage: -4 Opp. Dmg, Min 2` (P2) before Pere Fourrure's own
+   *   `Support: -1 Cards Damage, Min 0` x 2 (P1): 6 -> 2 -> 0. P1 first gave 6 -> 4 -> 2.
+   * - 1079078 r3: Rajesh's own `-2 Cards Damage, Min 4` (P2) before Sue's `-1 Opp Power And
+   *   Damage, Min 3` (P1): 6 -> 4 -> 3. P1 first gave 6 -> 5 -> 4.
+   * - 1525903 r1: Magenta's `-6 Opp Attack, Min 6` (P1) before Miss Denna's own `-7 Cards
+   *   Attack, Min 0` (P2): 10 -> 6 -> 0, where P2 first would leave 3.
+   * - 1525934 r2: C0re Cr's Hive `Equalizer: -3 Opp Attack, Min 5` (P1) before Miss Denna's
+   *   own `-7 Cards Attack, Min 0` (P2): 10 -> 7 -> 0.
+   * Equal Mins keep the old order, internal P1 before P2 and bonus before ability; so do the
+   * unbounded entries (Tune Out, an opposing increase), after every bounded one.
+   * Allocation-free: each side is sorted in place and the two are merged by index.
+   */
+  static executeCuts(
+    event: EventTime,
+    first: Events,
+    firstData: BattleData,
+    second: Events,
+    secondData: BattleData,
+  ) {
+    const a = first.events[event];
+    const b = second.events[event];
+    if (a.length > 1) a.sort(byMinDescending);
+    if (b.length > 1) b.sort(byMinDescending);
+    let i = 0;
+    let j = 0;
+    while (i < a.length || j < b.length) {
+      if (j >= b.length || (i < a.length && minClamp(a[i]) >= minClamp(b[j]))) {
+        a[i++].apply(firstData);
+      } else {
+        b[j++].apply(secondData);
+      }
     }
+    clear(a);
+    clear(b);
+
+    first.executeRepeat(event, firstData);
+    second.executeRepeat(event, secondData);
+    if (first.repeat[event].length === 0) first.mask &= ~(1 << event);
+    if (second.repeat[event].length === 0) second.mask &= ~(1 << event);
+  }
+
+  execute(event: EventTime, data: BattleData) {
+    const events = this.events[event];
     for (const ability of events) {
       ability.apply(data);
     }

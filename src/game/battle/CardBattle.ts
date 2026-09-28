@@ -76,8 +76,10 @@ export default class CardBattle {
     if (events1.mask & (1 << EventTime.PRE2)) events1.execute(EventTime.PRE2, b1);
     if (events2.mask & (1 << EventTime.PRE2)) events2.execute(EventTime.PRE2, b2);
     // console.log("Executing pre", 1);
-    if (events1.mask & (1 << EventTime.PRE1)) events1.execute(EventTime.PRE1, b1);
-    if (events2.mask & (1 << EventTime.PRE1)) events2.execute(EventTime.PRE1, b2);
+    // The reductions of both sides together, by descending Min (Events.executeCuts).
+    if ((events1.mask | events2.mask) & (1 << EventTime.PRE1)) {
+      Events.executeCuts(EventTime.PRE1, events1, b1, events2, b2);
+    }
 
     const a1 = card1.power.final * (pillz1 + 1);
     const a2 = card2.power.final * (pillz2 + 1);
@@ -88,8 +90,9 @@ export default class CardBattle {
     // events2.executePost(b2);
     if (events1.mask & (1 << EventTime.POST1)) events1.execute(EventTime.POST1, b1);
     if (events2.mask & (1 << EventTime.POST1)) events2.execute(EventTime.POST1, b2);
-    if (events1.mask & (1 << EventTime.POST2)) events1.execute(EventTime.POST2, b1);
-    if (events2.mask & (1 << EventTime.POST2)) events2.execute(EventTime.POST2, b2);
+    if ((events1.mask | events2.mask) & (1 << EventTime.POST2)) {
+      Events.executeCuts(EventTime.POST2, events1, b1, events2, b2);
+    }
     if (events1.mask & (1 << EventTime.POST3)) events1.execute(EventTime.POST3, b1);
     if (events2.mask & (1 << EventTime.POST3)) events2.execute(EventTime.POST3, b2);
     if (events1.mask & (1 << EventTime.POST4)) events1.execute(EventTime.POST4, b1);

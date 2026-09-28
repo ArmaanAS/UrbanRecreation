@@ -4863,6 +4863,71 @@ fn attack_per_opponent_damage_reads_the_printed_damage() {
     assert_eq!(report.cards[PlayerId::P1].attack, 36); // 32 + 2 x 2
 }
 
+/// Semantic revision 83: the owner's own half of a `Cards` reduction resolves by its Min with the
+/// opposing reductions of its card, both origins merged, where revisions 44-82 applied it with
+/// the owner's own modifiers first. 1526067/1 has Niva's `-4 Opp. Dmg, Min 2` take Pere
+/// Fourrure's 6 to 2 before his own `-2 Cards Damage, Min 0` takes it to 0 (own first gave 2),
+/// 1525903/1 has Magenta's `-6 Opp Attack, Min 6` hold Miss Denna's 10 at 6 before her own `-7
+/// Cards Attack, Min 0` takes it to 0 (own first gave 3), and 1079078/3 - Rajesh's own Min 4
+/// before Sue's Min 3, 6 -> 4 -> 3 - fits both. Each is played with the Cards owner on either seat.
+#[test]
+fn cards_own_half_resolves_by_min_with_the_opposing_cut() {
+    let cards = |stat, value, minimum| {
+        modifier(
+            CombatStatAffectedSideV1::Both,
+            stat,
+            CombatStatOperationV1::Decrease,
+            value,
+            Some(minimum),
+            None,
+            CombatStatMagnitudeV1::Fixed,
+        )
+    };
+    for owner in PlayerId::ALL {
+        let opponent = owner.other();
+        let play = |power, damage, own: CombatStatEffectV1, cut: CombatStatEffectV1, pillz| {
+            let base = base_spec(power, damage);
+            let mut plans = plans(&base);
+            plans[owner][0].ability = execute(2092, CombatStatPredicateV1::Always, own);
+            plans[opponent][0].ability = execute(916, CombatStatPredicateV1::Always, cut);
+            let mut bets = ByPlayer::new((0, 0, false), (0, 0, false));
+            bets[owner] = (0, pillz, false);
+            let (report, _) = game(base, plans)
+                .make(input(PlayerId::P1, bets[PlayerId::P1], bets[PlayerId::P2]))
+                .unwrap();
+            report
+        };
+        // The opposing Min 2 goes first: 6 -> 2 -> 0.
+        let report = play(
+            8,
+            6,
+            cards(CombatStatAttributeV1::Damage, 2, 0),
+            reduction(CombatStatAttributeV1::Damage, 4, 2),
+            0,
+        );
+        assert_eq!(report.cards[owner].damage, 0, "{owner:?}");
+        assert_eq!(report.cards[opponent].damage, 4, "{owner:?}"); // the opposing half, 6 - 2
+        // The own Min 4 goes first: 6 -> 4 -> 3.
+        let report = play(
+            5,
+            6,
+            cards(CombatStatAttributeV1::Damage, 2, 4),
+            reduction(CombatStatAttributeV1::Damage, 1, 3),
+            0,
+        );
+        assert_eq!(report.cards[owner].damage, 3, "{owner:?}");
+        // The Attack form: 5 x 2 = 10, held at 6, then 0.
+        let report = play(
+            5,
+            4,
+            cards(CombatStatAttributeV1::Attack, 7, 0),
+            reduction(CombatStatAttributeV1::Attack, 6, 6),
+            1,
+        );
+        assert_eq!(report.cards[owner].attack, 0, "{owner:?}");
+    }
+}
+
 /// `Xantiax: -N Life, Min. M` charges both players whatever the round did, floors each of
 /// them at the Min independently, and revives neither from it.
 #[test]

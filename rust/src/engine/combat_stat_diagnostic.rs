@@ -2489,7 +2489,9 @@ pub(crate) fn unmodelled_source_context(
             Some(InvalidCombatStatPlanReasonV1::GrowthLatchAgainstUnpinnedEffect)
         }
         // Revision 74's own decrease lands on its owner's card with the owner's own modifiers,
-        // before the opposing reductions (the order `Cards` pins for its own half, 1079078/3).
+        // before the opposing reductions, as the TypeScript reference runs it (revision 74 cited
+        // the own half of `Cards`, which since revision 83 resolves by Min among the reductions;
+        // no round has this decrease meet an opposing one under a binding floor).
         // No round shows it beside another change to the same card's Power or Damage, whose
         // order within the own phase would show when a floor binds, beside a Protection on
         // that card, facing an opposing cancel of those modifiers (1089974/2 shows a canceller

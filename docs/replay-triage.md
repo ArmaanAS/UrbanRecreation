@@ -73,6 +73,45 @@ were already implemented. The per-card `abilityData` the server sends (collected
 
 ## Fixed
 
+### Both sides' reductions of one card resolve by descending Min - 1079078, 1526067 (fixed)
+The server applies the reductions of one stat in descending order of their Min clamp, which the
+engine did within each side (Miss Stella, Don Cr: "Bonus before ability, reductions by descending
+Min" below) and then ran one side after the other, internal P1 first. The two orders part only
+where both sides reduce the same card, which happens when a `Cards` reduction's own half on its
+owner meets the opposing card's cut of that stat. The single point 1079078 r3 read Rajesh's case as
+"the owner's half with the owner's own modifiers, before the opposing reductions"; the autoplay
+runs 5-10 brought three more rounds, and only descending Min across both sides fits all four, on
+either seat:
+- 1526067 r1: Pere Fourrure L4 (8/6, internal P1) and his own `Support: -1 Cards Damage, Min 0` x 2
+  Jungo meet Niva L4's `Courage: -4 Opp. Dmg, Min 2` (P2): 6 -> 2 -> 0. P1 first gave 6 -> 4 -> 2,
+  and so does the owner's-half-first reading.
+- 1079078 r3: Rajesh L2 (5/6, P2) and his own `-2 Cards Damage, Min 4` meet Sue L2's `-1 Opp Power
+  And Damage, Min 3` (P1): 6 -> 4 -> 3. P1 first gave 6 -> 5, then 3 held at Min 4, so 4.
+- 1525903 r1: Miss Denna L1 (P2) on 1 pill is 10; Magenta L4's `-6 Opp Attack, Min 6` (P1) holds her
+  at 6 and her own `-7 Cards Attack, Min 0` takes her to 0. The owner's half first would leave 3.
+- 1525934 r2: Miss Denna again, on 1 pill and Fury; C0re Cr L4's Hive `Equalizer: -3 Opp Attack,
+  Min 5` x 1 star (P1) takes her from 10 to 7 and her own half to 0.
+
+The last two replayed by the seat order already; P2 first would fail them, as P1 first failed the
+first two. In every other captured round where both sides reduce one card - Merrick Cr against
+Sioux's Equalizer (1518557 r1) and Clover's Pussycats bonus (1522169 r2), Giovanni against Dobbs Ld
+(901613 r2), Dr Fazorth against Pulsar (1530067 r1) and Gemini (1520978 r0), Nefr0ct0n against
+Sioux (1525242 r2) and Feelyn (1525934 r3) - both orders end on the same number.
+
+`CardBattle` now runs PRE1 and POST2 through `Events.executeCuts`, which sorts each side's bucket
+as before and merges the two by descending Min, internal P1 first on a tie; the unbounded entries
+(`Tune Out`, an increase on the opposing card, the halves of a `Cards` increase) come after every
+bounded one, P1's before P2's. Only the Cards reductions move a captured number. Fixed 1526067 and
+the single point 1079078. Tests in `tests/ability/CutOrder.test.ts`.
+
+Unobserved, and following the merged order: a `Cards Damage +2` (El Resbaladizo, Sam & Remi Ld)
+whose own half meets an opposing clamp that binds (1525934 r1 and 1528541 r1 have the meeting with
+no clamp binding), and a `Tune Out` owned by internal P1 beside an opposing Power cut with Min 0,
+which ran after the Tune Out before and runs ahead of it now. The Rust engine applied the own half of
+every `Cards` modifier with the owner's own modifiers, so it disagreed with the server on
+1525903 r1, a strictly eligible draw; semantic revision 83 resolves both halves in the reductions
+phase in this order (`docs/rust-migration.md`).
+
 ### Every `Per Opp.` magnitude counts the printed opposing stat - 1521354, 1522916, 1525452, 1525823, 1526354, 1527537, 1528454, 1532324 (fixed)
 "`+N Attack Per Opp. Damage` counts the printed opposing Damage" below left the other two `Per
 Opp.` grammars reading what they had: `+N Life Per Opp. Damage` the final Damage (Fury included)
@@ -1065,9 +1104,11 @@ them fighting at 8 and 1 - the two *base* values swapped, as `abilityData` 1588 
 Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss.
 
 ### Single points waiting for a second capture
-- 1079078 r3: Rajesh's `-2 Cards Damage, Min 4` puts its own half in the opposing-reduction
-  phase, because an ability is queued as a whole at its first modifier's phase; the server
-  resolves the owner's half with the owner's own modifiers, before the opposing reductions.
+- 1079078 r3, fixed with 1526067 r1: Rajesh's own half of `-2 Cards Damage, Min 4` goes before
+  Sue's opposing Min 3. The reading filed here - the owner's half with the owner's own modifiers -
+  was wrong: 1526067 r1 has an opposing Min 2 go before an owner's Min 0. Both sides' reductions of
+  one card resolve by descending Min; see "Both sides' reductions of one card resolve by descending
+  Min" above.
 - 1089974 r2, fixed with 1506931 r3 and 1507792 r3: a canceller's own reduction of the card it
   cancels lands; see "Cancel Opp. Modif. cancels only the cancelled card's own modifiers" above.
 - 947670 r3, fixed with 1496258 r0: `Perfect` was an unknown condition, met unconditionally,
