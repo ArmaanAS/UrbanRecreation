@@ -638,7 +638,10 @@ export default class Ability {
 
         this.mods.push(mod);
       }
-    } else if (tokens[1] == "Combust" || tokens[1] == "Mindwipe") {
+    } else if (
+      tokens[1] == "Combust" || tokens[1] == "Mindwipe" ||
+      (tokens[0] == "Players" && tokens[2] == "Combust")
+    ) {
       failed = false;
 
       if (this.type === AbilityType.ABILITY) {
@@ -647,22 +650,33 @@ export default class Ability {
         this.type = AbilityType.GLOBAL_BONUS;
       }
 
-      if (tokens[1] == "Combust") {
+      // Bobby Cornteeth's "Players Combust 1, Min 0" normalises to "Players 1 Combust Min 0"
+      // and lands on both players: "If Bobby Cornteeth wins the round, at the end of each of
+      // the following turns, both players will lose 1 Life points and Pillz, minimum 0"
+      // (captures/abilities.json 5580). Four autoplay captures show it, each from the round
+      // after the win: 1521294 (r2: 16 - 6 - 1 = 9 and 12 - 1 = 11 Life, 11 - 2 - 1 = 8
+      // Pillz), 1527285, 1528501 and 1529213, with a permanent entry posted on each player.
+      const players = tokens[0] == "Players";
+      const t = players ? tokens.slice(1) : tokens;
+
+      if (t[1] == "Combust") {
         this.delayed = true;
       }
 
-      for (const type of ["Life", "Pillz"]) {
-        const mod = new BasicModifier();
-        mod.eventTime = EventTime.END;
-        mod.setType(type);
-        mod.setOpp(true);
-        mod.change = -tokens[0];
-        mod.always = true;
-        if (tokens[2] == "Min") {
-          mod.setMin(+tokens[3]);
-        }
+      for (const opp of players ? [true, false] : [true]) {
+        for (const type of ["Life", "Pillz"]) {
+          const mod = new BasicModifier();
+          mod.eventTime = EventTime.END;
+          mod.setType(type);
+          mod.setOpp(opp);
+          mod.change = -t[0];
+          mod.always = true;
+          if (t[2] == "Min") {
+            mod.setMin(+t[3]);
+          }
 
-        this.mods.push(mod);
+          this.mods.push(mod);
+        }
       }
     }
 

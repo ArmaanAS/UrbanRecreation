@@ -73,6 +73,30 @@ were already implemented. The per-card `abilityData` the server sends (collected
 
 ## Fixed
 
+### `Players Combust` takes Life and Pillz from both players - 1521294, 1527285, 1528501, 1529213 (fixed)
+Bobby Cornteeth's `Players Combust 1, Min 0` is "If Bobby Cornteeth wins the round, at the end of
+each of the following turns, both players will lose 1 Life points and Pillz, minimum 0"
+(`abilityData` 5580, `life&pillz`, sideAffected both, permanent). It normalises to `Players 1
+Combust Min 0`, which no branch of `compileAbility` read, so it did nothing. Four autoplay
+captures play it, and from the round after the win each player pays 1 Life and 1 Pillz, each with
+a permanent entry posted (a player on 0 Pillz posts none; the latching round posts zero entries on
+both, as a delayed Poison does):
+- 1521294: Bobby wins r1; r2 takes Cley's 6 and 1 more from the recorder (16 -> 9), and 1 Life and
+  1 Pillz from his own owner (12 -> 11, 11 - 2 bet -> 8); r3 does it again (9 - 7 - 1 = 1, 11 -> 10).
+- 1527285: Bobby wins r0; in r1 Lucien's 1 Damage and `-6 Opp. Life Min 0` take the recorder to 3,
+  the Combust to 2 and 12 - 2 -> 9 Pillz, and its own owner to 14 and 7 - 6 -> 0.
+- 1528501: Bobby wins r2 on Fury; r3 takes the recorder from 8 - 7 = 1 to 0 and its owner to 5 and
+  7 -> 6 Pillz.
+- 1529213: Bobby wins r0; r1 takes both (4 -> 3 and 15 -> 14, 12 -> 11 and 5 -> 4), and in r2 the
+  recorder, knocked out by Pulsar's 7, still loses 1 Pillz (6 -> 5).
+
+The Combust branch now reads a leading `Players` and compiles the Life and Pillz decreases on both
+sides, delayed like the plain Combust. Replays: 1521294, 1527285, 1528501 and 1529213 fixed, no
+other moved. The owner's own half follows the ordinary knockout guard (a knocked-out owner pays
+nothing), which no round shows. Tests in `tests/ability/PlayersCombust.test.ts`. The Rust registry
+lists the both-sides Combust as unsupported (the Combust grammar reads `sideAffected: opponent`),
+and no draw with a Players Combust card is eligible, so it needs no change.
+
 ### A latch from the other side replaces one of its family on the same player - 1519318 (fixed)
 1519318 is the cross-owner case "Same-family permanents replace" left following the printed
 text. The opposing Obyl Ld's `Poison 1, Min 0` latches on P1 in round zero; in round one P1's own
