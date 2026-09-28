@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         UR logger
 // @namespace    urban-recreation
-// @version      0.10.1
+// @version      0.10.2
 // @description  Mirror Urban Rivals network traffic to a local log server (see log_server.ts)
 // @match        https://www.urban-rivals.com/*
 // @run-at       document-start
@@ -23,7 +23,7 @@
 (() => {
   // Keep equal to @version above; log_server.ts compares it with the repository copy and
   // says when this one is out of date.
-  const VERSION = '0.10.1';
+  const VERSION = '0.10.2';
   const SERVER_ROOT = 'http://localhost:8787';
   const SERVER = SERVER_ROOT + '/log';
   const CONTROL = SERVER_ROOT + '/control';
@@ -443,14 +443,16 @@
     try { if (window.unityGame && window.unityGame.Quit) window.unityGame.Quit(); } catch { /* already gone */ }
     try { navigator.locks.request('ur-autoplay-keepawake', () => new Promise(() => {})); } catch { /* no Web Locks */ }
     try {
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.frequency.value = 20;
-      gain.gain.value = 0.03;
-      osc.connect(gain).connect(ctx.destination);
-      osc.start();
-      window.__urKeepAwake = ctx;
+      const ctx = window.__urKeepAwake || new AudioContext();
+      if (!window.__urKeepAwake) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = 20;
+        gain.gain.value = 0.03;
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        window.__urKeepAwake = ctx;
+      }
       if (ctx.state !== 'running') {
         const button = document.createElement('div');
         button.id = '__keepAwakeBtn';
@@ -481,7 +483,27 @@
     await log('xhr', { m: 'POST', u: '/ajax/collection/', body: new URLSearchParams([['action', cmd.deck], ...fields]).toString(), status: 200, resp: JSON.stringify(out) });
     return out;
   };
+  // A tab reloaded while a driver is running starts its keep-awake at once: a hidden tab is
+  // frozen within minutes, which can be before the game client has logged in and so before the
+  // first command would have started it. The game client itself is shut down only once a
+  // command arrives, since it is what logs in.
+  const startKeepAwakeIfDriven = async () => {
+    try {
+      const res = await nativeFetch(AUTOPLAY + '/state', { cache: 'no-store' });
+      if (res.ok && (await res.json()).driverActive && !window.__urKeepAwake) {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = 20;
+        gain.gain.value = 0.03;
+        osc.connect(gain).connect(ctx.destination);
+        osc.start();
+        window.__urKeepAwake = ctx;
+      }
+    } catch { /* no server, or no audio */ }
+  };
   const autoplayLoop = async () => {
+    startKeepAwakeIfDriven();
     for (;;) {
       const asked = Date.now();
       let cmd = null;

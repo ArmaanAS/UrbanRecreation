@@ -52,6 +52,8 @@ export class AutoplayBroker {
   /** Whether the last private call that ran was a successful `rooms.join` to Training. */
   #inTraining = false;
   lastPoll = 0;
+  /** When a driver last asked for anything; the game tab starts its keep-awake while this is recent. */
+  lastRequest = 0;
 
   /** Why `body` may not be sent, or the request it describes. */
   check(body: unknown): { request: Request } | { error: string } {
@@ -87,6 +89,7 @@ export class AutoplayBroker {
 
   /** Queue a checked request and wait for the userscript's answer. */
   request(body: unknown, timeoutMs = 30_000): Promise<AutoplayOutcome> {
+    this.lastRequest = Date.now();
     const checked = this.check(body);
     if ("error" in checked) return Promise.resolve({ ok: false, error: checked.error });
     const command = { id: ++this.#seq, ...checked.request } as AutoplayCommand;
@@ -148,6 +151,7 @@ export class AutoplayBroker {
       lastPollAgoMs: this.lastPoll ? now - this.lastPoll : null,
       queued: this.#queue.length,
       waiting: this.#pending.size,
+      driverActive: now - this.lastRequest < 10 * 60_000,
     };
   }
 
