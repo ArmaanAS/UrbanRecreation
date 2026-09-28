@@ -4590,6 +4590,47 @@ is back - Chelonite L3's refreshed `Unison: Killshot: +3 Life` (`5935`), which t
 refresh left without a captured record, arrived with 1533638. The registry fingerprint moves; the
 compiler revision (81), catalog-context revision (11), gate rounds and gate ids do not.
 
+Semantic revision 82 changes what the other two `Per Opp.` magnitudes read: `+N Attack Per Opp.
+Power` and `+N Life Per Opp. Damage` count the opposing card's printed stat, as `+N Attack Per Opp.
+Damage` has since revision 81. Revision 72 read the opposing Power as resolved by every
+Power/Damage modifier, and revision 25's Life conversion the losing card's final Damage, Fury
+included. It admits nothing. The autoplay runs 5-10 brought eight rounds against every kind of
+modification, and all count the printed value. The TypeScript engine changes to it in the same
+commit (docs/replay-triage.md, "Every `Per Opp.` magnitude counts the printed opposing stat").
+
+**Evidence.**
+- 1525823/0: Skinny Bob Ld's `+2 Attack Per Opp. Power` against Stacey L2 (6 Power) on 8 under her
+  `Power +2`: 6 x 1 + 2 x 6 = 18 (the resolved reading gives 22).
+- 1528454/1: Sling's `+2` against Ymirah Cr L5 (8 Power) on 10 under the Frozn `Revenge: Power And
+  Damage +2`: 7 + 2 x 8 = 23 (27).
+- 1522916/0: Taurite L1 copies Lakross L3's `+1 Attack Per Opp. Power`; its own GhosTown night bonus
+  takes Lakross from 6 to 5, and the copy counts 6: 7 x 13 + 6 = 97 (96). The converting side's own
+  cut, which revision 81 recorded as unobserved for the Damage form, does not count either.
+- 1521354/2: Ciminompah's `+1 Life Per Opp. Damage` against Sakazuki L2 (2 Damage) on 6 under his
+  `Damage +2` and the Fang Pi Clang `Damage +2`: 15 -> 17 (21).
+- 1525452/1 and 1527537/2: AbsorptionBoy's and Kenny West's `+1` against a Fury Boomstock Cr on 7
+  (printed 3, Courage `+2`) and a Fury Vixen Cr on 5 (printed 4, the GhosTown cut): +3 and +4.
+- 1526354/1: Kenny West's `+1` against Wonald L2 (2) cut to 1 by his own side's GhosTown bonus: +2.
+- 1532324/3: Ciminompah's `+1` against a Fury Rhed Cr L1 on 3: +1.
+
+1089513/2, revision 72's round, reads Wesley's unmodified 6 either way. Three of the eight
+(1521354, 1525452, 1526354) are strictly eligible draws.
+
+**The change.** `prepare_combat_resolution_with_post_round` passes the opposing card's printed Power
+to the Attack effects (`printed_power`, from the same `printed` pair as the Damage) where it passed
+the resolved Power, and the post-round Life conversion pays `prepared[loser].card.damage` where it
+paid the resolved `result.damage`; the effect is renamed
+`GainLifePerOpponentPrintedDamageOnVictory`. `attack_per_opponent_power_reads_the_printed_opposing_power`
+flips the owner's reduction of the opposing Power (48, where revision 81 gave 42) and an opposing
+Power increase (48, not 52), and
+`life_per_opposing_damage_pays_the_winner_the_losing_cards_printed_damage` adds an opposing Fury and
+an opposing `Damage +2` bonus (both +3, where revision 81 paid 5).
+
+`deno task pins:update` moves the compiler revision (81 to 82) and `tests/expect/rust-provenance.json`
+(compiler 82). The gate rounds (950), the eligible (803) and scanned (1857) draws, the gate ids and
+dispositions and both data fingerprints are unchanged: no gate round meets a modified opposing stat
+under either conversion.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

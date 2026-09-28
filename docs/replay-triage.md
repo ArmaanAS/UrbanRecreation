@@ -73,6 +73,41 @@ were already implemented. The per-card `abilityData` the server sends (collected
 
 ## Fixed
 
+### Every `Per Opp.` magnitude counts the printed opposing stat - 1521354, 1522916, 1525452, 1525823, 1526354, 1527537, 1528454, 1532324 (fixed)
+"`+N Attack Per Opp. Damage` counts the printed opposing Damage" below left the other two `Per
+Opp.` grammars reading what they had: `+N Life Per Opp. Damage` the final Damage (Fury included)
+and `+N Attack Per Opp. Power` the resolved Power, since no round had shown either against a
+modified stat. The autoplay runs 5-10 brought eight, against the opposing card's own ability and
+bonus, a Courage increase, Fury, and the converting side's own cut, and every one counts the
+printed stat:
+- 1521354 r2: Ciminompah's `+1 Life Per Opp. Damage` against Sakazuki L2 (6/2) on 6 under his
+  `Damage +2` and the Fang Pi Clang `Damage +2`: 15 -> 17 (the engine paid 6).
+- 1525452 r1: AbsorptionBoy's `+1` against a Fury Boomstock Cr L2 (6/3) on 7 with his Courage `+2`:
+  15 -> 18 (22).
+- 1532324 r3: Ciminompah's `+1` against a Fury Rhed Cr L1 (3/1) on 3: 10 -> 11 (13).
+- 1527537 r2: Kenny West's `+1` against a Fury Vixen Cr L3 (printed 4) cut to 3 by his own GhosTown
+  night bonus: 15 -> 19 (20).
+- 1526354 r1: Kenny West's `+1` against Wonald L2 (printed 2) cut to 1 by that bonus: 12 - 2 (a
+  latched Freaks Poison) + 2 = 12 (11).
+- 1525823 r0: Skinny Bob Ld's `+2 Attack Per Opp. Power` against Stacey L2 (6/2) on 8 under her
+  `Power +2`: 6 x 1 + 2 x 6 = 18 (22).
+- 1528454 r1: Sling's `+2` against Ymirah Cr L5 (printed 8) on 10 under the Frozn `Revenge: Power
+  And Damage +2`: 7 x 1 + 2 x 8 = 23 (27).
+- 1522916 r0: Taurite L1's `Unison : Copy: Opp. Ability` copies Lakross L3's `+1 Attack Per Opp.
+  Power`; Taurite's own GhosTown night bonus takes Lakross from 6 to 5 Power, and the copy counts 6:
+  7 x 13 + 6 = 97 (96). The game tab was reloaded later in this battle, but round 0 resolved well
+  before it and the 97 is the live resolution snapshot's; what the reload cost is the dictionary
+  records of the copied ability (see "Data notes").
+
+Of the 60 captured rounds that play one of the two grammars (the Life form counted where it wins),
+these eight are the only ones where the opposing stat ends away from its printed value; every other
+reads the same either way. `AbilityParser.per` now picks a printed multiplier for any magnitude per opposing
+Power or Damage (`OPP_PRINTED_DAMAGE`, and a new `OPP_PRINTED_POWER` reading `power.base`). Fixed
+all eight. Tests in `tests/ability/PerOppPrinted.test.ts`. The Rust engine admits both grammars and
+read them as the TypeScript engine did; semantic revision 82 reads the printed stats too
+(`docs/rust-migration.md`), and three of these captures (1521354, 1525452, 1526354) are strictly
+eligible draws.
+
 ### Robert Cobb's `Bypass` activates every clan bonus in its hand - 1529161 (fixed)
 `Bypass` is Robert Cobb's Leader ability: "The bonus of your other cards is active even if you
 don't have another card from the same clan. Their bonus can still be blocked by your opponent's

@@ -577,11 +577,15 @@ pub(super) fn prepare_combat_resolution_with_post_round(
     // side reducing the opposing Damage; the printed value reads before that too, as in the
     // TypeScript reference.
     let printed_damage = ByPlayer::new(printed[PlayerId::P1].1, printed[PlayerId::P2].1);
-    // `+N Attack Per Opp. Power` reads the opposing Power from the same point: resolved by
-    // every Power/Damage modifier (1089513/2: Mel-T's 2 per Power is taken against the 6 of a
-    // Wesley whose Confidence has already cut Mel-T itself to 4), and before the `Tune Out`
-    // reset below, under which no Attack effect runs anyway.
-    let resolved_power = power;
+    // `+N Attack Per Opp. Power` reads the opposing card's printed Power as well (semantic
+    // revision 82; revision 72 read it resolved by every Power/Damage modifier). Three rounds
+    // pin it: an opposing own increase (1525823/0: Skinny Bob Ld's +2 counts Stacey's 6, not
+    // the 8 of her `Power +2`), an opposing clan bonus (1528454/1: Sling's +2 counts Ymirah Cr's
+    // 8, not the 10 of the Frozn Revenge) and the owner's own cut (1522916/0: Taurite's copy of
+    // Lakross's +1 counts 6 under its own GhosTown night cut to 5). 1089513/2, where Wesley's
+    // Confidence cuts Mel-T himself to 4, reads Wesley's unmodified 6 either way. Under `Tune
+    // Out` no Attack effect runs.
+    let printed_power = ByPlayer::new(printed[PlayerId::P1].0, printed[PlayerId::P2].0);
 
     // Fury is added after Power/Damage modifiers.
     for player in PlayerId::ALL {
@@ -628,7 +632,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 rounds_played,
                 opponent_stars[origin],
                 printed_damage[origin.other()],
-                resolved_power[origin.other()],
+                printed_power[origin.other()],
                 &mut attack,
             )?;
         }
@@ -643,7 +647,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 rounds_played,
                 opponent_stars[origin],
                 printed_damage[origin.other()],
-                resolved_power[origin.other()],
+                printed_power[origin.other()],
                 &mut attack,
             )?;
         }
@@ -662,7 +666,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 rounds_played,
                 opponent_stars[origin],
                 printed_damage[origin.other()],
-                resolved_power[origin.other()],
+                printed_power[origin.other()],
                 &mut attack,
             )?;
         }
@@ -687,7 +691,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
             rounds_played,
             opponent_stars[origin],
             printed_damage[origin.other()],
-            resolved_power[origin.other()],
+            printed_power[origin.other()],
             &mut attack,
         )?;
         // No reviewed Team ability reduces an Attack; were one admitted it would land after the
@@ -703,7 +707,7 @@ pub(super) fn prepare_combat_resolution_with_post_round(
                 rounds_played,
                 opponent_stars[origin],
                 printed_damage[origin.other()],
-                resolved_power[origin.other()],
+                printed_power[origin.other()],
                 &mut attack,
             )?;
         }
@@ -1403,8 +1407,8 @@ fn effect_amount(
     // The opposing card's printed Damage, which the Attack phase reads (semantic revision 81).
     // Zero on the Power/Damage path, which never applies an Attack effect.
     opponent_damage: u16,
-    // The opposing card's Power as the Attack phase sees it: resolved, before any `Tune
-    // Out` reset. Zero on the Power/Damage path, as above.
+    // The opposing card's printed Power, which the Attack phase reads (semantic revision 82).
+    // Zero on the Power/Damage path, as above.
     opponent_power: u16,
 ) -> Result<u32, CombatResolutionError> {
     let multiplier = match multiplier {

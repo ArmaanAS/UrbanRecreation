@@ -260,8 +260,9 @@ pub enum MagnitudeMultiplierV1 {
     /// Scaled by the opposing selected card's printed Damage, before its own modifiers, a
     /// Copy and Fury (1515692/3, 1518052/0, 1518765/1, 1519829/1).
     OpponentDamage,
-    /// Scaled by the opposing selected card's Power as resolved for that round: every
-    /// Power/Damage modifier has run, and a `Tune Out` reset of Power to 1 has not.
+    /// Scaled by the opposing selected card's printed Power, before its own modifiers, the
+    /// owner's reductions and a `Tune Out` reset (semantic revision 82; 1522916/0, 1525823/0,
+    /// 1528454/1).
     OpponentPower,
     /// `Brawl:`. Scaled by the number of distinct characters in the *opposing* hand sharing
     /// the opposing selected card's effective clan - the mirror of `Support`, which counts

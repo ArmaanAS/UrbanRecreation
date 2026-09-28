@@ -2509,10 +2509,10 @@ fn prepare_catalog_source(
                     let life_per_damage =
                         classify_victory_life_per_opponent_damage(definition, source_kind)?;
                     Some((
-                        CombatStatPostRoundEffectV1::GainLifePerOpponentFinalDamageOnVictory {
+                        CombatStatPostRoundEffectV1::GainLifePerOpponentPrintedDamageOnVictory {
                             life_per_damage,
                         },
-                        CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory {
+                        CombatStatEffectV1::GainLifePerOpponentPrintedDamageOnVictory {
                             life_per_damage,
                         },
                         CombatStatPredicateV1::Always,

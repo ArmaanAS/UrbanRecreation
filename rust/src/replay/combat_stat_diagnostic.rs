@@ -1321,10 +1321,10 @@ fn prepare_combat_stat_source(
         return Ok(executes_post_round(
             identity,
             source.id,
-            CombatStatPostRoundEffectV1::GainLifePerOpponentFinalDamageOnVictory {
+            CombatStatPostRoundEffectV1::GainLifePerOpponentPrintedDamageOnVictory {
                 life_per_damage,
             },
-            CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { life_per_damage },
+            CombatStatEffectV1::GainLifePerOpponentPrintedDamageOnVictory { life_per_damage },
             CombatStatPredicateV1::Always,
         ));
     }

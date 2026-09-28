@@ -69,7 +69,7 @@ pub enum CombatStatMagnitudeV1 {
     OpponentStars,
     /// Scaled by the opposing selected card's printed Damage (semantic revision 81).
     OpponentDamage,
-    /// Scaled by the opposing selected card's resolved Power, before any `Tune Out` reset.
+    /// Scaled by the opposing selected card's printed Power (semantic revision 82).
     OpponentPower,
     /// `Brawl:`. Scaled by the number of distinct characters in the opposing hand sharing
     /// the opposing selected card's effective clan - the mirror of Support, which counts
@@ -255,8 +255,9 @@ pub enum CombatStatPostRoundEffectV1 {
         maximum: u16,
     },
     /// `+N Life Per Opp. Damage`: the winner's own Life rises by `life_per_damage` for
-    /// every point of the *losing* card's final resolved Damage, Fury included.
-    GainLifePerOpponentFinalDamageOnVictory {
+    /// every point of the *losing* card's printed Damage, before its modifiers and Fury
+    /// (semantic revision 82).
+    GainLifePerOpponentPrintedDamageOnVictory {
         life_per_damage: u16,
     },
     GainLifeOnDefeat {
@@ -626,8 +627,9 @@ pub enum CombatStatEffectV1 {
         maximum: u16,
     },
     /// `+N Life Per Opp. Damage`: the winner's own Life rises by `life_per_damage` for
-    /// every point of the *losing* card's final resolved Damage, Fury included.
-    GainLifePerOpponentFinalDamageOnVictory {
+    /// every point of the *losing* card's printed Damage, before its modifiers and Fury
+    /// (semantic revision 82).
+    GainLifePerOpponentPrintedDamageOnVictory {
         life_per_damage: u16,
     },
     /// Ordinary Defeat Life applies only after a surviving loss. The hot path retains the
@@ -5114,7 +5116,7 @@ fn validate_combat_stat_source_plan(
         }
         return Ok(());
     }
-    if let CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { life_per_damage } = effect
+    if let CombatStatEffectV1::GainLifePerOpponentPrintedDamageOnVictory { life_per_damage } = effect
     {
         if source != CombatStatEffectSourceV1::Ability
             || life_per_damage == 0
@@ -5965,7 +5967,7 @@ fn shared_effect(effect: CombatStatEffectV1) -> Option<DiagnosticCombatEffectV1>
         | CombatStatEffectV1::ReduceOpponentPillzOnDefeat { .. }
         | CombatStatEffectV1::GainPillzEqualToFinalDamageOnVictory
         | CombatStatEffectV1::GainLifePerFinalDamageOnVictory { .. }
-        | CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { .. }
+        | CombatStatEffectV1::GainLifePerOpponentPrintedDamageOnVictory { .. }
         | CombatStatEffectV1::GainLifeOnDefeat { .. }
         | CombatStatEffectV1::ReanimateLife { .. }
         | CombatStatEffectV1::GainLifeOnVictoryOrDefeat { .. }
@@ -6087,9 +6089,9 @@ pub(crate) fn shared_post_round_effect(
                 maximum,
             },
         )),
-        CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { life_per_damage } => {
+        CombatStatEffectV1::GainLifePerOpponentPrintedDamageOnVictory { life_per_damage } => {
             Some(PostRoundSourceEffect::Fixed(
-                PostRoundEffect::GainLifePerOpponentFinalDamageOnVictory { life_per_damage },
+                PostRoundEffect::GainLifePerOpponentPrintedDamageOnVictory { life_per_damage },
             ))
         }
         CombatStatEffectV1::GainLifeOnDefeat { life } => Some(PostRoundSourceEffect::Fixed(

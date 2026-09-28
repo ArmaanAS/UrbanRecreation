@@ -124,10 +124,11 @@ export class AbilityParser {
         stat++;
       }
       const lost = tokens[stat + 1] === "Lost";
-      // An Attack bonus per opposing Damage counts the printed Damage (see
-      // `OPP_PRINTED_DAMAGE` in BasicModifier).
-      if (opp && tokens[stat] === "Damage" && mod.type?.name === "ATTACK") {
-        mod.setPer("PRINTED_DAMAGE", true);
+      // Every magnitude per opposing Power or Damage counts the opposing card's printed stat:
+      // `+N Attack Per Opp. Damage`, `+N Life Per Opp. Damage` and `+N Attack Per Opp. Power`
+      // alike (see `OPP_PRINTED_DAMAGE` and `OPP_PRINTED_POWER` in BasicModifier).
+      if (opp && (tokens[stat] === "Damage" || tokens[stat] === "Power")) {
+        mod.setPer(tokens[stat] === "Damage" ? "PRINTED_DAMAGE" : "PRINTED_POWER", true);
       } else {
         mod.setPer(tokens[stat] + (lost ? "_LOST" : ""), opp);
       }

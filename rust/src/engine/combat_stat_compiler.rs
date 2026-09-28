@@ -235,7 +235,7 @@ use crate::effect_registry::{
     SpecialActionV1, StatOperationV1, StructuredEffectV1, SupportedEffectV1,
 };
 
-pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 81;
+pub(crate) const COMBAT_STAT_COMPILER_POLICY_SEMANTIC_REVISION_V1: u16 = 82;
 
 /// Revision 79: the lone Team Leaders the corpus pins, each by identity - the registry
 /// definition the captures deal, its exact printed text, and the effect it compiles to. Only
@@ -1648,7 +1648,7 @@ pub(crate) fn classify_victory_life_per_damage(
 }
 
 /// `+N Life Per Opp. Damage`: the winner's Life rises by N per point of the opposing
-/// card's final resolved Damage. Unconditional, uncapped, card abilities only.
+/// card's printed Damage (semantic revision 82). Unconditional, uncapped, card abilities only.
 pub(crate) fn classify_victory_life_per_opponent_damage(
     definition: &EffectDefinitionV1,
     source_kind: CombatStatEffectSourceV1,

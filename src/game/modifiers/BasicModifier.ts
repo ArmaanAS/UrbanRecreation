@@ -36,10 +36,26 @@ const Per: Record<string, PerType> = {
    * 8 x 1 + 2 x 5 = 18); Cobretti's `+2` counts Baxter's 3 under his `Copy: Power And Damage
    * Opp.` (1519829 r1, 7 x 1 + 2 x 3 + 8 - 8 = 13). Goran's `+2` reads Uuber's 2 before Fury
    * (1130726 r3), which the printed value covers too. Chosen at compile time
-   * (`AbilityParser.per`) for the Attack form only: `+N Life Per Opp. Damage` has no round
-   * against a modified Damage, and neither has `+N Attack Per Opp. Power`.
+   * (`AbilityParser.per`).
+   *
+   * `+N Life Per Opp. Damage` counts it too (autoplay runs 5-10), against every kind of
+   * modifier and Fury: Ciminompah's `+1` pays 2 for Sakazuki's printed 2 under two `Damage +2`
+   * (1521354 r2, 15 -> 17, where the engine paid 6) and 1 for a Fury Rhed Cr's printed 1
+   * (1532324 r3); AbsorptionBoy's pays 3 for a Fury Boomstock Cr on 7 under its Courage `+2`
+   * (1525452 r1, 15 -> 18); Kenny West's pays 2 for Wonald's 2 under the GhosTown night bonus
+   * `-1 Opp Pow. And Damage`, his own side's cut (1526354 r1: 12 - 2 Poison + 2), and 4 for a
+   * Fury Vixen Cr under that bonus (1527537 r2, 15 -> 19).
    */
   OPP_PRINTED_DAMAGE: { opp: true, type: 14, name: "OPP_PRINTED_DAMAGE" },
+  /**
+   * `+N Attack Per Opp. Power` reads the opposing card's printed Power as well (autoplay runs
+   * 5-10): Skinny Bob Ld's `+2` counts Stacey's 6 under her `Power +2` (1525823 r0, 6 x 1 + 2 x
+   * 6 = 18, where the engine read 8 and had 22), Sling's `+2` counts Ymirah Cr's 8 under her
+   * Frozn `Revenge: Power And Damage +2` (1528454 r1, 7 + 2 x 8 = 23, not 27), and Taurite's
+   * copy of Lakross's `+1` counts Lakross's 6 under Taurite's own GhosTown night cut to 5
+   * (1522916 r0, 7 x 13 + 6 = 97, not 96).
+   */
+  OPP_PRINTED_POWER: { opp: true, type: 15, name: "OPP_PRINTED_POWER" },
 };
 function perFromObject(o: PerType): PerType {
   return o && Per[o.name];
@@ -316,6 +332,8 @@ export default class BasicModifier extends Modifier {
         return Math.max(0, player.basePillz - player.pillz);
       case 14:
         return card.damage.base;
+      case 15:
+        return card.power.base;
       default:
         return 1;
     }

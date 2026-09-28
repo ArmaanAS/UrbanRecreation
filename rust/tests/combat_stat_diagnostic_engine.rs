@@ -6647,19 +6647,20 @@ fn per_pillz_magnitudes_read_the_round_start_pillz_before_the_bet() {
     ));
 }
 
-/// `+N Life Per Opp. Damage` pays a living winner N per point of the losing card's final
-/// Damage (1078736/1, 1065673/3) and nothing on a loss (926226/3, 948654/0). Whether an
-/// opposing Fury counts is unpinned - neither paying opponent furied - and it is read as the
-/// final Damage, Fury included, as the reference and the own-Damage conversions do.
+/// `+N Life Per Opp. Damage` pays a living winner N per point of the losing card's printed
+/// Damage (1078736/1, 1065673/3) and nothing on a loss (926226/3, 948654/0). Since semantic
+/// revision 82 neither the losing card's own modifiers nor its Fury count: 1521354/2 pays 2 for
+/// Sakazuki's printed 2 under two `Damage +2`, 1525452/1 and 1527537/2 pay the printed Damage of
+/// a Fury card, and 1526354/1 pays 2 for a Wonald the winner's own GhosTown bonus cut to 1.
 #[test]
-fn life_per_opposing_damage_pays_the_winner_the_losing_cards_final_damage() {
+fn life_per_opposing_damage_pays_the_winner_the_losing_cards_printed_damage() {
     let spec = || {
         let base = base_spec(6, 3);
         let mut cards = plans(&base);
         cards[PlayerId::P1][0].ability = execute(
             3779,
             CombatStatPredicateV1::Always,
-            CombatStatEffectV1::GainLifePerOpponentFinalDamageOnVictory { life_per_damage: 1 },
+            CombatStatEffectV1::GainLifePerOpponentPrintedDamageOnVictory { life_per_damage: 1 },
         );
         CombatStatDiagnosticMatchSpecV1 {
             base_rules: base,
@@ -6672,13 +6673,29 @@ fn life_per_opposing_damage_pays_the_winner_the_losing_cards_final_damage() {
         .unwrap();
     assert_eq!(report.players[PlayerId::P1].life, 20 + 3);
 
-    // The losing card's Fury is part of its final Damage.
+    // The losing card's Fury is not part of its printed Damage (revision 81 paid 3 + 2).
     let mut diag = CombatStatDiagnosticV1::new(spec()).unwrap();
     let (report, _) = diag
         .make(input(PlayerId::P1, (0, 9, false), (0, 0, true)))
         .unwrap();
     assert!(report.cards[PlayerId::P1].won);
-    assert_eq!(report.players[PlayerId::P1].life, 20 + 3 + 2);
+    assert_eq!(report.cards[PlayerId::P2].damage, 5);
+    assert_eq!(report.players[PlayerId::P1].life, 20 + 3);
+
+    // Nor is its own increase: a `Damage +2` bonus on the losing card still pays 3.
+    let mut boosted = spec();
+    boosted.cards[PlayerId::P2][0].bonus = execute(
+        38,
+        CombatStatPredicateV1::Always,
+        own(CombatStatAttributeV1::Damage, 2),
+    );
+    boosted.cards[PlayerId::P2][0].source_bonus_support_count = 1;
+    let mut diag = CombatStatDiagnosticV1::new(boosted).unwrap();
+    let (report, _) = diag
+        .make(input(PlayerId::P1, (0, 5, false), (0, 0, false)))
+        .unwrap();
+    assert_eq!(report.cards[PlayerId::P2].damage, 5);
+    assert_eq!(report.players[PlayerId::P1].life, 20 + 3);
 
     // A loss pays nothing.
     let mut diag = CombatStatDiagnosticV1::new(spec()).unwrap();
@@ -9939,12 +9956,13 @@ fn attack_per_opponent_power(value: u16) -> CombatStatEffectV1 {
     )
 }
 
-/// `+N Attack Per Opp. Power` scales by the opposing card's Power as the Attack phase sees
-/// it: after every Power/Damage modifier, so a reduction of the opposing Power counts, and a
-/// cut to the owner's own Power leaves the magnitude alone. Fury, which only adds Damage, does
-/// not move it. 1089513/2 is the captured own-cut case: Mel-T 7 cut to 4, 4 x 3 + 2 x 6 = 24.
+/// `+N Attack Per Opp. Power` scales by the opposing card's printed Power (semantic revision
+/// 82; revision 72 read it after every Power/Damage modifier): neither the owner's reduction of
+/// the opposing Power (1522916/0) nor the opposing card's own increase (1525823/0, 1528454/1)
+/// counts, and a cut to the owner's own Power moves only the Power term (1089513/2: Mel-T 7 cut
+/// to 4, 4 x 3 + 2 x 6 = 24). Fury, which only adds Damage, does not move it.
 #[test]
-fn attack_per_opponent_power_reads_the_resolved_opposing_power() {
+fn attack_per_opponent_power_reads_the_printed_opposing_power() {
     let base = base_spec(8, 2);
     let mut cards = plans(&base);
     cards[PlayerId::P1][0].ability = execute(
@@ -9959,7 +9977,8 @@ fn attack_per_opponent_power_reads_the_resolved_opposing_power() {
     assert_eq!(report.cards[PlayerId::P2].damage, 4); // 2 printed + 2 Fury
     assert_eq!(report.cards[PlayerId::P1].attack, 48); // 8 x 4 + 2 x 8
 
-    // The owner's own reduction of the opposing Power counts: 8 - 3 = 5.
+    // The owner's own reduction of the opposing Power does not count: 8 - 3 = 5, read as 8
+    // (revision 81 had 42).
     let mut reduced = cards.clone();
     reduced[PlayerId::P1][0].bonus = execute(
         612,
@@ -9971,9 +9990,10 @@ fn attack_per_opponent_power_reads_the_resolved_opposing_power() {
         .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
         .unwrap();
     assert_eq!(report.cards[PlayerId::P2].power, 5);
-    assert_eq!(report.cards[PlayerId::P1].attack, 42); // 8 x 4 + 2 x 5
+    assert_eq!(report.cards[PlayerId::P1].attack, 48);
 
-    // An opposing increase of its own Power counts too: 8 + 2 = 10.
+    // Nor does an opposing increase of its own Power: 8 + 2 = 10, read as 8 (revision 81 had
+    // 52).
     let mut raised = cards.clone();
     raised[PlayerId::P2][0].ability = execute(
         2006,
@@ -9984,7 +10004,7 @@ fn attack_per_opponent_power_reads_the_resolved_opposing_power() {
         .make(input(PlayerId::P1, (0, 3, false), (0, 3, false)))
         .unwrap();
     assert_eq!(report.cards[PlayerId::P2].power, 10);
-    assert_eq!(report.cards[PlayerId::P1].attack, 52); // 8 x 4 + 2 x 10
+    assert_eq!(report.cards[PlayerId::P1].attack, 48);
 
     // A cut to the owner's own Power moves only the Power term (Wesley's Confidence on
     // Mel-T in 1089513/2): 5 x 4 + 2 x 8.

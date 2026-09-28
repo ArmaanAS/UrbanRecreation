@@ -793,7 +793,7 @@ impl PostRoundEffect {
             | Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictory { .. }
-            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentPrintedDamageOnVictory { .. }
             | Self::GainLifeOnDefeat(_)
             | Self::ReanimateLife(_)
             | Self::GainLifeOnVictoryOrDefeat { .. }
@@ -915,7 +915,7 @@ impl PostRoundEffect {
             | Self::ReduceOpponentPillzOnDefeat { .. }
             | Self::GainPillzEqualToFinalDamageOnVictory
             | Self::GainLifePerFinalDamageOnVictory { .. }
-            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentPrintedDamageOnVictory { .. }
             | Self::GainLifeOnDefeat(_)
             | Self::ReanimateLife(_)
             | Self::GainLifeOnVictoryOrDefeat { .. }
@@ -995,7 +995,7 @@ impl PostRoundEffect {
             Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictory { .. }
-            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentPrintedDamageOnVictory { .. }
             | Self::GainLifeOnDefeat(_)
             | Self::ReanimateLife(_)
             | Self::GainLifeOnVictoryOrDefeat { .. }
@@ -1044,7 +1044,7 @@ impl PostRoundEffect {
             Self::GainOnePillzAndLifeOnVictory
             | Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
-            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentPrintedDamageOnVictory { .. }
             | Self::GainLifeOnDefeat(_)
             | Self::GainLifeOnVictoryOrDefeat { .. }
             | Self::GainPillzAndLifeOnKillshot { .. }
@@ -1153,7 +1153,7 @@ impl PostRoundEffect {
             | Self::ReduceOpponentPillzOnVictory { .. }
             | Self::GainPillzEqualToFinalDamageOnVictory
             | Self::GainLifePerFinalDamageOnVictory { .. }
-            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentPrintedDamageOnVictory { .. }
             | Self::ReduceOpponentLifeOnVictory { .. }
             | Self::ReduceOpponentLifeOnKillshot { .. }
             | Self::GainPillzAndLifeOnKillshot { .. }
@@ -1208,7 +1208,7 @@ impl PostRoundEffect {
             | Self::GainLifeEqualToFinalDamageOnCourageVictory
             | Self::GainLifeOnVictory(_)
             | Self::GainLifePerFinalDamageOnVictory { .. }
-            | Self::GainLifePerOpponentFinalDamageOnVictory { .. }
+            | Self::GainLifePerOpponentPrintedDamageOnVictory { .. }
             | Self::GainLifeOnDefeat(_)
             | Self::ReanimateLife(_)
             | Self::GainLifeOnVictoryOrDefeat { .. }
@@ -1327,8 +1327,9 @@ pub(super) enum PostRoundEffect {
         maximum: u16,
     },
     /// `+N Life Per Opp. Damage`: the winner's own Life rises by `life_per_damage` for
-    /// every point of the *losing* card's final resolved Damage, Fury included.
-    GainLifePerOpponentFinalDamageOnVictory {
+    /// every point of the *losing* card's printed Damage, before its modifiers and Fury
+    /// (semantic revision 82).
+    GainLifePerOpponentPrintedDamageOnVictory {
         life_per_damage: u16,
     },
     GainLifeOnDefeat(u16),
@@ -1751,11 +1752,15 @@ impl BaseRulesGame {
                         }
                     }
                     PostRoundEffect::GainLifePerFinalDamageOnVictory { .. } => {}
-                    PostRoundEffect::GainLifePerOpponentFinalDamageOnVictory {
+                    // The printed Damage of the losing card, not the Damage it fought with
+                    // (semantic revision 82): 1521354/2 pays 2 for Sakazuki's printed 2 under
+                    // two `Damage +2`, 1525452/1 pays 3 for a Fury Boomstock Cr on 7 and
+                    // 1526354/1 pays 2 for a Wonald cut to 1 by the winner's own GhosTown bonus.
+                    PostRoundEffect::GainLifePerOpponentPrintedDamageOnVictory {
                         life_per_damage,
                     } if owner == winner && position.players[owner].life > 0 => {
                         let gain = prepared[owner.other()]
-                            .result
+                            .card
                             .damage
                             .checked_mul(life_per_damage)
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
@@ -1764,7 +1769,7 @@ impl BaseRulesGame {
                             .checked_add(gain)
                             .ok_or(BaseRulesError::LifeIncreaseOverflow { player: owner })?;
                     }
-                    PostRoundEffect::GainLifePerOpponentFinalDamageOnVictory { .. } => {}
+                    PostRoundEffect::GainLifePerOpponentPrintedDamageOnVictory { .. } => {}
                     // The reviewed Victory Or Defeat Life sources are ordinary Life
                     // gains, not Reanimate: a living owner gains after either outcome,
                     // while a KO remains terminal.  Keep the addition checked so the
