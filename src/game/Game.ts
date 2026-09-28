@@ -174,13 +174,21 @@ export default class Game {
     );
 
     for (const hand of [h1, h2]) {
+      // Robert Cobb's "Bypass": "The bonus of your other cards is active even if you don't have
+      // another card from the same clan. Their bonus can still be blocked by your opponent's
+      // 'Stop Opp. Bonus' cards" (captures/abilities.json 1546, `activate_all_bonuses`). The
+      // server sends every lone card's clan bonus in all seven captured hands with a lone
+      // Robert Cobb (1521878, 1528037, 1529161, 1529585, 1530253, 1532896, 1534028), and in
+      // 1529161 r2 Stanly, the hand's only Ulu Watu, fights at 6 + 2 = 8 Power (8 x 7 = 56).
+      // getLeader() is undefined beside a second Leader, whose Cancel Leader turns it off.
+      const bypass = hand.getLeader()?.abilityString === "Bypass";
       for (const card of hand) {
         if (card.clan == "Leader") {
           if (hand.getClanCards(card) > 1) {
             card.ability.string = AbilityString.NO_ABILITY;
           }
         } else {
-          if (hand.getClanCards(card) === 1) {
+          if (hand.getClanCards(card) === 1 && !bypass) {
             card.bonus.string = AbilityString.NO_ABILITY;
           }
         }

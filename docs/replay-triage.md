@@ -73,6 +73,25 @@ were already implemented. The per-card `abilityData` the server sends (collected
 
 ## Fixed
 
+### Robert Cobb's `Bypass` activates every clan bonus in its hand - 1529161 (fixed)
+`Bypass` is Robert Cobb's Leader ability: "The bonus of your other cards is active even if you
+don't have another card from the same clan. Their bonus can still be blocked by your opponent's
+'Stop Opp. Bonus' cards" (`abilityData` 1546, specialAction `activate_all_bonuses`, first captured
+in the autoplay runs 5-10). The engine switched off every lone card's bonus when the match was
+built. In all seven captured hands with a lone Robert Cobb (1521878, 1528037, 1529161, 1529585,
+1530253, 1532896, 1534028) the server sends every lone card's clan bonus - Mattachione's Montana
+cut, Naliah Cr's and Stanly's Ulu Watu `Power +2`, Dorga's Tolvack `After`, Aisha's `+2 Life`,
+Buford's `Tune Out`, Carlos Cr's `Attack +8` - and Robert Cobb's own `Cancel Leader` too. 1529161
+r2 is the round it decides: Stanly, the hand's only Ulu Watu, fights at 6 + 2 = 8 Power, 8 x 7 =
+56 (the engine had 6 and 42). The other six replayed either way.
+
+The Game constructor now leaves every bonus of a hand whose lone Leader prints `Bypass` alone.
+`getLeader()` is undefined beside a second Leader, whose `Cancel Leader` deactivates Bypass as it
+does every Leader ability. Fixed 1529161. Tests in `tests/ability/Bypass.test.ts`. The Rust catalog
+refuses a lone Robert Cobb as it does every unlisted Leader hand, and its corpus derivation tests
+check the seven hands against the printed clan bonuses (commit "Add the autoplay runs 5-10
+registry inventories").
+
 ### `-N Players Pillz` reduces both players' Pillz - 1527810, 1533508, 1533638 (fixed)
 D4ggers' `-2 Players Pillz. Min 4` is "If D4ggers wins the round, the number of Pillz of the two
 competing players will be reduced by 2 Pillz, or up to a minimum of 4" (`abilityData` 3202;
