@@ -1,7 +1,7 @@
 # Replay triage — engine vs server mismatches
 
-Status from `deno test -A --no-check tests/replay/` against 774 captured battles
-(761 replay-ready; 13 ignored because they stopped mid-match): 757 replay exactly and 4
+Status from `deno test -A --no-check tests/replay/` against 1857 captured battles
+(1843 replay-ready; 14 ignored because they stopped mid-match): 1839 replay exactly and 4
 mismatch. Each entry
 is the first mismatching round of
 one battle; engine value first, server value second. Battle ids refer to
@@ -70,6 +70,13 @@ were already implemented. The per-card `abilityData` the server sends (collected
 | 2026-09-27 | 755 | 6 | An opposing `Cancel Opp. <stat> Modif.` beats a stat Protection (1519871, 1520579, 1521010) |
 | 2026-09-27 | 756 | 5 | `Disunion:` is Unison's complement (1519333) |
 | 2026-09-27 | 757 | 4 | A latch from the other side replaces one of its family on the same player (1519318); 1520327 is a new single point (a two-way Copy loop whose displayed Attack contradicts the round's winner) |
+| 2026-09-28 | 1820 | 23 | +1,083 Training captures (autoplay runs 5-10): nineteen fresh mismatches (1521294, 1521354, 1522916, 1525452, 1525735, 1525823, 1526067, 1526354, 1527285, 1527537, 1527810, 1527862, 1528454, 1528501, 1529161, 1529213, 1532324, 1533508, 1533638) |
+| 2026-09-28 | 1824 | 19 | `Players Combust` takes Life and Pillz from both players (1521294, 1527285, 1528501, 1529213) |
+| 2026-09-28 | 1827 | 16 | `-N Players Pillz` reduces both players' Pillz (1527810, 1533508, 1533638) |
+| 2026-09-28 | 1828 | 15 | Robert Cobb's `Bypass` activates every clan bonus in its hand (1529161) |
+| 2026-09-28 | 1836 | 7 | Every `Per Opp.` magnitude counts the printed opposing stat (1521354, 1522916, 1525452, 1525823, 1526354, 1527537, 1528454, 1532324; Rust semantic revision 82) |
+| 2026-09-28 | 1838 | 5 | Both sides' reductions of one card resolve by descending Min (1526067 and the single point 1079078; Rust semantic revision 83) |
+| 2026-09-28 | 1839 | 4 | Perfect measures one pill fewer through the Attack modifiers (1525735); 1527862 is a second capture of 1520327's Copy loop and does not decide it |
 
 ## Fixed
 
@@ -1143,7 +1150,9 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   above.
 - 1025413 r1: Dark Kaizerin (Oculus) infiltrates GhosTown at night and fights with the night
   bonus `Night: -1 Opp Pow. And Damage, Min 1` (1442); the hand stores the host's day bonus
-  before the game switches to night. It is the only such round.
+  before the game switches to night. It is the only such round: in 1532763 r0 (autoplay runs
+  5-10) Dark Zlatar also joins GhosTown at night and the server sends it the night bonus, but
+  Smokey Cr's Piranas `Stop Opp. Bonus` stops it, so the round shows nothing.
 - 1508932 r2, fixed with five Razor rounds: see "A capped increase is measured before its
   card's bonus" above.
 - 1517236 r3: Slobodan Cr's `+1 Players Life` ("If Slobodan Cr wins the fight, the two competing
@@ -1163,7 +1172,16 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   where its owner is knocked out while losing. The Rust engine refuses `2433`. 1519178 r3
   (autoplay runs 3-5) looked like it: Slobodan Cr wins for 5 Damage with Fury against a player
   on 3. But Beltran Cr's Roots bonus `Stop Opp. Ability` stops the gain, so neither player
-  moves and the round says nothing.
+  moves and the round says nothing. 1526814 r3 (autoplay runs 5-10) is the first knockout
+  beside another Players Life card, and it goes the other way: El Toucan L3's `Victory Or Defeat
+  : +3 Players Life` wins for 6 Damage (Fury) against a player on 5, and that player stays on 0 -
+  the result block says `byKo: true`, and only El Toucan's owner gets a `life +3` entry. The
+  engine already has that. So "a Players gain pays both players through the knockout" does not
+  hold for the Victory-or-Defeat form, and the two texts differ in their records: every
+  `Victory Or Defeat : +N Players Life` (2103, 3187, 5321, 5571) carries `valueMin: 1`, where
+  Slobodan Cr's `+1 Players Life` (2433) carries 0. Reading `valueMin` as "only a player on at
+  least 1 Life gains" would fit both rounds, but that is one round a text; a second needs Slobodan
+  Cr in a knockout round again.
 - 1520327 r0: El Mariachi level 1's `Copy: Opp. Bonus` meets Anoda level 3, whose Oblivion bonus
   is `Copy: Opp. Ability`, so each card copies the other's copy. The resolution snapshot's static
   block rewrites both to `+1 Attack Per Life Left` (923, El Mariachi's own Huracan bonus) and
@@ -1177,6 +1195,18 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   Oblivion Copy against Cravy's `Revenge: Copy Opp. Bonus`), replays either way. A second needs
   a `Copy: Opp. Bonus` card (El Mariachi or any of the other cards printing it) played into an
   Oblivion card, to see whether the displayed Attack and the winner disagree again.
+  1527862 r1 (autoplay runs 5-10) is that second capture, and it does not decide it: El Mariachi
+  L3 (6/5) on 6 pills meets Jiya L4, whose Oblivion bonus is `Copy: Opp. Ability`, the static
+  block again rewrites both copies to `+1 Attack Per Life Left` (923), and the snapshot again
+  shows El Mariachi with the Huracan bonus twice: 6 x 7 + 13 + 13 = 68, where the engine has 55
+  (Jiya: 8 + 15 = 23). But El Mariachi wins at either number, so this time the winner cannot say
+  which one the server fought with. Two captures now show the same doubled display, and the one
+  where it matters shows the fight without it; the engine keeps the single count, and both
+  replays fail only on the displayed Attack of the copier. Two other loops are in the corpus and
+  replay: 1523103 r2 (Saki's `Copy: Opp. Bonus` into Kochar's Oblivion bonus, rewritten to Saki's
+  own `-2 Opp Power, Min 1` on both sides, which the Min makes equal either way) and 1519271 r2. A
+  round that settles it is one where the doubled display and the single count put different
+  cards on top.
 
 ### An increase to the opposing card - 1414749, 1507713 (fixed)
 Pepo Brahms' `Growth: Opp. Attack +1` (level 4, `abilityData` 5210) and `Growth: Opp. Attack
@@ -1261,7 +1291,19 @@ Power And Damage guards both cards**, and 1507713 r3 turned out to be the second
 ## Fresh capture backlog
 
 Nothing is untriaged. The four remaining mismatches are single points waiting on a second
-capture: 1079078, 1025413, 1517236 and 1520327. Autoplay runs 3-5 (188 Training battles,
+capture, or on a capture that decides them: 1025413, 1517236, and El Mariachi's Copy loop in
+1520327 and 1527862. Autoplay runs 5-10 (1,083 Training battles, 2026-09-27/28; 1530425 stopped
+in its third round) brought nineteen mismatches, and they came down to six rules and a second
+capture: `Players Combust` compiling to nothing (1521294, 1527285, 1528501, 1529213), `-N Players
+Pillz` compiling to nothing (1527810, 1533508, 1533638), Robert Cobb's `Bypass` (1529161), the
+`Per Opp.` magnitudes reading the modified opposing stat (1521354, 1522916, 1525452, 1525823,
+1526354, 1527537, 1528454, 1532324), both sides' reductions of one card running one side after the
+other (1526067, which settled the single point 1079078), Perfect measuring one pill fewer as
+`attack - power` (1525735), all fixed above, and 1527862, the second capture of 1520327's Copy loop,
+which does not decide it. None was a capture artifact. 1522916 is the one reloaded battle among
+them, and its round 0 is the live resolution snapshot's; what the reload cost is dictionary
+records (see "Data notes"). 1526814 r3 bears on 1517236 and goes against its likely rule (filed
+there). Autoplay runs 3-5 (188 Training battles,
 2026-09-27; 1518086 stopped in its fourth round when the game tab reloaded) brought nine
 mismatches, and they came down to four rules and a single point: `+N Attack Per Opp. Damage`
 reading the modified opposing Damage (1518052, 1518765, 1519829, which also settled the single
@@ -1334,6 +1376,17 @@ open replay mismatches above.
   Defeat: +2 Life (878120 r1, 1091770 r1).
 
 ## Data notes
+- **Eighty-eight battles of the autoplay runs 5-10 name ability ids the dictionary never
+  received.** From 1521095 to 1523296 the battle files reference 79 ability and bonus ids that
+  `captures/abilities.json` lacks (3245, Lakross's `+1 Attack Per Opp. Power`, which Taurite copies
+  in 1522916, is one; that battle's game tab was reloaded mid-battle, but the gap spans far more
+  than it). The records reached the capture server - the battle files name them - but were never
+  written to the shared dictionary, and the committed
+  one cannot be completed by hand (`captures/` changes only through `deno task extract`). The
+  extractor writes such a card's ability or bonus as null, and the testcases fight with the
+  catalog's texts, so every one of the 88 replays; only their game records show those slots as
+  empty. Re-running `deno task extract --raw` over the raw log of that session would recover the
+  records, if it still exists.
 - Battle 1131463 exposed a fifth source of card-definition differences: EFC had rebalanced
   the level-3 semi-evo Quetzal Cr to 7/4 with Stop Opp. Bonus, while the 2026-09-10
   character dump still said 2/6 with no ability. The exact server definition is held in
