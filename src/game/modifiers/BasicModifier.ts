@@ -385,11 +385,15 @@ export default class BasicModifier extends Modifier {
           final = this.mod(card.damage.final, data);
           card.damage.final = final;
           break;
-        case Type.ATTACK:
+        case Type.ATTACK: {
           // card.attack_.final = this.mod(card.attack.final, data); break;
           final = this.mod(card.attack.final, data);
           card.attack.final = final;
+          // The same modifier on the one-pill-fewer Attack (`BattleData.fewerAttack`).
+          const target = this.opp ? data.other : data;
+          target.fewerAttack = this.mod(target.fewerAttack, data);
           break;
+        }
         case Type.LIFE:
           final = this.mod(player.life, data);
           player.life = final;

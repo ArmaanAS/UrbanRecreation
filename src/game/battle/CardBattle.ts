@@ -50,6 +50,9 @@ export default class CardBattle {
       fury2,
     );
 
+    b1.other = b2;
+    b2.other = b1;
+
     // CardBattle.battle(
     //   game, p1, card1, pillz1, fury1,
     //   p2, card2, pillz2, fury2,
@@ -85,6 +88,10 @@ export default class CardBattle {
     const a2 = card2.power.final * (pillz2 + 1);
     card1.attack.final = a1;
     card2.attack.final = a2;
+    // The Attack each card would have on one pill fewer, which every Attack modifier below also
+    // writes (`BattleData.fewerAttack`, read by Perfect).
+    b1.fewerAttack = card1.power.final * pillz1;
+    b2.fewerAttack = card2.power.final * pillz2;
 
     // events1.executePost(b1);
     // events2.executePost(b2);

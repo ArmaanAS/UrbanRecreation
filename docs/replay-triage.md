@@ -73,6 +73,26 @@ were already implemented. The per-card `abilityData` the server sends (collected
 
 ## Fixed
 
+### Perfect measures one pill fewer through the Attack modifiers - 1525735 (fixed)
+`Perfect:` holds when its card wins "with the exact number of pillz needed" (see "Single points
+waiting for a second capture": 947670 and 1496258 settled it as "won, and one pill fewer would not
+have"). The engine took the Attack on one pill fewer as `attack - power`, which is right while every
+Attack modifier adds or takes a flat amount and wrong once a Min clamp holds the Attack. 1525735 r2:
+Cyloxxt L1 (8/1) on 1 pill and Fury fights at 8 x 2 = 16, cut to 6 by the Uppers `-10 Opp Attack,
+Min 3`, and beats Sabrina L5 (Courage, 9 Power, cut to 3 by the Sakrohm `-8 Opp Attack, Min 3`). On
+no pill Cyloxxt is 8, held at 3 by the same Min - a tie his single star wins - so the pill was not
+needed, and the server takes 3 from Sabrina's owner, not 3 + 5. `6 - 8 = -2` called it Perfect.
+The same autoplay runs have the other side of it: 1522747 r1, Cyloxxt L2 on 2 pills at 27 cut to 17
+against Colin's 10, where one pill fewer is 18 - 10 = 8 and loses, and the server takes 1 + 5. Of
+the 30 captured rounds where a Perfect card wins, 1525735 r2 is the only one where the two measures
+reach different verdicts.
+
+`CardBattle` now tracks, beside each card's Attack, the Attack it would have on one pill fewer
+(`BattleData.fewerAttack`: Power x the pillz bet), and `BasicModifier.apply` writes every Attack
+modifier to it as well; Perfect compares that with the opposing Attack. It is per-battle scratch,
+not position state, so the continuation cache is unaffected. Fixed 1525735. Tests in
+`tests/ability/Perfect.test.ts`. The Rust engine refuses every `Perfect:` text.
+
 ### Both sides' reductions of one card resolve by descending Min - 1079078, 1526067 (fixed)
 The server applies the reductions of one stat in descending order of their Min clamp, which the
 engine did within each side (Miss Stella, Don Cr: "Bonus before ability, reductions by descending
@@ -1116,8 +1136,11 @@ Only 3 captured rounds play a Damage Exchange card at all, one of them on a loss
   (Perfect Pillz)" (3674, 4030, 4382, 5594; `currentRoundRequirement: "perfect"`). Akirale won
   with more than he needed in 947670 r3 and Tatiana won 5 to 2 on 5 pillz in 1496258 r0, and
   neither `Perfect: +2 Pillz` paid. `ConditionType.PERFECT` now holds when the card won and one
-  pill fewer would not have: one Power less Attack, with the engine's own tie rule. Both
-  observations are negative; no winning exact bet has been captured yet.
+  pill fewer would not have, with the engine's own tie rule. Both observations are negative.
+  The autoplay runs 5-10 brought the first exact bets that win and pay (Cyloxxt in 1522747 r1,
+  and on no pill and Fury in 1527672 r1) and one that measured the Attack on one pill fewer
+  wrongly under a Min clamp; see "Perfect measures one pill fewer through the Attack modifiers"
+  above.
 - 1025413 r1: Dark Kaizerin (Oculus) infiltrates GhosTown at night and fights with the night
   bonus `Night: -1 Opp Pow. And Damage, Min 1` (1442); the hand stores the host's day bonus
   before the game switches to night. It is the only such round.

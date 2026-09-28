@@ -19,6 +19,15 @@ export default class BattleData {
    */
   betPillz: number;
   events: Events;
+  /** The other side's view of the same battle; set by CardBattle once both exist. */
+  other!: BattleData;
+  /**
+   * What this side's card would have fought at on one pill fewer: Power x the pillz bet, then
+   * every Attack modifier the real Attack meets, applied to this value too
+   * (`BasicModifier.apply`). Perfect reads it (`Condition`); a Min clamp that holds the real
+   * Attack also holds this one, which `attack - power` missed (1525735 r2).
+   */
+  fewerAttack = 0;
   constructor(
     round: PlayerRound,
     p1: Player,

@@ -162,14 +162,20 @@ export default class Condition {
         return data.betPillz > this.bet;
       // "If Akirale wins his round with the exact number of pillz needed (Perfect Pillz)"
       // (captures/abilities.json 3674, 4030, 4382, 5594; currentRoundRequirement "perfect"):
-      // the card won, and one pill fewer would not have won. One pill less takes one Power off
-      // the Attack (Attack = Power x pillz used, and the later phases add or take off flat
-      // amounts); a tie then goes by the engine's own tie rule. Tatiana won 5 to 2 on 5 pillz
-      // in 1496258 r0 and Akirale with more than he needed in 947670 r3, and neither paid.
+      // the card won, and one pill fewer would not have won. The Attack on one pill fewer is
+      // tracked through every Attack modifier the real one meets (`BattleData.fewerAttack`); a
+      // tie then goes by the engine's own tie rule. Tatiana won 5 to 2 on 5 pillz in 1496258
+      // r0 and Akirale with more than he needed in 947670 r3, and neither paid; Cyloxxt L2 wins
+      // 17 to 10 on 2 pillz in 1522747 r1, where 1 would give 18 - 10 = 8, and pays its -5.
+      // The Attack used to be taken as `attack - power`, which misses a Min clamp: Cyloxxt L1
+      // on 1 pill and Fury fights at 8 x 2 = 16, cut to 6 by the Uppers `-10 Opp Attack, Min
+      // 3`, and wins 6 to 3 against Sabrina (1525735 r2). On no pill it is 8, held at 3 - a tie
+      // Cyloxxt's single star wins - so 1 was not the exact number and the server takes no Life,
+      // where 6 - 8 = -2 called it Perfect.
       case ConditionType.PERFECT: {
         if (data.player.won !== true) return false;
         if (data.betPillz <= 1) return true;
-        const fewer = data.card.attack.final - data.card.power.final;
+        const fewer = data.fewerAttack;
         const opp = data.oppCard.attack.final;
         const winsTie = data.card.stars < data.oppCard.stars ||
           (data.card.stars === data.oppCard.stars && data.round.first);
