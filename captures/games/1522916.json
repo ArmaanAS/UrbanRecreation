@@ -52,7 +52,7 @@
           "index": 1,
           "inBattleId": 2,
           "state": "m1",
-          "ability": {},
+          "ability": null,
           "bonus": {
             "id": 1442,
             "description": "Night: -1 Opp Pow. And Damage, Min 1"

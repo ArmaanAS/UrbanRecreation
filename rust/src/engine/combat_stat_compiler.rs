@@ -10142,13 +10142,19 @@ mod tests {
         // `Confidence: Attack +12` (`573`), `Confidence: Power +2` (`647`), `Confidence: Power
         // And Damage +2` (`808`, `2621`), `Confidence: Power +4` (`1104`), `Revenge: Power And
         // Damage +2` (`1234`, `1542`, `1555`), `Revenge: Damage +3` (`1708`) and `Confidence :
-        // -4 Opp. Power, Min 2` (`4732`).
+        // -4 Opp. Power, Min 2` (`4732`). Autoplay runs 5-10 brought fifteen more: `Revenge: -3
+        // Opp. Power, Min 1` (`475`), `Revenge: Damage +3` (`523`, `622`), `Revenge: Power +2`
+        // (`927`), `Confidence: Power +4` (`943`, `1168`, `2456`, `3116`), `Revenge: Power And
+        // Damage +2` (`966`, `1031`, `1271`), `Revenge: -2 Opp Pow. & Dmg,min 2` (`1170`),
+        // `Confidence: Power +3` (`1262`), `Confidence: Damage +4` (`4615`) and `Revenge: Damage
+        // +2` (`4886`).
         let admitted = BTreeSet::from([
-            463, 465, 471, 478, 485, 488, 513, 520, 553, 555, 556, 560, 573, 585, 591, 599, 634,
-            644, 647, 773, 784, 801, 808, 859, 883, 884, 904, 914, 921, 938, 965, 994, 1022, 1026,
-            1053, 1085, 1091, 1099, 1104, 1107, 1234, 1278, 1286, 1303, 1314, 1370, 1395, 1410,
-            1417, 1542, 1555, 1672, 1708, 1780, 1839, 2194, 2206, 2621, 2628, 2657, 3035, 3119,
-            3827, 3829, 4316, 4399, 4464, 4469, 4623, 4699, 4711, 4732, 4838, 5146, 5406, 5881,
+            463, 465, 471, 475, 478, 485, 488, 513, 520, 523, 553, 555, 556, 560, 573, 585, 591,
+            599, 622, 634, 644, 647, 773, 784, 801, 808, 859, 883, 884, 904, 914, 921, 927, 938,
+            943, 965, 966, 994, 1022, 1026, 1031, 1053, 1085, 1091, 1099, 1104, 1107, 1168, 1170,
+            1234, 1262, 1271, 1278, 1286, 1303, 1314, 1370, 1395, 1410, 1417, 1542, 1555, 1672,
+            1708, 1780, 1839, 2194, 2206, 2456, 2621, 2628, 2657, 3035, 3116, 3119, 3827, 3829,
+            4316, 4399, 4464, 4469, 4615, 4623, 4699, 4711, 4732, 4838, 4886, 5146, 5406, 5881,
         ]);
         // Since revision 47 the `Confidence:` and `Revenge:` Stops are admitted by the
         // conditional-Stop grammar, card abilities only.
@@ -10162,10 +10168,12 @@ mod tests {
         // `Revenge: Stop Opp. Ability` (`979`, `2010`), another `Confidence: Stop Opp. Ability`
         // (`1632`), `Revenge: Copy: Opp. Damage` (`1803`) and `Confidence: Copy: Opp. Power`
         // (`4364`) to the conditional-Stop and stat-Copy grammars, and Musafar's `Revenge: + 2
-        // Attack Per Opp. Power` (`1832`) to Betul's.
+        // Attack Per Opp. Power` (`1832`) to Betul's. Runs 5-10 brought `Revenge: Stop Opp. Bonus`
+        // (`497`), two more `Revenge: Stop Opp. Ability` (`737`, `1176`), another `Confidence: Stop
+        // Opp. Ability` (`1374`) and another `Confidence: Copy: Opp. Power` (`986`).
         let ability_only = BTreeSet::from([
-            490, 589, 979, 1409, 1597, 1632, 1680, 1685, 1713, 1719, 1803, 1832, 2010, 2095, 2398,
-            4364, 5183,
+            490, 497, 589, 737, 979, 986, 1176, 1374, 1409, 1597, 1632, 1680, 1685, 1713, 1719,
+            1803, 1832, 2010, 2095, 2398, 4364, 5183,
         ]);
         // Fjell's `Revenge : +4 Life` (`5666`), Zhiara's `Revenge: Poison 2, Min 1` (`4903`),
         // `Day: Confidence: +1 Life Per Damage` (`1471`), `Confidence: +1 Life Per Dmg.` (`787`)
@@ -10188,11 +10196,16 @@ mod tests {
         // Yodd's `Revenge: Protec. Power And Dmg` (`984`) is the Revenge Protection no round has
         // shown, XU91's `Revenge: Copy Opp. Bonus` (`1828`) is `1751`'s source Copy, which the
         // source-Copy table adopts rather than this classifier, and Shevorgitz's `Revenge: +1
-        // Pillz And Life` (`3406`) is a compound post-round gain.
+        // Pillz And Life` (`3406`) is a compound post-round gain. Of runs 5-10's, two more
+        // `Confidence: +1 Life Per Dmg.` (`470`, `896`), `Revenge: -3 Opp. Life, Min 2` (`542`)
+        // and `Revenge : +2 Life` (`636`) are post-round Life effects, `Revenge: Copy Opp. Bonus`
+        // (`1334`) is another source Copy, and `Day: Confidence: Damage Exchange` (`1630`) is an
+        // Exchange under two prefixes, which no conditional grammar reads.
         let deferred = BTreeSet::from([
-            486, 507, 655, 676, 787, 814, 951, 984, 1040, 1050, 1070, 1079, 1097, 1113, 1230, 1471,
-            1642, 1643, 1652, 1661, 1693, 1702, 1751, 1756, 1810, 1828, 2113, 2267, 2495, 2582,
-            3016, 3301, 3406, 3546, 4106, 4301, 4449, 4903, 4972, 5099, 5666,
+            470, 486, 507, 542, 636, 655, 676, 787, 814, 896, 951, 984, 1040, 1050, 1070, 1079,
+            1097, 1113, 1230, 1334, 1471, 1630, 1642, 1643, 1652, 1661, 1693, 1702, 1751, 1756,
+            1810, 1828, 2113, 2267, 2495, 2582, 3016, 3301, 3406, 3546, 4106, 4301, 4449, 4903,
+            4972, 5099, 5666,
         ]);
         let observed: BTreeSet<_> = registry
             .iter()

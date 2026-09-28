@@ -164,3 +164,14 @@ Deno.test("a result that fits neither side stays flagged", async () => {
   assertEquals(captured.rounds.at(-1)?.life, [4, 12]);
   assertEquals(captured.issues.includes(STALE), true);
 });
+
+Deno.test("an ability the dictionary lacks is null, even with a long text beside it", async () => {
+  // 1522916 (autoplay runs 5-10): Taurite's Copy rewrote its ability to 3245 with a long text,
+  // and 3245 never reached captures/abilities.json. The extractor used to keep `{}` there.
+  const captured = reconstruct(1522916, await loadCapture(1522916));
+  const taurite = captured.players[0].hand[1];
+
+  assertEquals(taurite.name, "Taurite");
+  assertEquals(taurite.ability, null);
+  assertEquals(taurite.bonus?.id, 1442);
+});

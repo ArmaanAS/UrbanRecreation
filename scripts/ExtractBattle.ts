@@ -149,6 +149,12 @@ async function splitRaw(path: string, state: CaptureState): Promise<number[]> {
 // ---------------------------------------------------------------------------------------
 // Reconstruction
 // ---------------------------------------------------------------------------------------
+/** An expanded ability or bonus that the shared dictionary actually defines. */
+// deno-lint-ignore no-explicit-any
+function hasDefinition(a: any): boolean {
+  return typeof a?.id === "number";
+}
+
 function describeCard(c: Character, issues: string[]) {
   const known = cardById.get(c.id);
   const atLevel = cardByIdLevel.get(`${c.id}:${c.level}`);
@@ -162,9 +168,14 @@ function describeCard(c: Character, issues: string[]) {
     index: c.index,
     inBattleId: c.inBattleId,
     state: c.state,
-    // Full definitions incl. structured abilityData live in captures/abilities.json.
-    ability: c.ability ? { id: c.ability.id, description: c.ability.description } : null,
-    bonus: c.bonus ? { id: c.bonus.id, description: c.bonus.description } : null,
+    // Full definitions incl. structured abilityData live in captures/abilities.json. A card
+    // whose ability id the dictionary lacks has no definition to show and gets null, as an
+    // unknown id always did - also when the static block carries a long text for it, which
+    // used to leave an empty `{}` that the Rust corpus parser rejects (1521680, 1522214 and
+    // 1522916: the Copy targets of the autoplay runs 5-10, whose ids never reached the
+    // dictionary).
+    ability: hasDefinition(c.ability) ? { id: c.ability.id, description: c.ability.description } : null,
+    bonus: hasDefinition(c.bonus) ? { id: c.bonus.id, description: c.bonus.description } : null,
   };
 }
 

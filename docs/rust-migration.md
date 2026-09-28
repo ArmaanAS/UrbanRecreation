@@ -4550,6 +4550,46 @@ record, which the grammar's shape refuses, stays refused. Eligible draws 373 -> 
 1078669 back, nothing else moving); `tests/expect/rust-provenance.json` moves to catalog-context
 11. Test: `strict_catalog_match_resolves_an_ambiguous_post_round_text_by_the_cards_own_record`.
 
+#### The autoplay runs 5-10 data
+
+The 1,083 Training battles of the 2026-09-27/28 autoplay runs 5-10 added 456 records to
+`captures/abilities.json` (1993 -> 2449) and 1,083 draws to the catalog scan (774 -> 1857). As with
+runs 3-5, nothing in them needed an engine change on the Rust side by itself; what they moved:
+- **A new `specialAction`.** Robert Cobb's `Bypass` (`1546` at level 5, a Leader) prints
+  `activate_all_bonuses`: "The bonus of your other cards is active even if you don't have another
+  card from the same clan". `SpecialActionV1::ActivateAllBonuses` parses it. A lone Robert Cobb is
+  refused as every unlisted Leader hand is, and the catalog does not derive the bonuses it makes
+  live; the two corpus derivation tests check the seven captured Bypass hands against the printed
+  clan bonuses instead (every lone card's bonus is sent, and the Leader's own `Cancel Leader`).
+- **The hand-kept inventories.** Twenty-six new previous-round records - fifteen admitted as fixed
+  combat stats under `Confidence:`/`Revenge:`, five card-ability-only (`Revenge: Stop Opp. Bonus`,
+  two `Revenge: Stop Opp. Ability`, a `Confidence: Stop Opp. Ability` and a `Confidence: Copy: Opp.
+  Power`) and six deferred (two `Confidence: +1 Life Per Dmg.`, `Revenge: -3 Opp. Life, Min 2`,
+  `Revenge : +2 Life`, Nexus's source Copy `1334` and `Day: Confidence: Damage Exchange`) - and ten
+  new Support records, all executing as the ordinary Support grammar. 1530425 stopped in its third
+  round and joins the corpus skip list (14 skipped).
+- **Aliases.** New same-text, same-record ids joined existing groups, and several became their
+  group's lowest id: Oogway's `1296` (`Growth: Heal 1 Max. 12`, over Litchxxt's `1813`), Praxie's
+  `533` (`-3 Opp. Life Min 0`, over Zinfrid's `594`), Rakhan's `978` (`-5 Opp. Life Min 5`, over
+  Mou's `1399`) and Svelthlana's `113` (`Copy: Opp. Power`, thirty zero-valued records now). Others
+  only joined: `691` and `915` (`Defeat: Recover 2 Pillz Out Of 3`), `575`, `641` and `2540` (`+2
+  Life`), `726`, `742` and `882` (`Defeat: +2 Life`), `3985` (`Reanimate: +2 Life`, kept out of
+  execution by Lobo's identity lock) and `4125` (O Riley L3's Equalizer opponent-Life, kept out by
+  the `1415`/`4458` lock). Four printed levels the catalog had refused for want of their own record
+  prepare by it now: Gwen L3's `Copy: Opp. Ability` (`5558`), Nexus L3's `Revenge: Copy Opp. Bonus`
+  (`1334`), Eeok Ld L1's post-round Brawl (`5509`) and Rakhan L3 (`978`).
+- **Empty ability objects in three game records.** Eighty-eight of the new battle files (1521095 to
+  1523296) name ability ids the dictionary never received - their records reached the capture
+  server but not `captures/abilities.json`. The extractor already wrote such an ability as null,
+  but where the static block also carried a long text (a Copy target) it wrote `{}`, which the
+  corpus parser rejects: 1521680, 1522214 and 1522916. `ExtractBattle.ts` now writes null there too
+  (`tests/BattleCapture.test.ts`), and `deno task extract` changes only those three files.
+
+Eligible draws 375 -> 803 of 1857: 427 of the 1,083 new games are eligible on arrival, and 1090887
+is back - Chelonite L3's refreshed `Unison: Killshot: +3 Life` (`5935`), which the 2026-09-26 card
+refresh left without a captured record, arrived with 1533638. The registry fingerprint moves; the
+compiler revision (81), catalog-context revision (11), gate rounds and gate ids do not.
+
 #### The clan gate, measured but not taken
 
 The Oculus infiltration gate is the next slice by unlock, and it is measured, evidenced and

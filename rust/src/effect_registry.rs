@@ -153,6 +153,12 @@ string_enum! {
         // or Revenge, are activated for all rounds". A Leader ability too; a lone Memento is
         // not among the Leader hands the catalog admits, so it is refused before it is read.
         RemoveConditions => "remove_conditions",
+        // Robert Cobb's `Bypass` (1546 at level 5), first captured 2026-09-28: "The bonus of your
+        // other cards is active even if you don't have another card from the same clan. Their
+        // bonus can still be blocked by your opponent's 'Stop Opp. Bonus' cards". A Leader
+        // ability too; a lone Robert Cobb is not among the Leader hands the catalog admits, so
+        // it is refused before it is read.
+        ActivateAllBonuses => "activate_all_bonuses",
     }
 }
 
@@ -1723,7 +1729,7 @@ mod tests {
                 "stop_modif"
             ]
         );
-        assert_eq!(SpecialActionV1::DOMAIN.len(), 19);
+        assert_eq!(SpecialActionV1::DOMAIN.len(), 20);
     }
 
     #[test]
@@ -2331,14 +2337,15 @@ mod tests {
         ));
         // Scar's `2470` (2026-09-27 autoplay runs 2-3) prints `Copy: Opp. Power` over a stray
         // `value: 5, valueMin: 8`; the seventeen other records of the text print zeros, and so
-        // do the six more the autoplay runs 3-5 brought. The text is ambiguous, while each
+        // do the six more the autoplay runs 3-5 brought and the seven more of runs 5-10 (113,
+        // now the lowest, 163, 253, 359, 410, 776 and 1222). The text is ambiguous, while each
         // record's own structural group is not.
         assert!(matches!(
             registry.lookup_description("Copy: Opp. Power"),
             Err(EffectLookupError::AmbiguousDescription { ref ids, .. }) if ids.contains(&2470)
         ));
         let copy_power = registry.structural_alias_ids(173).unwrap();
-        assert_eq!(copy_power.len(), 23);
+        assert_eq!(copy_power.len(), 30);
         assert!(copy_power.contains(&4461) && !copy_power.contains(&2470));
         assert_eq!(registry.structural_alias_ids(2470).unwrap(), [2470]);
         assert_eq!(
