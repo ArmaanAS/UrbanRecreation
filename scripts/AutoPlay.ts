@@ -468,7 +468,7 @@ if (import.meta.main) {
   const myId = Number(await Deno.readTextFile("captures/.player-id"));
   if (!myId) throw new Error("captures/.player-id is empty: play one game with the log server running first");
   const counts: Record<string, number> = JSON.parse(await Deno.readTextFile(SITUATIONS)).counts;
-  const collection: Collection = JSON.parse(await Deno.readTextFile(COLLECTION));
+  let collection: Collection = JSON.parse(await Deno.readTextFile(COLLECTION));
   const policy: Policy = opts.policy === "random"
     ? () => Promise.resolve(undefined)
     : opts.policy === "solver"
@@ -477,19 +477,36 @@ if (import.meta.main) {
   const used = new Set<string>();
   for (let b = 0; b < opts.batches; b++) {
     if (opts.deck || opts.plan) {
-      let spec = opts.deck
-        ? JSON.parse(await Deno.readTextFile(opts.deck)) as DeckSpec
-        : planDeck(collection, counts, PLAN_SLOTS[b % PLAN_SLOTS.length], used);
-      if (!spec && !opts.deck && used.size > 0) {
-        // Every clan has had its turn this run: start another round of them, ranked on what
-        // is still unfired now.
-        used.clear();
-        spec = planDeck(collection, counts, PLAN_SLOTS[b % PLAN_SLOTS.length], used);
+      // The owner may have sold or evolved cards since the run began: the log server rewrites
+      // the collection file whenever Collection Pro loads, so read it again for every deck.
+      try {
+        collection = JSON.parse(await Deno.readTextFile(COLLECTION));
+      } catch { /* keep the last one */ }
+      let saved = false;
+      for (let attempt = 0; attempt < 5 && !saved; attempt++) {
+        let spec = opts.deck
+          ? JSON.parse(await Deno.readTextFile(opts.deck)) as DeckSpec
+          : planDeck(collection, counts, PLAN_SLOTS[b % PLAN_SLOTS.length], used);
+        if (!spec && !opts.deck && used.size > 0) {
+          // Every clan has had its turn this run: start another round of them, ranked on what
+          // is still unfired now.
+          used.clear();
+          spec = planDeck(collection, counts, PLAN_SLOTS[b % PLAN_SLOTS.length], used);
+        }
+        if (!spec) throw new Error("the planner found no clan left to test");
+        used.add(spec.name.replace(/^Auto /, ""));
+        try {
+          const id = await saveDeck(bridge, spec);
+          console.log(`deck "${spec.name}" saved as ${id} and made current`);
+          saved = true;
+        } catch (e) {
+          // "Impossible to find all those characters in your collection": a card the capture
+          // still lists has gone (sold, evolved). Try the next clan rather than end the run.
+          if (opts.deck) throw e;
+          console.log(`  deck "${spec.name}" not saved (${(e as Error).message}); trying another clan`);
+        }
       }
-      if (!spec) throw new Error("the planner found no clan left to test");
-      const id = await saveDeck(bridge, spec);
-      used.add(spec.name.replace(/^Auto /, ""));
-      console.log(`deck "${spec.name}" saved as ${id} and made current`);
+      if (!saved) throw new Error("no planned deck could be saved");
     }
     const before = Object.keys(counts).length;
     for (let g = 0; g < opts.games; g++) {
