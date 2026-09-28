@@ -320,7 +320,14 @@ export default class Ability {
         }
       }
     } else if (/-\d+/.test(tokens[0])) {
-      const dupe = ["Xantiax", "Cards"].includes(tokens[1]);
+      // "Players" lands on both players, like "Cards" on both cards: D4ggers' "-2 Players
+      // Pillz. Min 4" is "If D4ggers wins the round, the number of Pillz of the two competing
+      // players will be reduced by 2 Pillz, or up to a minimum of 4" (captures/abilities.json
+      // 3202; Karter's 3608 with Min 5). Karter wins 1533508 r0 and both players lose 2 (12 ->
+      // 10, and his own 9 -> 7); D4ggers takes his own owner from 8 to 6 in 1527810 r1 and from
+      // 6 to its Min 4 in 1533638 r1. Unlike Xantiax and Cards it keeps its win condition.
+      const players = tokens[1] === "Players";
+      const dupe = players || ["Xantiax", "Cards"].includes(tokens[1]);
       let t: string[];
       const i = dupe ? 2 : 1;
 
@@ -363,7 +370,7 @@ export default class Ability {
       if (dupe) {
         const newMods = [];
         for (const mod of this.mods) {
-          mod.win = false;
+          if (!players) mod.win = false;
           // const clone = mod.clone();
           const cloned = clone(mod);
           if (cloned instanceof BasicModifier) {

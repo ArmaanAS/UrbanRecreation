@@ -73,6 +73,22 @@ were already implemented. The per-card `abilityData` the server sends (collected
 
 ## Fixed
 
+### `-N Players Pillz` reduces both players' Pillz - 1527810, 1533508, 1533638 (fixed)
+D4ggers' `-2 Players Pillz. Min 4` is "If D4ggers wins the round, the number of Pillz of the two
+competing players will be reduced by 2 Pillz, or up to a minimum of 4" (`abilityData` 3202;
+Karter's 3608 prints Min 5). In the negative branch of `compileAbility` "Players" was an unknown
+stat, so the text compiled to nothing. Three autoplay rounds, all won:
+- 1533508 r0: Karter wins on 3 pillz under the Cosmohnuts `Tune Out`; his owner goes 12 - 3 = 9
+  -> 7 and the opponent 12 -> 10 (the engine had 9 and 12).
+- 1527810 r1: D4ggers wins on no pillz and takes his own owner 8 -> 6; the opponent is on 0.
+- 1533638 r1: D4ggers wins on 4 pillz: 10 - 4 = 6 -> 4, held at the Min; the opponent is on 0.
+
+"Players" now duplicates the reduction onto both players as "Cards" does onto both cards, and
+unlike Xantiax and Cards it keeps the win requirement its text prints (no losing round is
+captured). Fixed 1527810, 1533508 and 1533638. Tests in `tests/ability/PlayersPillz.test.ts`. The
+Rust registry does not compile the both-sides Pillz reduction and no draw holding D4ggers or
+Karter is eligible, so it needs no change.
+
 ### `Players Combust` takes Life and Pillz from both players - 1521294, 1527285, 1528501, 1529213 (fixed)
 Bobby Cornteeth's `Players Combust 1, Min 0` is "If Bobby Cornteeth wins the round, at the end of
 each of the following turns, both players will lose 1 Life points and Pillz, minimum 0"
