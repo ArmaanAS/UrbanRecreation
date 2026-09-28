@@ -1,0 +1,487 @@
+{
+  "id": 1529703,
+  "capturedAt": "2026-09-28T02:01:47.483Z",
+  "creationTime": 1790560906,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 155,
+          "name": "Don Cr",
+          "clan": "Montana",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 3865,
+            "description": "-4 Opp Attack, Min 2"
+          },
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        },
+        {
+          "id": 179,
+          "name": "Flesh Pimp Cr",
+          "clan": "Montana",
+          "level": 1,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": null,
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        },
+        {
+          "id": 130,
+          "name": "Lino Borsa",
+          "clan": "Montana",
+          "level": 1,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": null,
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        },
+        {
+          "id": 156,
+          "name": "Ottavia",
+          "clan": "Montana",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 53,
+            "description": "-2 Opp Damage, Min 2"
+          },
+          "bonus": {
+            "id": 6,
+            "description": "-12 Opp Attack, Min 8"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1289,
+          "name": "Khaali",
+          "clan": "Vortex",
+          "level": 3,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "s",
+          "ability": {
+            "id": 1116,
+            "description": "Growth: +1 Pillz"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 764,
+          "name": "Oflgn",
+          "clan": "Vortex",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 584,
+            "description": "+1 Life Per Damage"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 1466,
+          "name": "Sarah",
+          "clan": "Vortex",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1282,
+            "description": "Growth: Poison 1, Min 1"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 759,
+          "name": "Sunder",
+          "clan": "Vortex",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 579,
+            "description": "-3 Opp. Life Min 3"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 759,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1790560908578
+        },
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 156,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790560909783
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 7,
+          "won": false
+        },
+        {
+          "power": 7,
+          "damage": 2,
+          "damageAfter": 3,
+          "attack": 9,
+          "won": true
+        }
+      ],
+      "life": [
+        10,
+        15
+      ],
+      "pillz": [
+        9,
+        10
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 2377
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 155,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790560921397
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 764,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": true,
+          "t": 1790560922505
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 9,
+          "damageAfter": 9,
+          "attack": 6,
+          "won": false
+        },
+        {
+          "power": 7,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 26,
+          "won": true
+        }
+      ],
+      "life": [
+        3,
+        22
+      ],
+      "pillz": [
+        6,
+        2
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 12744
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1466,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790560922604
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 179,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790560932356
+        }
+      ],
+      "resolution": [
+        {
+          "power": 2,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 2,
+          "won": false
+        },
+        {
+          "power": 8,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 8,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        22
+      ],
+      "pillz": [
+        3,
+        2
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "life",
+          "attributeAction": "decrease",
+          "isPermanent": true,
+          "quantity": 0
+        }
+      ],
+      "durationMs": 9752
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 0,
+      "pillz": 3,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 22,
+      "pillz": 2
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 1200
+      },
+      {
+        "type": "playerXP",
+        "value": 9
+      },
+      {
+        "type": "characterXP",
+        "value": 600
+      }
+    ],
+    "t": 1790560932422
+  },
+  "finalStatus": "done",
+  "snapshots": 8,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Khaali",
+      "Oflgn",
+      "Sarah",
+      "Sunder",
+      "Don Cr",
+      "Flesh Pimp Cr",
+      "Lino Borsa",
+      "Ottavia"
+    ],
+    "levels": [
+      3,
+      5,
+      3,
+      3,
+      3,
+      1,
+      1,
+      3
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          3,
+          2,
+          false
+        ],
+        "s2": [
+          3,
+          0,
+          true
+        ],
+        "p1life": 15,
+        "p2life": 10,
+        "p1pillz": 10,
+        "p2pillz": 9,
+        "r1": {
+          "power": 7,
+          "damage": 2,
+          "attack": 9,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 5,
+          "attack": 7,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          0,
+          0,
+          true
+        ],
+        "s2": [
+          1,
+          5,
+          true
+        ],
+        "p1life": 22,
+        "p2life": 3,
+        "p1pillz": 2,
+        "p2pillz": 6,
+        "r1": {
+          "power": 7,
+          "damage": 7,
+          "attack": 26,
+          "won": true
+        },
+        "r2": {
+          "power": 6,
+          "damage": 9,
+          "attack": 6,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          0,
+          false
+        ],
+        "s2": [
+          1,
+          0,
+          true
+        ],
+        "p1life": 22,
+        "p2life": 0,
+        "p1pillz": 2,
+        "p2pillz": 3,
+        "r1": {
+          "power": 8,
+          "damage": 3,
+          "attack": 8,
+          "won": true
+        },
+        "r2": {
+          "power": 2,
+          "damage": 3,
+          "attack": 2,
+          "won": false
+        }
+      }
+    ]
+  }
+}

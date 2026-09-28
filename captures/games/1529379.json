@@ -1,0 +1,490 @@
+{
+  "id": 1529379,
+  "capturedAt": "2026-09-28T01:38:15.448Z",
+  "creationTime": 1790559494,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 762,
+          "name": "Cyb Lhia",
+          "clan": "Vortex",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": {
+            "id": 582,
+            "description": "Poison 2, Min 4"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 760,
+          "name": "Heegrn Cr",
+          "clan": "Vortex",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 580,
+            "description": "Protection: Bonus"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 761,
+          "name": "Neloe",
+          "clan": "Vortex",
+          "level": 1,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": null,
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        },
+        {
+          "id": 759,
+          "name": "Sunder",
+          "clan": "Vortex",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 579,
+            "description": "-3 Opp. Life Min 3"
+          },
+          "bonus": {
+            "id": 577,
+            "description": "Defeat: Recover 2 Pillz Out Of 3"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2620,
+          "name": "Demusa",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 5092,
+            "description": "Symmetry: Toxin 3, Min 0"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2028,
+          "name": "Gregor Ld",
+          "clan": "Paradox",
+          "level": 5,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 5805,
+            "description": "Asymmetry: Cancel Opp. Power Mod."
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2048,
+          "name": "Lom",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 2099,
+            "description": "Equalizer: -1 Opp Power, Min 3"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        },
+        {
+          "id": 2463,
+          "name": "Solares Cr",
+          "clan": "Paradox",
+          "level": 2,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 3871,
+            "description": "Equalizer: Power And Damage +1"
+          },
+          "bonus": {
+            "id": 1844,
+            "description": "Asymmetry: Damage +3"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 2620,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1790559496565
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 762,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790559500499
+        }
+      ],
+      "resolution": [
+        {
+          "power": 8,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 8,
+          "won": false
+        },
+        {
+          "power": 9,
+          "damage": 1,
+          "damageAfter": 1,
+          "attack": 27,
+          "won": true
+        }
+      ],
+      "life": [
+        11,
+        15
+      ],
+      "pillz": [
+        13,
+        10
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 5145
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 759,
+          "pillz": 11,
+          "pillzUsed": 12,
+          "fury": false,
+          "t": 1790559510641
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 2028,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": false,
+          "t": 1790559511731
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 84,
+          "won": true
+        },
+        {
+          "power": 9,
+          "damage": 8,
+          "damageAfter": 5,
+          "attack": 54,
+          "won": false
+        }
+      ],
+      "life": [
+        8,
+        9
+      ],
+      "pillz": [
+        2,
+        5
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 11242
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 2463,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1790559511835
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 760,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790559521646
+        }
+      ],
+      "resolution": [
+        {
+          "power": 6,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 6,
+          "won": false
+        },
+        {
+          "power": 9,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 36,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        9
+      ],
+      "pillz": [
+        3,
+        2
+      ],
+      "postRoundAbilities": [
+        {
+          "playerId": 19309601,
+          "attributeAffected": "pillz",
+          "attributeAction": "increase",
+          "isPermanent": false,
+          "quantity": 1
+        }
+      ],
+      "durationMs": 9811
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 0,
+      "pillz": 3,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 9,
+      "pillz": 2
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 200
+      },
+      {
+        "type": "playerXP",
+        "value": 11
+      },
+      {
+        "type": "characterXP",
+        "value": 700
+      }
+    ],
+    "t": 1790559521729
+  },
+  "finalStatus": "done",
+  "snapshots": 8,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Demusa",
+      "Gregor Ld",
+      "Lom",
+      "Solares Cr",
+      "Cyb Lhia",
+      "Heegrn Cr",
+      "Neloe",
+      "Sunder"
+    ],
+    "levels": [
+      2,
+      5,
+      2,
+      2,
+      2,
+      4,
+      1,
+      3
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          2,
+          false
+        ],
+        "s2": [
+          0,
+          0,
+          false
+        ],
+        "p1life": 15,
+        "p2life": 11,
+        "p1pillz": 10,
+        "p2pillz": 13,
+        "r1": {
+          "power": 9,
+          "damage": 1,
+          "attack": 27,
+          "won": true
+        },
+        "r2": {
+          "power": 8,
+          "damage": 1,
+          "attack": 8,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          3,
+          11,
+          false
+        ],
+        "s2": [
+          1,
+          5,
+          false
+        ],
+        "p1life": 9,
+        "p2life": 8,
+        "p1pillz": 5,
+        "p2pillz": 2,
+        "r1": {
+          "power": 9,
+          "damage": 8,
+          "attack": 54,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 3,
+          "attack": 84,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          3,
+          false
+        ],
+        "s2": [
+          1,
+          0,
+          false
+        ],
+        "p1life": 9,
+        "p2life": 0,
+        "p1pillz": 2,
+        "p2pillz": 3,
+        "r1": {
+          "power": 9,
+          "damage": 8,
+          "attack": 36,
+          "won": true
+        },
+        "r2": {
+          "power": 6,
+          "damage": 7,
+          "attack": 6,
+          "won": false
+        }
+      }
+    ]
+  }
+}

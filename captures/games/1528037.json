@@ -1,0 +1,482 @@
+{
+  "id": 1528037,
+  "capturedAt": "2026-09-28T00:16:53.572Z",
+  "creationTime": 1790554612,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 319,
+          "name": "Bhudd",
+          "clan": "All Stars",
+          "level": 1,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": null,
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        },
+        {
+          "id": 312,
+          "name": "Mikki",
+          "clan": "All Stars",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 3037,
+            "description": "-4 Opp Power, Min 1"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        },
+        {
+          "id": 1726,
+          "name": "Stenmark",
+          "clan": "All Stars",
+          "level": 3,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 1558,
+            "description": "Courage: Stop Opp. Bonus"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        },
+        {
+          "id": 311,
+          "name": "Striker Cr",
+          "clan": "All Stars",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "m1",
+          "ability": {
+            "id": 153,
+            "description": "Stop Opp. Ability"
+          },
+          "bonus": {
+            "id": 156,
+            "description": "-2 Opp Power, Min 1"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 2344,
+          "name": "Carnibox",
+          "clan": "Dominion",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 3356,
+            "description": "+1 Pillz And Life"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 2499,
+          "name": "Spectral Arkan",
+          "clan": "Dominion",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 4028,
+            "description": "Victory Or Defeat: - 2 Opp. Life Min 4"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1715,
+          "name": "Robert Cobb",
+          "clan": "Leader",
+          "level": 5,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1546,
+            "description": "Bypass"
+          },
+          "bonus": {
+            "id": 117,
+            "description": "Cancel Leader"
+          }
+        },
+        {
+          "id": 1182,
+          "name": "Naliah Cr",
+          "clan": "Ulu Watu",
+          "level": 5,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 1008,
+            "description": "Reprisal: Power +2"
+          },
+          "bonus": {
+            "id": 39,
+            "description": "Power +2"
+          }
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 2499,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790554614684
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 312,
+          "pillz": 3,
+          "pillzUsed": 4,
+          "fury": false,
+          "t": 1790554616525
+        }
+      ],
+      "resolution": [
+        {
+          "power": 3,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 12,
+          "won": true
+        },
+        {
+          "power": 1,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 1,
+          "won": false
+        }
+      ],
+      "life": [
+        13,
+        11
+      ],
+      "pillz": [
+        9,
+        12
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 3024
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 2,
+          "cardId": 1726,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790554626508
+        },
+        {
+          "side": 1,
+          "index": 3,
+          "cardId": 1182,
+          "pillz": 1,
+          "pillzUsed": 2,
+          "fury": false,
+          "t": 1790554627624
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 4,
+          "damageAfter": 4,
+          "attack": 7,
+          "won": false
+        },
+        {
+          "power": 7,
+          "damage": 6,
+          "damageAfter": 6,
+          "attack": 14,
+          "won": true
+        }
+      ],
+      "life": [
+        7,
+        11
+      ],
+      "pillz": [
+        9,
+        11
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 11120
+    },
+    {
+      "round": 2,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 2,
+          "cardId": 1715,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790554627716
+        },
+        {
+          "side": 0,
+          "index": 0,
+          "cardId": 319,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": true,
+          "t": 1790554637427
+        }
+      ],
+      "resolution": [
+        {
+          "power": 3,
+          "damage": 3,
+          "damageAfter": 3,
+          "attack": 3,
+          "won": false
+        },
+        {
+          "power": 7,
+          "damage": 8,
+          "damageAfter": 8,
+          "attack": 7,
+          "won": true
+        }
+      ],
+      "life": [
+        0,
+        11
+      ],
+      "pillz": [
+        6,
+        11
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 9711
+    }
+  ],
+  "result": {
+    "result": "lose",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 0,
+      "pillz": 6,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 11,
+      "pillz": 11
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 200
+      },
+      {
+        "type": "playerXP",
+        "value": 44
+      },
+      {
+        "type": "characterXP",
+        "value": 650
+      }
+    ],
+    "t": 1790554637508
+  },
+  "finalStatus": "done",
+  "snapshots": 8,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Carnibox",
+      "Spectral Arkan",
+      "Robert Cobb",
+      "Naliah Cr",
+      "Bhudd",
+      "Mikki",
+      "Stenmark",
+      "Striker Cr"
+    ],
+    "levels": [
+      2,
+      4,
+      5,
+      5,
+      1,
+      3,
+      3,
+      4
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          1,
+          0,
+          false
+        ],
+        "s2": [
+          1,
+          3,
+          false
+        ],
+        "p1life": 11,
+        "p2life": 13,
+        "p1pillz": 12,
+        "p2pillz": 9,
+        "r1": {
+          "power": 1,
+          "damage": 4,
+          "attack": 1,
+          "won": false
+        },
+        "r2": {
+          "power": 3,
+          "damage": 4,
+          "attack": 12,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          2,
+          0,
+          false
+        ],
+        "s2": [
+          3,
+          1,
+          false
+        ],
+        "p1life": 11,
+        "p2life": 7,
+        "p1pillz": 11,
+        "p2pillz": 9,
+        "r1": {
+          "power": 7,
+          "damage": 6,
+          "attack": 14,
+          "won": true
+        },
+        "r2": {
+          "power": 7,
+          "damage": 4,
+          "attack": 7,
+          "won": false
+        }
+      },
+      {
+        "s1": [
+          2,
+          0,
+          false
+        ],
+        "s2": [
+          0,
+          0,
+          true
+        ],
+        "p1life": 11,
+        "p2life": 0,
+        "p1pillz": 11,
+        "p2pillz": 6,
+        "r1": {
+          "power": 7,
+          "damage": 8,
+          "attack": 7,
+          "won": true
+        },
+        "r2": {
+          "power": 3,
+          "damage": 3,
+          "attack": 3,
+          "won": false
+        }
+      }
+    ]
+  }
+}

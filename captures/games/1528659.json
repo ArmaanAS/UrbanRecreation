@@ -1,0 +1,401 @@
+{
+  "id": 1528659,
+  "capturedAt": "2026-09-28T00:53:25.840Z",
+  "creationTime": 1790556804,
+  "room": {
+    "id": 6,
+    "name": "Training",
+    "idBattleRule": 2,
+    "idDeckFormat": 0
+  },
+  "battleRuleId": 2,
+  "night": false,
+  "myId": 19309601,
+  "mySide": 0,
+  "firstPlayer": 1,
+  "players": [
+    {
+      "side": 0,
+      "id": 19309601,
+      "name": "DashSmashing",
+      "level": 164,
+      "grade": "Titan",
+      "country": "gb",
+      "club": {
+        "id": 1944486,
+        "name": "The Founding Fathers"
+      },
+      "registrationTime": 1323456712,
+      "certificationLevel": 0,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 248,
+          "name": "Aurelia",
+          "clan": "Sentinel",
+          "level": 2,
+          "index": 0,
+          "inBattleId": 1,
+          "state": "",
+          "ability": null,
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 246,
+          "name": "Copper Cr",
+          "clan": "Sentinel",
+          "level": 3,
+          "index": 1,
+          "inBattleId": 2,
+          "state": "",
+          "ability": {
+            "id": 4494,
+            "description": "Reprisal: Power +5"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 249,
+          "name": "Rebecca",
+          "clan": "Sentinel",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 3,
+          "state": "",
+          "ability": {
+            "id": 5554,
+            "description": "Equalizer: -1 Opp Power, Min 4"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        },
+        {
+          "id": 253,
+          "name": "Robin",
+          "clan": "Sentinel",
+          "level": 3,
+          "index": 3,
+          "inBattleId": 4,
+          "state": "",
+          "ability": {
+            "id": 101,
+            "description": "Power +2"
+          },
+          "bonus": {
+            "id": 93,
+            "description": "Attack +8"
+          }
+        }
+      ]
+    },
+    {
+      "side": 1,
+      "id": 64101,
+      "name": "Smash Jabber",
+      "level": 51,
+      "grade": "Novice",
+      "country": "wo",
+      "club": null,
+      "registrationTime": 1153673625,
+      "certificationLevel": 2,
+      "baseLife": 15,
+      "basePillz": 12,
+      "hand": [
+        {
+          "id": 1814,
+          "name": "Babe",
+          "clan": "Dominion",
+          "level": 4,
+          "index": 0,
+          "inBattleId": 5,
+          "state": "",
+          "ability": {
+            "id": 1655,
+            "description": "Cancel Opp. Pillz & Life Modif."
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1754,
+          "name": "Dookor",
+          "clan": "Dominion",
+          "level": 4,
+          "index": 1,
+          "inBattleId": 6,
+          "state": "",
+          "ability": {
+            "id": 1589,
+            "description": "Cancel Opp. Power And Damage Modif."
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 1955,
+          "name": "Sata",
+          "clan": "Dominion",
+          "level": 2,
+          "index": 2,
+          "inBattleId": 7,
+          "state": "",
+          "ability": {
+            "id": 1817,
+            "description": "-1 Opp Att. Per Life Left, Min 7"
+          },
+          "bonus": {
+            "id": 1578,
+            "description": "Growth: -1 Opp Power, Min 4"
+          }
+        },
+        {
+          "id": 840,
+          "name": "Eggman",
+          "clan": "Jungo",
+          "level": 4,
+          "index": 3,
+          "inBattleId": 8,
+          "state": "",
+          "ability": {
+            "id": 660,
+            "description": "Heal 2 Max. 12"
+          },
+          "bonus": null
+        }
+      ]
+    }
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "first": 1,
+      "moves": [
+        {
+          "side": 1,
+          "index": 0,
+          "cardId": 1814,
+          "pillz": 2,
+          "pillzUsed": 3,
+          "fury": false,
+          "t": 1790556806928
+        },
+        {
+          "side": 0,
+          "index": 1,
+          "cardId": 246,
+          "pillz": 5,
+          "pillzUsed": 6,
+          "fury": true,
+          "t": 1790556812471
+        }
+      ],
+      "resolution": [
+        {
+          "power": 7,
+          "damage": 9,
+          "damageAfter": 9,
+          "attack": 50,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 21,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        6
+      ],
+      "pillz": [
+        4,
+        10
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 6721
+    },
+    {
+      "round": 1,
+      "first": 0,
+      "moves": [
+        {
+          "side": 0,
+          "index": 3,
+          "cardId": 253,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790556824180
+        },
+        {
+          "side": 1,
+          "index": 1,
+          "cardId": 1754,
+          "pillz": 0,
+          "pillzUsed": 1,
+          "fury": false,
+          "t": 1790556825263
+        }
+      ],
+      "resolution": [
+        {
+          "power": 1,
+          "damage": 7,
+          "damageAfter": 7,
+          "attack": 9,
+          "won": true
+        },
+        {
+          "power": 7,
+          "damage": 5,
+          "damageAfter": 5,
+          "attack": 7,
+          "won": false
+        }
+      ],
+      "life": [
+        15,
+        0
+      ],
+      "pillz": [
+        4,
+        10
+      ],
+      "postRoundAbilities": [],
+      "durationMs": 12702
+    }
+  ],
+  "result": {
+    "result": "win",
+    "byKo": true,
+    "score": 0,
+    "scoreDiff": 0,
+    "player": {
+      "life": 15,
+      "pillz": 4,
+      "following": false,
+      "followed": false
+    },
+    "opponent": {
+      "life": 0,
+      "pillz": 10
+    },
+    "rewards": [
+      {
+        "type": "clintz",
+        "value": 4000
+      },
+      {
+        "type": "playerXP",
+        "value": 31
+      },
+      {
+        "type": "characterXP",
+        "value": 900
+      }
+    ],
+    "t": 1790556825351
+  },
+  "finalStatus": "done",
+  "snapshots": 6,
+  "issues": [],
+  "testcase": {
+    "cards": [
+      "Babe",
+      "Dookor",
+      "Sata",
+      "Eggman",
+      "Aurelia",
+      "Copper Cr",
+      "Rebecca",
+      "Robin"
+    ],
+    "levels": [
+      4,
+      4,
+      2,
+      4,
+      2,
+      3,
+      2,
+      3
+    ],
+    "night": false,
+    "flip": false,
+    "life": 15,
+    "pillz": 12,
+    "moves": [
+      {
+        "s1": [
+          0,
+          2,
+          false
+        ],
+        "s2": [
+          1,
+          5,
+          true
+        ],
+        "p1life": 6,
+        "p2life": 15,
+        "p1pillz": 10,
+        "p2pillz": 4,
+        "r1": {
+          "power": 7,
+          "damage": 5,
+          "attack": 21,
+          "won": false
+        },
+        "r2": {
+          "power": 7,
+          "damage": 9,
+          "attack": 50,
+          "won": true
+        }
+      },
+      {
+        "s1": [
+          3,
+          0,
+          false
+        ],
+        "s2": [
+          1,
+          0,
+          false
+        ],
+        "p1life": 0,
+        "p2life": 15,
+        "p1pillz": 10,
+        "p2pillz": 4,
+        "r1": {
+          "power": 7,
+          "damage": 5,
+          "attack": 7,
+          "won": false
+        },
+        "r2": {
+          "power": 1,
+          "damage": 7,
+          "attack": 9,
+          "won": true
+        }
+      }
+    ]
+  }
+}
